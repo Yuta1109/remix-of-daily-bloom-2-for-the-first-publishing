@@ -56,7 +56,10 @@ jobs:
           PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
           mkdir -p ~/private_keys
-          echo "$PRIVATE_KEY" > ~/private_keys/AuthKey_${KEY_ID}.p8
+          KEY_PATH=~/private_keys/AuthKey_${KEY_ID}.p8
+          printf '%s\n' "$PRIVATE_KEY" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          grep -q "BEGIN PRIVATE KEY" "$KEY_PATH" || { echo "Invalid .p8 key in APP_STORE_CONNECT_PRIVATE_KEY secret"; exit 1; }
 
       - name: Generate ExportOptions.plist
         env:
@@ -109,7 +112,8 @@ jobs:
             -authenticationKeyID "$KEY_ID" \
             -authenticationKeyIssuerID "$ISSUER_ID" \
             -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
-            DEVELOPMENT_TEAM="$TEAM_ID"
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic
 
       - name: Upload to TestFlight
         env:
