@@ -99,6 +99,7 @@ jobs:
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Essentials.xcarchive" \
@@ -107,7 +108,8 @@ jobs:
             -allowProvisioningUpdates \
             -authenticationKeyID "$KEY_ID" \
             -authenticationKeyIssuerID "$ISSUER_ID" \
-            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8
+            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
+            DEVELOPMENT_TEAM="$TEAM_ID"
 
       - name: Upload to TestFlight
         env:
