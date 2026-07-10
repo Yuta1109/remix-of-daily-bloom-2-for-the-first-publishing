@@ -8,6 +8,7 @@ import {
   AlignLeft,
   Palette,
   Calendar as CalIcon,
+  Activity,
 } from "lucide-react";
 import {
   getEvent,
@@ -17,7 +18,10 @@ import {
   type CalendarEvent,
   type ReminderOffset,
   type RepeatFreq,
+  type LiveActivityLead,
 } from "@/lib/events-store";
+import { rescheduleAll } from "@/lib/notifications";
+import { refreshLiveActivities } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -61,6 +65,8 @@ function makeInitial(target: EventSheetTarget | null): CalendarEvent | null {
     repeat: "none",
     location: "",
     notes: "",
+    liveActivity: false,
+    liveActivityLead: "1h",
   };
 }
 
@@ -80,6 +86,21 @@ const REPEATS: { key: RepeatFreq; tk: string }[] = [
   { key: "weekly", tk: "repeatWeekly" },
   { key: "monthly", tk: "repeatMonthly" },
   { key: "yearly", tk: "repeatYearly" },
+];
+
+const LIVE_ACTIVITY_LEADS: { key: LiveActivityLead; tk: string }[] = [
+  { key: "24h", tk: "la24h" },
+  { key: "12h", tk: "la12h" },
+  { key: "8h", tk: "la8h" },
+  { key: "6h", tk: "la6h" },
+  { key: "4h", tk: "la4h" },
+  { key: "3h", tk: "la3h" },
+  { key: "2h", tk: "la2h" },
+  { key: "1h", tk: "la1h" },
+  { key: "30m", tk: "la30m" },
+  { key: "20m", tk: "la20m" },
+  { key: "10m", tk: "la10m" },
+  { key: "5m", tk: "la5m" },
 ];
 
 export function EventSheet({ open, onOpenChange, target, onSaved, onDeleted }: Props) {
@@ -103,6 +124,12 @@ export function EventSheet({ open, onOpenChange, target, onSaved, onDeleted }: P
   const patch = (p: Partial<CalendarEvent>) =>
     setForm((f) => (f ? { ...f, ...p } : f));
 
+  const syncSchedules = () => {
+    // Fire-and-forget; these are no-ops on web.
+    void rescheduleAll();
+    void refreshLiveActivities();
+  };
+
   const save = () => {
     if (!form.title.trim()) return;
     const endDate =
@@ -116,6 +143,7 @@ export function EventSheet({ open, onOpenChange, target, onSaved, onDeleted }: P
       startTime: form.allDay ? undefined : form.startTime,
       endTime: form.allDay ? undefined : form.endTime,
     });
+    syncSchedules();
     onSaved?.();
     onOpenChange(false);
   };
@@ -127,6 +155,7 @@ export function EventSheet({ open, onOpenChange, target, onSaved, onDeleted }: P
     }
     if (confirm(t("confirmDelete"))) {
       deleteEvent(form.id);
+      syncSchedules();
       onDeleted?.();
       onOpenChange(false);
     }
@@ -297,6 +326,52 @@ export function EventSheet({ open, onOpenChange, target, onSaved, onDeleted }: P
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* Live Activity */}
+            <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
+              <div className="px-4 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm">{t("liveActivity")}</span>
+                </div>
+                <Switch
+                  checked={!!form.liveActivity}
+                  onCheckedChange={(v) => patch({ liveActivity: v })}
+                  disabled={!!form.allDay}
+                />
+              </div>
+              {form.liveActivity && !form.allDay && (
+                <div className="px-4 py-3 flex items-center justify-between gap-3">
+                  <span className="text-sm text-muted-foreground">
+                    {t("liveActivityShow")}
+                  </span>
+                  <Select
+                    value={form.liveActivityLead ?? "1h"}
+                    onValueChange={(v) =>
+                      patch({ liveActivityLead: v as LiveActivityLead })
+                    }
+                  >
+                    <SelectTrigger className="w-[170px] h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LIVE_ACTIVITY_LEADS.map((r) => (
+                        <SelectItem key={r.key} value={r.key}>
+                          {t(r.tk as never)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {form.liveActivity && (
+                <div className="px-4 py-2.5">
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    {t("liveActivityHint")}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Location & Notes */}

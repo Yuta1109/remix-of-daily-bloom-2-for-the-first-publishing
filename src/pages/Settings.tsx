@@ -1,17 +1,32 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Globe, ListPlus, Plus, X } from "lucide-react";
+import { ArrowLeft, Globe, ListPlus, Plus, X, Bell, Shield, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n, type Locale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { loadReusable, addReusable, removeReusable, type ReusableTask } from "@/lib/reusable-tasks";
+import { checkPermission, ensurePermission, isNative } from "@/lib/notifications";
+import { rescheduleAll } from "@/lib/notifications";
+
+const APP_VERSION = "1.0.0";
 
 export default function Settings() {
   const navigate = useNavigate();
   const { locale, setLocale, t } = useI18n();
   const [reusable, setReusable] = useState<ReusableTask[]>([]);
   const [newText, setNewText] = useState("");
+  const [notifGranted, setNotifGranted] = useState(false);
 
   useEffect(() => setReusable(loadReusable()), []);
+  useEffect(() => {
+    if (!isNative()) return;
+    void checkPermission().then((s) => setNotifGranted(s === "granted"));
+  }, []);
+
+  const handleEnableNotifications = async () => {
+    const granted = await ensurePermission();
+    setNotifGranted(granted);
+    if (granted) void rescheduleAll();
+  };
 
   const languages: { key: Locale; label: string; flag: string }[] = [
     { key: "en", label: t("english"), flag: "🇺🇸" },
@@ -64,6 +79,31 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* Notifications (native only) */}
+        {isNative() && (
+          <div className="bg-card rounded-2xl p-5 shadow-soft">
+            <div className="flex items-center gap-2 mb-1">
+              <Bell className="w-4 h-4 text-accent" />
+              <p className="text-sm font-semibold">{t("notifications")}</p>
+            </div>
+            {notifGranted ? (
+              <p className="text-xs text-muted-foreground">{t("notificationsEnabled")}</p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mb-4">
+                  {t("notificationsPermissionNeeded")}
+                </p>
+                <button
+                  onClick={handleEnableNotifications}
+                  className="w-full bg-accent text-accent-foreground rounded-xl px-4 py-3 text-sm font-medium hover:opacity-90 transition-opacity"
+                >
+                  {t("enableNotifications")}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Reusable Tasks */}
         <div className="bg-card rounded-2xl p-5 shadow-soft">
           <div className="flex items-center gap-2 mb-1">
@@ -105,6 +145,24 @@ export default function Settings() {
               {t("add")}
             </button>
           </div>
+        </div>
+
+        {/* About */}
+        <div className="bg-card rounded-2xl p-5 shadow-soft">
+          <div className="flex items-center gap-2 mb-4">
+            <Shield className="w-4 h-4 text-accent" />
+            <p className="text-sm font-semibold">{t("about")}</p>
+          </div>
+          <button
+            onClick={() => navigate("/privacy")}
+            className="w-full flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-3 text-sm hover:bg-secondary transition-colors"
+          >
+            <span>{t("privacyPolicy")}</span>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <p className="text-xs text-muted-foreground mt-3 text-center">
+            {t("version")} {APP_VERSION}
+          </p>
         </div>
       </div>
     </div>

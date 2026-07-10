@@ -1,6 +1,21 @@
 export type RepeatFreq = "none" | "daily" | "weekly" | "monthly" | "yearly";
 export type ReminderOffset = "none" | "at" | "5m" | "15m" | "30m" | "1h" | "1d";
 
+/** Live Activity lead time: how long before the event start it appears on the Lock Screen. */
+export type LiveActivityLead =
+  | "24h"
+  | "12h"
+  | "8h"
+  | "6h"
+  | "4h"
+  | "3h"
+  | "2h"
+  | "1h"
+  | "30m"
+  | "20m"
+  | "10m"
+  | "5m";
+
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -14,6 +29,62 @@ export interface CalendarEvent {
   repeat?: RepeatFreq;
   location?: string;
   notes?: string;
+  /** Whether this event shows a Lock Screen Live Activity (iOS only). */
+  liveActivity?: boolean;
+  /** How long before start the Live Activity begins. Defaults to "1h". */
+  liveActivityLead?: LiveActivityLead;
+}
+
+/** Minutes-before-start for each reminder offset. Returns null when disabled. */
+export function reminderOffsetMinutes(r?: ReminderOffset): number | null {
+  switch (r) {
+    case "at":
+      return 0;
+    case "5m":
+      return 5;
+    case "15m":
+      return 15;
+    case "30m":
+      return 30;
+    case "1h":
+      return 60;
+    case "1d":
+      return 1440;
+    default:
+      return null; // "none" or undefined
+  }
+}
+
+/** Minutes-before-start for each Live Activity lead time. */
+export function liveActivityLeadMinutes(l?: LiveActivityLead): number {
+  switch (l) {
+    case "24h":
+      return 1440;
+    case "12h":
+      return 720;
+    case "8h":
+      return 480;
+    case "6h":
+      return 360;
+    case "4h":
+      return 240;
+    case "3h":
+      return 180;
+    case "2h":
+      return 120;
+    case "1h":
+      return 60;
+    case "30m":
+      return 30;
+    case "20m":
+      return 20;
+    case "10m":
+      return 10;
+    case "5m":
+      return 5;
+    default:
+      return 60;
+  }
 }
 
 const KEY = "calendar-events";
@@ -119,6 +190,57 @@ export function eventOccursOn(e: CalendarEvent, date: string): boolean {
       return covers(occStart);
     }
   }
+}
+
+/** Returns true if a fresh occurrence of `e` *starts* on `date` (not just spans it). */
+export function isOccurrenceStart(e: CalendarEvent, date: string): boolean {
+  const target = parseYMD(date);
+  const start = parseYMD(e.date);
+  if (target < start) return false;
+
+  if (!e.repeat || e.repeat === "none") {
+    return date === e.date;
+  }
+  switch (e.repeat) {
+    case "daily":
+      return true;
+    case "weekly":
+      return diffDays(target, start) % 7 === 0;
+    case "monthly":
+      return target.getDate() === start.getDate();
+    case "yearly":
+      return target.getDate() === start.getDate() && target.getMonth() === start.getMonth();
+    default:
+      return false;
+  }
+}
+
+/**
+ * Concrete start Date/times of upcoming occurrences of `e`, within `horizonDays`
+ * from `from`. All-day events anchor to 09:00 local time.
+ */
+export function upcomingOccurrenceStarts(
+  e: CalendarEvent,
+  from: Date,
+  horizonDays = 120,
+  max = 30,
+): Date[] {
+  const results: Date[] = [];
+  const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const [sh, sm] = (e.allDay ? "09:00" : e.startTime || "09:00")
+    .split(":")
+    .map(Number);
+
+  for (let i = 0; i <= horizonDays && results.length < max; i++) {
+    const ymd = toYMD(cursor);
+    if (isOccurrenceStart(e, ymd)) {
+      const d = new Date(cursor);
+      d.setHours(sh, sm, 0, 0);
+      if (d.getTime() > from.getTime()) results.push(d);
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return results;
 }
 
 export function eventsForDate(date: string, events?: CalendarEvent[]): CalendarEvent[] {

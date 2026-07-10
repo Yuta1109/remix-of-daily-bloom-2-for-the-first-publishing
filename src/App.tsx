@@ -6,8 +6,8 @@ import { BottomNav } from "@/components/BottomNav";
 import { I18nProvider } from "@/lib/i18n";
 import Index from "./pages/Index";
 import Calendar from "./pages/Calendar";
-
 import Settings from "./pages/Settings";
+import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +22,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/calendar" element={<Calendar />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
           <BottomNav />
