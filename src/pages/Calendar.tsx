@@ -1,7 +1,9 @@
 import { useMemo, useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
+import { ChevronDown } from "lucide-react";
 import { getDay, startOfMonth } from "date-fns";
 import { EventSheet, type EventSheetTarget } from "@/components/EventSheet";
 import { DayEventsSheet } from "@/components/DayEventsSheet";
+import { FabButton } from "@/components/FabButton";
 import {
   loadEvents,
   eventsForDate,
@@ -11,8 +13,6 @@ import {
 } from "@/lib/events-store";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-
-/* ── helpers ──────────────────────────────────────────────────────────────── */
 
 function daysInMonth(year: number, month: number): string[] {
   const total = new Date(year, month + 1, 0).getDate();
@@ -30,8 +30,6 @@ function addMonths(date: Date, n: number) {
   return new Date(date.getFullYear(), date.getMonth() + n, 1);
 }
 
-/* ── MonthGrid sub-component ──────────────────────────────────────────────── */
-
 interface MonthGridProps {
   year: number;
   month: number;
@@ -39,7 +37,6 @@ interface MonthGridProps {
   onDayTap: (date: string) => void;
   faded?: boolean;
   weekdayHeaders: string[];
-  locale: string;
 }
 
 function MonthGrid({ year, month, events, onDayTap, faded, weekdayHeaders }: MonthGridProps) {
@@ -55,11 +52,10 @@ function MonthGrid({ year, month, events, onDayTap, faded, weekdayHeaders }: Mon
   return (
     <div
       className={cn(
-        "bg-card rounded-2xl shadow-card overflow-hidden transition-opacity duration-300",
-        faded ? "opacity-30 pointer-events-none" : "opacity-100"
+        "bg-card rounded-2xl shadow-card overflow-hidden w-full transition-opacity duration-300",
+        faded ? "opacity-35 pointer-events-none" : "opacity-100"
       )}
     >
-      {/* Weekday headers */}
       <div className="grid grid-cols-7 border-b border-border/60 bg-secondary/30">
         {weekdayHeaders.map((d, i) => (
           <div
@@ -75,13 +71,11 @@ function MonthGrid({ year, month, events, onDayTap, faded, weekdayHeaders }: Mon
           </div>
         ))}
       </div>
-
-      {/* Day cells */}
       <div className="grid grid-cols-7 auto-rows-fr">
         {Array.from({ length: firstDayOfWeek }).map((_, i) => (
           <div
             key={`empty-${i}`}
-            className="min-h-[70px] border-b border-r border-border/40"
+            className="min-h-[78px] border-b border-r border-border/40"
           />
         ))}
         {days.map((date, idx) => {
@@ -89,14 +83,14 @@ function MonthGrid({ year, month, events, onDayTap, faded, weekdayHeaders }: Mon
           const col = (firstDayOfWeek + idx) % 7;
           const isToday = date === today;
           const dayEvents = monthEvents.get(date) ?? [];
-          const shown = dayEvents.slice(0, 2);
+          const shown = dayEvents.slice(0, 3);
           const more = dayEvents.length - shown.length;
           return (
             <button
               key={date}
               onClick={() => onDayTap(date)}
               className={cn(
-                "min-h-[70px] p-1 text-left border-b border-r border-border/40 flex flex-col gap-0.5 transition-colors relative hover:bg-secondary/40 active:bg-secondary/60",
+                "min-h-[78px] p-1 text-left border-b border-r border-border/40 flex flex-col gap-0.5 transition-colors hover:bg-secondary/40 active:bg-secondary/60",
                 col === 6 && "border-r-0"
               )}
             >
@@ -141,68 +135,56 @@ function MonthGrid({ year, month, events, onDayTap, faded, weekdayHeaders }: Mon
   );
 }
 
-/* ── Main page ───────────────────────────────────────────────────────────── */
-
 export default function CalendarPage() {
   const { t, locale, formatDate } = useI18n();
 
   const [viewDate, setViewDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  // Day-events bottom sheet
   const [daySheetOpen, setDaySheetOpen] = useState(false);
   const [daySheetDate, setDaySheetDate] = useState<string>(todayKey());
 
-  // Edit/new event drawer
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetTarget, setSheetTarget] = useState<EventSheetTarget | null>(null);
 
-  // New-event popup (modal)
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDate, setModalDate] = useState<string>(todayKey());
 
   const refreshEvents = () => setEvents(loadEvents());
   useEffect(() => { refreshEvents(); }, []);
 
-  /* ── Swipeable months scroll ──────────────────────────────────────────── */
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollBlockedRef = useRef(false);
+  const scrollTimerRef = useRef<number>();
 
-  // On viewDate change: reset scroll to center instantly (no animation).
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const w = el.clientWidth;
-    // Temporarily suppress the scrollend handler while we reposition.
+    const h = el.clientHeight;
     scrollBlockedRef.current = true;
     el.style.scrollBehavior = "auto";
-    el.scrollLeft = w;
+    el.scrollTop = h;
     requestAnimationFrame(() => {
       el.style.scrollBehavior = "";
       scrollBlockedRef.current = false;
     });
   }, [viewDate]);
 
-  // Detect when the user swipes to prev/next month.
-  const scrollTimerRef = useRef<number>();
   const handleScroll = useCallback(() => {
     clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = window.setTimeout(() => {
       if (scrollBlockedRef.current) return;
       const el = scrollRef.current;
       if (!el) return;
-      const w = el.clientWidth;
-      if (w === 0) return;
-      const snap = Math.round(el.scrollLeft / w);
-      if (snap === 0) {
-        setViewDate((d) => addMonths(d, -1));
-      } else if (snap === 2) {
-        setViewDate((d) => addMonths(d, +1));
-      }
+      const h = el.clientHeight;
+      if (h === 0) return;
+      const snap = Math.round(el.scrollTop / h);
+      if (snap === 0) setViewDate((d) => addMonths(d, -1));
+      else if (snap === 2) setViewDate((d) => addMonths(d, +1));
     }, 120);
   }, []);
 
-  /* ── Weekday headers ──────────────────────────────────────────────────── */
   const weekdayHeaders = useMemo(
     () =>
       Array.from({ length: 7 }, (_, i) => {
@@ -214,7 +196,8 @@ export default function CalendarPage() {
     [locale]
   );
 
-  /* ── Event handlers ────────────────────────────────────────────────────── */
+  const months = useMemo(() => [-1, 0, 1].map((o) => addMonths(viewDate, o)), [viewDate]);
+  const daySheetEvents = eventsForDate(daySheetDate, events);
 
   const handleDayTap = (date: string) => {
     setDaySheetDate(date);
@@ -222,7 +205,6 @@ export default function CalendarPage() {
   };
 
   const handleNewEvent = () => {
-    // Close day sheet, open new-event popup
     setDaySheetOpen(false);
     setModalDate(daySheetDate);
     setTimeout(() => setModalOpen(true), 200);
@@ -233,94 +215,114 @@ export default function CalendarPage() {
     setSheetOpen(true);
   };
 
-  const goToday = () => {
-    setViewDate(new Date());
-  };
+  const goToday = () => setViewDate(new Date());
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
 
-  // Months rendered: prev, current, next
-  const months = useMemo(() => [-1, 0, 1].map((o) => addMonths(viewDate, o)), [viewDate]);
-
-  const daySheetEvents = eventsForDate(daySheetDate, events);
+  const monthOptions = Array.from({ length: 12 }, (_, i) => i);
+  const yearOptions = Array.from({ length: 11 }, (_, i) => new Date().getFullYear() - 5 + i);
 
   return (
-    <div className="page-shell">
+    <div className="page-shell flex flex-col">
+      {/* Header */}
+      <div className="shrink-0 flex items-center justify-between pl-4 pr-3 pt-3 pb-2">
+        <div className="relative flex items-center gap-1 min-w-0">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-left"
+          >
+            <h1 className="text-2xl font-bold tracking-tight">
+              {formatDate(viewDate, { month: "long", year: "numeric" })}
+            </h1>
+            <ChevronDown
+              className={cn(
+                "w-5 h-5 text-muted-foreground shrink-0 transition-transform",
+                pickerOpen && "rotate-180"
+              )}
+            />
+          </button>
 
-      {/* ── Header ───────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
-        <h1 className="text-xl font-bold tracking-tight">
-          {formatDate(viewDate, { month: "long", year: "numeric" })}
-        </h1>
+          {pickerOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
+              <div className="absolute top-full left-0 mt-2 z-40 bg-card rounded-2xl shadow-card border border-border p-4 flex gap-3">
+                <select
+                  value={month}
+                  onChange={(e) => {
+                    setViewDate(new Date(year, Number(e.target.value), 1));
+                    setPickerOpen(false);
+                  }}
+                  className="bg-secondary/60 rounded-lg px-3 py-2 text-sm outline-none"
+                >
+                  {monthOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {formatDate(new Date(2024, m, 1), { month: "long" })}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={year}
+                  onChange={(e) => {
+                    setViewDate(new Date(Number(e.target.value), month, 1));
+                    setPickerOpen(false);
+                  }}
+                  className="bg-secondary/60 rounded-lg px-3 py-2 text-sm outline-none"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+        </div>
+
         <button
           onClick={goToday}
-          className="text-xs font-semibold text-accent hover:opacity-80 px-3 py-1.5 rounded-xl bg-accent/10 transition-opacity"
+          className="text-sm font-semibold text-accent hover:opacity-80 px-4 py-2 rounded-xl bg-accent/10 transition-opacity shrink-0 mr-1"
         >
           {t("today")}
         </button>
       </div>
 
-      {/* ── Swipeable months ─────────────────────────────────────────────── */}
-      {/*
-        Layout: 3 month cards at 82% width each, with 9% padding on each side.
-        When snapped to center card, ~9% of each adjacent card peeks at the edges.
-        Adjacent months are faded (opacity:0.3) to emphasise the current month.
-      */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="scrollbar-none"
-        style={{
-          display: "flex",
-          overflowX: "scroll",
-          scrollSnapType: "x mandatory",
-          WebkitOverflowScrolling: "touch",
-          paddingLeft: "9%",
-          paddingRight: "9%",
-          gap: "0",
-          flex: "none",
-        }}
-      >
-        {months.map((m, idx) => (
-          <div
-            key={`${m.getFullYear()}-${m.getMonth()}`}
-            style={{
-              flex: "0 0 82%",
-              scrollSnapAlign: "center",
-              scrollSnapStop: "always",
-              padding: "0 4px",
-            }}
-          >
-            <MonthGrid
-              year={m.getFullYear()}
-              month={m.getMonth()}
-              events={events}
-              onDayTap={handleDayTap}
-              faded={idx !== 1}
-              weekdayHeaders={weekdayHeaders}
-              locale={locale}
-            />
-          </div>
-        ))}
+      {/* Vertical month carousel */}
+      <div className="flex-1 min-h-0 px-3 pb-1">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="h-full month-carousel overflow-y-auto scrollbar-none"
+        >
+          {months.map((m, idx) => (
+            <div
+              key={`${m.getFullYear()}-${m.getMonth()}`}
+              className="month-carousel-panel flex items-center justify-center px-0.5"
+              style={{ minHeight: "100%" }}
+            >
+              <MonthGrid
+                year={m.getFullYear()}
+                month={m.getMonth()}
+                events={events}
+                onDayTap={handleDayTap}
+                faded={idx !== 1}
+                weekdayHeaders={weekdayHeaders}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Flex spacer */}
-      <div className="flex-1" />
-
-      {/* ── FAB ──────────────────────────────────────────────────────────── */}
-      <button
+      <FabButton
         onClick={() => {
           setModalDate(todayKey());
           setModalOpen(true);
         }}
         aria-label={t("addEvent")}
-        className="fixed bottom-24 right-6 w-14 h-14 rounded-full bg-accent text-accent-foreground shadow-float flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-40"
-      >
-        <span className="text-2xl leading-none font-light">+</span>
-      </button>
+      />
 
-      {/* ── Day events bottom sheet ──────────────────────────────────────── */}
       <DayEventsSheet
         open={daySheetOpen}
         onOpenChange={setDaySheetOpen}
@@ -330,7 +332,6 @@ export default function CalendarPage() {
         onNewEvent={handleNewEvent}
       />
 
-      {/* ── New event modal (centered popup) ────────────────────────────── */}
       <EventSheet
         open={modalOpen}
         onOpenChange={setModalOpen}
@@ -340,7 +341,6 @@ export default function CalendarPage() {
         onDeleted={refreshEvents}
       />
 
-      {/* ── Edit event drawer ────────────────────────────────────────────── */}
       <EventSheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}

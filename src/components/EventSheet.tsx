@@ -33,6 +33,7 @@ import {
 } from "@/lib/notifications";
 import { refreshLiveActivities } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
+import { resetViewportZoom } from "@/lib/viewport-zoom";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -171,9 +172,9 @@ function FormBody({
         >
           {t("cancel")}
         </button>
-        <DrawerPrimitive.Title className="text-base font-semibold">
+        <h2 className="text-base font-semibold">
           {isNew ? t("newEvent") : t("editEvent")}
-        </DrawerPrimitive.Title>
+        </h2>
         <button
           onClick={onSave}
           disabled={!form.title.trim()}
@@ -190,8 +191,10 @@ function FormBody({
           <input
             value={form.title}
             onChange={(e) => patch({ title: e.target.value })}
+            onBlur={resetViewportZoom}
+            onKeyDown={(e) => e.key === "Enter" && resetViewportZoom()}
             placeholder={t("eventTitle")}
-            className="w-full bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/40"
+            className="w-full bg-transparent text-[15px] font-semibold outline-none placeholder:text-muted-foreground/40"
           />
           <div className="mt-3 flex items-center gap-2 pt-3 border-t border-border/50">
             <Palette className="w-4 h-4 text-muted-foreground" />
@@ -442,8 +445,10 @@ function FormBody({
             <input
               value={form.location ?? ""}
               onChange={(e) => patch({ location: e.target.value })}
+              onBlur={resetViewportZoom}
+              onKeyDown={(e) => e.key === "Enter" && resetViewportZoom()}
               placeholder={t("location")}
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+              className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/50"
             />
           </div>
           <div className="px-4 py-3 flex items-start gap-2">
@@ -451,9 +456,10 @@ function FormBody({
             <textarea
               value={form.notes ?? ""}
               onChange={(e) => patch({ notes: e.target.value })}
+              onBlur={resetViewportZoom}
               placeholder={t("notes")}
               rows={3}
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 resize-none"
+              className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/50 resize-none"
             />
           </div>
         </div>
@@ -565,7 +571,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         {/* Backdrop */}
         <div
           className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-          onClick={() => onOpenChange(false)}
+          onClick={() => {
+            resetViewportZoom();
+            onOpenChange(false);
+          }}
         />
         {/* Panel */}
         <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10 overflow-hidden">

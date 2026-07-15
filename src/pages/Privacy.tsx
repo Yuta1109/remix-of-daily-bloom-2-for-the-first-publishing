@@ -1,8 +1,8 @@
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/lib/i18n";
+import { useEdgeSwipeBack } from "@/hooks/use-edge-swipe-back";
 
-// TODO: Replace with your actual contact email address before publishing.
 const CONTACT_EMAIL = "your-email@example.com";
 const LAST_UPDATED = "2026-07-15";
 
@@ -11,8 +11,10 @@ export default function Privacy() {
   const { locale, t } = useI18n();
   const ja = locale === "ja";
 
+  useEdgeSwipeBack(() => navigate(-1));
+
   return (
-    <div className="page-scroll px-5 pt-6">
+    <div className="page-scroll px-5 pt-3">
       <button
         onClick={() => navigate(-1)}
         className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 hover:text-foreground transition-colors"

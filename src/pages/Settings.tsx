@@ -60,7 +60,7 @@ export default function Settings() {
   const handleRemove = (id: string) => setReusable(removeReusable(id));
 
   return (
-    <div className="page-scroll px-5 pt-6">
+    <div className="page-scroll px-5 pt-3">
       <div className="space-y-6 animate-fade-in-up">
         <h1 className="text-2xl font-bold tracking-tight">{t("appSettings")}</h1>
 

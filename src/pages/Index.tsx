@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, Flame, Target, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { TaskItem } from "@/components/TaskItem";
+import { FabButton } from "@/components/FabButton";
 import {
   getDayData,
   saveDayData,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/store";
 import { loadReusable, type ReusableTask } from "@/lib/reusable-tasks";
 import { useI18n } from "@/lib/i18n";
+import { resetViewportZoom } from "@/lib/viewport-zoom";
 import type { DayData, Task } from "@/lib/store";
 
 export default function Index() {
@@ -49,10 +51,11 @@ export default function Index() {
     persist({ ...dayData, tasks: [...dayData.tasks, task] });
   };
 
-  const addTask = () => {
+  const finishNewTask = () => {
     addTaskWithText(newTask);
     setNewTask("");
     setShowInput(false);
+    resetViewportZoom();
   };
 
   const toggleTask = (id: string) => {
@@ -62,8 +65,8 @@ export default function Index() {
       tasks: dayData.tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
     };
     persist(updated);
-    if (task && !task.completed) {
-      if (getCompletionRate(updated) === 100) toast(t("allTasksComplete"));
+    if (task && !task.completed && getCompletionRate(updated) === 100) {
+      toast(t("allTasksComplete"));
     }
   };
 
@@ -71,16 +74,21 @@ export default function Index() {
     persist({ ...dayData, tasks: dayData.tasks.filter((t) => t.id !== id) });
   };
 
+  const editTask = (id: string, text: string) => {
+    persist({
+      ...dayData,
+      tasks: dayData.tasks.map((t) => (t.id === id ? { ...t, text } : t)),
+    });
+  };
+
   const now = new Date();
 
   return (
-    <div className="page-shell">
-      {/* ── Scrollable content area ─────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto scrollbar-none px-3 pt-6">
-
-        {/* Stats card */}
-        <div className="bg-card rounded-3xl p-5 shadow-card mb-5 animate-fade-in-up">
-          <div className="mb-4">
+    <div className="page-shell px-3">
+      {/* Stats — fixed, no scroll */}
+      <div className="shrink-0 pt-3 pb-3">
+        <div className="bg-card rounded-3xl p-4 shadow-card animate-fade-in-up">
+          <div className="mb-3">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
               {formatDate(now, { weekday: "long" })}
             </p>
@@ -113,13 +121,12 @@ export default function Index() {
           </div>
         </div>
 
-        {/* Quick-add chips */}
         {reusable.length > 0 && (
-          <div className="mb-4 animate-fade-in-up" style={{ animationDelay: "0.05s" }}>
+          <div className="mt-3 animate-fade-in-up" style={{ animationDelay: "0.05s" }}>
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2 px-1">
               {t("quickAdd")}
             </p>
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
               {reusable.map((r) => (
                 <button
                   key={r.id}
@@ -134,52 +141,63 @@ export default function Index() {
           </div>
         )}
 
-        {/* Task list header */}
-        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2 px-1 animate-fade-in-up" style={{ animationDelay: "0.1s" }}>
+        <p
+          className="text-xs text-muted-foreground font-medium uppercase tracking-wider mt-3 mb-2 px-1"
+          style={{ animationDelay: "0.1s" }}
+        >
           {t("todaysTasks")}
         </p>
       </div>
 
-      {/* ── Task list (scrollable) ──────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0">
-        <div className="space-y-0 divide-y divide-border/40">
-          {dayData.tasks.map((task) => (
-            <TaskItem key={task.id} task={task} onToggle={toggleTask} onDelete={deleteTask} />
-          ))}
+      {/* Embedded task card — frame fixed, list scrolls inside */}
+      <div className="flex-1 min-h-0 pb-1">
+        <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0">
+            {dayData.tasks.length > 0 ? (
+              <div className="divide-y divide-border/40 py-1">
+                {dayData.tasks.map((task) => (
+                  <TaskItem
+                    key={task.id}
+                    task={task}
+                    onToggle={toggleTask}
+                    onDelete={deleteTask}
+                    onEdit={editTask}
+                  />
+                ))}
+              </div>
+            ) : !showInput ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <p className="text-base font-medium mb-1">{t("startYourDay")}</p>
+                <p className="text-sm opacity-60">{t("tapPlusHint")}</p>
+              </div>
+            ) : null}
+
+            {showInput && (
+              <div className="py-2 animate-fade-in-up">
+                <input
+                  autoFocus
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") finishNewTask();
+                  }}
+                  onBlur={() => {
+                    if (newTask.trim()) finishNewTask();
+                    else {
+                      setShowInput(false);
+                      resetViewportZoom();
+                    }
+                  }}
+                  placeholder={t("whatNeedsDone")}
+                  className="w-full bg-transparent text-[15px] py-3 px-1 outline-none placeholder:text-muted-foreground/40 border-b border-border"
+                />
+              </div>
+            )}
+          </div>
         </div>
-
-        {dayData.tasks.length === 0 && !showInput && (
-          <div className="text-center py-10 text-muted-foreground">
-            <p className="text-base font-medium mb-1">{t("startYourDay")}</p>
-            <p className="text-sm opacity-60">{t("tapPlusHint")}</p>
-          </div>
-        )}
-
-        {showInput && (
-          <div className="animate-fade-in-up">
-            <input
-              autoFocus
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addTask()}
-              onBlur={() => !newTask && setShowInput(false)}
-              placeholder={t("whatNeedsDone")}
-              className="w-full bg-transparent py-3 px-1 outline-none placeholder:text-muted-foreground/40 border-b border-border"
-            />
-          </div>
-        )}
-
-        {/* Bottom spacer so last item isn't flush against scrollbar end */}
-        <div className="h-4" />
       </div>
 
-      {/* FAB */}
-      <button
-        onClick={() => setShowInput(true)}
-        className="fixed bottom-24 right-6 w-14 h-14 rounded-full bg-accent text-accent-foreground shadow-float flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-40"
-      >
-        <Plus className="w-6 h-6" strokeWidth={2.5} />
-      </button>
+      <FabButton onClick={() => setShowInput(true)} aria-label={t("add")} />
     </div>
   );
 }

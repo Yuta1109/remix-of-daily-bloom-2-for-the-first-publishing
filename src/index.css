@@ -45,6 +45,8 @@
     --shadow-card: 0 4px 24px -4px hsl(220 20% 10% / 0.08);
     --shadow-float: 0 8px 32px -6px hsl(220 20% 10% / 0.12);
 
+    --bottom-nav-height: 48px;
+
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -130,13 +132,6 @@
     height: 100%;
     overflow: hidden;
   }
-
-  /* Prevent iOS auto-zoom on input focus (requires font-size >= 16px) */
-  input,
-  textarea,
-  select {
-    font-size: 16px !important;
-  }
 }
 
 /* ── Layout utilities ─────────────────────────────────────────────────────── */
@@ -147,18 +142,15 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Leave room for the fixed bottom nav */
-  padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
-  /* Push content below status bar */
+  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   padding-top: env(safe-area-inset-top, 0px);
 }
 
-/* Page that needs its own vertical scroll (Settings, Privacy) */
 .page-scroll {
   height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   padding-top: env(safe-area-inset-top, 0px);
 }
 
@@ -221,3 +213,14 @@
 .animate-fade-in-up { animation: fade-in-up 0.3s ease-out; }
 .animate-slide-up   { animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .animate-float-up   { animation: float-up 1.2s ease-out forwards; }
+
+/* Vertical month carousel */
+.month-carousel {
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+.month-carousel-panel {
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
