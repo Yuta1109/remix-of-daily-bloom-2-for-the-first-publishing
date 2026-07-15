@@ -17,7 +17,8 @@ require "xcodeproj"
 APP_NAME = "App"
 WIDGET_NAME = "EssentialsWidget"
 APP_BUNDLE_ID = "com.confast.essences"
-WIDGET_BUNDLE_ID = "com.confast.essences.EssencesWidget"
+# Lowercase suffix — Apple Developer Portal rejects some mixed-case IDs.
+WIDGET_BUNDLE_ID = "com.confast.essences.widget"
 DEPLOYMENT_TARGET = "16.1"
 SWIFT_VERSION = "5.0"
 
