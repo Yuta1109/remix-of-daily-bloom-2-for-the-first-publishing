@@ -27,6 +27,21 @@ private func overflowText(_ locale: String, _ n: Int) -> String {
 }
 
 @available(iOS 16.1, *)
+private struct CountdownLabel: View {
+    let target: Date
+
+    var body: some View {
+        if #available(iOS 17.0, *) {
+            Text(timerInterval: Date.now...target, countsDown: true)
+                .monospacedDigit()
+        } else {
+            Text(target, style: .timer)
+                .monospacedDigit()
+        }
+    }
+}
+
+@available(iOS 16.1, *)
 struct LockScreenView: View {
     let state: EssencesWidgetAttributes.ContentState
 
@@ -50,9 +65,8 @@ struct LockScreenView: View {
                         .font(.subheadline).fontWeight(.medium)
                         .lineLimit(1)
                     Spacer(minLength: 8)
-                    Text(item.startDate, style: .relative)
+                    CountdownLabel(target: item.startDate)
                         .font(.subheadline)
-                        .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 56, alignment: .trailing)
                 }
@@ -85,8 +99,7 @@ struct EssencesWidgetLiveActivity: Widget {
                 Image(systemName: "calendar")
             } compactTrailing: {
                 if let first = context.state.items.first {
-                    Text(first.startDate, style: .relative)
-                        .monospacedDigit()
+                    CountdownLabel(target: first.startDate)
                         .frame(maxWidth: 52)
                 }
             } minimal: {

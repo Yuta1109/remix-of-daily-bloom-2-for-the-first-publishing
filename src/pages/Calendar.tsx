@@ -156,57 +156,77 @@ export default function CalendarPage() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollBlockedRef = useRef(false);
-  const scrollTimerRef = useRef<number>();
-  const [snapIndex, setSnapIndex] = useState(1);
+  const scrollEndTimerRef = useRef<number>();
+  const [isScrolling, setIsScrolling] = useState(false);
+  const [viewportH, setViewportH] = useState(0);
 
   const overlayOpen = daySheetOpen || sheetOpen || modalOpen;
+  const peekPx = viewportH / 15;
+  const panelStride = viewportH + peekPx * 2;
+
+  const measureViewport = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setViewportH(el.clientHeight);
+  }, []);
+
+  useLayoutEffect(() => {
+    measureViewport();
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(measureViewport);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measureViewport]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!el || overlayOpen) return;
-    const h = el.clientHeight;
+    if (!el || overlayOpen || panelStride === 0) return;
     scrollBlockedRef.current = true;
     el.style.scrollBehavior = "auto";
-    el.scrollTop = h;
-    setSnapIndex(1);
+    el.scrollTop = panelStride;
     requestAnimationFrame(() => {
       el.style.scrollBehavior = "";
       scrollBlockedRef.current = false;
+      setIsScrolling(false);
     });
-  }, [viewDate, overlayOpen]);
+  }, [viewDate, overlayOpen, panelStride]);
+
+  const snapToNearest = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || overlayOpen || panelStride === 0) return;
+
+    const nearest = Math.max(0, Math.min(2, Math.round(el.scrollTop / panelStride)));
+
+    scrollBlockedRef.current = true;
+    el.style.scrollBehavior = "smooth";
+    el.scrollTop = nearest * panelStride;
+
+    window.setTimeout(() => {
+      el.style.scrollBehavior = "";
+      scrollBlockedRef.current = false;
+      setIsScrolling(false);
+      if (nearest === 0) setViewDate((d) => addMonths(d, -1));
+      else if (nearest === 2) setViewDate((d) => addMonths(d, +1));
+    }, 260);
+  }, [overlayOpen, panelStride]);
+
+  const handleScroll = useCallback(() => {
+    if (overlayOpen || scrollBlockedRef.current) return;
+    setIsScrolling(true);
+    clearTimeout(scrollEndTimerRef.current);
+    scrollEndTimerRef.current = window.setTimeout(snapToNearest, 100);
+  }, [overlayOpen, snapToNearest]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
-      if (scrollBlockedRef.current || overlayOpen) return;
-      scrollBlockedRef.current = true;
-      el.scrollTop = el.clientHeight * snapIndex;
-      requestAnimationFrame(() => {
-        scrollBlockedRef.current = false;
-      });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [overlayOpen, snapIndex]);
-
-  const handleScroll = useCallback(() => {
-    if (overlayOpen) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    const h = el.clientHeight;
-    if (h === 0) return;
-
-    const idx = Math.round(el.scrollTop / h);
-    setSnapIndex(idx);
-
-    clearTimeout(scrollTimerRef.current);
-    scrollTimerRef.current = window.setTimeout(() => {
-      if (scrollBlockedRef.current || overlayOpen) return;
-      if (idx === 0) setViewDate((d) => addMonths(d, -1));
-      else if (idx === 2) setViewDate((d) => addMonths(d, +1));
-    }, 60);
-  }, [overlayOpen]);
+    const onScrollEnd = () => {
+      if (!scrollBlockedRef.current) snapToNearest();
+    };
+    el.addEventListener("scrollend", onScrollEnd);
+    return () => el.removeEventListener("scrollend", onScrollEnd);
+  }, [snapToNearest]);
 
   const weekdayHeaders = useMemo(
     () =>
@@ -322,17 +342,24 @@ export default function CalendarPage() {
           {months.map((m, idx) => (
             <div
               key={`${m.getFullYear()}-${m.getMonth()}`}
-              className="month-carousel-panel flex items-center justify-center px-0.5"
-              style={{ minHeight: "100%" }}
+              className="month-carousel-panel"
+              style={{ minHeight: panelStride || "100%" }}
             >
-              <MonthGrid
-                year={m.getFullYear()}
-                month={m.getMonth()}
-                events={events}
-                onDayTap={handleDayTap}
-                faded={idx !== snapIndex}
-                weekdayHeaders={weekdayHeaders}
-              />
+              <div style={{ height: peekPx || 0 }} className="shrink-0" aria-hidden />
+              <div
+                className="shrink-0 flex items-center justify-center px-0.5"
+                style={{ height: viewportH || undefined, minHeight: viewportH || undefined }}
+              >
+                <MonthGrid
+                  year={m.getFullYear()}
+                  month={m.getMonth()}
+                  events={events}
+                  onDayTap={handleDayTap}
+                  faded={isScrolling || idx !== 1}
+                  weekdayHeaders={weekdayHeaders}
+                />
+              </div>
+              <div style={{ height: peekPx || 0 }} className="shrink-0" aria-hidden />
             </div>
           ))}
         </div>

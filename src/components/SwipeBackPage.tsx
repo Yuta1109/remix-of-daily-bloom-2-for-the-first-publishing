@@ -3,22 +3,25 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   children: ReactNode;
+  underlay?: ReactNode;
   onBack: () => void;
   className?: string;
 }
 
-export function SwipeBackPage({ children, onBack, className }: Props) {
+export function SwipeBackPage({ children, underlay, onBack, className }: Props) {
   const [dx, setDx] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const startX = useRef(0);
   const startY = useRef(0);
   const tracking = useRef(false);
 
   const onTouchStart = (e: TouchEvent) => {
     const t = e.touches[0];
-    if (!t || t.clientX > 24) return;
+    if (!t || t.clientX > 28) return;
     startX.current = t.clientX;
     startY.current = t.clientY;
     tracking.current = true;
+    setDragging(true);
   };
 
   const onTouchMove = (e: TouchEvent) => {
@@ -27,40 +30,50 @@ export function SwipeBackPage({ children, onBack, className }: Props) {
     if (!t) return;
     const deltaX = t.clientX - startX.current;
     const deltaY = Math.abs(t.clientY - startY.current);
-    if (deltaY > 40 && deltaX < 20) {
+    if (deltaY > 48 && deltaX < 24) {
       tracking.current = false;
+      setDragging(false);
       setDx(0);
       return;
     }
-    if (deltaX > 0) setDx(Math.min(deltaX, window.innerWidth * 0.85));
+    if (deltaX > 0) {
+      e.preventDefault();
+      setDx(Math.min(deltaX, window.innerWidth));
+    }
   };
 
-  const onTouchEnd = () => {
+  const finish = () => {
     if (!tracking.current) return;
     tracking.current = false;
-    if (dx > 80) onBack();
+    setDragging(false);
+    if (dx > window.innerWidth * 0.33) onBack();
     setDx(0);
   };
 
   return (
-    <div
-      className={cn("page-scroll relative", className)}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchEnd}
-      style={{
-        transform: dx > 0 ? `translateX(${dx}px)` : undefined,
-        transition: tracking.current ? "none" : "transform 0.22s ease-out",
-      }}
-    >
-      {dx > 0 && (
-        <div
-          className="fixed inset-y-0 left-0 w-1 bg-border/60 pointer-events-none z-50"
-          style={{ opacity: Math.min(dx / 120, 1) }}
-        />
+    <div className="fixed inset-0 z-[70] overflow-hidden">
+      {underlay && (
+        <div className="absolute inset-0 overflow-hidden bg-background">
+          {underlay}
+        </div>
       )}
-      {children}
+
+      <div
+        className={cn(
+          "absolute inset-0 bg-background shadow-lg page-scroll",
+          className
+        )}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={finish}
+        onTouchCancel={finish}
+        style={{
+          transform: dx > 0 ? `translateX(${dx}px)` : undefined,
+          transition: dragging ? "none" : "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

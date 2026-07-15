@@ -15,10 +15,10 @@ export function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-card/80 backdrop-blur-xl border-t border-border z-50">
+    <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50">
       <div
-        className="flex justify-around items-center pt-1"
-        style={{ paddingBottom: "calc(5px + env(safe-area-inset-bottom, 0px))" }}
+        className="flex justify-around items-center"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
         {tabs.map(({ path, icon: Icon, label }) => {
           const active = location.pathname === path;
@@ -27,7 +27,7 @@ export function BottomNav() {
               key={path}
               onClick={() => navigate(path)}
               className={cn(
-                "flex flex-col items-center gap-0.5 px-4 py-1 rounded-xl transition-colors min-h-[var(--bottom-nav-height)] justify-center",
+                "flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-colors min-h-[var(--bottom-nav-height)] justify-center",
                 active ? "text-accent" : "text-muted-foreground"
               )}
             >

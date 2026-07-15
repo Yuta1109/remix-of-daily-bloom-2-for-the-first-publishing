@@ -473,10 +473,9 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   }, [open, targetKey, target]);
 
   useEffect(() => {
-    if (variant === "modal" && open) {
-      setOverlayChrome(true);
-      return () => setOverlayChrome(false);
-    }
+    if (!open) return;
+    setOverlayChrome(true, variant === "modal" ? "modal" : "drawer");
+    return () => setOverlayChrome(false, variant === "modal" ? "modal" : "drawer");
   }, [variant, open]);
 
   useEffect(() => {
@@ -558,7 +557,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
         {/* Backdrop */}
         <div
-          className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+          className="absolute inset-0 bg-secondary"
           onClick={() => onOpenChange(false)}
         />
         {/* Panel */}
@@ -576,7 +575,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   return (
     <DrawerPrimitive.Root open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
       <DrawerPrimitive.Portal>
-        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-secondary" />
         <DrawerPrimitive.Content
           className={cn(
             "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",

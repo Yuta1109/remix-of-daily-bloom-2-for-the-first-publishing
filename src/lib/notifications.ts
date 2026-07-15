@@ -88,8 +88,8 @@ function buildLaWakeTitle(e: CalendarEvent): string {
 function buildLaWakeBody(): string {
   const locale = currentLocale();
   return locale === "ja"
-    ? "ロック画面のカウントダウンを表示するには、アプリを開いてください"
-    : "Open Essences to show the countdown on your Lock Screen";
+    ? "タップしてロック画面にカウントダウンを表示"
+    : "Tap to show the countdown on your Lock Screen";
 }
 
 /**

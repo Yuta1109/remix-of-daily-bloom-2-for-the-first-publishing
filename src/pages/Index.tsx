@@ -139,16 +139,16 @@ export default function Index() {
           </div>
         )}
 
-        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mt-2 mb-1 px-1">
+        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mt-3 mb-0.5 px-1">
           {t("todaysTasks")}
         </p>
       </div>
 
       <div className="flex-1 min-h-0 mb-1">
         <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0 pb-2">
+          <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0 pb-[3px]">
             {dayData.tasks.length > 0 ? (
-              <div className="divide-y divide-border/40 py-1">
+              <div className="space-y-2 py-1">
                 {dayData.tasks.map((task) => (
                   <TaskItem
                     key={task.id}

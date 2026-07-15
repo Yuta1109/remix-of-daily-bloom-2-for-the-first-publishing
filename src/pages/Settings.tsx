@@ -17,14 +17,18 @@ import { useNestedScrollLock } from "@/hooks/use-nested-scroll";
 
 const APP_VERSION = "1.0.0";
 
-export default function Settings() {
+interface Props {
+  staticPreview?: boolean;
+}
+
+export default function Settings({ staticPreview = false }: Props) {
   const navigate = useNavigate();
   const { locale, setLocale, t } = useI18n();
   const [reusable, setReusable] = useState<ReusableTask[]>([]);
   const [newText, setNewText] = useState("");
   const [osGranted, setOsGranted] = useState(false);
   const [userEnabled, setUserEnabled] = useState(getNotificationsUserEnabled());
-  const { outerRef, innerProps } = useNestedScrollLock();
+  const { outerRef, innerProps } = useNestedScrollLock(reusable.length >= 5);
 
   useEffect(() => setReusable(loadReusable()), []);
   useEffect(() => {
@@ -62,8 +66,12 @@ export default function Settings() {
   const handleRemove = (id: string) => setReusable(removeReusable(id));
 
   return (
-    <div ref={outerRef} className="page-scroll px-5">
-      <div className="space-y-6 animate-fade-in-up pb-4">
+    <div
+      ref={staticPreview ? undefined : outerRef}
+      className={cn("page-scroll px-5", staticPreview && "pointer-events-none select-none")}
+      aria-hidden={staticPreview || undefined}
+    >
+      <div className={cn("space-y-6 animate-fade-in-up", staticPreview ? "pb-4" : "pb-4")}>
         <h1 className="text-2xl font-bold tracking-tight">{t("appSettings")}</h1>
 
         <div className="bg-card rounded-2xl p-5 shadow-soft">
@@ -129,10 +137,10 @@ export default function Settings() {
           <p className="text-xs text-muted-foreground mb-4">{t("reusableTasksDesc")}</p>
 
           <div
-            {...innerProps}
+            {...(reusable.length >= 5 ? innerProps : {})}
             className={cn(
-              "space-y-2 mb-3 scrollbar-app overscroll-contain",
-              reusable.length > 5 && "max-h-48 overflow-y-auto pr-1"
+              "space-y-2 mb-3",
+              reusable.length >= 5 && "max-h-48 overflow-y-auto pr-1 scrollbar-app overscroll-contain"
             )}
           >
             {reusable.map((r) => (
@@ -169,7 +177,7 @@ export default function Settings() {
           </div>
         </div>
 
-        <div className="bg-card rounded-2xl p-5 shadow-soft mb-2">
+        <div className="bg-card rounded-2xl p-5 shadow-soft mb-6">
           <div className="flex items-center gap-2 mb-4">
             <Shield className="w-4 h-4 text-accent" />
             <p className="text-sm font-semibold">{t("about")}</p>

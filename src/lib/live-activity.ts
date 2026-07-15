@@ -9,9 +9,6 @@ import {
 /** Up to this many events are shown inside a single Live Activity. */
 const MAX_ITEMS = 3;
 
-/** How often to poll while the app is in the foreground (ms). */
-const FOREGROUND_POLL_MS = 30_000;
-
 export interface LiveActivityItem {
   title: string;
   startEpochMs: number;
@@ -52,7 +49,7 @@ function collectActiveItems(now: Date): LiveActivityItem[] {
   for (const event of loadEvents()) {
     if (!event.liveActivity || event.allDay) continue;
     const leadMin = liveActivityLeadMinutes(event.liveActivityLead);
-    const [next] = upcomingOccurrenceStarts(event, now, 7, 1);
+    const [next] = upcomingOccurrenceStarts(event, now, 14, 1);
     if (!next) continue;
     const windowStart = next.getTime() - leadMin * 60_000;
     if (now.getTime() >= windowStart && now.getTime() < next.getTime()) {
@@ -78,10 +75,7 @@ export function msUntilNextLiveActivityBoundary(from = new Date()): number | nul
     const leadMin = liveActivityLeadMinutes(event.liveActivityLead);
     const starts = upcomingOccurrenceStarts(event, from, 14, 5);
     for (const start of starts) {
-      const boundaries = [
-        start.getTime() - leadMin * 60_000,
-        start.getTime(),
-      ];
+      const boundaries = [start.getTime() - leadMin * 60_000, start.getTime()];
       for (const boundary of boundaries) {
         if (boundary > now) {
           nextMs = nextMs === null ? boundary : Math.min(nextMs, boundary);
@@ -94,42 +88,31 @@ export function msUntilNextLiveActivityBoundary(from = new Date()): number | nul
   return Math.max(nextMs - now + 300, 1000);
 }
 
-let pollTimer: ReturnType<typeof setInterval> | undefined;
 let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
 
-function scheduleBoundaryRefresh(): void {
+function scheduleNextBoundary(): void {
   clearTimeout(boundaryTimer);
   const ms = msUntilNextLiveActivityBoundary();
   if (ms === null) return;
   boundaryTimer = setTimeout(() => {
-    void refreshLiveActivities().finally(scheduleBoundaryRefresh);
+    void refreshLiveActivities().finally(scheduleNextBoundary);
   }, ms);
 }
 
-/**
- * Keeps Live Activities in sync while the app stays open (start/end at exact times).
- * Call when the app enters the foreground; pair with `stopLiveActivityRefreshLoop`.
- */
-export function startLiveActivityRefreshLoop(): void {
+/** Schedule start/end refreshes only (countdown runs natively in the widget). */
+export function scheduleLiveActivityBoundaries(): void {
   if (!isLiveActivitySupported()) return;
-  stopLiveActivityRefreshLoop();
-  pollTimer = setInterval(() => void refreshLiveActivities(), FOREGROUND_POLL_MS);
-  scheduleBoundaryRefresh();
+  scheduleNextBoundary();
 }
 
-export function stopLiveActivityRefreshLoop(): void {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = undefined;
+export function stopLiveActivityBoundaries(): void {
   if (boundaryTimer) clearTimeout(boundaryTimer);
   boundaryTimer = undefined;
 }
 
 /**
- * Computes events currently inside their Live Activity lead window and updates
- * the Live Activity accordingly. Ends the activity when none are active.
- *
- * iOS only allows *starting* a Live Activity from the foreground (without push).
- * A local notification at the lead window reminds the user to open the app.
+ * Starts/updates/end Live Activities for events in their lead window.
+ * The widget uses SwiftUI `.timer` — no periodic JS updates for the countdown.
  */
 export async function refreshLiveActivities(): Promise<void> {
   if (!isLiveActivitySupported()) return;
@@ -150,7 +133,7 @@ export async function refreshLiveActivities(): Promise<void> {
     } catch {
       /* ignore */
     }
-    scheduleBoundaryRefresh();
+    scheduleNextBoundary();
     return;
   }
 
@@ -163,11 +146,11 @@ export async function refreshLiveActivities(): Promise<void> {
       items,
       overflow,
     });
-  } catch {
-    /* plugin unavailable or ActivityKit rejected the request */
+  } catch (err) {
+    console.warn("[LiveActivity] startOrUpdate failed:", err);
   }
 
-  scheduleBoundaryRefresh();
+  scheduleNextBoundary();
 }
 
 /** Events with Live Activity enabled that are eligible for a wake notification. */

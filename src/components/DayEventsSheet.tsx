@@ -32,7 +32,7 @@ export function DayEventsSheet({
   return (
     <DrawerPrimitive.Root open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
       <DrawerPrimitive.Portal>
-        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-secondary" />
         <DrawerPrimitive.Content className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background max-h-[65vh] outline-none">
           <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-muted" />
 
