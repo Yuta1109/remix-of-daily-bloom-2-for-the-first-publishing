@@ -28,13 +28,17 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        let locale = call.getString("locale") ?? "en"
-        let overflow = call.getInt("overflow") ?? 0
-        let rawItems = call.getArray("items") ?? []
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            call.resolve(["activityId": NSNull()])
+            return
+        }
 
-        var items: [EssentialsWidgetAttributes.Item] = []
-        for entry in rawItems {
-            guard let obj = entry as? [String: Any] else { continue }
+        let locale = call.getString("locale", "en")
+        let overflow = call.getInt("overflow", 0)
+        let rawItems = call.getArray("items", []) as! [[String: Any]]
+
+        var items: [EssencesWidgetAttributes.Item] = []
+        for obj in rawItems {
             let title = obj["title"] as? String ?? ""
             let start: Double
             if let d = obj["startEpochMs"] as? Double {
@@ -48,27 +52,41 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             items.append(.init(title: title, startEpochMs: start, color: color))
         }
 
-        let state = EssentialsWidgetAttributes.ContentState(
+        let state = EssencesWidgetAttributes.ContentState(
             items: items,
             overflow: overflow,
             locale: locale
         )
 
         Task {
-            if let existing = Activity<EssentialsWidgetAttributes>.activities.first {
-                await existing.update(using: state)
-                call.resolve(["activityId": existing.id])
-                return
-            }
             do {
-                let activity = try Activity.request(
-                    attributes: EssentialsWidgetAttributes(name: "Essentials"),
-                    contentState: state,
-                    pushType: nil
-                )
+                if let existing = Activity<EssencesWidgetAttributes>.activities.first {
+                    if #available(iOS 16.2, *) {
+                        await existing.update(ActivityContent(state: state, staleDate: nil))
+                    } else {
+                        await existing.update(using: state)
+                    }
+                    call.resolve(["activityId": existing.id])
+                    return
+                }
+
+                let activity: Activity<EssencesWidgetAttributes>
+                if #available(iOS 16.2, *) {
+                    activity = try Activity.request(
+                        attributes: EssencesWidgetAttributes(name: "Essences"),
+                        content: ActivityContent(state: state, staleDate: nil),
+                        pushType: nil
+                    )
+                } else {
+                    activity = try Activity.request(
+                        attributes: EssencesWidgetAttributes(name: "Essences"),
+                        contentState: state,
+                        pushType: nil
+                    )
+                }
                 call.resolve(["activityId": activity.id])
             } catch {
-                call.reject("Failed to start Live Activity: \(error.localizedDescription)")
+                call.reject("Live Activity error: \(error.localizedDescription)")
             }
         }
     }
@@ -79,8 +97,12 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         Task {
-            for activity in Activity<EssentialsWidgetAttributes>.activities {
-                await activity.end(dismissalPolicy: .immediate)
+            for activity in Activity<EssencesWidgetAttributes>.activities {
+                if #available(iOS 16.2, *) {
+                    await activity.end(ActivityContent(state: activity.content.state, staleDate: nil), dismissalPolicy: .immediate)
+                } else {
+                    await activity.end(dismissalPolicy: .immediate)
+                }
             }
             call.resolve()
         }

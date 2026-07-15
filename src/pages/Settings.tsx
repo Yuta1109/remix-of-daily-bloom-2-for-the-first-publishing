@@ -1,11 +1,18 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Globe, ListPlus, Plus, X, Bell, Shield, ChevronRight } from "lucide-react";
+import { Globe, ListPlus, Plus, X, Bell, Shield, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n, type Locale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { loadReusable, addReusable, removeReusable, type ReusableTask } from "@/lib/reusable-tasks";
-import { checkPermission, ensurePermission, isNative } from "@/lib/notifications";
-import { rescheduleAll } from "@/lib/notifications";
+import {
+  checkPermission,
+  ensurePermission,
+  isNative,
+  rescheduleAll,
+  getNotificationsUserEnabled,
+  setNotificationsUserEnabled,
+} from "@/lib/notifications";
+import { Switch } from "@/components/ui/switch";
 
 const APP_VERSION = "1.0.0";
 
@@ -14,18 +21,29 @@ export default function Settings() {
   const { locale, setLocale, t } = useI18n();
   const [reusable, setReusable] = useState<ReusableTask[]>([]);
   const [newText, setNewText] = useState("");
-  const [notifGranted, setNotifGranted] = useState(false);
+  const [osGranted, setOsGranted] = useState(false);
+  const [userEnabled, setUserEnabled] = useState(getNotificationsUserEnabled());
 
   useEffect(() => setReusable(loadReusable()), []);
   useEffect(() => {
     if (!isNative()) return;
-    void checkPermission().then((s) => setNotifGranted(s === "granted"));
+    void checkPermission().then((s) => setOsGranted(s === "granted"));
   }, []);
 
   const handleEnableNotifications = async () => {
     const granted = await ensurePermission();
-    setNotifGranted(granted);
-    if (granted) void rescheduleAll();
+    setOsGranted(granted);
+    if (granted) {
+      setNotificationsUserEnabled(true);
+      setUserEnabled(true);
+      void rescheduleAll();
+    }
+  };
+
+  const handleToggleUserEnabled = async (on: boolean) => {
+    setNotificationsUserEnabled(on);
+    setUserEnabled(on);
+    void rescheduleAll();
   };
 
   const languages: { key: Locale; label: string; flag: string }[] = [
@@ -43,13 +61,6 @@ export default function Settings() {
 
   return (
     <div className="max-w-lg mx-auto px-5 pt-6 pb-32 min-h-screen">
-      <button
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-      </button>
-
       <div className="space-y-6 animate-fade-in-up">
         <h1 className="text-2xl font-bold tracking-tight">{t("appSettings")}</h1>
 
@@ -86,9 +97,9 @@ export default function Settings() {
               <Bell className="w-4 h-4 text-accent" />
               <p className="text-sm font-semibold">{t("notifications")}</p>
             </div>
-            {notifGranted ? (
-              <p className="text-xs text-muted-foreground">{t("notificationsEnabled")}</p>
-            ) : (
+
+            {!osGranted ? (
+              /* OS permission not yet granted */
               <>
                 <p className="text-xs text-muted-foreground mb-4">
                   {t("notificationsPermissionNeeded")}
@@ -100,6 +111,17 @@ export default function Settings() {
                   {t("enableNotifications")}
                 </button>
               </>
+            ) : (
+              /* OS permission granted — show toggle to enable/disable scheduling */
+              <div className="flex items-center justify-between pt-1">
+                <p className="text-xs text-muted-foreground flex-1 pr-3">
+                  {userEnabled ? t("notificationsEnabled") : t("notificationsOffWarning")}
+                </p>
+                <Switch
+                  checked={userEnabled}
+                  onCheckedChange={handleToggleUserEnabled}
+                />
+              </div>
             )}
           </div>
         )}

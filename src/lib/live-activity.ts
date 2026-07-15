@@ -9,29 +9,20 @@ import {
 const MAX_ITEMS = 3;
 
 export interface LiveActivityItem {
-  /** Event title. */
   title: string;
-  /** Event start time as epoch milliseconds (used for the countdown). */
   startEpochMs: number;
-  /** Color token key (blue/green/orange/...). */
   color: string;
 }
 
 export interface LiveActivityPayload {
-  /** UI language, kept in sync with the in-app setting. */
   locale: "en" | "ja";
-  /** Nearest upcoming events, soonest first (max 3). */
   items: LiveActivityItem[];
-  /** How many additional events are hidden beyond the shown ones. */
   overflow: number;
 }
 
 export interface LiveActivitiesPlugin {
-  /** Whether the user has Live Activities enabled for this app in iOS Settings. */
   areEnabled(): Promise<{ enabled: boolean }>;
-  /** Starts a new Live Activity or updates the existing one. */
   startOrUpdate(payload: LiveActivityPayload): Promise<{ activityId: string | null }>;
-  /** Ends all Live Activities started by this app. */
   endAll(): Promise<void>;
 }
 
@@ -52,15 +43,22 @@ function currentLocale(): "en" | "ja" {
 }
 
 /**
- * Computes the events currently inside their Live Activity lead window
- * ([start - lead, start)) and pushes up to 3 of them (soonest first) into a
- * single Live Activity. Ends the activity when none are active.
+ * Computes events currently inside their Live Activity lead window and updates
+ * the Live Activity accordingly. Ends the activity when none are active.
  *
- * NOTE: iOS only lets an app start a Live Activity from the foreground (without
- * a push server), so this runs on app launch and whenever the app resumes.
+ * NOTE: iOS only allows starting a Live Activity from the foreground (without a
+ * push server). Call this on app launch and on foreground resume.
  */
 export async function refreshLiveActivities(): Promise<void> {
   if (!isIOS()) return;
+
+  // Guard: check if the user has Live Activities enabled in iOS Settings.
+  try {
+    const { enabled } = await LiveActivities.areEnabled();
+    if (!enabled) return;
+  } catch {
+    return;
+  }
 
   const now = new Date();
   const active: LiveActivityItem[] = [];
@@ -83,16 +81,20 @@ export async function refreshLiveActivities(): Promise<void> {
   active.sort((a, b) => a.startEpochMs - b.startEpochMs);
 
   if (active.length === 0) {
-    await LiveActivities.endAll();
+    try { await LiveActivities.endAll(); } catch { /* ignore */ }
     return;
   }
 
   const items = active.slice(0, MAX_ITEMS);
   const overflow = active.length - items.length;
 
-  await LiveActivities.startOrUpdate({
-    locale: currentLocale(),
-    items,
-    overflow,
-  });
+  try {
+    await LiveActivities.startOrUpdate({
+      locale: currentLocale(),
+      items,
+      overflow,
+    });
+  } catch {
+    /* Live Activities unavailable or rejected — ignore */
+  }
 }

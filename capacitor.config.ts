@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.confast.essentials",
-  appName: "Essentials",
+  appId: "com.confast.essences",
+  appName: "Essences",
   webDir: "dist",
   ios: {
     contentInset: "always",
@@ -15,6 +15,10 @@ const config: CapacitorConfig = {
     },
     LocalNotifications: {
       smallIcon: "ic_stat_icon",
+    },
+    Keyboard: {
+      resize: "body",
+      resizeOnFullScreen: true,
     },
   },
 };

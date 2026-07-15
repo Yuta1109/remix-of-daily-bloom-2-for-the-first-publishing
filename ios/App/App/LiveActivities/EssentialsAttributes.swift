@@ -5,7 +5,7 @@ import ActivityKit
 /// target (to start/update/end activities) and the widget extension (to render
 /// them on the Lock Screen).
 @available(iOS 16.1, *)
-public struct EssentialsWidgetAttributes: ActivityAttributes {
+public struct EssencesWidgetAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         /// Up to 3 upcoming events, soonest first.
         public var items: [Item]
@@ -23,7 +23,7 @@ public struct EssentialsWidgetAttributes: ActivityAttributes {
 
     public struct Item: Codable, Hashable {
         public var title: String
-        /// Event start time as epoch milliseconds.
+        /// Event start time as epoch milliseconds (used for the countdown).
         public var startEpochMs: Double
         /// Color token key (blue/green/orange/pink/purple/red/teal/gray).
         public var color: String
@@ -41,7 +41,7 @@ public struct EssentialsWidgetAttributes: ActivityAttributes {
 
     public var name: String
 
-    public init(name: String = "Essentials") {
+    public init(name: String = "Essences") {
         self.name = name
     }
 }

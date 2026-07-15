@@ -1,4 +1,4 @@
-# Essentials
+# Essences
 
 A calm calendar for the plans that matter. Schedule events, receive reminders, and keep upcoming plans visible on your iOS Lock Screen with Live Activities.
 
@@ -26,7 +26,7 @@ npx cap open ios   # open in Xcode (Mac only)
 iOS builds are produced in CI via GitHub Actions (see `.github/workflows/`).
 The app is distributed to the App Store / TestFlight; no local Mac is required.
 
-- Bundle ID: `com.confast.essentials`
+- Bundle ID: `com.confast.essences`
 - Minimum iOS version: 16.1 (required for Live Activities)
 
 ## Data & privacy

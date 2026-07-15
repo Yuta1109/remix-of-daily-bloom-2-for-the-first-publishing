@@ -12,7 +12,7 @@ private func colorFor(_ key: String) -> Color {
     case "red": return Color(hue: 0 / 360, saturation: 0.75, brightness: 0.90)
     case "teal": return Color(hue: 180 / 360, saturation: 0.60, brightness: 0.70)
     case "gray": return Color(hue: 220 / 360, saturation: 0.08, brightness: 0.60)
-    default: return Color(hue: 212 / 360, saturation: 0.90, brightness: 0.85) // blue
+    default: return Color(hue: 212 / 360, saturation: 0.90, brightness: 0.85)
     }
 }
 
@@ -28,7 +28,7 @@ private func overflowText(_ locale: String, _ n: Int) -> String {
 
 @available(iOS 16.1, *)
 struct LockScreenView: View {
-    let state: EssentialsWidgetAttributes.ContentState
+    let state: EssencesWidgetAttributes.ContentState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -68,9 +68,9 @@ struct LockScreenView: View {
 }
 
 @available(iOS 16.1, *)
-struct EssentialsWidgetLiveActivity: Widget {
+struct EssencesWidgetLiveActivity: Widget {
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: EssentialsWidgetAttributes.self) { context in
+        ActivityConfiguration(for: EssencesWidgetAttributes.self) { context in
             LockScreenView(state: context.state)
                 .padding(14)
                 .activityBackgroundTint(Color.black.opacity(0.35))

@@ -9,6 +9,7 @@ import {
   Palette,
   Calendar as CalIcon,
   Activity,
+  AlertCircle,
 } from "lucide-react";
 import {
   getEvent,
@@ -20,7 +21,14 @@ import {
   type RepeatFreq,
   type LiveActivityLead,
 } from "@/lib/events-store";
-import { rescheduleAll } from "@/lib/notifications";
+import {
+  rescheduleAll,
+  isNative,
+  checkPermission,
+  ensurePermission,
+  getNotificationsUserEnabled,
+  setNotificationsUserEnabled,
+} from "@/lib/notifications";
 import { refreshLiveActivities } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -107,11 +115,19 @@ export function EventSheet({ open, onOpenChange, target, onSaved, onDeleted }: P
   const { t } = useI18n();
   const initial = useMemo(() => makeInitial(target), [target, open]);
   const [form, setForm] = useState<CalendarEvent | null>(initial);
+  const [notifBlocked, setNotifBlocked] = useState(false);
   const isNew = target?.mode === "new";
 
   useEffect(() => {
     setForm(initial);
   }, [initial]);
+
+  useEffect(() => {
+    if (!open || !isNative()) return;
+    void checkPermission().then((perm) => {
+      setNotifBlocked(perm !== "granted" || !getNotificationsUserEnabled());
+    });
+  }, [open]);
 
   if (!form) {
     return (
@@ -198,7 +214,6 @@ export function EventSheet({ open, onOpenChange, target, onSaved, onDeleted }: P
             {/* Title + color */}
             <div className="bg-card rounded-2xl p-4 shadow-soft">
               <input
-                autoFocus={isNew}
                 value={form.title}
                 onChange={(e) => patch({ title: e.target.value })}
                 placeholder={t("eventTitle")}
@@ -284,6 +299,29 @@ export function EventSheet({ open, onOpenChange, target, onSaved, onDeleted }: P
 
             {/* Reminder & Repeat */}
             <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
+              {notifBlocked && isNative() && (
+                <div className="px-4 py-3 flex items-start gap-2 bg-amber-50/60 dark:bg-amber-900/20 rounded-t-2xl">
+                  <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      {t("notifDisabledInApp")}
+                    </p>
+                    <button
+                      className="text-xs font-semibold text-accent mt-1 underline underline-offset-2"
+                      onClick={async () => {
+                        const granted = await ensurePermission();
+                        if (granted) {
+                          setNotificationsUserEnabled(true);
+                          void rescheduleAll();
+                          setNotifBlocked(false);
+                        }
+                      }}
+                    >
+                      {t("enableNotifications")}
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="px-4 py-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <Bell className="w-4 h-4 text-muted-foreground" />

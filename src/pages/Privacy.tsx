@@ -2,8 +2,9 @@ import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/lib/i18n";
 
-const CONTACT_EMAIL = "support@confast.app";
-const LAST_UPDATED = "2026-07-10";
+// TODO: Replace with your actual contact email address before publishing.
+const CONTACT_EMAIL = "your-email@example.com";
+const LAST_UPDATED = "2026-07-15";
 
 export default function Privacy() {
   const navigate = useNavigate();
@@ -29,7 +30,7 @@ export default function Privacy() {
         {ja ? (
           <div className="space-y-4 text-sm leading-relaxed text-foreground/90">
             <p>
-              Essentials（以下「本アプリ」）は、ユーザーのプライバシーを尊重します。本ポリシーは、本アプリが扱う情報について説明します。
+              Essences（以下「本アプリ」）は、ユーザーのプライバシーを尊重します。本ポリシーは、本アプリが扱う情報について説明します。
             </p>
             <section className="space-y-1">
               <h2 className="text-base font-semibold">収集する情報</h2>
@@ -65,7 +66,7 @@ export default function Privacy() {
         ) : (
           <div className="space-y-4 text-sm leading-relaxed text-foreground/90">
             <p>
-              Essentials ("the app") respects your privacy. This policy explains
+              Essences ("the app") respects your privacy. This policy explains
               what information the app handles.
             </p>
             <section className="space-y-1">
@@ -77,7 +78,7 @@ export default function Privacy() {
               </p>
             </section>
             <section className="space-y-1">
-              <h2 className="text-base font-semibold">Notifications & Live Activities</h2>
+              <h2 className="text-base font-semibold">Notifications &amp; Live Activities</h2>
               <p>
                 Notifications and Lock Screen Live Activities are generated
                 on-device from your event data. This information is never

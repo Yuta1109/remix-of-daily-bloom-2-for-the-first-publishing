@@ -108,9 +108,33 @@
     @apply border-border;
   }
 
+  html {
+    height: 100%;
+    /* Prevent iOS rubber-band overscroll on the document root */
+    overscroll-behavior: none;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    /* Fill exactly the visible viewport on all iPhone sizes */
+    height: 100%;
+    overscroll-behavior: none;
+    /* Prevent tap highlight on iOS */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #root {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Prevent iOS from auto-zooming when focusing inputs (requires font-size >= 16px) */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }
 

@@ -16,8 +16,8 @@ require "xcodeproj"
 
 APP_NAME = "App"
 WIDGET_NAME = "EssentialsWidget"
-APP_BUNDLE_ID = "com.confast.essentials"
-WIDGET_BUNDLE_ID = "#{APP_BUNDLE_ID}.#{WIDGET_NAME}"
+APP_BUNDLE_ID = "com.confast.essences"
+WIDGET_BUNDLE_ID = "com.confast.essences.EssencesWidget"
 DEPLOYMENT_TARGET = "16.1"
 SWIFT_VERSION = "5.0"
 
@@ -138,4 +138,4 @@ unless already_embedded
 end
 
 project.save
-puts "EssentialsWidget wiring complete."
+puts "EssencesWidget wiring complete."
