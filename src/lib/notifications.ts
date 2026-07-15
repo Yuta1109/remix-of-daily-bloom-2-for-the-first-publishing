@@ -7,6 +7,7 @@ import {
   upcomingOccurrenceStarts,
   type CalendarEvent,
 } from "./events-store";
+import { liveActivityWakeTimes } from "./live-activity";
 
 const MAX_SCHEDULED = 60;
 const HORIZON_DAYS = 120;
@@ -49,10 +50,7 @@ export async function ensurePermission(): Promise<boolean> {
   return req.display === "granted";
 }
 
-function timeRangeLabel(e: CalendarEvent): string {
-  if (e.allDay || !e.startTime) return "";
-  return e.endTime ? `⏰ ${e.startTime} - ${e.endTime}` : `⏰ ${e.startTime}`;
-}
+import { formatEventSchedule } from "./event-display";
 
 function buildTitle(e: CalendarEvent): string {
   return `予定：${e.title}`;
@@ -60,8 +58,8 @@ function buildTitle(e: CalendarEvent): string {
 
 function buildBody(e: CalendarEvent): string {
   const parts: string[] = [];
-  const time = timeRangeLabel(e);
-  if (time) parts.push(time);
+  const schedule = formatEventSchedule(e, "ja");
+  if (schedule) parts.push(schedule);
   if (e.location) parts.push(e.location);
   return parts.join("  ·  ");
 }
@@ -69,6 +67,29 @@ function buildBody(e: CalendarEvent): string {
 interface ScheduledItem {
   at: Date;
   event: CalendarEvent;
+  kind: "reminder" | "liveActivityWake";
+}
+
+function currentLocale(): "en" | "ja" {
+  try {
+    const saved = localStorage.getItem("growth-app-lang");
+    if (saved === "ja" || saved === "en") return saved;
+  } catch {
+    /* ignore */
+  }
+  return (navigator.language || "en").startsWith("ja") ? "ja" : "en";
+}
+
+function buildLaWakeTitle(e: CalendarEvent): string {
+  const locale = currentLocale();
+  return locale === "ja" ? `予定：${e.title}` : `Event: ${e.title}`;
+}
+
+function buildLaWakeBody(): string {
+  const locale = currentLocale();
+  return locale === "ja"
+    ? "ロック画面のカウントダウンを表示するには、アプリを開いてください"
+    : "Open Essences to show the countdown on your Lock Screen";
 }
 
 /**
@@ -106,9 +127,15 @@ export async function rescheduleAll(): Promise<void> {
         if (offset === null) continue;
         const at = new Date(start.getTime() - offset * 60_000);
         if (at.getTime() > now.getTime()) {
-          items.push({ at, event });
+          items.push({ at, event, kind: "reminder" });
         }
       }
+    }
+  }
+
+  if (Capacitor.getPlatform() === "ios") {
+    for (const { at, event } of liveActivityWakeTimes(now, HORIZON_DAYS)) {
+      items.push({ at, event, kind: "liveActivityWake" });
     }
   }
 
@@ -118,10 +145,10 @@ export async function rescheduleAll(): Promise<void> {
 
   let id = 1;
   await LocalNotifications.schedule({
-    notifications: slice.map(({ at, event }) => ({
+    notifications: slice.map(({ at, event, kind }) => ({
       id: id++,
-      title: buildTitle(event),
-      body: buildBody(event),
+      title: kind === "liveActivityWake" ? buildLaWakeTitle(event) : buildTitle(event),
+      body: kind === "liveActivityWake" ? buildLaWakeBody() : buildBody(event),
       schedule: { at, allowWhileIdle: true },
     })),
   });

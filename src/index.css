@@ -46,6 +46,7 @@
     --shadow-float: 0 8px 32px -6px hsl(220 20% 10% / 0.12);
 
     --bottom-nav-height: 48px;
+    --bottom-nav-extra: 5px;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -132,6 +133,17 @@
     height: 100%;
     overflow: hidden;
   }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+html.overlay-open,
+html.overlay-open body {
+  background-color: rgba(0, 0, 0, 0.4);
 }
 
 /* ── Layout utilities ─────────────────────────────────────────────────────── */
@@ -142,16 +154,16 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-extra) + env(safe-area-inset-bottom, 0px));
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
 }
 
 .page-scroll {
   height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-extra) + env(safe-area-inset-bottom, 0px));
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
 }
 
 /* ── Custom scrollbars ───────────────────────────────────────────────────── */
@@ -223,4 +235,10 @@
 .month-carousel-panel {
   scroll-snap-align: center;
   scroll-snap-stop: always;
+  height: calc(100% * 13 / 15);
+  min-height: calc(100% * 13 / 15);
+}
+
+.month-grid-fade {
+  transition: opacity 150ms ease-out;
 }

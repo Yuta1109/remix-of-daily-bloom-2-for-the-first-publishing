@@ -18,7 +18,7 @@ export function BottomNav() {
     <nav className="fixed bottom-0 left-0 right-0 bg-card/80 backdrop-blur-xl border-t border-border z-50">
       <div
         className="flex justify-around items-center pt-1"
-        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+        style={{ paddingBottom: "calc(5px + env(safe-area-inset-bottom, 0px))" }}
       >
         {tabs.map(({ path, icon: Icon, label }) => {
           const active = location.pathname === path;

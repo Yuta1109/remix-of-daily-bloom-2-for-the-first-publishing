@@ -13,7 +13,7 @@ import {
 } from "@/lib/store";
 import { loadReusable, type ReusableTask } from "@/lib/reusable-tasks";
 import { useI18n } from "@/lib/i18n";
-import { resetViewportZoom } from "@/lib/viewport-zoom";
+import { scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import type { DayData, Task } from "@/lib/store";
 
 export default function Index() {
@@ -55,7 +55,6 @@ export default function Index() {
     addTaskWithText(newTask);
     setNewTask("");
     setShowInput(false);
-    resetViewportZoom();
   };
 
   const toggleTask = (id: string) => {
@@ -85,8 +84,7 @@ export default function Index() {
 
   return (
     <div className="page-shell px-3">
-      {/* Stats — fixed, no scroll */}
-      <div className="shrink-0 pt-3 pb-3">
+      <div className="shrink-0 pb-2">
         <div className="bg-card rounded-3xl p-4 shadow-card animate-fade-in-up">
           <div className="mb-3">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
@@ -141,18 +139,14 @@ export default function Index() {
           </div>
         )}
 
-        <p
-          className="text-xs text-muted-foreground font-medium uppercase tracking-wider mt-3 mb-2 px-1"
-          style={{ animationDelay: "0.1s" }}
-        >
+        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mt-2 mb-1 px-1">
           {t("todaysTasks")}
         </p>
       </div>
 
-      {/* Embedded task card — frame fixed, list scrolls inside */}
-      <div className="flex-1 min-h-0 pb-1">
+      <div className="flex-1 min-h-0 mb-1">
         <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0">
+          <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0 pb-2">
             {dayData.tasks.length > 0 ? (
               <div className="divide-y divide-border/40 py-1">
                 {dayData.tasks.map((task) => (
@@ -178,18 +172,16 @@ export default function Index() {
                   autoFocus
                   value={newTask}
                   onChange={(e) => setNewTask(e.target.value)}
+                  onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") finishNewTask();
                   }}
                   onBlur={() => {
                     if (newTask.trim()) finishNewTask();
-                    else {
-                      setShowInput(false);
-                      resetViewportZoom();
-                    }
+                    else setShowInput(false);
                   }}
                   placeholder={t("whatNeedsDone")}
-                  className="w-full bg-transparent text-[15px] py-3 px-1 outline-none placeholder:text-muted-foreground/40 border-b border-border"
+                  className="w-full bg-transparent text-base py-3 px-1 outline-none placeholder:text-muted-foreground/40 border-b border-border"
                 />
               </div>
             )}

@@ -13,6 +13,7 @@ import {
   setNotificationsUserEnabled,
 } from "@/lib/notifications";
 import { Switch } from "@/components/ui/switch";
+import { useNestedScrollLock } from "@/hooks/use-nested-scroll";
 
 const APP_VERSION = "1.0.0";
 
@@ -23,6 +24,7 @@ export default function Settings() {
   const [newText, setNewText] = useState("");
   const [osGranted, setOsGranted] = useState(false);
   const [userEnabled, setUserEnabled] = useState(getNotificationsUserEnabled());
+  const { outerRef, innerProps } = useNestedScrollLock();
 
   useEffect(() => setReusable(loadReusable()), []);
   useEffect(() => {
@@ -60,11 +62,10 @@ export default function Settings() {
   const handleRemove = (id: string) => setReusable(removeReusable(id));
 
   return (
-    <div className="page-scroll px-5 pt-3">
-      <div className="space-y-6 animate-fade-in-up">
+    <div ref={outerRef} className="page-scroll px-5">
+      <div className="space-y-6 animate-fade-in-up pb-4">
         <h1 className="text-2xl font-bold tracking-tight">{t("appSettings")}</h1>
 
-        {/* Language */}
         <div className="bg-card rounded-2xl p-5 shadow-soft">
           <div className="flex items-center gap-2 mb-1">
             <Globe className="w-4 h-4 text-accent" />
@@ -90,7 +91,6 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Notifications (native only) */}
         {isNative() && (
           <div className="bg-card rounded-2xl p-5 shadow-soft">
             <div className="flex items-center gap-2 mb-1">
@@ -99,7 +99,6 @@ export default function Settings() {
             </div>
 
             {!osGranted ? (
-              /* OS permission not yet granted */
               <>
                 <p className="text-xs text-muted-foreground mb-4">
                   {t("notificationsPermissionNeeded")}
@@ -112,21 +111,16 @@ export default function Settings() {
                 </button>
               </>
             ) : (
-              /* OS permission granted — show toggle to enable/disable scheduling */
               <div className="flex items-center justify-between pt-1">
                 <p className="text-xs text-muted-foreground flex-1 pr-3">
                   {userEnabled ? t("notificationsEnabled") : t("notificationsOffWarning")}
                 </p>
-                <Switch
-                  checked={userEnabled}
-                  onCheckedChange={handleToggleUserEnabled}
-                />
+                <Switch checked={userEnabled} onCheckedChange={handleToggleUserEnabled} />
               </div>
             )}
           </div>
         )}
 
-        {/* Reusable Tasks */}
         <div className="bg-card rounded-2xl p-5 shadow-soft">
           <div className="flex items-center gap-2 mb-1">
             <ListPlus className="w-4 h-4 text-accent" />
@@ -134,10 +128,10 @@ export default function Settings() {
           </div>
           <p className="text-xs text-muted-foreground mb-4">{t("reusableTasksDesc")}</p>
 
-          {/* Scroll when more than 5 items */}
           <div
+            {...innerProps}
             className={cn(
-              "space-y-2 mb-3 scrollbar-app",
+              "space-y-2 mb-3 scrollbar-app overscroll-contain",
               reusable.length > 5 && "max-h-48 overflow-y-auto pr-1"
             )}
           >
@@ -163,7 +157,7 @@ export default function Settings() {
               onChange={(e) => setNewText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               placeholder={t("addReusable")}
-              className="flex-1 bg-secondary/60 rounded-xl px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground/50"
+              className="flex-1 bg-secondary/60 rounded-xl px-4 py-2.5 text-base outline-none placeholder:text-muted-foreground/50"
             />
             <button
               onClick={handleAdd}
@@ -175,8 +169,7 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* About */}
-        <div className="bg-card rounded-2xl p-5 shadow-soft">
+        <div className="bg-card rounded-2xl p-5 shadow-soft mb-2">
           <div className="flex items-center gap-2 mb-4">
             <Shield className="w-4 h-4 text-accent" />
             <p className="text-sm font-semibold">{t("about")}</p>

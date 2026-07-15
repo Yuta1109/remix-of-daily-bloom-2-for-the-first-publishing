@@ -35,7 +35,10 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let locale = call.getString("locale", "en")
         let overflow = call.getInt("overflow", 0)
-        let rawItems = call.getArray("items", []) as! [[String: Any]]
+        guard let rawItems = call.getArray("items") as? [[String: Any]] else {
+            call.reject("Invalid items payload")
+            return
+        }
 
         var items: [EssencesWidgetAttributes.Item] = []
         for obj in rawItems {
@@ -58,11 +61,20 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             locale: locale
         )
 
+        let staleDate: Date? = {
+            guard let earliest = items.map(\.startEpochMs).min(), earliest > 0 else {
+                return nil
+            }
+            return Date(timeIntervalSince1970: earliest / 1000.0)
+        }()
+
         Task {
             do {
                 if let existing = Activity<EssencesWidgetAttributes>.activities.first {
                     if #available(iOS 16.2, *) {
-                        await existing.update(ActivityContent(state: state, staleDate: nil))
+                        await existing.update(
+                            ActivityContent(state: state, staleDate: staleDate)
+                        )
                     } else {
                         await existing.update(using: state)
                     }
@@ -74,7 +86,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                 if #available(iOS 16.2, *) {
                     activity = try Activity.request(
                         attributes: EssencesWidgetAttributes(name: "Essences"),
-                        content: ActivityContent(state: state, staleDate: nil),
+                        content: ActivityContent(state: state, staleDate: staleDate),
                         pushType: nil
                     )
                 } else {
@@ -99,7 +111,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             for activity in Activity<EssencesWidgetAttributes>.activities {
                 if #available(iOS 16.2, *) {
-                    await activity.end(ActivityContent(state: activity.content.state, staleDate: nil), dismissalPolicy: .immediate)
+                    await activity.end(nil, dismissalPolicy: .immediate)
                 } else {
                     await activity.end(dismissalPolicy: .immediate)
                 }

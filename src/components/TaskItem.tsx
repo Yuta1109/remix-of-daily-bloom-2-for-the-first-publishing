@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { Check, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { resetViewportZoom } from "@/lib/viewport-zoom";
+import { scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import type { Task } from "@/lib/store";
 
 interface TaskItemProps {
@@ -17,7 +17,8 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: TaskItemProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.text);
 
-  const handleToggle = () => {
+  const handleToggle = (e: MouseEvent) => {
+    e.stopPropagation();
     if (!task.completed) {
       setPopping(true);
       setShowFeedback(true);
@@ -32,20 +33,24 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: TaskItemProps) {
     if (trimmed && trimmed !== task.text) onEdit(task.id, trimmed);
     else setDraft(task.text);
     setEditing(false);
-    resetViewportZoom();
   };
 
   return (
-    <div className="group relative flex items-center gap-2 py-2 animate-fade-in-up">
-      {/* Larger touch target for checkbox */}
+    <div
+      className={cn(
+        "group relative flex items-center gap-1 min-h-[52px] isolate",
+        editing && "z-20"
+      )}
+    >
       <button
+        type="button"
         onClick={handleToggle}
         aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
-        className="flex-shrink-0 w-11 h-11 flex items-center justify-center -ml-1"
+        className="flex-shrink-0 w-12 h-12 flex items-center justify-center touch-manipulation"
       >
         <span
           className={cn(
-            "w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-300",
+            "w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-300 pointer-events-none",
             task.completed
               ? "bg-accent border-accent"
               : "border-muted-foreground/25",
@@ -63,30 +68,32 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: TaskItemProps) {
           autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
           onBlur={commitEdit}
           onKeyDown={(e) => {
             if (e.key === "Enter") commitEdit();
             if (e.key === "Escape") {
               setDraft(task.text);
               setEditing(false);
-              resetViewportZoom();
             }
           }}
-          className="flex-1 text-[15px] bg-transparent outline-none border-b border-accent/40 py-1"
+          className="flex-1 min-w-0 text-base bg-transparent outline-none border-b border-accent/40 py-2 relative z-10"
         />
       ) : (
         <button
-          onClick={() => {
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
             if (!task.completed) {
               setDraft(task.text);
               setEditing(true);
             }
           }}
-          className="flex-1 text-left min-w-0"
+          className="flex-1 min-w-0 min-h-11 py-2 px-1 text-left touch-manipulation relative z-10"
         >
           <span
             className={cn(
-              "text-[15px] transition-all duration-300 block truncate",
+              "text-base transition-all duration-300 block truncate",
               task.completed && "line-through text-muted-foreground/50"
             )}
           >
@@ -96,14 +103,18 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: TaskItemProps) {
       )}
 
       {showFeedback && (
-        <span className="absolute left-10 -top-1 text-accent text-xs font-bold animate-float-up flex items-center gap-0.5 pointer-events-none">
+        <span className="absolute left-11 -top-1 text-accent text-xs font-bold animate-float-up flex items-center gap-0.5 pointer-events-none">
           <Sparkles className="w-3 h-3" /> +1
         </span>
       )}
 
       <button
-        onClick={() => onDelete(task.id)}
-        className="opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity p-2 -mr-1 text-muted-foreground hover:text-destructive"
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete(task.id);
+        }}
+        className="flex-shrink-0 opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity p-2 text-muted-foreground hover:text-destructive touch-manipulation"
       >
         <X className="w-4 h-4" />
       </button>

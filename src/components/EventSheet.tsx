@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Drawer as DrawerPrimitive } from "vaul";
 import {
   Trash2,
@@ -31,9 +31,10 @@ import {
   getNotificationsUserEnabled,
   setNotificationsUserEnabled,
 } from "@/lib/notifications";
-import { refreshLiveActivities } from "@/lib/live-activity";
+import { refreshLiveActivities, isLiveActivitySupported } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
-import { resetViewportZoom } from "@/lib/viewport-zoom";
+import { scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
+import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -130,7 +131,6 @@ function makeInitial(target: EventSheetTarget | null): CalendarEvent | null {
 interface FormBodyProps {
   form: CalendarEvent;
   isNew: boolean;
-  fixedDate?: boolean;
   notifBlocked: boolean;
   patch: (p: Partial<CalendarEvent>) => void;
   onSave: () => void;
@@ -139,10 +139,11 @@ interface FormBodyProps {
   onEnableNotif: () => void;
 }
 
+const selectMenuClass = "z-[100]";
+
 function FormBody({
   form,
   isNew,
-  fixedDate,
   notifBlocked,
   patch,
   onSave,
@@ -191,10 +192,9 @@ function FormBody({
           <input
             value={form.title}
             onChange={(e) => patch({ title: e.target.value })}
-            onBlur={resetViewportZoom}
-            onKeyDown={(e) => e.key === "Enter" && resetViewportZoom()}
+            onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
             placeholder={t("eventTitle")}
-            className="w-full bg-transparent text-[15px] font-semibold outline-none placeholder:text-muted-foreground/40"
+            className="w-full bg-transparent text-base font-semibold outline-none placeholder:text-muted-foreground/40"
           />
           <div className="mt-3 flex items-center gap-2 pt-3 border-t border-border/50">
             <Palette className="w-4 h-4 text-muted-foreground" />
@@ -218,99 +218,61 @@ function FormBody({
         </div>
 
         {/* Date & Time */}
-        {!fixedDate && (
-          <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-2">
-                <CalIcon className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium">{t("allDay")}</span>
-              </div>
-              <Switch
-                checked={!!form.allDay}
-                onCheckedChange={(v) => patch({ allDay: v })}
-              />
+        <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-2">
+              <CalIcon className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">{t("allDay")}</span>
             </div>
-            <div className="px-4 py-3 flex items-center justify-between gap-3">
-              <span className="text-sm">{t("startDate")}</span>
-              <input
-                type="date"
-                value={form.date}
-                onChange={(e) => patch({ date: e.target.value })}
-                className="bg-secondary/60 rounded-lg px-3 py-1.5 text-sm outline-none"
-              />
-            </div>
-            {!form.allDay && (
-              <div className="px-4 py-3 flex items-center justify-between gap-3">
-                <span className="text-sm">{t("startTime")}</span>
-                <input
-                  type="time"
-                  value={form.startTime ?? ""}
-                  onChange={(e) => patch({ startTime: e.target.value })}
-                  className="bg-secondary/60 rounded-lg px-3 py-1.5 text-sm outline-none"
-                />
-              </div>
-            )}
-            <div className="px-4 py-3 flex items-center justify-between gap-3">
-              <span className="text-sm">{t("endDate")}</span>
-              <input
-                type="date"
-                value={form.endDate ?? form.date}
-                min={form.date}
-                onChange={(e) => patch({ endDate: e.target.value })}
-                className="bg-secondary/60 rounded-lg px-3 py-1.5 text-sm outline-none"
-              />
-            </div>
-            {!form.allDay && (
-              <div className="px-4 py-3 flex items-center justify-between gap-3">
-                <span className="text-sm">{t("endTime")}</span>
-                <input
-                  type="time"
-                  value={form.endTime ?? ""}
-                  onChange={(e) => patch({ endTime: e.target.value })}
-                  className="bg-secondary/60 rounded-lg px-3 py-1.5 text-sm outline-none"
-                />
-              </div>
-            )}
+            <Switch
+              checked={!!form.allDay}
+              onCheckedChange={(v) =>
+                patch(v ? { allDay: true, liveActivity: false } : { allDay: false })
+              }
+            />
           </div>
-        )}
-
-        {/* When date is fixed: show all-day + time only */}
-        {fixedDate && (
-          <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-2">
-                <CalIcon className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium">{t("allDay")}</span>
-              </div>
-              <Switch
-                checked={!!form.allDay}
-                onCheckedChange={(v) => patch({ allDay: v })}
+          <div className="px-4 py-3 flex items-center justify-between gap-3">
+            <span className="text-sm">{t("startDate")}</span>
+            <input
+              type="date"
+              value={form.date}
+              onChange={(e) => patch({ date: e.target.value })}
+              className="bg-secondary/60 rounded-lg px-3 py-1.5 text-base outline-none"
+            />
+          </div>
+          {!form.allDay && (
+            <div className="px-4 py-3 flex items-center justify-between gap-3">
+              <span className="text-sm">{t("startTime")}</span>
+              <input
+                type="time"
+                value={form.startTime ?? ""}
+                onChange={(e) => patch({ startTime: e.target.value })}
+                className="bg-secondary/60 rounded-lg px-3 py-1.5 text-base outline-none"
               />
             </div>
-            {!form.allDay && (
-              <>
-                <div className="px-4 py-3 flex items-center justify-between gap-3">
-                  <span className="text-sm">{t("startTime")}</span>
-                  <input
-                    type="time"
-                    value={form.startTime ?? ""}
-                    onChange={(e) => patch({ startTime: e.target.value })}
-                    className="bg-secondary/60 rounded-lg px-3 py-1.5 text-sm outline-none"
-                  />
-                </div>
-                <div className="px-4 py-3 flex items-center justify-between gap-3">
-                  <span className="text-sm">{t("endTime")}</span>
-                  <input
-                    type="time"
-                    value={form.endTime ?? ""}
-                    onChange={(e) => patch({ endTime: e.target.value })}
-                    className="bg-secondary/60 rounded-lg px-3 py-1.5 text-sm outline-none"
-                  />
-                </div>
-              </>
-            )}
+          )}
+          <div className="px-4 py-3 flex items-center justify-between gap-3">
+            <span className="text-sm">{t("endDate")}</span>
+            <input
+              type="date"
+              value={form.endDate ?? form.date}
+              min={form.date}
+              onChange={(e) => patch({ endDate: e.target.value })}
+              className="bg-secondary/60 rounded-lg px-3 py-1.5 text-base outline-none"
+            />
           </div>
-        )}
+          {!form.allDay && (
+            <div className="px-4 py-3 flex items-center justify-between gap-3">
+              <span className="text-sm">{t("endTime")}</span>
+              <input
+                type="time"
+                value={form.endTime ?? ""}
+                onChange={(e) => patch({ endTime: e.target.value })}
+                className="bg-secondary/60 rounded-lg px-3 py-1.5 text-base outline-none"
+              />
+            </div>
+          )}
+        </div>
 
         {/* Reminders (multi-select chips) */}
         <div className="bg-card rounded-2xl shadow-soft">
@@ -381,7 +343,7 @@ function FormBody({
               <SelectTrigger className="w-[160px] h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className={selectMenuClass}>
                 {REPEATS.map((r) => (
                   <SelectItem key={r.key} value={r.key}>
                     {t(r.tk as never)}
@@ -392,7 +354,8 @@ function FormBody({
           </div>
         </div>
 
-        {/* Live Activity */}
+        {/* Live Activity (iOS only) */}
+        {isLiveActivitySupported() && (
         <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
           <div className="px-4 py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -419,7 +382,7 @@ function FormBody({
                 <SelectTrigger className="w-[160px] h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={selectMenuClass}>
                   {LIVE_ACTIVITY_LEADS.map((r) => (
                     <SelectItem key={r.key} value={r.key}>
                       {t(r.tk as never)}
@@ -430,13 +393,17 @@ function FormBody({
             </div>
           )}
           {form.liveActivity && (
-            <div className="px-4 py-2.5">
+            <div className="px-4 py-2.5 space-y-1">
               <p className="text-[11px] text-muted-foreground leading-snug">
                 {t("liveActivityHint")}
+              </p>
+              <p className="text-[11px] text-muted-foreground/70 leading-snug">
+                {t("liveActivityForegroundNote")}
               </p>
             </div>
           )}
         </div>
+        )}
 
         {/* Location & Notes */}
         <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
@@ -445,10 +412,9 @@ function FormBody({
             <input
               value={form.location ?? ""}
               onChange={(e) => patch({ location: e.target.value })}
-              onBlur={resetViewportZoom}
-              onKeyDown={(e) => e.key === "Enter" && resetViewportZoom()}
+              onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
               placeholder={t("location")}
-              className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/50"
+              className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50"
             />
           </div>
           <div className="px-4 py-3 flex items-start gap-2">
@@ -456,10 +422,10 @@ function FormBody({
             <textarea
               value={form.notes ?? ""}
               onChange={(e) => patch({ notes: e.target.value })}
-              onBlur={resetViewportZoom}
+              onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
               placeholder={t("notes")}
               rows={3}
-              className="flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground/50 resize-none"
+              className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50 resize-none"
             />
           </div>
         </div>
@@ -483,12 +449,35 @@ function FormBody({
 
 export function EventSheet({ open, onOpenChange, target, variant = "drawer", onSaved, onDeleted }: Props) {
   const { t } = useI18n();
-  const initial = useMemo(() => makeInitial(target), [target, open]);
-  const [form, setForm] = useState<CalendarEvent | null>(initial);
+  const targetKey =
+    target == null
+      ? null
+      : target.mode === "edit"
+        ? target.id
+        : `new:${target.date}`;
+
+  const [form, setForm] = useState<CalendarEvent | null>(null);
   const [notifBlocked, setNotifBlocked] = useState(false);
   const isNew = target?.mode === "new";
+  const lastInitKey = useRef<string | null>(null);
 
-  useEffect(() => { setForm(initial); }, [initial]);
+  useEffect(() => {
+    if (!open) {
+      lastInitKey.current = null;
+      return;
+    }
+    if (!target || targetKey == null) return;
+    if (lastInitKey.current === targetKey) return;
+    lastInitKey.current = targetKey;
+    setForm(makeInitial(target));
+  }, [open, targetKey, target]);
+
+  useEffect(() => {
+    if (variant === "modal" && open) {
+      setOverlayChrome(true);
+      return () => setOverlayChrome(false);
+    }
+  }, [variant, open]);
 
   useEffect(() => {
     if (!open || !isNative()) return;
@@ -554,7 +543,6 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   const formBodyProps: FormBodyProps = {
     form,
     isNew,
-    fixedDate: variant === "modal",
     notifBlocked,
     patch,
     onSave: save,
@@ -571,10 +559,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         {/* Backdrop */}
         <div
           className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-          onClick={() => {
-            resetViewportZoom();
-            onOpenChange(false);
-          }}
+          onClick={() => onOpenChange(false)}
         />
         {/* Panel */}
         <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10 overflow-hidden">

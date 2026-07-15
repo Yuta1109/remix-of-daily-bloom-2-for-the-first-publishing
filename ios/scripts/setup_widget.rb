@@ -5,6 +5,7 @@
 #   * adds the ActivityKit plugin + shared attributes to the App target
 #   * creates the "EssentialsWidget" widget-extension target (iOS 16.1+)
 #   * embeds the widget extension into the app
+#   * sets CODE_SIGN_ENTITLEMENTS for the main app
 #
 # Run from the `ios/App` directory:
 #   gem install xcodeproj
@@ -32,6 +33,7 @@ abort("App target not found") unless app_target
 # --- Enforce deployment target everywhere -----------------------------------
 (project.build_configurations + app_target.build_configurations).each do |cfg|
   cfg.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = DEPLOYMENT_TARGET
+  cfg.build_settings["CODE_SIGN_ENTITLEMENTS"] = "#{APP_NAME}/App.entitlements"
 end
 
 # --- Helper: find or create a file reference under a group ------------------
@@ -43,6 +45,12 @@ def ref_for(project, group, absolute_path, relative_name)
 end
 
 app_group = project.main_group[APP_NAME] || project.main_group.new_group(APP_NAME, APP_NAME)
+
+# --- Entitlements file reference (not compiled) -----------------------------
+entitlements_path = File.expand_path("App/App.entitlements", Dir.pwd)
+unless project.files.any? { |f| f.real_path.to_s == entitlements_path.to_s }
+  app_group.new_reference("App.entitlements")
+end
 
 # --- 1. Add plugin + shared attributes to the App target --------------------
 la_group = app_group["LiveActivities"] || app_group.new_group("LiveActivities", "LiveActivities")
@@ -58,6 +66,14 @@ app_sources = app_target.source_build_phase
   next if app_sources.files_references.include?(ref)
 
   app_sources.add_file_reference(ref)
+end
+
+# --- ActivityKit on the main app target -------------------------------------
+%w[ActivityKit].each do |fw|
+  already = app_target.frameworks_build_phase.files.any? do |bf|
+    bf.display_name == "#{fw}.framework"
+  end
+  app_target.add_system_framework(fw) unless already
 end
 
 # --- 2. Create the widget extension target ----------------------------------
@@ -115,7 +131,7 @@ unless project.files.any? { |f| f.real_path.to_s == File.expand_path("#{WIDGET_N
 end
 
 # --- 4. Frameworks the widget links against ---------------------------------
-%w[WidgetKit SwiftUI].each do |fw|
+%w[WidgetKit SwiftUI ActivityKit].each do |fw|
   already = widget_target.frameworks_build_phase.files.any? do |bf|
     bf.display_name == "#{fw}.framework"
   end
@@ -123,7 +139,9 @@ end
 end
 
 # --- 5. Embed the widget extension into the app -----------------------------
-app_target.add_dependency(widget_target)
+unless app_target.dependencies.any? { |d| d.target == widget_target }
+  app_target.add_dependency(widget_target)
+end
 
 embed_phase = app_target.copy_files_build_phases.find { |p| p.name == "Embed App Extensions" }
 unless embed_phase

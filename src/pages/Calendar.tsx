@@ -52,7 +52,7 @@ function MonthGrid({ year, month, events, onDayTap, faded, weekdayHeaders }: Mon
   return (
     <div
       className={cn(
-        "bg-card rounded-2xl shadow-card overflow-hidden w-full transition-opacity duration-300",
+        "bg-card rounded-2xl shadow-card overflow-hidden w-full month-grid-fade",
         faded ? "opacity-35 pointer-events-none" : "opacity-100"
       )}
     >
@@ -157,33 +157,56 @@ export default function CalendarPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollBlockedRef = useRef(false);
   const scrollTimerRef = useRef<number>();
+  const [snapIndex, setSnapIndex] = useState(1);
+
+  const overlayOpen = daySheetOpen || sheetOpen || modalOpen;
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || overlayOpen) return;
     const h = el.clientHeight;
     scrollBlockedRef.current = true;
     el.style.scrollBehavior = "auto";
     el.scrollTop = h;
+    setSnapIndex(1);
     requestAnimationFrame(() => {
       el.style.scrollBehavior = "";
       scrollBlockedRef.current = false;
     });
-  }, [viewDate]);
+  }, [viewDate, overlayOpen]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (scrollBlockedRef.current || overlayOpen) return;
+      scrollBlockedRef.current = true;
+      el.scrollTop = el.clientHeight * snapIndex;
+      requestAnimationFrame(() => {
+        scrollBlockedRef.current = false;
+      });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [overlayOpen, snapIndex]);
 
   const handleScroll = useCallback(() => {
+    if (overlayOpen) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const h = el.clientHeight;
+    if (h === 0) return;
+
+    const idx = Math.round(el.scrollTop / h);
+    setSnapIndex(idx);
+
     clearTimeout(scrollTimerRef.current);
     scrollTimerRef.current = window.setTimeout(() => {
-      if (scrollBlockedRef.current) return;
-      const el = scrollRef.current;
-      if (!el) return;
-      const h = el.clientHeight;
-      if (h === 0) return;
-      const snap = Math.round(el.scrollTop / h);
-      if (snap === 0) setViewDate((d) => addMonths(d, -1));
-      else if (snap === 2) setViewDate((d) => addMonths(d, +1));
-    }, 120);
-  }, []);
+      if (scrollBlockedRef.current || overlayOpen) return;
+      if (idx === 0) setViewDate((d) => addMonths(d, -1));
+      else if (idx === 2) setViewDate((d) => addMonths(d, +1));
+    }, 60);
+  }, [overlayOpen]);
 
   const weekdayHeaders = useMemo(
     () =>
@@ -226,7 +249,7 @@ export default function CalendarPage() {
   return (
     <div className="page-shell flex flex-col">
       {/* Header */}
-      <div className="shrink-0 flex items-center justify-between pl-4 pr-3 pt-3 pb-2">
+      <div className="shrink-0 flex items-center justify-between pl-4 pr-3 pb-2">
         <div className="relative flex items-center gap-1 min-w-0">
           <button
             type="button"
@@ -307,7 +330,7 @@ export default function CalendarPage() {
                 month={m.getMonth()}
                 events={events}
                 onDayTap={handleDayTap}
-                faded={idx !== 1}
+                faded={idx !== snapIndex}
                 weekdayHeaders={weekdayHeaders}
               />
             </div>

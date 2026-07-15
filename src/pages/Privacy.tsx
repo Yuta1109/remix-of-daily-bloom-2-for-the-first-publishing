@@ -1,7 +1,7 @@
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/lib/i18n";
-import { useEdgeSwipeBack } from "@/hooks/use-edge-swipe-back";
+import { SwipeBackPage } from "@/components/SwipeBackPage";
 
 const CONTACT_EMAIL = "your-email@example.com";
 const LAST_UPDATED = "2026-07-15";
@@ -11,10 +11,8 @@ export default function Privacy() {
   const { locale, t } = useI18n();
   const ja = locale === "ja";
 
-  useEdgeSwipeBack(() => navigate(-1));
-
   return (
-    <div className="page-scroll px-5 pt-3">
+    <SwipeBackPage onBack={() => navigate(-1)} className="px-5">
       <button
         onClick={() => navigate(-1)}
         className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 hover:text-foreground transition-colors"
@@ -23,7 +21,7 @@ export default function Privacy() {
         {t("back")}
       </button>
 
-      <article className="prose prose-sm max-w-none space-y-4 animate-fade-in-up">
+      <article className="prose prose-sm max-w-none space-y-4 animate-fade-in-up pb-4">
         <h1 className="text-2xl font-bold tracking-tight">{t("privacyPolicy")}</h1>
         <p className="text-xs text-muted-foreground">
           {ja ? "最終更新日" : "Last updated"}: {LAST_UPDATED}
@@ -110,6 +108,6 @@ export default function Privacy() {
           </div>
         )}
       </article>
-    </div>
+    </SwipeBackPage>
   );
 }
