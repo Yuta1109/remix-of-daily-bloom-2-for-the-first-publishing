@@ -60,7 +60,7 @@ export default function Settings() {
   const handleRemove = (id: string) => setReusable(removeReusable(id));
 
   return (
-    <div className="max-w-lg mx-auto px-5 pt-6 pb-32 min-h-screen">
+    <div className="page-scroll px-5 pt-6">
       <div className="space-y-6 animate-fade-in-up">
         <h1 className="text-2xl font-bold tracking-tight">{t("appSettings")}</h1>
 
@@ -134,7 +134,13 @@ export default function Settings() {
           </div>
           <p className="text-xs text-muted-foreground mb-4">{t("reusableTasksDesc")}</p>
 
-          <div className="space-y-2 mb-3">
+          {/* Scroll when more than 5 items */}
+          <div
+            className={cn(
+              "space-y-2 mb-3 scrollbar-app",
+              reusable.length > 5 && "max-h-48 overflow-y-auto pr-1"
+            )}
+          >
             {reusable.map((r) => (
               <div
                 key={r.id}

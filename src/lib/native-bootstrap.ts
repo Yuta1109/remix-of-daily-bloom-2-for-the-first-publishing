@@ -19,31 +19,31 @@ export async function initNative(): Promise<void> {
 
   try {
     await StatusBar.setStyle({ style: Style.Light });
-  } catch {
-    /* not available */
-  }
+  } catch { /* not available */ }
+
   try {
     await SplashScreen.hide();
-  } catch {
-    /* not available */
-  }
+  } catch { /* not available */ }
 
-  // Reset scroll position after keyboard dismissal so the viewport
-  // returns to its original size (fixes iOS zoom-not-resetting bug).
+  // ── Keyboard avoidance ────────────────────────────────────────────────────
+  // When keyboard shows, scroll the focused input into view above the keyboard.
   try {
-    Keyboard.addListener("keyboardWillHide", () => {
-      // Small delay ensures the keyboard animation has finished before
-      // we attempt to restore the scroll position.
+    Keyboard.addListener("keyboardWillShow", () => {
       setTimeout(() => {
-        if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur();
+        const el = document.activeElement;
+        if (el && el instanceof HTMLElement) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
         }
+      }, 100);
+    });
+
+    // After keyboard hides, reset any accidental page-level scroll to top.
+    Keyboard.addListener("keyboardWillHide", () => {
+      setTimeout(() => {
         window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
       }, 50);
     });
-  } catch {
-    /* keyboard plugin not available */
-  }
+  } catch { /* keyboard plugin not available */ }
 
   syncSchedules();
 

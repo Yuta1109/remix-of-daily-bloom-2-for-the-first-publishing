@@ -17,7 +17,7 @@ const config: CapacitorConfig = {
       smallIcon: "ic_stat_icon",
     },
     Keyboard: {
-      resize: "body",
+      resize: "native",
       resizeOnFullScreen: true,
     },
   },

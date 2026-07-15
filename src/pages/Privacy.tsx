@@ -12,7 +12,7 @@ export default function Privacy() {
   const ja = locale === "ja";
 
   return (
-    <div className="max-w-lg mx-auto px-5 pt-6 pb-32 min-h-screen">
+    <div className="page-scroll px-5 pt-6">
       <button
         onClick={() => navigate(-1)}
         className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 hover:text-foreground transition-colors"

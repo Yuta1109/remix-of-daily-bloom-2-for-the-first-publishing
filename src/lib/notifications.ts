@@ -3,28 +3,23 @@ import { LocalNotifications, type PermissionStatus } from "@capacitor/local-noti
 import {
   loadEvents,
   reminderOffsetMinutes,
+  getReminders,
   upcomingOccurrenceStarts,
   type CalendarEvent,
 } from "./events-store";
 
-/**
- * iOS allows at most 64 pending local notifications. We keep a safety margin
- * and distribute the budget across events by soonest fire time.
- */
 const MAX_SCHEDULED = 60;
 const HORIZON_DAYS = 120;
-
 const NOTIF_PREF_KEY = "essences-notif-user-enabled";
 
 export function isNative(): boolean {
   return Capacitor.isNativePlatform();
 }
 
-/** User-level preference (independent of OS permission). Defaults to true. */
+/** User-level preference (separate from OS permission). Defaults to true. */
 export function getNotificationsUserEnabled(): boolean {
   try {
-    const stored = localStorage.getItem(NOTIF_PREF_KEY);
-    return stored !== "false";
+    return localStorage.getItem(NOTIF_PREF_KEY) !== "false";
   } catch {
     return true;
   }
@@ -54,15 +49,9 @@ export async function ensurePermission(): Promise<boolean> {
   return req.display === "granted";
 }
 
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
 function timeRangeLabel(e: CalendarEvent): string {
   if (e.allDay || !e.startTime) return "";
-  const start = e.startTime; // "HH:mm"
-  const end = e.endTime ?? "";
-  return end ? `⏰ ${start} - ${end}` : `⏰ ${start}`;
+  return e.endTime ? `⏰ ${e.startTime} - ${e.endTime}` : `⏰ ${e.startTime}`;
 }
 
 function buildTitle(e: CalendarEvent): string {
@@ -70,9 +59,9 @@ function buildTitle(e: CalendarEvent): string {
 }
 
 function buildBody(e: CalendarEvent): string {
-  const timeRange = timeRangeLabel(e);
   const parts: string[] = [];
-  if (timeRange) parts.push(timeRange);
+  const time = timeRangeLabel(e);
+  if (time) parts.push(time);
   if (e.location) parts.push(e.location);
   return parts.join("  ·  ");
 }
@@ -83,18 +72,16 @@ interface ScheduledItem {
 }
 
 /**
- * Cancels all pending notifications and reschedules them from the current
- * event list. Call after any event add/edit/delete and on app resume.
- *
- * If the user has toggled notifications off (user preference), all pending
- * notifications are cancelled and nothing new is scheduled.
+ * Cancels all pending notifications and reschedules them based on current events.
+ * Respects the user-level toggle (getNotificationsUserEnabled).
  */
 export async function rescheduleAll(): Promise<void> {
   if (!isNative()) return;
+
   const perm = await LocalNotifications.checkPermissions();
   if (perm.display !== "granted") return;
 
-  // Cancel everything first regardless of user preference.
+  // Always cancel existing notifications first.
   const pending = await LocalNotifications.getPending();
   if (pending.notifications.length) {
     await LocalNotifications.cancel({
@@ -102,19 +89,26 @@ export async function rescheduleAll(): Promise<void> {
     });
   }
 
-  // Respect the user-level toggle.
+  // Respect user preference.
   if (!getNotificationsUserEnabled()) return;
 
   const now = new Date();
   const items: ScheduledItem[] = [];
 
   for (const event of loadEvents()) {
-    const offset = reminderOffsetMinutes(event.reminder);
-    if (offset === null) continue;
+    const reminders = getReminders(event);
+    if (reminders.length === 0) continue;
+
     const starts = upcomingOccurrenceStarts(event, now, HORIZON_DAYS, 20);
     for (const start of starts) {
-      const at = new Date(start.getTime() - offset * 60_000);
-      if (at.getTime() > now.getTime()) items.push({ at, event });
+      for (const reminder of reminders) {
+        const offset = reminderOffsetMinutes(reminder);
+        if (offset === null) continue;
+        const at = new Date(start.getTime() - offset * 60_000);
+        if (at.getTime() > now.getTime()) {
+          items.push({ at, event });
+        }
+      }
     }
   }
 

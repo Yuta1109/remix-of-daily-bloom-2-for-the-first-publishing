@@ -1,5 +1,12 @@
 export type RepeatFreq = "none" | "daily" | "weekly" | "monthly" | "yearly";
-export type ReminderOffset = "none" | "at" | "5m" | "15m" | "30m" | "1h" | "1d";
+
+/**
+ * Reminder lead-time options — same set as Live Activity leads.
+ * Multiple can be selected per event (stored in `reminders`).
+ */
+export type ReminderOffset =
+  | "at" | "5m" | "10m" | "20m" | "30m"
+  | "1h" | "2h" | "3h" | "4h" | "6h" | "8h" | "12h" | "24h";
 
 /** Live Activity lead time: how long before the event start it appears on the Lock Screen. */
 export type LiveActivityLead =
@@ -25,7 +32,10 @@ export interface CalendarEvent {
   startTime?: string;   // HH:mm (when !allDay)
   endTime?: string;     // HH:mm (when !allDay)
   color?: string;       // token key: 'blue' | 'green' | 'orange' | 'pink' | 'purple' | 'red'
-  reminder?: ReminderOffset;
+  /** Multiple reminder offsets. Replaces the old single `reminder` field. */
+  reminders?: ReminderOffset[];
+  /** @deprecated Use `reminders` instead. Kept for backward-compat migration. */
+  reminder?: string;
   repeat?: RepeatFreq;
   location?: string;
   notes?: string;
@@ -36,23 +46,38 @@ export interface CalendarEvent {
 }
 
 /** Minutes-before-start for each reminder offset. Returns null when disabled. */
-export function reminderOffsetMinutes(r?: ReminderOffset): number | null {
+export function reminderOffsetMinutes(r?: ReminderOffset | string): number | null {
   switch (r) {
-    case "at":
-      return 0;
-    case "5m":
-      return 5;
-    case "15m":
-      return 15;
-    case "30m":
-      return 30;
-    case "1h":
-      return 60;
-    case "1d":
-      return 1440;
-    default:
-      return null; // "none" or undefined
+    case "at":   return 0;
+    case "5m":   return 5;
+    case "10m":  return 10;
+    case "15m":  return 15; // legacy
+    case "20m":  return 20;
+    case "30m":  return 30;
+    case "1h":   return 60;
+    case "2h":   return 120;
+    case "3h":   return 180;
+    case "4h":   return 240;
+    case "6h":   return 360;
+    case "8h":   return 480;
+    case "12h":  return 720;
+    case "24h":  return 1440;
+    case "1d":   return 1440; // legacy alias
+    default:     return null;
   }
+}
+
+/**
+ * Returns the effective reminders array for an event, supporting
+ * both the new `reminders[]` field and the legacy `reminder` string.
+ */
+export function getReminders(e: CalendarEvent): ReminderOffset[] {
+  if (e.reminders && e.reminders.length > 0) return e.reminders;
+  const legacy = e.reminder;
+  if (legacy && legacy !== "none" && reminderOffsetMinutes(legacy) !== null) {
+    return [legacy as ReminderOffset];
+  }
+  return [];
 }
 
 /** Minutes-before-start for each Live Activity lead time. */

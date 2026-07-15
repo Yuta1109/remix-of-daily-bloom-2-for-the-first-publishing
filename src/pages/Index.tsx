@@ -71,69 +71,77 @@ export default function Index() {
     persist({ ...dayData, tasks: dayData.tasks.filter((t) => t.id !== id) });
   };
 
-
   const now = new Date();
 
   return (
-    <div className="max-w-lg mx-auto px-5 pt-8 pb-32 min-h-screen">
-      <div className="bg-card rounded-3xl p-6 shadow-card mb-6 animate-fade-in-up">
-        <div className="mb-4">
-          <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-            {formatDate(now, { weekday: "long" })}
-          </p>
-          <h1 className="text-2xl font-bold tracking-tight mt-0.5">
-            {formatDate(now, { month: "long", day: "numeric" })}
-          </h1>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-secondary/60 rounded-2xl p-3 text-center">
-            <div className="flex items-center justify-center text-streak mb-0.5">
-              <Flame className="w-4 h-4" />
-            </div>
-            <p className="text-xl font-bold">{streak}</p>
-            <p className="text-[10px] text-muted-foreground font-medium">{t("streak")}</p>
-          </div>
-          <div className="bg-secondary/60 rounded-2xl p-3 text-center">
-            <div className="flex items-center justify-center text-accent mb-0.5">
-              <Target className="w-4 h-4" />
-            </div>
-            <p className="text-xl font-bold">{completion}%</p>
-            <p className="text-[10px] text-muted-foreground font-medium">{t("todayLabel")}</p>
-          </div>
-          <div className="bg-secondary/60 rounded-2xl p-3 text-center">
-            <div className="flex items-center justify-center text-success mb-0.5">
-              <Calendar className="w-4 h-4" />
-            </div>
-            <p className="text-xl font-bold">{totalActiveDays}</p>
-            <p className="text-[10px] text-muted-foreground font-medium">{t("days")}</p>
-          </div>
-        </div>
-      </div>
+    <div className="page-shell">
+      {/* ── Scrollable content area ─────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto scrollbar-none px-3 pt-6">
 
-      {reusable.length > 0 && (
-        <div className="mb-6 animate-fade-in-up" style={{ animationDelay: "0.05s" }}>
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2 px-1">
-            {t("quickAdd")}
-          </p>
-          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
-            {reusable.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => addTaskWithText(r.text)}
-                className="flex-shrink-0 flex items-center gap-1 bg-secondary/60 hover:bg-secondary text-sm px-3 py-1.5 rounded-full transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-                {r.text}
-              </button>
-            ))}
+        {/* Stats card */}
+        <div className="bg-card rounded-3xl p-5 shadow-card mb-5 animate-fade-in-up">
+          <div className="mb-4">
+            <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+              {formatDate(now, { weekday: "long" })}
+            </p>
+            <h1 className="text-2xl font-bold tracking-tight mt-0.5">
+              {formatDate(now, { month: "long", day: "numeric" })}
+            </h1>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-secondary/60 rounded-2xl p-3 text-center">
+              <div className="flex items-center justify-center text-streak mb-0.5">
+                <Flame className="w-4 h-4" />
+              </div>
+              <p className="text-xl font-bold">{streak}</p>
+              <p className="text-[10px] text-muted-foreground font-medium">{t("streak")}</p>
+            </div>
+            <div className="bg-secondary/60 rounded-2xl p-3 text-center">
+              <div className="flex items-center justify-center text-accent mb-0.5">
+                <Target className="w-4 h-4" />
+              </div>
+              <p className="text-xl font-bold">{completion}%</p>
+              <p className="text-[10px] text-muted-foreground font-medium">{t("todayLabel")}</p>
+            </div>
+            <div className="bg-secondary/60 rounded-2xl p-3 text-center">
+              <div className="flex items-center justify-center text-success mb-0.5">
+                <Calendar className="w-4 h-4" />
+              </div>
+              <p className="text-xl font-bold">{totalActiveDays}</p>
+              <p className="text-[10px] text-muted-foreground font-medium">{t("days")}</p>
+            </div>
           </div>
         </div>
-      )}
 
-      <div className="animate-fade-in-up" style={{ animationDelay: "0.1s" }}>
-        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-3 px-1">
+        {/* Quick-add chips */}
+        {reusable.length > 0 && (
+          <div className="mb-4 animate-fade-in-up" style={{ animationDelay: "0.05s" }}>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2 px-1">
+              {t("quickAdd")}
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
+              {reusable.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => addTaskWithText(r.text)}
+                  className="flex-shrink-0 flex items-center gap-1 bg-secondary/60 hover:bg-secondary text-sm px-3 py-1.5 rounded-full transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+                  {r.text}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Task list header */}
+        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2 px-1 animate-fade-in-up" style={{ animationDelay: "0.1s" }}>
           {t("todaysTasks")}
         </p>
+      </div>
+
+      {/* ── Task list (scrollable) ──────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0">
         <div className="space-y-0 divide-y divide-border/40">
           {dayData.tasks.map((task) => (
             <TaskItem key={task.id} task={task} onToggle={toggleTask} onDelete={deleteTask} />
@@ -148,7 +156,7 @@ export default function Index() {
         )}
 
         {showInput && (
-          <div className="mt-2 animate-fade-in-up">
+          <div className="animate-fade-in-up">
             <input
               autoFocus
               value={newTask}
@@ -156,12 +164,16 @@ export default function Index() {
               onKeyDown={(e) => e.key === "Enter" && addTask()}
               onBlur={() => !newTask && setShowInput(false)}
               placeholder={t("whatNeedsDone")}
-              className="w-full bg-transparent text-[15px] py-3 px-1 outline-none placeholder:text-muted-foreground/40 border-b border-border"
+              className="w-full bg-transparent py-3 px-1 outline-none placeholder:text-muted-foreground/40 border-b border-border"
             />
           </div>
         )}
+
+        {/* Bottom spacer so last item isn't flush against scrollbar end */}
+        <div className="h-4" />
       </div>
 
+      {/* FAB */}
       <button
         onClick={() => setShowInput(true)}
         className="fixed bottom-24 right-6 w-14 h-14 rounded-full bg-accent text-accent-foreground shadow-float flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-40"
