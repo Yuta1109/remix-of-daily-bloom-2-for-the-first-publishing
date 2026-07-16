@@ -14,7 +14,14 @@ let keyboardHeight = 0;
 let adjustTimer: ReturnType<typeof setTimeout> | undefined;
 let initialized = false;
 
-function getShift(): number {
+/** Scroll parent that currently has keyboard bottom padding. */
+let paddedScroller: HTMLElement | null = null;
+/** Overlay shell currently lifted (`[data-kb-shell]`). */
+let liftedShell: HTMLElement | null = null;
+/** Absolute px the current shell is lifted (for unshifted math). */
+let shellShiftPx = 0;
+
+function getRootShift(): number {
   const raw = getComputedStyle(document.documentElement)
     .getPropertyValue("--kb-shift")
     .trim();
@@ -29,88 +36,179 @@ function applyRootShift(px: number) {
   );
 }
 
-function resetRootShift() {
-  applyRootShift(0);
+function clearShellLift(shell: HTMLElement) {
+  shell.style.bottom = "";
+  shell.style.maxHeight = "";
+  shell.style.transform = "";
+  shell.style.transition = "";
 }
 
+function applyShellLift(shell: HTMLElement | null, px: number) {
+  if (liftedShell && liftedShell !== shell) {
+    clearShellLift(liftedShell);
+    liftedShell = null;
+  }
+  const amount = Math.max(0, Math.round(px));
+  shellShiftPx = amount;
+  if (!shell || amount <= 0) {
+    if (shell) clearShellLift(shell);
+    liftedShell = null;
+    shellShiftPx = 0;
+    return;
+  }
+  liftedShell = shell;
+  const mode = shell.dataset.kbShell || "translate";
+  shell.style.transition =
+    "transform 0.2s ease-out, bottom 0.2s ease-out, max-height 0.2s ease-out";
+  if (mode === "bottom") {
+    // Bottom sheets (vaul): lift via `bottom` so we don't fight drawer's transform.
+    shell.style.bottom = `${amount}px`;
+    shell.style.maxHeight = `${Math.max(160, window.innerHeight - amount)}px`;
+    shell.style.transform = "";
+  } else {
+    shell.style.bottom = "";
+    shell.style.maxHeight = "";
+    shell.style.transform = `translateY(-${amount}px)`;
+  }
+}
+
+function setScrollerPad(scroller: HTMLElement | null, pad: number) {
+  if (paddedScroller && paddedScroller !== scroller) {
+    paddedScroller.style.paddingBottom = "";
+  }
+  paddedScroller = scroller;
+  if (!scroller) return;
+  const value = Math.max(0, Math.round(pad));
+  scroller.style.paddingBottom = value > 0 ? `${value}px` : "";
+}
+
+function resetLifts() {
+  applyRootShift(0);
+  applyShellLift(null, 0);
+  setScrollerPad(null, 0);
+}
+
+/** Nearest overflow-y scroller (need not already overflow — we may pad it). */
 function findScrollParent(el: HTMLElement): HTMLElement | null {
   let node: HTMLElement | null = el.parentElement;
   while (node && node !== document.body) {
     const style = getComputedStyle(node);
-    const scrollable =
-      /auto|scroll|overlay/.test(style.overflowY) &&
-      node.scrollHeight > node.clientHeight + 1;
-    if (scrollable) return node;
+    if (/auto|scroll|overlay/.test(style.overflowY)) {
+      return node;
+    }
     node = node.parentElement;
   }
   return null;
 }
 
+function findShell(el: HTMLElement): HTMLElement | null {
+  return el.closest("[data-kb-shell]") as HTMLElement | null;
+}
+
+function isInsideRoot(el: HTMLElement): boolean {
+  const root = document.getElementById("root");
+  return !!(root && root.contains(el));
+}
+
+function keyboardPx(): number {
+  if (keyboardHeight > 0) return keyboardHeight;
+  if (window.visualViewport) {
+    return Math.max(
+      0,
+      window.innerHeight -
+        window.visualViewport.height -
+        window.visualViewport.offsetTop
+    );
+  }
+  return 0;
+}
+
 /**
- * Lift the whole app (#root) so the focused field sits above the keyboard.
- * Prefer scrolling an inner scroller first; use remaining delta as root shift.
- * With Capacitor Keyboard resize:"none", the WebView stays full-height.
+ * Keep the focused field above the keyboard.
+ * - In-page (#root): scroll inner scroller first, then lift #root.
+ * - Overlay (`[data-kb-shell]`): never lift #root (avoids shifting the page behind).
+ *   Pad the overlay scroller so it can scroll; lift the shell for the rest.
  */
 function adjustForKeyboard() {
   if (!focused) {
-    resetRootShift();
+    resetLifts();
     return;
   }
 
-  const currentShift = getShift();
-  const rect = focused.getBoundingClientRect();
-  // Undo current shift to work in "unshifted" space.
-  const unshiftedBottom = rect.bottom + currentShift;
-  const unshiftedTop = rect.top + currentShift;
+  const kb = keyboardPx();
+  if (kb <= 0) {
+    resetLifts();
+    return;
+  }
 
   const viewH = window.innerHeight;
-  const kb = keyboardHeight > 0
-    ? keyboardHeight
-    : window.visualViewport
-      ? Math.max(0, viewH - window.visualViewport.height - window.visualViewport.offsetTop)
-      : 0;
-
-  if (kb <= 0) {
-    resetRootShift();
-    return;
-  }
-
   const visibleBottom = viewH - kb - GAP;
   const visibleTop = GAP + (window.visualViewport?.offsetTop ?? 0);
 
-  let remaining = unshiftedBottom - visibleBottom;
+  const shell = findShell(focused);
+  const inRoot = isInsideRoot(focused);
+  const scroller = findScrollParent(focused);
 
-  if (remaining > 0) {
-    const parent = findScrollParent(focused);
-    if (parent) {
-      const before = parent.scrollTop;
-      const maxScroll = parent.scrollHeight - parent.clientHeight;
+  // Overlay focus must never move the page behind the portal.
+  if (shell || !inRoot) {
+    applyRootShift(0);
+  }
+
+  // Make the scroller tall enough that the field can be scrolled above the keyboard.
+  setScrollerPad(scroller, kb + GAP);
+
+  const reveal = () => {
+    if (!focused) return;
+
+    // Convert to unshifted coordinates so repeated adjusts stay stable.
+    const activeShift = shell ? shellShiftPx : inRoot ? getRootShift() : 0;
+    let rect = focused.getBoundingClientRect();
+    let unshiftedBottom = rect.bottom + activeShift;
+    let unshiftedTop = rect.top + activeShift;
+    let remaining = unshiftedBottom - visibleBottom;
+
+    if (remaining > 0 && scroller) {
+      const before = scroller.scrollTop;
+      const maxScroll = scroller.scrollHeight - scroller.clientHeight;
       const scrollBy = Math.min(remaining, Math.max(0, maxScroll - before));
       if (scrollBy > 0) {
-        parent.scrollTop = before + scrollBy;
+        scroller.scrollTop = before + scrollBy;
         remaining -= scrollBy;
+        unshiftedBottom -= scrollBy;
+        unshiftedTop -= scrollBy;
       }
     }
-  }
 
-  // If field is above the visible top after scroll, scroll back a bit.
-  if (remaining <= 0) {
-    const afterRect = focused.getBoundingClientRect();
-    const afterTop = afterRect.top + getShift();
-    if (afterTop < visibleTop) {
-      const parent = findScrollParent(focused);
-      if (parent) {
-        parent.scrollTop = Math.max(0, parent.scrollTop - (visibleTop - afterTop));
-      }
+    if (remaining <= 0 && unshiftedTop < visibleTop && scroller) {
+      const back = visibleTop - unshiftedTop;
+      const prev = scroller.scrollTop;
+      scroller.scrollTop = Math.max(0, prev - back);
+      const actual = prev - scroller.scrollTop;
+      remaining += actual;
+      unshiftedTop += actual;
+      unshiftedBottom += actual;
     }
-    // Still need root shift if bottom is clipped
-    const finalRect = focused.getBoundingClientRect();
-    const need = finalRect.bottom + getShift() - visibleBottom;
-    applyRootShift(Math.max(0, need));
-    return;
-  }
 
-  applyRootShift(remaining);
+    // Visible with current scroll/lift — keep lift; don't yank the UI back down.
+    if (remaining <= 0 && unshiftedTop >= visibleTop - 1) {
+      return;
+    }
+
+    const lift = Math.max(0, remaining);
+    if (shell) {
+      applyRootShift(0);
+      applyShellLift(shell, lift);
+    } else if (inRoot) {
+      applyShellLift(null, 0);
+      applyRootShift(lift);
+    } else {
+      // Portal without data-kb-shell: last resort — do not lift #root.
+      applyRootShift(0);
+    }
+  };
+
+  // Padding changes layout; measure after paint.
+  requestAnimationFrame(() => requestAnimationFrame(reveal));
 }
 
 function scheduleAdjust(delay = 40) {
@@ -132,7 +230,7 @@ export async function hideKeyboard(): Promise<void> {
   if (el instanceof HTMLElement) el.blur();
   focused = null;
   keyboardHeight = 0;
-  resetRootShift();
+  resetLifts();
 }
 
 /** Install global keyboard / visualViewport listeners once at startup. */
@@ -153,11 +251,10 @@ export function initKeyboardAvoidance(): void {
   document.addEventListener(
     "focusout",
     () => {
-      // Delay: focus may move to another input.
       setTimeout(() => {
         if (!isInput(document.activeElement)) {
           focused = null;
-          if (keyboardHeight <= 0) resetRootShift();
+          if (keyboardHeight <= 0) resetLifts();
         }
       }, 80);
     },
@@ -183,11 +280,11 @@ export function initKeyboardAvoidance(): void {
     });
     Keyboard.addListener("keyboardWillHide", () => {
       keyboardHeight = 0;
-      resetRootShift();
+      resetLifts();
     });
     Keyboard.addListener("keyboardDidHide", () => {
       keyboardHeight = 0;
-      resetRootShift();
+      resetLifts();
     });
   } catch {
     /* plugin unavailable */

@@ -17,7 +17,7 @@ import {
 } from "@/lib/notifications";
 import { Switch } from "@/components/ui/switch";
 import { InsetScrollArea } from "@/components/InsetScrollArea";
-import { scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
+import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { App } from "@capacitor/app";
 
 const APP_VERSION = "1.0.0";
@@ -100,12 +100,14 @@ export default function Settings({ staticPreview = false }: Props) {
     if (!newText.trim()) return;
     setReusable(addReusable(newText));
     setNewText("");
+    void hideKeyboard();
   };
 
   const handleModalAdd = () => {
     if (!modalText.trim()) return;
     setReusable(addReusable(modalText));
     setModalText("");
+    void hideKeyboard();
   };
 
   const onReusableEnter = (
@@ -117,8 +119,6 @@ export default function Settings({ staticPreview = false }: Props) {
     e.stopPropagation();
     if (which === "page") handleAdd();
     else handleModalAdd();
-    // Stay on the same field — do not advance focus to the next control.
-    e.currentTarget.focus();
   };
 
   const handleRemove = (id: string) => setReusable(removeReusable(id));
@@ -275,7 +275,10 @@ export default function Settings({ staticPreview = false }: Props) {
               className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
               onClick={() => setListOpen(false)}
             />
-            <div className="relative z-10 w-full max-w-md max-h-[80dvh] bg-background rounded-3xl shadow-float flex flex-col overflow-hidden">
+            <div
+              data-kb-shell="translate"
+              className="relative z-10 w-full max-w-md max-h-[80dvh] bg-background rounded-3xl shadow-float flex flex-col overflow-hidden"
+            >
               <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border/50 shrink-0">
                 <h2 className="text-base font-semibold">{t("reusableTasks")}</h2>
                 <button

@@ -579,7 +579,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
           className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
           onClick={() => onOpenChange(false)}
         />
-        <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10">
+        <div
+          data-kb-shell="translate"
+          className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10"
+        >
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
           <FormBody {...formBodyProps} />
         </div>
@@ -594,6 +597,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
+          data-kb-shell="bottom"
           className={cn(
             "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
             "max-h-[88dvh] outline-none"

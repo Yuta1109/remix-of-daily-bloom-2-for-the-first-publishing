@@ -10,7 +10,7 @@ import { tickHaptic } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 
 const GAP_PX = 8;
-const PEEK_PX = 44;
+const PEEK_PX = 66;
 const SNAP_RATIO = 0.22;
 const VELOCITY_THRESHOLD = 0.35; // px/ms
 
