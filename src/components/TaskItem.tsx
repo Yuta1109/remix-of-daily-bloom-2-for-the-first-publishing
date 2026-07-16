@@ -6,20 +6,32 @@ import type { Task } from "@/lib/store";
 
 interface TaskItemProps {
   task: Task;
+  selected: boolean;
+  onSelect: (id: string) => void;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string, text: string) => void;
 }
 
-export function TaskItem({ task, onToggle, onDelete, onEdit }: TaskItemProps) {
+export function TaskItem({
+  task,
+  selected,
+  onSelect,
+  onToggle,
+  onDelete,
+  onEdit,
+}: TaskItemProps) {
   const [popping, setPopping] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.text);
-  const [pressed, setPressed] = useState(false);
 
   const handleToggle = (e: MouseEvent) => {
     e.stopPropagation();
+    if (!selected) {
+      onSelect(task.id);
+      return;
+    }
     if (!task.completed) {
       setPopping(true);
       setShowFeedback(true);
@@ -34,32 +46,39 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: TaskItemProps) {
     if (trimmed && trimmed !== task.text) onEdit(task.id, trimmed);
     else setDraft(task.text);
     setEditing(false);
-    setPressed(false);
   };
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={() => {
+        if (!selected) onSelect(task.id);
+      }}
+      onKeyDown={(e) => {
+        if ((e.key === "Enter" || e.key === " ") && !selected) {
+          e.preventDefault();
+          onSelect(task.id);
+        }
+      }}
       className={cn(
-        "group relative rounded-xl px-3 py-2.5 transition-colors touch-manipulation",
-        editing || pressed
+        "relative rounded-xl px-3 py-2.5 transition-colors touch-manipulation select-none",
+        selected
           ? "bg-accent/10 ring-1 ring-accent/30"
-          : "bg-secondary/50 active:bg-accent/10 active:ring-1 active:ring-accent/25",
-        task.completed && !editing && "opacity-80"
+          : "bg-secondary/50",
+        task.completed && !selected && "opacity-80"
       )}
-      onTouchStart={() => !editing && setPressed(true)}
-      onTouchEnd={() => setPressed(false)}
-      onTouchCancel={() => setPressed(false)}
     >
-      <div className="flex items-center gap-1 min-h-[44px]">
+      <div className="flex items-center gap-1.5 min-h-[40px]">
         <button
           type="button"
           onClick={handleToggle}
           aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
-          className="flex-shrink-0 w-11 h-11 flex items-center justify-center touch-manipulation"
+          className="flex-shrink-0 w-10 h-10 flex items-center justify-center touch-manipulation"
         >
           <span
             className={cn(
-              "w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-300 pointer-events-none",
+              "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 pointer-events-none",
               task.completed
                 ? "bg-accent border-accent"
                 : "border-muted-foreground/25",
@@ -72,19 +91,19 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: TaskItemProps) {
           </span>
         </button>
 
-        {editing ? (
+        {editing && selected ? (
           <input
             autoFocus
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
+            onClick={(e) => e.stopPropagation()}
             onBlur={commitEdit}
             onKeyDown={(e) => {
               if (e.key === "Enter") commitEdit();
               if (e.key === "Escape") {
                 setDraft(task.text);
                 setEditing(false);
-                setPressed(false);
               }
             }}
             className="flex-1 min-w-0 text-base bg-transparent outline-none py-1.5"
@@ -94,13 +113,16 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: TaskItemProps) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              if (!selected) {
+                onSelect(task.id);
+                return;
+              }
               if (!task.completed) {
                 setDraft(task.text);
                 setEditing(true);
-                setPressed(true);
               }
             }}
-            className="flex-1 min-w-0 min-h-10 py-1.5 text-left touch-manipulation"
+            className="flex-1 min-w-0 min-h-9 py-1 text-left touch-manipulation"
           >
             <span
               className={cn(
@@ -113,20 +135,23 @@ export function TaskItem({ task, onToggle, onDelete, onEdit }: TaskItemProps) {
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(task.id);
-          }}
-          className="flex-shrink-0 opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity p-2 text-muted-foreground hover:text-destructive touch-manipulation"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {selected && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(task.id);
+            }}
+            className="flex-shrink-0 p-2 text-muted-foreground hover:text-destructive touch-manipulation"
+            aria-label="Delete"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {showFeedback && (
-        <span className="absolute left-12 top-0 text-accent text-xs font-bold animate-float-up flex items-center gap-0.5 pointer-events-none">
+        <span className="absolute left-11 top-0 text-accent text-xs font-bold animate-float-up flex items-center gap-0.5 pointer-events-none">
           <Sparkles className="w-3 h-3" /> +1
         </span>
       )}

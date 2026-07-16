@@ -15,7 +15,7 @@ export function FabButton({ onClick, "aria-label": ariaLabel, className }: Props
       className={cn(
         "fixed z-40 w-14 h-14 rounded-full bg-accent text-accent-foreground shadow-float",
         "flex items-center justify-center transition-all hover:scale-110 active:scale-95",
-        "bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom,0px)+10px)] right-5",
+        "bottom-[calc(var(--bottom-nav-offset)+10px)] right-5",
         className
       )}
     >

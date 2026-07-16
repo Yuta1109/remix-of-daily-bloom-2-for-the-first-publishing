@@ -23,6 +23,7 @@ export default function Index() {
   const [newTask, setNewTask] = useState("");
   const [showInput, setShowInput] = useState(false);
   const [reusable, setReusable] = useState<ReusableTask[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const streak = getStreak();
   const completion = getCompletionRate(dayData);
   const totalActiveDays = Object.values(getAllData()).filter((d) => d.tasks.length > 0).length;
@@ -71,6 +72,7 @@ export default function Index() {
 
   const deleteTask = (id: string) => {
     persist({ ...dayData, tasks: dayData.tasks.filter((t) => t.id !== id) });
+    if (selectedId === id) setSelectedId(null);
   };
 
   const editTask = (id: string, text: string) => {
@@ -83,8 +85,8 @@ export default function Index() {
   const now = new Date();
 
   return (
-    <div className="page-shell px-3">
-      <div className="shrink-0 pb-2">
+    <div className="page-shell px-3" onClick={() => setSelectedId(null)}>
+      <div className="shrink-0 pb-2" onClick={(e) => e.stopPropagation()}>
         <div className="bg-card rounded-3xl p-4 shadow-card animate-fade-in-up">
           <div className="mb-3">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
@@ -144,15 +146,17 @@ export default function Index() {
         </p>
       </div>
 
-      <div className="flex-1 min-h-0 mb-1">
+      <div className="flex-1 min-h-0" onClick={(e) => e.stopPropagation()}>
         <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0 pb-[3px]">
+          <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0 pb-3">
             {dayData.tasks.length > 0 ? (
-              <div className="space-y-2 py-1">
+              <div className="space-y-2 pt-3">
                 {dayData.tasks.map((task) => (
                   <TaskItem
                     key={task.id}
                     task={task}
+                    selected={selectedId === task.id}
+                    onSelect={setSelectedId}
                     onToggle={toggleTask}
                     onDelete={deleteTask}
                     onEdit={editTask}

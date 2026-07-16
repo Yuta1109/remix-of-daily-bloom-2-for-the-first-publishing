@@ -5,7 +5,9 @@ const config: CapacitorConfig = {
   appName: "Essences",
   webDir: "dist",
   ios: {
-    contentInset: "always",
+    // Handle safe areas in CSS only — "always" double-counted insets and caused
+    // intermittent black bars + oversized bottom gaps on notched iPhones.
+    contentInset: "never",
   },
   plugins: {
     SplashScreen: {

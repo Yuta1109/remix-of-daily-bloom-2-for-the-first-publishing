@@ -45,8 +45,8 @@
     --shadow-card: 0 4px 24px -4px hsl(220 20% 10% / 0.08);
     --shadow-float: 0 8px 32px -6px hsl(220 20% 10% / 0.12);
 
-    --bottom-nav-height: 48px;
-    --bottom-nav-extra: 0px;
+    /* Updated by BottomNav via ResizeObserver for flexible device heights */
+    --bottom-nav-offset: 56px;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -111,19 +111,17 @@
     @apply border-border;
   }
 
-  /* Safe-area background: html background fills the status-bar region on iOS */
   html {
     height: 100%;
     background-color: hsl(var(--background));
-    /* Prevent page-level rubber-band overscroll */
     overscroll-behavior: none;
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply text-foreground font-sans antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     height: 100%;
-    /* No body scroll — each page manages its own scroll regions */
+    background-color: hsl(var(--background));
     overflow: hidden;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
@@ -131,7 +129,9 @@
 
   #root {
     height: 100%;
+    min-height: 100%;
     overflow: hidden;
+    background-color: hsl(var(--background));
     transform: translateY(calc(-1 * var(--kb-shift, 0px)));
     transition: transform 0.18s ease-out;
   }
@@ -143,55 +143,64 @@
   }
 }
 
+/* Keep chrome the same color as page background while overlays are open
+   (avoids intermittent black status/home bars). */
 html.overlay-open,
-html.overlay-open body {
+html.overlay-open body,
+html.overlay-open #root {
   background-color: hsl(var(--background));
-}
-
-html.overlay-open-modal,
-html.overlay-open-modal body {
-  background-color: hsl(var(--secondary));
 }
 
 /* ── Layout utilities ─────────────────────────────────────────────────────── */
 
-/* Page wrapper: fills available height between safe-area top and bottom nav */
 .page-shell {
   height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-extra) + env(safe-area-inset-bottom, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: calc(env(safe-area-inset-top, 0px) + 4px);
+  padding-bottom: var(--bottom-nav-offset);
+  background-color: hsl(var(--background));
 }
 
 .page-scroll {
   height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-extra) + env(safe-area-inset-bottom, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: calc(env(safe-area-inset-top, 0px) + 4px);
+  padding-bottom: var(--bottom-nav-offset);
+  background-color: hsl(var(--background));
 }
 
-/* ── Custom scrollbars ───────────────────────────────────────────────────── */
+/* ── Custom scrollbars (inset so rounded cards don't clip the thumb) ─────── */
 
-/* Thin scrollbar with a proportionally large thumb (not invisible) */
+.scrollbar-app {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.28) transparent;
+}
+
 .scrollbar-app::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
 }
+
 .scrollbar-app::-webkit-scrollbar-track {
   background: transparent;
+  margin-block: 12px;
 }
+
 .scrollbar-app::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--muted-foreground) / 0.25);
-  border-radius: 2px;
-  min-height: 48px;
+  background-color: hsl(var(--muted-foreground) / 0.28);
+  border-radius: 999px;
+  min-height: 20px;
+  max-height: 40%;
+  border: 1px solid transparent;
+  background-clip: padding-box;
 }
+
 .scrollbar-app::-webkit-scrollbar-thumb:active {
   background-color: hsl(var(--muted-foreground) / 0.45);
 }
 
-/* Hide scrollbar completely (for calendar swipe area) */
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
@@ -233,7 +242,7 @@ html.overlay-open-modal body {
 .animate-slide-up   { animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .animate-float-up   { animation: float-up 1.2s ease-out forwards; }
 
-/* Vertical month carousel */
+/* Vertical month carousel (no peek spacers) */
 .month-carousel {
   scroll-snap-type: y mandatory;
   -webkit-overflow-scrolling: touch;
@@ -242,12 +251,13 @@ html.overlay-open-modal body {
 .month-carousel-panel {
   scroll-snap-align: center;
   scroll-snap-stop: always;
+  height: 100%;
+  min-height: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
 }
 
 .month-grid-fade {
-  transition: opacity 180ms ease-out;
+  transition: opacity 150ms ease-out;
 }

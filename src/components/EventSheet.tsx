@@ -474,8 +474,8 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
 
   useEffect(() => {
     if (!open) return;
-    setOverlayChrome(true, variant === "modal" ? "modal" : "drawer");
-    return () => setOverlayChrome(false, variant === "modal" ? "modal" : "drawer");
+    setOverlayChrome(true);
+    return () => setOverlayChrome(false);
   }, [variant, open]);
 
   useEffect(() => {
@@ -557,12 +557,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
         {/* Backdrop */}
         <div
-          className="absolute inset-0 bg-secondary"
+          className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
           onClick={() => onOpenChange(false)}
         />
-        {/* Panel */}
         <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10 overflow-hidden">
-          {/* Drag indicator */}
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
           <FormBody {...formBodyProps} />
         </div>
@@ -575,7 +573,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   return (
     <DrawerPrimitive.Root open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
       <DrawerPrimitive.Portal>
-        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-secondary" />
+        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
           className={cn(
             "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",

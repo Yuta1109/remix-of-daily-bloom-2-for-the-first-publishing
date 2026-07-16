@@ -23,6 +23,7 @@ export async function initNative(): Promise<void> {
   initKeyboardAvoidance();
 
   try {
+    await StatusBar.setOverlaysWebView({ overlay: true });
     await StatusBar.setStyle({ style: Style.Light });
   } catch { /* not available */ }
 
