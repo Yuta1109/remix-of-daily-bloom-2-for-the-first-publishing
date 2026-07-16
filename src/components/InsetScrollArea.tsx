@@ -14,6 +14,8 @@ interface Props {
   contentClassName?: string;
   /** How far the scrollbar track is inset from top/bottom (matches rounded corners). */
   inset?: number;
+  /** When inside a vaul drawer, disable drawer drag so vertical scroll works. */
+  vaulNoDrag?: boolean;
 }
 
 /**
@@ -25,6 +27,7 @@ export function InsetScrollArea({
   className,
   contentClassName,
   inset = 16,
+  vaulNoDrag = false,
 }: Props) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState({ top: 0, height: 0, visible: false });
@@ -58,14 +61,16 @@ export function InsetScrollArea({
   const onScroll = (_e: UIEvent) => updateThumb();
 
   return (
-    <div className={cn("relative min-h-0 flex-1", className)}>
+    <div className={cn("relative min-h-0 flex-1 overflow-hidden", className)}>
       <div
         ref={scrollerRef}
         onScroll={onScroll}
+        data-vaul-no-drag={vaulNoDrag ? true : undefined}
         className={cn(
-          "h-full overflow-y-auto scrollbar-none overscroll-contain",
+          "h-full min-h-0 overflow-y-auto overflow-x-hidden scrollbar-none overscroll-contain",
           contentClassName
         )}
+        style={{ WebkitOverflowScrolling: "touch" }}
       >
         {children}
       </div>

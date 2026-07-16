@@ -34,10 +34,10 @@ export function DayEventsSheet({
     <DrawerPrimitive.Root open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
-        <DrawerPrimitive.Content className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background max-h-[65vh] outline-none">
-          <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-muted" />
+        <DrawerPrimitive.Content className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background max-h-[65vh] min-h-0 overflow-hidden outline-none">
+          <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-muted shrink-0" />
 
-          <div className="flex items-center justify-between px-5 pt-3 pb-3 border-b border-border/50">
+          <div className="flex items-center justify-between px-5 pt-3 pb-3 border-b border-border/50 shrink-0">
             <DrawerPrimitive.Title className="text-base font-semibold">
               {dateLabel}
             </DrawerPrimitive.Title>
@@ -50,7 +50,7 @@ export function DayEventsSheet({
             </button>
           </div>
 
-          <InsetScrollArea contentClassName="px-4 py-3" inset={16}>
+          <InsetScrollArea contentClassName="px-4 py-3" inset={16} vaulNoDrag>
             {events.length > 0 ? (
               <div className="space-y-2">
                 {events.map((ev) => (

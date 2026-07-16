@@ -135,8 +135,8 @@
     min-height: 100%;
     overflow: hidden;
     background-color: hsl(var(--background));
+    /* Instant shift — a 0.2s transition made keyboard avoidance overshoot then settle. */
     transform: translateY(calc(-1 * var(--kb-shift, 0px)));
-    transition: transform 0.2s ease-out;
   }
 
   input,

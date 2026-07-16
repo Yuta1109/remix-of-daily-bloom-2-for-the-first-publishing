@@ -34,7 +34,7 @@ import {
 import { refreshLiveActivities, isLiveActivitySupported } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
 import { InsetScrollArea } from "@/components/InsetScrollArea";
-import { hideKeyboard } from "@/lib/keyboard-avoidance";
+import { hideKeyboard, onDoneKey } from "@/lib/keyboard-avoidance";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -165,7 +165,7 @@ function FormBody({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0" data-kb-ignore>
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden" data-kb-ignore>
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0">
         <button
@@ -191,14 +191,19 @@ function FormBody({
         </button>
       </div>
 
-      {/* Scrollable body — no keyboard lift (data-kb-ignore); location/notes sit under title. */}
-      <InsetScrollArea contentClassName="px-4 pt-2 pb-6 space-y-3" inset={16}>
+      {/* Scrollable body — keyboard lift disabled; vaulNoDrag keeps drawer scroll working. */}
+      <InsetScrollArea
+        contentClassName="px-4 pt-2 pb-6 space-y-3"
+        inset={16}
+        vaulNoDrag
+      >
         {/* Title + color */}
         <div className="bg-card rounded-2xl p-4 shadow-soft">
           <input
             value={form.title}
             onChange={(e) => patch({ title: e.target.value })}
             enterKeyHint="done"
+            onKeyDown={(e) => onDoneKey(e)}
             placeholder={t("eventTitle")}
             className="w-full bg-transparent text-base font-semibold outline-none placeholder:text-muted-foreground/40"
           />
@@ -231,6 +236,7 @@ function FormBody({
               value={form.location ?? ""}
               onChange={(e) => patch({ location: e.target.value })}
               enterKeyHint="done"
+              onKeyDown={(e) => onDoneKey(e)}
               placeholder={t("location")}
               className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50"
             />
@@ -566,7 +572,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
           className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
           onClick={() => onOpenChange(false)}
         />
-        <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10">
+        <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] min-h-0 flex flex-col overflow-hidden shadow-float z-10">
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
           <FormBody {...formBodyProps} />
         </div>
@@ -583,7 +589,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         <DrawerPrimitive.Content
           className={cn(
             "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
-            "max-h-[88dvh] outline-none"
+            "max-h-[88dvh] min-h-0 overflow-hidden outline-none"
           )}
         >
           <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-muted shrink-0" />
