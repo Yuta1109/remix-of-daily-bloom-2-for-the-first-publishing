@@ -129,8 +129,18 @@ function keyboardPx(): number {
  * - Overlay (`[data-kb-shell]`): never lift #root (avoids shifting the page behind).
  *   Pad the overlay scroller so it can scroll; lift the shell for the rest.
  */
+function shouldIgnore(el: HTMLElement): boolean {
+  return !!el.closest("[data-kb-ignore]");
+}
+
 function adjustForKeyboard() {
   if (!focused) {
+    resetLifts();
+    return;
+  }
+
+  // Event sheets opt out — keyboard lift was breaking their scroll.
+  if (shouldIgnore(focused)) {
     resetLifts();
     return;
   }

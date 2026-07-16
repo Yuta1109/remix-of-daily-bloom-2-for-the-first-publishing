@@ -34,7 +34,7 @@ import {
 import { refreshLiveActivities, isLiveActivitySupported } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
 import { InsetScrollArea } from "@/components/InsetScrollArea";
-import { hideKeyboard, onDoneKey, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
+import { hideKeyboard } from "@/lib/keyboard-avoidance";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -165,7 +165,7 @@ function FormBody({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="flex flex-col flex-1 min-h-0" data-kb-ignore>
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0">
         <button
@@ -191,16 +191,14 @@ function FormBody({
         </button>
       </div>
 
-      {/* Scrollable body */}
+      {/* Scrollable body — no keyboard lift (data-kb-ignore); location/notes sit under title. */}
       <InsetScrollArea contentClassName="px-4 pt-2 pb-6 space-y-3" inset={16}>
         {/* Title + color */}
         <div className="bg-card rounded-2xl p-4 shadow-soft">
           <input
             value={form.title}
             onChange={(e) => patch({ title: e.target.value })}
-            onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
             enterKeyHint="done"
-            onKeyDown={(e) => onDoneKey(e)}
             placeholder={t("eventTitle")}
             className="w-full bg-transparent text-base font-semibold outline-none placeholder:text-muted-foreground/40"
           />
@@ -222,6 +220,30 @@ function FormBody({
                 />
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* Location & Notes (directly under title so they stay reachable) */}
+        <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
+          <div className="px-4 py-3 flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <input
+              value={form.location ?? ""}
+              onChange={(e) => patch({ location: e.target.value })}
+              enterKeyHint="done"
+              placeholder={t("location")}
+              className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50"
+            />
+          </div>
+          <div className="px-4 py-3 flex items-start gap-2">
+            <AlignLeft className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
+            <textarea
+              value={form.notes ?? ""}
+              onChange={(e) => patch({ notes: e.target.value })}
+              placeholder={t("notes")}
+              rows={3}
+              className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50 resize-none"
+            />
           </div>
         </div>
 
@@ -413,41 +435,6 @@ function FormBody({
         </div>
         )}
 
-        {/* Location & Notes */}
-        <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
-          <div className="px-4 py-3 flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            <input
-              value={form.location ?? ""}
-              onChange={(e) => patch({ location: e.target.value })}
-              onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
-              enterKeyHint="done"
-              onKeyDown={(e) => onDoneKey(e)}
-              placeholder={t("location")}
-              className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50"
-            />
-          </div>
-          <div className="px-4 py-3 flex items-start gap-2">
-            <AlignLeft className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
-            <textarea
-              value={form.notes ?? ""}
-              onChange={(e) => patch({ notes: e.target.value })}
-              onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
-              enterKeyHint="done"
-              onKeyDown={(e) => {
-                // Enter dismisses keyboard (Shift+Enter inserts a newline).
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void hideKeyboard();
-                }
-              }}
-              placeholder={t("notes")}
-              rows={3}
-              className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50 resize-none"
-            />
-          </div>
-        </div>
-
         {/* Delete */}
         {!isNew && (
           <button
@@ -579,10 +566,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
           className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
           onClick={() => onOpenChange(false)}
         />
-        <div
-          data-kb-shell="translate"
-          className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10"
-        >
+        <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10">
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
           <FormBody {...formBodyProps} />
         </div>
@@ -597,7 +581,6 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
-          data-kb-shell="bottom"
           className={cn(
             "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
             "max-h-[88dvh] outline-none"

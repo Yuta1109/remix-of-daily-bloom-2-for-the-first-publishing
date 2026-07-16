@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type KeyboardEvent } from "react";
 import { Plus, Flame, Target, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { TaskItem } from "@/components/TaskItem";
-import { FabButton } from "@/components/FabButton";
 import {
   getDayData,
   saveDayData,
@@ -22,7 +21,6 @@ export default function Index() {
   const today = getDateKey(new Date());
   const [dayData, setDayData] = useState<DayData>({ tasks: [], reflection: "" });
   const [newTask, setNewTask] = useState("");
-  const [showInput, setShowInput] = useState(false);
   const [reusable, setReusable] = useState<ReusableTask[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const streak = getStreak();
@@ -44,20 +42,27 @@ export default function Index() {
 
   const addTaskWithText = (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed) return false;
     if (dayData.tasks.some((t) => t.text === trimmed && !t.completed)) {
       toast(t("alreadyInToday"));
-      return;
+      return false;
     }
     const task: Task = { id: crypto.randomUUID(), text: trimmed, completed: false, date: today };
     persist({ ...dayData, tasks: [...dayData.tasks, task] });
+    return true;
   };
 
   const finishNewTask = () => {
+    if (!newTask.trim()) return;
     addTaskWithText(newTask);
     setNewTask("");
-    setShowInput(false);
     void hideKeyboard();
+  };
+
+  const onAddKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    finishNewTask();
   };
 
   const toggleTask = (id: string) => {
@@ -148,7 +153,7 @@ export default function Index() {
         </p>
       </div>
 
-      <div className="flex-1 min-h-0 mb-2.5" onClick={(e) => e.stopPropagation()}>
+      <div className="flex-1 min-h-0" onClick={(e) => e.stopPropagation()}>
         <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden">
           <InsetScrollArea contentClassName="px-3 py-3" inset={16}>
             {dayData.tasks.length > 0 ? (
@@ -165,41 +170,41 @@ export default function Index() {
                   />
                 ))}
               </div>
-            ) : !showInput ? (
+            ) : (
               <div className="text-center py-10 text-muted-foreground">
                 <p className="text-base font-medium mb-1">{t("startYourDay")}</p>
                 <p className="text-sm opacity-60">{t("tapPlusHint")}</p>
-              </div>
-            ) : null}
-
-            {showInput && (
-              <div className="py-2 animate-fade-in-up">
-                <input
-                  autoFocus
-                  value={newTask}
-                  onChange={(e) => setNewTask(e.target.value)}
-                  onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
-                  enterKeyHint="done"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      finishNewTask();
-                    }
-                  }}
-                  onBlur={() => {
-                    if (newTask.trim()) finishNewTask();
-                    else setShowInput(false);
-                  }}
-                  placeholder={t("whatNeedsDone")}
-                  className="w-full bg-transparent text-base py-3 px-1 outline-none placeholder:text-muted-foreground/40 border-b border-border"
-                />
               </div>
             )}
           </InsetScrollArea>
         </div>
       </div>
 
-      <FabButton onClick={() => setShowInput(true)} aria-label={t("add")} />
+      {/* Fixed add row (like Settings reusable tasks), clear of the tab bar. */}
+      <div
+        className="shrink-0 pt-2.5 pb-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2">
+          <input
+            value={newTask}
+            onChange={(e) => setNewTask(e.target.value)}
+            onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
+            enterKeyHint="done"
+            onKeyDown={onAddKeyDown}
+            placeholder={t("whatNeedsDone")}
+            className="flex-1 bg-card rounded-xl px-4 py-2.5 text-base outline-none shadow-soft placeholder:text-muted-foreground/50"
+          />
+          <button
+            type="button"
+            onClick={finishNewTask}
+            className="bg-accent text-accent-foreground rounded-xl px-4 py-2.5 text-sm font-medium flex items-center gap-1 hover:opacity-90 transition-opacity"
+          >
+            <Plus className="w-4 h-4" strokeWidth={2.5} />
+            {t("add")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
