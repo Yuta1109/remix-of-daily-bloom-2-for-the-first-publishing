@@ -8,8 +8,17 @@ name: iOS Release (App Store / TestFlight)
 #   APP_STORE_CONNECT_PRIVATE_KEY  Contents of the AuthKey_XXXX.p8 file (paste as-is)
 #   APPLE_TEAM_ID                  Your 10-character Apple Developer Team ID
 #
-# Automatic signing (-allowProvisioningUpdates) creates the required
-# provisioning profiles for both the app and the widget extension.
+# Signing strategy:
+#   Archive WITHOUT code signing. Ephemeral CI runners + Automatic signing +
+#   -allowProvisioningUpdates mint a NEW Apple Development certificate on every
+#   run, which eventually hits Apple's per-account cert cap and fails with
+#   "maximum number of certificates" / "No profiles found".
+#   All signing happens at exportArchive, which reuses the cloud-managed
+#   Apple Distribution certificate (no churn).
+#
+# One-time cleanup if the account is already at the cert limit:
+#   Apple Developer → Certificates → revoke unused "Apple Development" certs
+#   (especially ones named like "Created via API"), then re-run this workflow.
 on:
   workflow_dispatch:
 
@@ -79,26 +88,25 @@ jobs:
           </plist>
           EOF
 
-      - name: Archive
+      - name: Archive (unsigned)
         env:
-          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # Do not sign during archive. Automatic signing here would mint a new
+          # Apple Development certificate on every ephemeral runner.
           xcodebuild archive \
             -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
+            -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/Essences.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyID "$KEY_ID" \
-            -authenticationKeyIssuerID "$ISSUER_ID" \
-            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
 
-      - name: Export .ipa
+      - name: Export .ipa (sign + provision)
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -112,8 +120,7 @@ jobs:
             -authenticationKeyID "$KEY_ID" \
             -authenticationKeyIssuerID "$ISSUER_ID" \
             -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic
+            DEVELOPMENT_TEAM="$TEAM_ID"
 
       - name: Upload to TestFlight
         env:
