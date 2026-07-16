@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Globe, ListPlus, Plus, X, Bell, Shield, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -16,6 +16,8 @@ import {
   type NotificationPermissionState,
 } from "@/lib/notifications";
 import { Switch } from "@/components/ui/switch";
+import { InsetScrollArea } from "@/components/InsetScrollArea";
+import { scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { App } from "@capacitor/app";
 
 const APP_VERSION = "1.0.0";
@@ -104,6 +106,19 @@ export default function Settings({ staticPreview = false }: Props) {
     if (!modalText.trim()) return;
     setReusable(addReusable(modalText));
     setModalText("");
+  };
+
+  const onReusableEnter = (
+    e: KeyboardEvent<HTMLInputElement>,
+    which: "page" | "modal"
+  ) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (which === "page") handleAdd();
+    else handleModalAdd();
+    // Stay on the same field — do not advance focus to the next control.
+    e.currentTarget.focus();
   };
 
   const handleRemove = (id: string) => setReusable(removeReusable(id));
@@ -217,11 +232,14 @@ export default function Settings({ staticPreview = false }: Props) {
             <input
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
+              enterKeyHint="done"
+              onKeyDown={(e) => onReusableEnter(e, "page")}
               placeholder={t("addReusable")}
               className="flex-1 bg-secondary/60 rounded-xl px-4 py-2.5 text-base outline-none placeholder:text-muted-foreground/50"
             />
             <button
+              type="button"
               onClick={handleAdd}
               className="bg-accent text-accent-foreground rounded-xl px-4 py-2.5 text-sm font-medium flex items-center gap-1 hover:opacity-90 transition-opacity"
             >
@@ -269,7 +287,7 @@ export default function Settings({ staticPreview = false }: Props) {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto scrollbar-app px-4 py-3 space-y-2 min-h-0">
+              <InsetScrollArea contentClassName="px-4 py-3 space-y-2" inset={16}>
                 {reusable.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     {t("addReusable")}
@@ -282,6 +300,7 @@ export default function Settings({ staticPreview = false }: Props) {
                     >
                       <span className="text-sm">{r.text}</span>
                       <button
+                        type="button"
                         onClick={() => handleRemove(r.id)}
                         className="text-muted-foreground hover:text-destructive p-1"
                       >
@@ -290,17 +309,20 @@ export default function Settings({ staticPreview = false }: Props) {
                     </div>
                   ))
                 )}
-              </div>
+              </InsetScrollArea>
 
               <div className="shrink-0 border-t border-border/50 px-4 py-3 flex items-center gap-2">
                 <input
                   value={modalText}
                   onChange={(e) => setModalText(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleModalAdd()}
+                  onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
+                  enterKeyHint="done"
+                  onKeyDown={(e) => onReusableEnter(e, "modal")}
                   placeholder={t("addReusable")}
                   className="flex-1 bg-secondary/60 rounded-xl px-4 py-2.5 text-base outline-none placeholder:text-muted-foreground/50"
                 />
                 <button
+                  type="button"
                   onClick={handleModalAdd}
                   className="bg-accent text-accent-foreground rounded-xl px-4 py-2.5 text-sm font-medium flex items-center gap-1 hover:opacity-90 transition-opacity"
                 >

@@ -19,8 +19,10 @@ const config: CapacitorConfig = {
       smallIcon: "ic_stat_icon",
     },
     Keyboard: {
-      resize: "body",
-      resizeOnFullScreen: true,
+      // Do not resize the WebView — we lift #root ourselves so the whole UI
+      // (including the focused field) moves above the keyboard together.
+      resize: "none",
+      resizeOnFullScreen: false,
     },
   },
 };

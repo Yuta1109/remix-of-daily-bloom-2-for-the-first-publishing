@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
-import { App } from "@capacitor/app";
 import { LocalNotifications, type PermissionStatus } from "@capacitor/local-notifications";
+import { NativeSettings, AndroidSettings, IOSSettings } from "capacitor-native-settings";
 import {
   loadEvents,
   reminderOffsetMinutes,
@@ -46,8 +46,7 @@ export async function checkPermission(): Promise<NotificationPermissionState> {
 
 /**
  * Requests notification permission when possible.
- * Always calls `requestPermissions` unless already granted — never permanently
- * blocks the UI after a single deny (iOS may still no-op if Settings locked).
+ * Always calls `requestPermissions` unless already granted.
  */
 export async function ensurePermission(): Promise<boolean> {
   if (!isNative()) return false;
@@ -62,13 +61,16 @@ export async function ensurePermission(): Promise<boolean> {
   }
 }
 
-/** Open the system Settings page for this app (iOS `app-settings:`). */
+/** Open this app's page in the system Settings app. */
 export async function openAppSettings(): Promise<void> {
   if (!isNative()) return;
   try {
-    await App.openUrl({ url: "app-settings:" });
-  } catch {
-    /* ignore */
+    await NativeSettings.open({
+      optionAndroid: AndroidSettings.ApplicationDetails,
+      optionIOS: IOSSettings.App,
+    });
+  } catch (err) {
+    console.warn("[notifications] openAppSettings failed:", err);
   }
 }
 
@@ -112,10 +114,6 @@ function buildLaWakeBody(): string {
     : "Tap to show the countdown on your Lock Screen";
 }
 
-/**
- * Cancels all pending notifications and reschedules them based on current events.
- * Respects the user-level toggle (getNotificationsUserEnabled).
- */
 export async function rescheduleAll(): Promise<void> {
   if (!isNative()) return;
 

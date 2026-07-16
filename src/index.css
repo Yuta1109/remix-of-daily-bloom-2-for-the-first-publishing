@@ -125,6 +125,9 @@
     overflow: hidden;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   #root {
@@ -133,13 +136,17 @@
     overflow: hidden;
     background-color: hsl(var(--background));
     transform: translateY(calc(-1 * var(--kb-shift, 0px)));
-    transition: transform 0.18s ease-out;
+    transition: transform 0.2s ease-out;
   }
 
   input,
   textarea,
-  select {
+  select,
+  [contenteditable="true"] {
     font-size: 16px !important;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
   }
 }
 
@@ -172,42 +179,7 @@ html.overlay-open #root {
   background-color: hsl(var(--background));
 }
 
-/* ── Custom scrollbars (ends sit inside rounded corners) ─────────────────── */
-
-.scrollbar-app {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--muted-foreground) / 0.28) transparent;
-  /* Keep thumb away from the rounded corners of parent cards */
-  scrollbar-gutter: stable;
-}
-
-.scrollbar-app::-webkit-scrollbar {
-  width: 4px;
-}
-
-.scrollbar-app::-webkit-scrollbar-button {
-  display: block;
-  height: 16px;
-  background: transparent;
-}
-
-.scrollbar-app::-webkit-scrollbar-track {
-  background: transparent;
-  margin-block: 16px;
-}
-
-.scrollbar-app::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--muted-foreground) / 0.28);
-  border-radius: 999px;
-  min-height: 18px;
-  border: 1px solid transparent;
-  background-clip: content-box;
-}
-
-.scrollbar-app::-webkit-scrollbar-thumb:active {
-  background-color: hsl(var(--muted-foreground) / 0.45);
-}
-
+/* Hide native scrollbars — InsetScrollArea draws a shortened custom thumb. */
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }

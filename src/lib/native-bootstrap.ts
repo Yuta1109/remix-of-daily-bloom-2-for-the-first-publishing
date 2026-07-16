@@ -3,14 +3,13 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import { App } from "@capacitor/app";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
-import { Keyboard } from "@capacitor/keyboard";
 import { rescheduleAll } from "./notifications";
 import {
   refreshLiveActivities,
   scheduleLiveActivityBoundaries,
   stopLiveActivityBoundaries,
 } from "./live-activity";
-import { initKeyboardAvoidance, scrollInputAboveKeyboard } from "./keyboard-avoidance";
+import { initKeyboardAvoidance } from "./keyboard-avoidance";
 
 function syncSchedules() {
   void rescheduleAll();
@@ -20,6 +19,7 @@ function syncSchedules() {
 export async function initNative(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
 
+  // Keyboard listeners live inside initKeyboardAvoidance (resize: none + root shift).
   initKeyboardAvoidance();
 
   try {
@@ -52,15 +52,4 @@ export async function initNative(): Promise<void> {
     }
   });
   App.addListener("resume", () => syncSchedules());
-
-  try {
-    Keyboard.addListener("keyboardWillShow", () => {
-      const el = document.activeElement;
-      if (el instanceof HTMLElement) scrollInputAboveKeyboard(el);
-    });
-    Keyboard.addListener("keyboardDidShow", () => {
-      const el = document.activeElement;
-      if (el instanceof HTMLElement) scrollInputAboveKeyboard(el);
-    });
-  } catch { /* keyboard plugin not available */ }
 }

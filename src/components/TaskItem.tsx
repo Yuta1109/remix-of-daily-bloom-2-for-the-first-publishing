@@ -1,7 +1,7 @@
 import { useState, type MouseEvent } from "react";
 import { Check, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
+import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import type { Task } from "@/lib/store";
 
 interface TaskItemProps {
@@ -46,6 +46,7 @@ export function TaskItem({
     if (trimmed && trimmed !== task.text) onEdit(task.id, trimmed);
     else setDraft(task.text);
     setEditing(false);
+    void hideKeyboard();
   };
 
   return (
@@ -99,11 +100,16 @@ export function TaskItem({
             onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
             onClick={(e) => e.stopPropagation()}
             onBlur={commitEdit}
+            enterKeyHint="done"
             onKeyDown={(e) => {
-              if (e.key === "Enter") commitEdit();
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitEdit();
+              }
               if (e.key === "Escape") {
                 setDraft(task.text);
                 setEditing(false);
+                void hideKeyboard();
               }
             }}
             className="flex-1 min-w-0 text-base bg-transparent outline-none py-1.5"

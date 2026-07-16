@@ -1,5 +1,6 @@
 import { Drawer as DrawerPrimitive } from "vaul";
 import { Clock, MapPin, Plus } from "lucide-react";
+import { InsetScrollArea } from "@/components/InsetScrollArea";
 import { type CalendarEvent, colorHslFor } from "@/lib/events-store";
 import { formatEventSchedule } from "@/lib/event-display";
 import { useI18n } from "@/lib/i18n";
@@ -49,12 +50,13 @@ export function DayEventsSheet({
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto scrollbar-app px-4 py-3">
+          <InsetScrollArea contentClassName="px-4 py-3" inset={16}>
             {events.length > 0 ? (
               <div className="space-y-2">
                 {events.map((ev) => (
                   <button
                     key={ev.id}
+                    type="button"
                     onClick={() => {
                       onOpenChange(false);
                       setTimeout(() => onEditEvent(ev.id), 100);
@@ -95,7 +97,7 @@ export function DayEventsSheet({
               </div>
             )}
             <div className="h-4" />
-          </div>
+          </InsetScrollArea>
         </DrawerPrimitive.Content>
       </DrawerPrimitive.Portal>
     </DrawerPrimitive.Root>

@@ -33,7 +33,8 @@ import {
 } from "@/lib/notifications";
 import { refreshLiveActivities, isLiveActivitySupported } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
-import { scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
+import { InsetScrollArea } from "@/components/InsetScrollArea";
+import { hideKeyboard, onDoneKey, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -164,10 +165,11 @@ function FormBody({
   };
 
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0">
         <button
+          type="button"
           onClick={onClose}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
@@ -177,7 +179,11 @@ function FormBody({
           {isNew ? t("newEvent") : t("editEvent")}
         </h2>
         <button
-          onClick={onSave}
+          type="button"
+          onClick={() => {
+            void hideKeyboard();
+            onSave();
+          }}
           disabled={!form.title.trim()}
           className="text-sm font-semibold text-accent disabled:opacity-40"
         >
@@ -186,13 +192,15 @@ function FormBody({
       </div>
 
       {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto scrollbar-app px-4 pt-2 pb-6 space-y-3 min-h-0 rounded-b-3xl">
+      <InsetScrollArea contentClassName="px-4 pt-2 pb-6 space-y-3" inset={16}>
         {/* Title + color */}
         <div className="bg-card rounded-2xl p-4 shadow-soft">
           <input
             value={form.title}
             onChange={(e) => patch({ title: e.target.value })}
             onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
+            enterKeyHint="done"
+            onKeyDown={(e) => onDoneKey(e)}
             placeholder={t("eventTitle")}
             className="w-full bg-transparent text-base font-semibold outline-none placeholder:text-muted-foreground/40"
           />
@@ -413,6 +421,8 @@ function FormBody({
               value={form.location ?? ""}
               onChange={(e) => patch({ location: e.target.value })}
               onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
+              enterKeyHint="done"
+              onKeyDown={(e) => onDoneKey(e)}
               placeholder={t("location")}
               className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50"
             />
@@ -423,6 +433,14 @@ function FormBody({
               value={form.notes ?? ""}
               onChange={(e) => patch({ notes: e.target.value })}
               onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
+              enterKeyHint="done"
+              onKeyDown={(e) => {
+                // Enter dismisses keyboard (Shift+Enter inserts a newline).
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void hideKeyboard();
+                }
+              }}
               placeholder={t("notes")}
               rows={3}
               className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground/50 resize-none"
@@ -433,6 +451,7 @@ function FormBody({
         {/* Delete */}
         {!isNew && (
           <button
+            type="button"
             onClick={onRemove}
             className="w-full bg-card rounded-2xl shadow-soft px-4 py-3 text-sm font-semibold text-destructive flex items-center justify-center gap-2 hover:bg-destructive/5 transition-colors"
           >
@@ -440,8 +459,8 @@ function FormBody({
             {t("deleteEvent")}
           </button>
         )}
-      </div>
-    </>
+      </InsetScrollArea>
+    </div>
   );
 }
 

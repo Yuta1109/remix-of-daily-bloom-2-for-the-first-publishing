@@ -13,7 +13,8 @@ import {
 } from "@/lib/store";
 import { loadReusable, type ReusableTask } from "@/lib/reusable-tasks";
 import { useI18n } from "@/lib/i18n";
-import { scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
+import { InsetScrollArea } from "@/components/InsetScrollArea";
+import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import type { DayData, Task } from "@/lib/store";
 
 export default function Index() {
@@ -56,6 +57,7 @@ export default function Index() {
     addTaskWithText(newTask);
     setNewTask("");
     setShowInput(false);
+    void hideKeyboard();
   };
 
   const toggleTask = (id: string) => {
@@ -147,8 +149,8 @@ export default function Index() {
       </div>
 
       <div className="flex-1 min-h-0 mb-2.5" onClick={(e) => e.stopPropagation()}>
-        <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col">
-          <div className="flex-1 overflow-y-auto scrollbar-app rounded-2xl px-3 min-h-0 py-3">
+        <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden">
+          <InsetScrollArea contentClassName="px-3 py-3" inset={16}>
             {dayData.tasks.length > 0 ? (
               <div className="space-y-2">
                 {dayData.tasks.map((task) => (
@@ -177,8 +179,12 @@ export default function Index() {
                   value={newTask}
                   onChange={(e) => setNewTask(e.target.value)}
                   onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
+                  enterKeyHint="done"
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") finishNewTask();
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      finishNewTask();
+                    }
                   }}
                   onBlur={() => {
                     if (newTask.trim()) finishNewTask();
@@ -189,7 +195,7 @@ export default function Index() {
                 />
               </div>
             )}
-          </div>
+          </InsetScrollArea>
         </div>
       </div>
 
