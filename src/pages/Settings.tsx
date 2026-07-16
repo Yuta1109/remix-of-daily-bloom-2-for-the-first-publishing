@@ -8,12 +8,15 @@ import { loadReusable, addReusable, removeReusable, type ReusableTask } from "@/
 import {
   checkPermission,
   ensurePermission,
+  openAppSettings,
   isNative,
   rescheduleAll,
   getNotificationsUserEnabled,
   setNotificationsUserEnabled,
+  type NotificationPermissionState,
 } from "@/lib/notifications";
 import { Switch } from "@/components/ui/switch";
+import { App } from "@capacitor/app";
 
 const APP_VERSION = "1.0.0";
 const PREVIEW_LIMIT = 4;
@@ -28,23 +31,55 @@ export default function Settings({ staticPreview = false }: Props) {
   const [reusable, setReusable] = useState<ReusableTask[]>([]);
   const [newText, setNewText] = useState("");
   const [modalText, setModalText] = useState("");
-  const [osGranted, setOsGranted] = useState(false);
+  const [perm, setPerm] = useState<NotificationPermissionState>("prompt");
   const [userEnabled, setUserEnabled] = useState(getNotificationsUserEnabled());
   const [listOpen, setListOpen] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+
+  const refreshPermission = async () => {
+    if (!isNative()) return;
+    const s = await checkPermission();
+    setPerm(s);
+  };
 
   useEffect(() => setReusable(loadReusable()), []);
   useEffect(() => {
+    void refreshPermission();
+  }, []);
+
+  useEffect(() => {
     if (!isNative()) return;
-    void checkPermission().then((s) => setOsGranted(s === "granted"));
+    let handle: { remove: () => Promise<void> } | undefined;
+    void App.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) void refreshPermission();
+    }).then((h) => {
+      handle = h;
+    });
+    return () => {
+      void handle?.remove();
+    };
   }, []);
 
   const handleEnableNotifications = async () => {
-    const granted = await ensurePermission();
-    setOsGranted(granted);
-    if (granted) {
-      setNotificationsUserEnabled(true);
-      setUserEnabled(true);
-      void rescheduleAll();
+    if (requesting) return;
+    setRequesting(true);
+    try {
+      const current = await checkPermission();
+      if (current === "denied") {
+        // iOS won't show the dialog again — open system Settings instead.
+        await openAppSettings();
+        await refreshPermission();
+        return;
+      }
+      const granted = await ensurePermission();
+      await refreshPermission();
+      if (granted) {
+        setNotificationsUserEnabled(true);
+        setUserEnabled(true);
+        void rescheduleAll();
+      }
+    } finally {
+      setRequesting(false);
     }
   };
 
@@ -116,25 +151,29 @@ export default function Settings({ staticPreview = false }: Props) {
               <p className="text-sm font-semibold">{t("notifications")}</p>
             </div>
 
-            {!osGranted ? (
-              <>
-                <p className="text-xs text-muted-foreground mb-4">
-                  {t("notificationsPermissionNeeded")}
-                </p>
-                <button
-                  onClick={handleEnableNotifications}
-                  className="w-full bg-accent text-accent-foreground rounded-xl px-4 py-3 text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                  {t("enableNotifications")}
-                </button>
-              </>
-            ) : (
+            {perm === "granted" ? (
               <div className="flex items-center justify-between pt-1">
                 <p className="text-xs text-muted-foreground flex-1 pr-3">
                   {userEnabled ? t("notificationsEnabled") : t("notificationsOffWarning")}
                 </p>
                 <Switch checked={userEnabled} onCheckedChange={handleToggleUserEnabled} />
               </div>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mb-4">
+                  {perm === "denied"
+                    ? t("notificationsDeniedHint")
+                    : t("notificationsPermissionNeeded")}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleEnableNotifications}
+                  disabled={requesting}
+                  className="w-full bg-accent text-accent-foreground rounded-xl px-4 py-3 text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+                >
+                  {perm === "denied" ? t("openSettings") : t("enableNotifications")}
+                </button>
+              </>
             )}
           </div>
         )}

@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { App } from "@capacitor/app";
 import { LocalNotifications, type PermissionStatus } from "@capacitor/local-notifications";
 import {
   loadEvents,
@@ -8,10 +9,13 @@ import {
   type CalendarEvent,
 } from "./events-store";
 import { liveActivityWakeTimes } from "./live-activity";
+import { formatEventSchedule } from "./event-display";
 
 const MAX_SCHEDULED = 60;
 const HORIZON_DAYS = 120;
 const NOTIF_PREF_KEY = "essences-notif-user-enabled";
+
+export type NotificationPermissionState = PermissionStatus["display"];
 
 export function isNative(): boolean {
   return Capacitor.isNativePlatform();
@@ -34,23 +38,39 @@ export function setNotificationsUserEnabled(enabled: boolean): void {
   }
 }
 
-export async function checkPermission(): Promise<PermissionStatus["display"]> {
+export async function checkPermission(): Promise<NotificationPermissionState> {
   if (!isNative()) return "denied";
   const status = await LocalNotifications.checkPermissions();
   return status.display;
 }
 
-/** Requests notification permission if not yet granted. Returns true when granted. */
+/**
+ * Requests notification permission when possible.
+ * Always calls `requestPermissions` unless already granted — never permanently
+ * blocks the UI after a single deny (iOS may still no-op if Settings locked).
+ */
 export async function ensurePermission(): Promise<boolean> {
   if (!isNative()) return false;
   const status = await LocalNotifications.checkPermissions();
   if (status.display === "granted") return true;
-  if (status.display === "denied") return false;
-  const req = await LocalNotifications.requestPermissions();
-  return req.display === "granted";
+
+  try {
+    const req = await LocalNotifications.requestPermissions();
+    return req.display === "granted";
+  } catch {
+    return false;
+  }
 }
 
-import { formatEventSchedule } from "./event-display";
+/** Open the system Settings page for this app (iOS `app-settings:`). */
+export async function openAppSettings(): Promise<void> {
+  if (!isNative()) return;
+  try {
+    await App.openUrl({ url: "app-settings:" });
+  } catch {
+    /* ignore */
+  }
+}
 
 function buildTitle(e: CalendarEvent): string {
   return `予定：${e.title}`;
@@ -102,7 +122,6 @@ export async function rescheduleAll(): Promise<void> {
   const perm = await LocalNotifications.checkPermissions();
   if (perm.display !== "granted") return;
 
-  // Always cancel existing notifications first.
   const pending = await LocalNotifications.getPending();
   if (pending.notifications.length) {
     await LocalNotifications.cancel({
@@ -110,7 +129,6 @@ export async function rescheduleAll(): Promise<void> {
     });
   }
 
-  // Respect user preference.
   if (!getNotificationsUserEnabled()) return;
 
   const now = new Date();

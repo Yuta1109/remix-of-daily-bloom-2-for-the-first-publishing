@@ -186,7 +186,7 @@ function FormBody({
       </div>
 
       {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto scrollbar-app px-4 pb-6 space-y-3 min-h-0">
+      <div className="flex-1 overflow-y-auto scrollbar-app px-4 pt-2 pb-6 space-y-3 min-h-0 rounded-b-3xl">
         {/* Title + color */}
         <div className="bg-card rounded-2xl p-4 shadow-soft">
           <input
@@ -560,7 +560,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
           className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
           onClick={() => onOpenChange(false)}
         />
-        <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10 overflow-hidden">
+        <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] flex flex-col shadow-float z-10">
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
           <FormBody {...formBodyProps} />
         </div>

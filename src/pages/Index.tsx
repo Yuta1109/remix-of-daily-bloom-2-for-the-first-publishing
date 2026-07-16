@@ -146,11 +146,11 @@ export default function Index() {
         </p>
       </div>
 
-      <div className="flex-1 min-h-0" onClick={(e) => e.stopPropagation()}>
-        <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto scrollbar-app px-3 min-h-0 pb-3">
+      <div className="flex-1 min-h-0 mb-2.5" onClick={(e) => e.stopPropagation()}>
+        <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col">
+          <div className="flex-1 overflow-y-auto scrollbar-app rounded-2xl px-3 min-h-0 py-3">
             {dayData.tasks.length > 0 ? (
-              <div className="space-y-2 pt-3">
+              <div className="space-y-2">
                 {dayData.tasks.map((task) => (
                   <TaskItem
                     key={task.id}

@@ -172,29 +172,36 @@ html.overlay-open #root {
   background-color: hsl(var(--background));
 }
 
-/* ── Custom scrollbars (inset so rounded cards don't clip the thumb) ─────── */
+/* ── Custom scrollbars (ends sit inside rounded corners) ─────────────────── */
 
 .scrollbar-app {
   scrollbar-width: thin;
   scrollbar-color: hsl(var(--muted-foreground) / 0.28) transparent;
+  /* Keep thumb away from the rounded corners of parent cards */
+  scrollbar-gutter: stable;
 }
 
 .scrollbar-app::-webkit-scrollbar {
-  width: 5px;
+  width: 4px;
+}
+
+.scrollbar-app::-webkit-scrollbar-button {
+  display: block;
+  height: 16px;
+  background: transparent;
 }
 
 .scrollbar-app::-webkit-scrollbar-track {
   background: transparent;
-  margin-block: 12px;
+  margin-block: 16px;
 }
 
 .scrollbar-app::-webkit-scrollbar-thumb {
   background-color: hsl(var(--muted-foreground) / 0.28);
   border-radius: 999px;
-  min-height: 20px;
-  max-height: 40%;
+  min-height: 18px;
   border: 1px solid transparent;
-  background-clip: padding-box;
+  background-clip: content-box;
 }
 
 .scrollbar-app::-webkit-scrollbar-thumb:active {
@@ -241,22 +248,6 @@ html.overlay-open #root {
 .animate-fade-in-up { animation: fade-in-up 0.3s ease-out; }
 .animate-slide-up   { animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .animate-float-up   { animation: float-up 1.2s ease-out forwards; }
-
-/* Vertical month carousel (no peek spacers) */
-.month-carousel {
-  scroll-snap-type: y mandatory;
-  -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
-}
-.month-carousel-panel {
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
-  height: 100%;
-  min-height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
 .month-grid-fade {
   transition: opacity 150ms ease-out;
