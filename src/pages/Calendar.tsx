@@ -173,6 +173,7 @@ export default function CalendarPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDate, setModalDate] = useState<string>(todayKey());
   const [goalsMinimized, setGoalsMinimized] = useState(false);
+  const [goalsCollapseSignal, setGoalsCollapseSignal] = useState(0);
 
   const refreshEvents = () => setEvents(loadEvents());
   useEffect(() => {
@@ -182,6 +183,17 @@ export default function CalendarPage() {
   const onGoalsMinimizedChange = useCallback((m: boolean) => {
     setGoalsMinimized(m);
   }, []);
+
+  const requestGoalsMinimize = useCallback(() => {
+    setGoalsCollapseSignal((n) => n + 1);
+  }, []);
+
+  // Minimize month goals while editing / adding events.
+  useEffect(() => {
+    if (sheetOpen || modalOpen || daySheetOpen) {
+      requestGoalsMinimize();
+    }
+  }, [sheetOpen, modalOpen, daySheetOpen, requestGoalsMinimize]);
 
   const overlayOpen = daySheetOpen || sheetOpen || modalOpen;
 
@@ -300,6 +312,7 @@ export default function CalendarPage() {
           monthKey={monthKeyOf(viewDate)}
           disabled={overlayOpen}
           onMonthStep={onMonthStep}
+          onInteractionStart={requestGoalsMinimize}
         >
           {(rel, { faded }) => {
             const m = months[rel + 1];
@@ -317,10 +330,10 @@ export default function CalendarPage() {
           }}
         </MonthWheel>
 
-        {/* Overlays the calendar top (~1/7 height); does not push the grid down. */}
+        {/* Overlays the calendar top (~1/5.5 ≈ slightly larger than 1/7 for prompt buttons). */}
         <div
           className="absolute top-0 left-3 right-3 z-20 pointer-events-none"
-          style={goalsMinimized ? undefined : { height: "14.2857%" }}
+          style={goalsMinimized ? undefined : { height: "18%" }}
         >
           <div
             className={cn(
@@ -331,6 +344,7 @@ export default function CalendarPage() {
             <MonthGoalsCard
               monthKey={monthKeyFromDate(viewDate)}
               onMinimizedChange={onGoalsMinimizedChange}
+              collapseSignal={goalsCollapseSignal}
             />
           </div>
         </div>

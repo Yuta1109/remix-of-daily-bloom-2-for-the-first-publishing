@@ -33,6 +33,7 @@ import {
 } from "@/lib/notifications";
 import { refreshLiveActivities, isLiveActivitySupported } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
+import { InsetScrollArea } from "@/components/InsetScrollArea";
 import { hideKeyboard, onDoneKey } from "@/lib/keyboard-avoidance";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { cn } from "@/lib/utils";
@@ -191,13 +192,16 @@ function FormBody({
       </div>
 
       {/* Embedded scroll region: title and everything below.
-          Pointer stopPropagation keeps vaul drawer drag off this surface;
-          touch-action:pan-y (CSS) lets the body scroll without fighting the sheet. */}
-      <div
-        className="event-sheet-scroll min-h-0 overflow-y-scroll overscroll-contain px-4 pt-3 pb-6 space-y-3"
+          Custom thumb inset at bottom so it clears the sheet's rounded corners. */}
+      <InsetScrollArea
         style={{ flex: "1 1 0%" }}
-        data-vaul-no-drag=""
-        onPointerDown={(e) => e.stopPropagation()}
+        contentClassName="event-sheet-scroll px-4 pt-3 pb-6 space-y-3"
+        insetTop={12}
+        insetBottom={20}
+        vaulNoDrag
+        scrollerProps={{
+          onPointerDown: (e) => e.stopPropagation(),
+        }}
       >
         {/* Title + color */}
         <div className="bg-card rounded-2xl p-4 shadow-soft">
@@ -454,7 +458,7 @@ function FormBody({
             {t("deleteEvent")}
           </button>
         )}
-      </div>
+      </InsetScrollArea>
     </div>
   );
 }

@@ -19,6 +19,8 @@ interface Props {
   monthKey: string;
   disabled?: boolean;
   onMonthStep: (delta: -1 | 1) => void;
+  /** Fired when the user starts dragging the month wheel. */
+  onInteractionStart?: () => void;
   /** Render a month panel. `index` is -1 | 0 | 1 relative to the selected month. */
   children: (index: -1 | 0 | 1, dims: { height: number; faded: boolean }) => ReactNode;
 }
@@ -28,7 +30,13 @@ interface Props {
  * Finger tracks 1:1, snaps with inertia, haptics on detent, adjacent months peek.
  * Avoids scroll-snap remount races that blanked the destination month.
  */
-export function MonthWheel({ monthKey, disabled, onMonthStep, children }: Props) {
+export function MonthWheel({
+  monthKey,
+  disabled,
+  onMonthStep,
+  onInteractionStart,
+  children,
+}: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewportH, setViewportH] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -48,6 +56,8 @@ export function MonthWheel({ monthKey, disabled, onMonthStep, children }: Props)
   const strideRef = useRef(0);
   const disabledRef = useRef(!!disabled);
   const onMonthStepRef = useRef(onMonthStep);
+  const onInteractionStartRef = useRef(onInteractionStart);
+  onInteractionStartRef.current = onInteractionStart;
 
   const itemH = Math.max(0, viewportH - PEEK_PX * 2);
   const stride = itemH + GAP_PX;
@@ -167,6 +177,7 @@ export function MonthWheel({ monthKey, disabled, onMonthStep, children }: Props)
       setAnimating(false);
       draggingRef.current = true;
       setDragging(true);
+      onInteractionStartRef.current?.();
       startYRef.current = t.clientY;
       startOffsetRef.current = offsetRef.current;
       lastYRef.current = t.clientY;

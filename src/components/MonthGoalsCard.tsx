@@ -19,11 +19,17 @@ import { hideKeyboard } from "@/lib/keyboard-avoidance";
 interface Props {
   monthKey: string;
   onMinimizedChange?: (minimized: boolean) => void;
+  /** Increment to force-minimize (calendar scroll / event editing). */
+  collapseSignal?: number;
 }
 
 type PromptState = { goalId: string } | null;
 
-export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
+export function MonthGoalsCard({
+  monthKey,
+  onMinimizedChange,
+  collapseSignal = 0,
+}: Props) {
   const { t } = useI18n();
   const [bundle, setBundle] = useState<MonthGoalsBundle>(() =>
     loadMonthGoals(monthKey)
@@ -31,9 +37,14 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
   const [prompt, setPrompt] = useState<PromptState>(null);
   const [draftText, setDraftText] = useState("");
   const [composing, setComposing] = useState(false);
+  /** When true, compose UI slides in from the right over the completed goal. */
+  const [slideCompose, setSlideCompose] = useState(false);
+  const [pageIndex, setPageIndex] = useState(0);
   const carouselRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLInputElement>(null);
   const focusDraftAfter = useRef(false);
+  const lastCollapse = useRef(0);
+  const slideFromGoalRef = useRef<MonthGoal | null>(null);
 
   useEffect(() => {
     const next = loadMonthGoals(monthKey);
@@ -41,7 +52,9 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
     onMinimizedChange?.(next.minimized);
     setPrompt(null);
     setComposing(false);
+    setSlideCompose(false);
     setDraftText("");
+    slideFromGoalRef.current = null;
   }, [monthKey, onMinimizedChange]);
 
   const persist = useCallback(
@@ -53,11 +66,23 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
     [monthKey, onMinimizedChange]
   );
 
+  // Auto-minimize when calendar scrolls or event sheets open.
+  useEffect(() => {
+    if (!collapseSignal || collapseSignal === lastCollapse.current) return;
+    lastCollapse.current = collapseSignal;
+    setBundle((prev) => {
+      if (prev.minimized) return prev;
+      const next = { ...prev, minimized: true };
+      saveMonthGoals(monthKey, next);
+      onMinimizedChange?.(true);
+      return next;
+    });
+  }, [collapseSignal, monthKey, onMinimizedChange]);
+
   const goals = bundle.goals;
   const completedCount = goals.filter((g) => g.completed).length;
   const active = goals.find((g) => !g.completed) ?? null;
   const showCarousel = goals.length >= 2 && !composing && !prompt;
-  // Empty month or explicit compose (+ / after complete→yes).
   const drafting = !prompt && (composing || goals.length === 0);
 
   useLayoutEffect(() => {
@@ -66,25 +91,40 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
     const target = idx >= 0 ? idx : Math.max(0, goals.length - 1);
     const el = carouselRef.current;
     el.scrollTo({ left: target * el.clientWidth, behavior: "auto" });
+    setPageIndex(target);
   }, [monthKey, showCarousel, goals]);
 
   useEffect(() => {
     if (!focusDraftAfter.current) return;
     focusDraftAfter.current = false;
-    requestAnimationFrame(() => draftRef.current?.focus());
-  }, [composing, drafting]);
+    // Wait for slide animation to settle a bit.
+    const t = window.setTimeout(() => draftRef.current?.focus(), 220);
+    return () => clearTimeout(t);
+  }, [composing, drafting, slideCompose]);
 
-  const startCompose = () => {
+  const startCompose = (fromGoal?: MonthGoal | null) => {
+    slideFromGoalRef.current = fromGoal ?? null;
     setComposing(true);
     setDraftText("");
     focusDraftAfter.current = true;
     if (bundle.minimized) persist({ ...bundle, minimized: false });
+    if (fromGoal) {
+      // Paint at 0%, then slide to show the draft input from the right.
+      setSlideCompose(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setSlideCompose(true));
+      });
+    } else {
+      setSlideCompose(false);
+    }
   };
 
   const commitDraft = () => {
     const text = draftText.trim();
     if (!text) {
       setComposing(false);
+      setSlideCompose(false);
+      slideFromGoalRef.current = null;
       void hideKeyboard();
       return;
     }
@@ -100,6 +140,8 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
       minimized: false,
     });
     setComposing(false);
+    setSlideCompose(false);
+    slideFromGoalRef.current = null;
     setDraftText("");
     void hideKeyboard();
   };
@@ -117,9 +159,10 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
         ? { ...g, completed: true, completedAt: now }
         : g
     );
+    const justDone = marked.find((g) => g.id === prompt.goalId) ?? null;
     persist({ ...bundle, goals: marked, minimized: false });
     setPrompt(null);
-    if (setNew) startCompose();
+    if (setNew) startCompose(justDone);
   };
 
   const updateGoalText = (id: string, text: string) => {
@@ -131,6 +174,13 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
 
   const toggleMinimized = () => {
     persist({ ...bundle, minimized: !bundle.minimized });
+  };
+
+  const onCarouselScroll = () => {
+    const el = carouselRef.current;
+    if (!el || el.clientWidth <= 0) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    setPageIndex(Math.max(0, Math.min(goals.length - 1, idx)));
   };
 
   if (bundle.minimized) {
@@ -198,7 +248,7 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
         {opts?.showPlus && done && (
           <button
             type="button"
-            onClick={startCompose}
+            onClick={() => startCompose(goal)}
             aria-label={t("add")}
             className="flex-shrink-0 w-9 h-9 rounded-full bg-accent text-accent-foreground flex items-center justify-center touch-manipulation"
           >
@@ -208,6 +258,38 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
       </div>
     );
   };
+
+  const draftRow = (
+    <div className="flex items-center gap-2.5 min-h-[40px]">
+      <span className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
+        <span className="w-6 h-6 rounded-full border-2 border-muted-foreground/30" />
+      </span>
+      <input
+        ref={draftRef}
+        value={draftText}
+        onChange={(e) => setDraftText(e.target.value)}
+        onBlur={() => {
+          if (draftText.trim()) commitDraft();
+          else if (goals.length > 0) {
+            setComposing(false);
+            setSlideCompose(false);
+            slideFromGoalRef.current = null;
+          }
+        }}
+        enterKeyHint="done"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commitDraft();
+          }
+        }}
+        placeholder={t("monthGoalPlaceholder")}
+        className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+      />
+    </div>
+  );
+
+  const fromGoal = slideFromGoalRef.current;
 
   return (
     <div className="w-full h-full rounded-2xl bg-card/95 backdrop-blur-sm shadow-card border border-border/50 flex flex-col overflow-hidden">
@@ -223,9 +305,9 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 px-3.5 pb-2 flex flex-col justify-center">
+      <div className="flex-1 min-h-0 px-3.5 pb-2.5 flex flex-col justify-center">
         {prompt ? (
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <p className="text-sm font-medium text-center leading-snug">
               {t("setNewGoalPrompt")}
             </p>
@@ -233,56 +315,64 @@ export function MonthGoalsCard({ monthKey, onMinimizedChange }: Props) {
               <button
                 type="button"
                 onClick={() => confirmComplete(true)}
-                className="flex-1 rounded-xl bg-accent text-accent-foreground text-sm font-medium py-2"
+                className="flex-1 rounded-xl bg-accent text-accent-foreground text-sm font-medium py-2.5"
               >
                 {t("yes")}
               </button>
               <button
                 type="button"
                 onClick={() => confirmComplete(false)}
-                className="flex-1 rounded-xl bg-secondary text-foreground text-sm font-medium py-2"
+                className="flex-1 rounded-xl bg-secondary text-foreground text-sm font-medium py-2.5"
               >
                 {t("no")}
               </button>
             </div>
           </div>
-        ) : drafting ? (
-          <div className="flex items-center gap-2.5">
-            <span className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
-              <span className="w-6 h-6 rounded-full border-2 border-muted-foreground/30" />
-            </span>
-            <input
-              ref={draftRef}
-              value={draftText}
-              onChange={(e) => setDraftText(e.target.value)}
-              onBlur={() => {
-                if (draftText.trim()) commitDraft();
-                else if (goals.length > 0) setComposing(false);
+        ) : drafting && fromGoal ? (
+          <div className="overflow-hidden w-full">
+            <div
+              className="flex w-[200%] transition-transform duration-300 ease-out"
+              style={{
+                transform: slideCompose ? "translateX(-50%)" : "translateX(0%)",
               }}
-              enterKeyHint="done"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  commitDraft();
-                }
-              }}
-              placeholder={t("monthGoalPlaceholder")}
-              className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
-            />
-          </div>
-        ) : showCarousel ? (
-          <div
-            ref={carouselRef}
-            className="flex overflow-x-auto snap-x snap-mandatory scrollbar-none h-full items-center"
-            style={{ WebkitOverflowScrolling: "touch" }}
-          >
-            {goals.map((g) => (
-              <div key={g.id} className="w-full shrink-0 snap-center">
-                {renderGoalRow(g, {
-                  showPlus: g.completed && !goals.some((x) => !x.completed),
-                })}
+            >
+              <div className="w-1/2 shrink-0 pr-1">
+                {renderGoalRow(fromGoal, { showPlus: true })}
               </div>
-            ))}
+              <div className="w-1/2 shrink-0 pl-1">{draftRow}</div>
+            </div>
+          </div>
+        ) : drafting ? (
+          draftRow
+        ) : showCarousel ? (
+          <div className="flex flex-col gap-1.5 min-h-0">
+            <div
+              ref={carouselRef}
+              onScroll={onCarouselScroll}
+              className="flex overflow-x-auto snap-x snap-mandatory scrollbar-none min-h-[40px] items-center"
+              style={{ WebkitOverflowScrolling: "touch" }}
+            >
+              {goals.map((g) => (
+                <div key={g.id} className="w-full shrink-0 snap-center">
+                  {renderGoalRow(g, {
+                    showPlus: g.completed && !goals.some((x) => !x.completed),
+                  })}
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-center gap-1.5 pb-0.5">
+              {goals.map((g, i) => (
+                <span
+                  key={g.id}
+                  className={cn(
+                    "h-1.5 rounded-full transition-all",
+                    i === pageIndex
+                      ? "w-3.5 bg-accent"
+                      : "w-1.5 bg-muted-foreground/30"
+                  )}
+                />
+              ))}
+            </div>
           </div>
         ) : active ? (
           renderGoalRow(active)
