@@ -4,6 +4,7 @@ import { getDay, startOfMonth } from "date-fns";
 import { EventSheet, type EventSheetTarget } from "@/components/EventSheet";
 import { DayEventsSheet } from "@/components/DayEventsSheet";
 import { FabButton } from "@/components/FabButton";
+import { MonthGoalsCard } from "@/components/MonthGoalsCard";
 import { MonthWheel } from "@/components/MonthWheel";
 import {
   loadEvents,
@@ -12,6 +13,7 @@ import {
   colorHslFor,
   type CalendarEvent,
 } from "@/lib/events-store";
+import { monthKeyFromDate } from "@/lib/month-goals";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -170,10 +172,15 @@ export default function CalendarPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDate, setModalDate] = useState<string>(todayKey());
+  const [goalsMinimized, setGoalsMinimized] = useState(false);
 
   const refreshEvents = () => setEvents(loadEvents());
   useEffect(() => {
     refreshEvents();
+  }, []);
+
+  const onGoalsMinimizedChange = useCallback((m: boolean) => {
+    setGoalsMinimized(m);
   }, []);
 
   const overlayOpen = daySheetOpen || sheetOpen || modalOpen;
@@ -288,7 +295,7 @@ export default function CalendarPage() {
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 px-3 pb-1">
+      <div className="relative flex-1 min-h-0 px-3 pb-1">
         <MonthWheel
           monthKey={monthKeyOf(viewDate)}
           disabled={overlayOpen}
@@ -309,6 +316,24 @@ export default function CalendarPage() {
             );
           }}
         </MonthWheel>
+
+        {/* Overlays the calendar top (~1/7 height); does not push the grid down. */}
+        <div
+          className="absolute top-0 left-3 right-3 z-20 pointer-events-none"
+          style={goalsMinimized ? undefined : { height: "14.2857%" }}
+        >
+          <div
+            className={cn(
+              "pointer-events-auto",
+              !goalsMinimized && "h-full"
+            )}
+          >
+            <MonthGoalsCard
+              monthKey={monthKeyFromDate(viewDate)}
+              onMinimizedChange={onGoalsMinimizedChange}
+            />
+          </div>
+        </div>
       </div>
 
       <FabButton

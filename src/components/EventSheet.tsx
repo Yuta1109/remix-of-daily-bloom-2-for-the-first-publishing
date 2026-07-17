@@ -33,7 +33,6 @@ import {
 } from "@/lib/notifications";
 import { refreshLiveActivities, isLiveActivitySupported } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
-import { InsetScrollArea } from "@/components/InsetScrollArea";
 import { hideKeyboard, onDoneKey } from "@/lib/keyboard-avoidance";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { cn } from "@/lib/utils";
@@ -166,8 +165,8 @@ function FormBody({
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden" data-kb-ignore>
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0">
+      {/* Fixed header — does not scroll */}
+      <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0 border-b border-border/40">
         <button
           type="button"
           onClick={onClose}
@@ -191,11 +190,14 @@ function FormBody({
         </button>
       </div>
 
-      {/* Scrollable body — keyboard lift disabled; vaulNoDrag keeps drawer scroll working. */}
-      <InsetScrollArea
-        contentClassName="px-4 pt-2 pb-6 space-y-3"
-        inset={16}
-        vaulNoDrag
+      {/* Embedded scroll region: title and everything below.
+          Pointer stopPropagation keeps vaul drawer drag off this surface;
+          touch-action:pan-y (CSS) lets the body scroll without fighting the sheet. */}
+      <div
+        className="event-sheet-scroll min-h-0 overflow-y-scroll overscroll-contain px-4 pt-3 pb-6 space-y-3"
+        style={{ flex: "1 1 0%" }}
+        data-vaul-no-drag=""
+        onPointerDown={(e) => e.stopPropagation()}
       >
         {/* Title + color */}
         <div className="bg-card rounded-2xl p-4 shadow-soft">
@@ -452,7 +454,7 @@ function FormBody({
             {t("deleteEvent")}
           </button>
         )}
-      </InsetScrollArea>
+      </div>
     </div>
   );
 }
@@ -572,7 +574,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
           className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
           onClick={() => onOpenChange(false)}
         />
-        <div className="relative bg-background rounded-3xl w-full max-w-md max-h-[88dvh] min-h-0 flex flex-col overflow-hidden shadow-float z-10">
+        <div
+          className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
+          style={{ maxHeight: "88dvh" }}
+        >
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
           <FormBody {...formBodyProps} />
         </div>
@@ -583,16 +588,25 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
 
   /* ── Drawer variant ─────────────────────────────────────────────────── */
   return (
-    <DrawerPrimitive.Root open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
+    <DrawerPrimitive.Root
+      open={open}
+      onOpenChange={onOpenChange}
+      shouldScaleBackground={false}
+      // Drag-to-dismiss from the handle area only — body scroll must not fight the sheet.
+      dismissible
+    >
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
           className={cn(
             "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
-            "max-h-[88dvh] min-h-0 overflow-hidden outline-none"
+            "min-h-0 overflow-hidden outline-none"
           )}
+          style={{ maxHeight: "88dvh" }}
+          onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-muted shrink-0" />
+          {/* Drag handle — sheet resize / dismiss gesture lives here */}
+          <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
           <FormBody {...formBodyProps} />
         </DrawerPrimitive.Content>
       </DrawerPrimitive.Portal>

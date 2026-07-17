@@ -187,6 +187,13 @@ html.overlay-open #root {
   scrollbar-width: none;
 }
 
+/* Event sheet body: reliable nested scroll inside modal / vaul drawer. */
+.event-sheet-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
 /* ── Animations ─────────────────────────────────────────────────────────── */
 
 @layer utilities {
