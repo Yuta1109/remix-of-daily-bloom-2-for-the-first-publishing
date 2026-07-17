@@ -16,21 +16,16 @@ interface Props {
   className?: string;
   contentClassName?: string;
   style?: CSSProperties;
-  /** Inset from the top of the track (rounded-corner clearance). */
-  insetTop?: number;
-  /** Inset from the bottom of the track (rounded-corner clearance). */
-  insetBottom?: number;
-  /** Shorthand: same inset on top and bottom. Overridden by insetTop/insetBottom. */
+  /** How far the scrollbar track is inset from top/bottom (matches rounded corners). */
   inset?: number;
-  /** When inside a vaul drawer, disable drawer drag so vertical scroll works. */
+  /** When inside a vaul drawer, keep vertical pans on this scroller. */
   vaulNoDrag?: boolean;
   scrollerProps?: HTMLAttributes<HTMLDivElement>;
 }
 
 /**
- * Custom scrollbar that stays inside rounded corners.
- * Native iOS overlay scrollbars ignore CSS track margins — this paints our own.
- * Content is wrapped so ResizeObserver always sees the full scroll height.
+ * Same design as Today's task list: custom thumb inset from rounded corners.
+ * Content is wrapped so height measurement stays accurate.
  */
 export function InsetScrollArea({
   children,
@@ -38,13 +33,9 @@ export function InsetScrollArea({
   contentClassName,
   style,
   inset = 16,
-  insetTop,
-  insetBottom,
   vaulNoDrag = false,
   scrollerProps,
 }: Props) {
-  const top = insetTop ?? inset;
-  const bottom = insetBottom ?? inset;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState({ top: 0, height: 0, visible: false });
@@ -57,13 +48,13 @@ export function InsetScrollArea({
       setThumb((t) => (t.visible ? { top: 0, height: 0, visible: false } : t));
       return;
     }
-    const track = Math.max(0, clientHeight - top - bottom);
-    const height = Math.max(20, (clientHeight / scrollHeight) * track);
+    const track = Math.max(0, clientHeight - inset * 2);
+    const height = Math.max(24, (clientHeight / scrollHeight) * track);
     const maxTop = Math.max(0, track - height);
     const range = scrollHeight - clientHeight;
-    const thumbTop = top + (range > 0 ? (scrollTop / range) * maxTop : 0);
-    setThumb({ top: thumbTop, height, visible: true });
-  }, [top, bottom]);
+    const top = inset + (range > 0 ? (scrollTop / range) * maxTop : 0);
+    setThumb({ top, height, visible: true });
+  }, [inset]);
 
   useLayoutEffect(() => {
     updateThumb();
@@ -73,12 +64,27 @@ export function InsetScrollArea({
     const el = scrollerRef.current;
     const content = contentRef.current;
     if (!el) return;
-    updateThumb();
     const ro = new ResizeObserver(() => updateThumb());
     ro.observe(el);
     if (content) ro.observe(content);
     return () => ro.disconnect();
   }, [updateThumb, children]);
+
+  // Non-passive touchmove so we can stopPropagation to vaul without blocking scroll.
+  useEffect(() => {
+    if (!vaulNoDrag) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const stop = (e: TouchEvent) => {
+      e.stopPropagation();
+    };
+    el.addEventListener("touchstart", stop, { passive: true });
+    el.addEventListener("touchmove", stop, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", stop);
+      el.removeEventListener("touchmove", stop);
+    };
+  }, [vaulNoDrag, children]);
 
   const onScroll = (e: UIEvent<HTMLDivElement>) => {
     updateThumb();
@@ -87,14 +93,14 @@ export function InsetScrollArea({
 
   const {
     className: scrollerClassName,
-    onScroll: _omitScroll,
+    onScroll: _omit,
     style: scrollerStyle,
     ...restScroller
   } = scrollerProps ?? {};
 
   return (
     <div
-      className={cn("relative min-h-0 flex-1 overflow-hidden", className)}
+      className={cn("relative min-h-0 flex-1 basis-0 overflow-hidden", className)}
       style={style}
     >
       <div
@@ -108,6 +114,7 @@ export function InsetScrollArea({
         )}
         style={{
           WebkitOverflowScrolling: "touch",
+          touchAction: "pan-y",
           ...scrollerStyle,
         }}
       >
@@ -118,7 +125,7 @@ export function InsetScrollArea({
       {thumb.visible && (
         <div
           aria-hidden
-          className="pointer-events-none absolute right-1.5 w-[3px] rounded-full bg-foreground/25"
+          className="pointer-events-none absolute right-1 w-[3px] rounded-full bg-muted-foreground/30"
           style={{ top: thumb.top, height: thumb.height }}
         />
       )}

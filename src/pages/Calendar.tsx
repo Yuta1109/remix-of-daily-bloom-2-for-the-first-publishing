@@ -330,10 +330,10 @@ export default function CalendarPage() {
           }}
         </MonthWheel>
 
-        {/* Overlays the calendar top (~13%); does not push the grid down. */}
+        {/* Overlays the calendar top (~15%); does not push the grid down. */}
         <div
           className="absolute top-0 left-3 right-3 z-20 pointer-events-none"
-          style={goalsMinimized ? undefined : { height: "13%" }}
+          style={goalsMinimized ? undefined : { height: "15%" }}
         >
           <div
             className={cn(
