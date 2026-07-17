@@ -33,7 +33,6 @@ import {
 } from "@/lib/notifications";
 import { refreshLiveActivities, isLiveActivitySupported } from "@/lib/live-activity";
 import { useI18n } from "@/lib/i18n";
-import { InsetScrollArea } from "@/components/InsetScrollArea";
 import { hideKeyboard, onDoneKey } from "@/lib/keyboard-avoidance";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { cn } from "@/lib/utils";
@@ -165,7 +164,7 @@ function FormBody({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 basis-0 overflow-hidden" data-kb-ignore>
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden" data-kb-ignore>
       {/* Fixed header — does not scroll */}
       <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0 border-b border-border/40">
         <button
@@ -191,16 +190,13 @@ function FormBody({
         </button>
       </div>
 
-      {/* Same InsetScrollArea as Today's tasks. Cap height so overflow always scrolls. */}
+      {/* Native overflow scroll (pre–scrollbar-inset experiments; scrolling worked here). */}
       <div
-        className="flex-1 min-h-0 basis-0 overflow-hidden"
-        style={{ maxHeight: "calc(88dvh - 4.5rem)" }}
+        className="event-sheet-scroll min-h-0 overflow-y-scroll overscroll-contain px-4 pt-3 pb-6 space-y-3"
+        style={{ flex: "1 1 0%" }}
+        data-vaul-no-drag=""
+        onPointerDown={(e) => e.stopPropagation()}
       >
-        <InsetScrollArea
-          contentClassName="px-4 pt-3 pb-6 space-y-3"
-          inset={16}
-          vaulNoDrag
-        >
         {/* Title + color */}
         <div className="bg-card rounded-2xl p-4 shadow-soft">
           <input
@@ -456,7 +452,6 @@ function FormBody({
             {t("deleteEvent")}
           </button>
         )}
-        </InsetScrollArea>
       </div>
     </div>
   );

@@ -25,6 +25,9 @@ interface Props {
 
 type PromptState = { goalId: string } | null;
 
+/** Trailing column width — always reserved once any goal history exists. */
+const TRAIL = "w-8";
+
 function PageDots({ count, active }: { count: number; active: number }) {
   if (count < 2) return null;
   return (
@@ -42,23 +45,29 @@ function PageDots({ count, active }: { count: number; active: number }) {
   );
 }
 
-/** Shared row chrome — reserves trailing slot so + appearing/disappearing won't shift text. */
 function GoalRowShell({
   leading,
   children,
+  reserveTrail,
   trailing,
 }: {
   leading: ReactNode;
   children: ReactNode;
+  /** Keep right column even when empty so rows don't shift. */
+  reserveTrail: boolean;
   trailing?: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2 min-h-[36px] w-full">
-      <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center">{leading}</div>
-      <div className="flex-1 min-w-0">{children}</div>
-      <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center">
-        {trailing ?? null}
+    <div className="flex items-center gap-2 min-h-[36px] w-full box-border">
+      <div className={cn("flex-shrink-0 h-8 flex items-center justify-center", TRAIL)}>
+        {leading}
       </div>
+      <div className="flex-1 min-w-0">{children}</div>
+      {reserveTrail && (
+        <div className={cn("flex-shrink-0 h-8 flex items-center justify-center", TRAIL)}>
+          {trailing ?? <span className="w-8 h-8" aria-hidden />}
+        </div>
+      )}
     </div>
   );
 }
@@ -75,14 +84,12 @@ export function MonthGoalsCard({
   const [prompt, setPrompt] = useState<PromptState>(null);
   const [draftText, setDraftText] = useState("");
   const [composing, setComposing] = useState(false);
-  /** Completed goal we're sliding away from (state — not a ref — so the draft UI stays mounted). */
   const [composeFrom, setComposeFrom] = useState<MonthGoal | null>(null);
   const [slideCompose, setSlideCompose] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const carouselRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLInputElement>(null);
   const focusDraftAfter = useRef(false);
-  const ignoreBlurUntil = useRef(0);
   const lastCollapse = useRef(0);
 
   useEffect(() => {
@@ -122,6 +129,9 @@ export function MonthGoalsCard({
   const active = goals.find((g) => !g.completed) ?? null;
   const showCarousel = goals.length >= 2 && !composing && !prompt;
   const drafting = !prompt && (composing || goals.length === 0);
+  /** Once there is any history, always reserve the + column (prevents Enter shift). */
+  const reserveTrail =
+    completedCount >= 1 || goals.length >= 2 || !!composeFrom || (composing && goals.length >= 1);
   const showPager =
     !prompt &&
     (goals.length >= 2 || (!!composeFrom && drafting && goals.length >= 1));
@@ -135,15 +145,14 @@ export function MonthGoalsCard({
     setPageIndex(target);
   }, [monthKey, showCarousel, goals]);
 
-  // Focus draft after the slide finishes (don't cancel on slideCompose flip).
   useEffect(() => {
     if (!composing || !focusDraftAfter.current) return;
+    // Wait until slide reveals the draft panel.
     if (composeFrom && !slideCompose) return;
     focusDraftAfter.current = false;
-    ignoreBlurUntil.current = Date.now() + 400;
     const id = window.setTimeout(() => {
       draftRef.current?.focus({ preventScroll: true });
-    }, composeFrom ? 280 : 40);
+    }, composeFrom ? 320 : 50);
     return () => clearTimeout(id);
   }, [composing, composeFrom, slideCompose]);
 
@@ -152,7 +161,6 @@ export function MonthGoalsCard({
     setComposing(true);
     setDraftText("");
     focusDraftAfter.current = true;
-    ignoreBlurUntil.current = Date.now() + 500;
     if (bundle.minimized) persist({ ...bundle, minimized: false });
     if (from) {
       setSlideCompose(false);
@@ -168,6 +176,7 @@ export function MonthGoalsCard({
   const commitDraft = () => {
     const text = draftText.trim();
     if (!text) {
+      // Empty Enter / dismiss: leave compose without shifting layout quirks.
       setComposing(false);
       setSlideCompose(false);
       setComposeFrom(null);
@@ -257,7 +266,7 @@ export function MonthGoalsCard({
     >
       <span
         className={cn(
-          "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
+          "w-5 h-5 rounded-full border-2 flex items-center justify-center",
           done ? "bg-accent border-accent" : "border-muted-foreground/30"
         )}
       >
@@ -268,64 +277,51 @@ export function MonthGoalsCard({
     </button>
   );
 
-  const renderGoalRow = (goal: MonthGoal, opts?: { showPlus?: boolean }) => {
-    const done = goal.completed;
-    const reservePlus = completedCount >= 1 || !!opts?.showPlus;
-    return (
-      <GoalRowShell
-        leading={checkbox(done, done ? undefined : () => onCheckActive(goal))}
-        trailing={
-          reservePlus ? (
-            opts?.showPlus && done ? (
-              <button
-                type="button"
-                onClick={() => startCompose(goal)}
-                aria-label={t("add")}
-                className="w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center touch-manipulation"
-              >
-                <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-              </button>
-            ) : (
-              <span className="w-8 h-8" aria-hidden />
-            )
-          ) : undefined
-        }
-      >
-        {done ? (
-          <p className="text-sm line-through text-muted-foreground truncate">
-            {goal.text}
-          </p>
-        ) : (
-          <input
-            value={goal.text}
-            onChange={(e) => updateGoalText(goal.id, e.target.value)}
-            placeholder={t("monthGoalPlaceholder")}
-            enterKeyHint="done"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void hideKeyboard();
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
-          />
-        )}
-      </GoalRowShell>
-    );
-  };
+  const renderGoalRow = (goal: MonthGoal, opts?: { showPlus?: boolean }) => (
+    <GoalRowShell
+      reserveTrail={reserveTrail}
+      leading={checkbox(goal.completed, goal.completed ? undefined : () => onCheckActive(goal))}
+      trailing={
+        opts?.showPlus && goal.completed ? (
+          <button
+            type="button"
+            onClick={() => startCompose(goal)}
+            aria-label={t("add")}
+            className="w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center touch-manipulation"
+          >
+            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+          </button>
+        ) : undefined
+      }
+    >
+      {goal.completed ? (
+        <p className="text-sm line-through text-muted-foreground truncate">{goal.text}</p>
+      ) : (
+        <input
+          value={goal.text}
+          onChange={(e) => updateGoalText(goal.id, e.target.value)}
+          placeholder={t("monthGoalPlaceholder")}
+          enterKeyHint="done"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void hideKeyboard();
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+        />
+      )}
+    </GoalRowShell>
+  );
 
   const draftRow = (
     <GoalRowShell
+      reserveTrail={reserveTrail}
       leading={
         <span className="w-8 h-8 flex items-center justify-center">
           <span className="w-5 h-5 rounded-full border-2 border-muted-foreground/30" />
         </span>
-      }
-      trailing={
-        completedCount >= 1 || composeFrom ? (
-          <span className="w-8 h-8" aria-hidden />
-        ) : undefined
       }
     >
       <input
@@ -333,13 +329,9 @@ export function MonthGoalsCard({
         value={draftText}
         onChange={(e) => setDraftText(e.target.value)}
         onBlur={() => {
-          if (Date.now() < ignoreBlurUntil.current) return;
+          // Do NOT cancel empty compose on blur — iOS fires blur when the keyboard
+          // opens, which previously unmounted the draft (invisible checkbox/field).
           if (draftText.trim()) commitDraft();
-          else if (goals.length > 0) {
-            setComposing(false);
-            setSlideCompose(false);
-            setComposeFrom(null);
-          }
         }}
         enterKeyHint="done"
         onKeyDown={(e) => {
@@ -356,7 +348,7 @@ export function MonthGoalsCard({
 
   const body = (
     <div className="flex-1 min-h-0 flex flex-col justify-start gap-1 pt-0.5">
-      <div className="min-h-[36px] flex flex-col justify-center">
+      <div className="min-h-[36px] relative overflow-hidden">
         {prompt ? (
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-center leading-snug">
@@ -380,17 +372,25 @@ export function MonthGoalsCard({
             </div>
           </div>
         ) : drafting && composeFrom ? (
-          <div className="overflow-hidden w-full">
+          // Full-width panels (not w-1/2 of a 200% flex) — avoids clipped/invisible draft.
+          <div className="relative w-full min-h-[36px]">
             <div
-              className="flex w-[200%] transition-transform duration-300 ease-out"
-              style={{
-                transform: slideCompose ? "translateX(-50%)" : "translateX(0%)",
-              }}
+              className={cn(
+                "w-full transition-transform duration-300 ease-out",
+                slideCompose ? "-translate-x-full absolute inset-x-0 top-0" : "relative"
+              )}
             >
-              <div className="w-1/2 shrink-0 pr-1">
-                {renderGoalRow(composeFrom, { showPlus: true })}
-              </div>
-              <div className="w-1/2 shrink-0 pl-1">{draftRow}</div>
+              {renderGoalRow(composeFrom, { showPlus: true })}
+            </div>
+            <div
+              className={cn(
+                "w-full transition-transform duration-300 ease-out",
+                slideCompose
+                  ? "relative translate-x-0"
+                  : "absolute inset-x-0 top-0 translate-x-full"
+              )}
+            >
+              {draftRow}
             </div>
           </div>
         ) : drafting ? (
@@ -424,10 +424,7 @@ export function MonthGoalsCard({
             drafting && composeFrom
               ? slideCompose
                 ? goals.length
-                : Math.max(
-                    0,
-                    goals.findIndex((g) => g.id === composeFrom.id)
-                  )
+                : Math.max(0, goals.findIndex((g) => g.id === composeFrom.id))
               : pageIndex
           }
         />
