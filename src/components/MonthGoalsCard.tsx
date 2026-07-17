@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import {
   loadMonthGoals,
+  monthGoalsHeading,
   saveMonthGoals,
   type MonthGoal,
   type MonthGoalsBundle,
@@ -77,7 +78,13 @@ export function MonthGoalsCard({
   onMinimizedChange,
   collapseSignal = 0,
 }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const title = monthGoalsHeading(monthKey, locale, {
+    this: t("monthGoalsThis"),
+    next: t("monthGoalsNext"),
+    last: t("monthGoalsLast"),
+    named: t("monthGoalsNamed"),
+  });
   const [bundle, setBundle] = useState<MonthGoalsBundle>(() =>
     loadMonthGoals(monthKey)
   );
@@ -246,7 +253,7 @@ export function MonthGoalsCard({
         className="w-full rounded-2xl bg-card/95 backdrop-blur-sm shadow-card border border-border/50 px-4 py-2.5 flex items-center justify-between gap-2 text-left"
       >
         <div className="min-w-0">
-          <p className="text-sm font-semibold">{t("monthGoals")}</p>
+          <p className="text-sm font-semibold">{title}</p>
           <p className="text-xs text-muted-foreground truncate">
             {t("goalsCompletedCount").replace("{n}", String(completedCount))}
           </p>
@@ -438,7 +445,7 @@ export function MonthGoalsCard({
       data-kb-ignore
     >
       <div className="flex items-center justify-between px-3 pt-1.5 pb-0.5 shrink-0">
-        <p className="text-sm font-semibold">{t("monthGoals")}</p>
+        <p className="text-sm font-semibold">{title}</p>
         <button
           type="button"
           onClick={toggleMinimized}
