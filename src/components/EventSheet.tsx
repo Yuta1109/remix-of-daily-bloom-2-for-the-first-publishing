@@ -194,10 +194,10 @@ function FormBody({
       {/* Embedded scroll region: title and everything below.
           Custom thumb inset at bottom so it clears the sheet's rounded corners. */}
       <InsetScrollArea
-        style={{ flex: "1 1 0%" }}
-        contentClassName="event-sheet-scroll px-4 pt-3 pb-6 space-y-3"
-        insetTop={12}
-        insetBottom={20}
+        style={{ flex: "1 1 0%", minHeight: 0 }}
+        contentClassName="event-sheet-scroll px-4 pt-3 pb-8 space-y-3"
+        insetTop={10}
+        insetBottom={22}
         vaulNoDrag
         scrollerProps={{
           onPointerDown: (e) => e.stopPropagation(),

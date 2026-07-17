@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -17,7 +18,7 @@ interface Props {
   style?: CSSProperties;
   /** Inset from the top of the track (rounded-corner clearance). */
   insetTop?: number;
-  /** Inset from the bottom of the track (rounded-corner / home-indicator clearance). */
+  /** Inset from the bottom of the track (rounded-corner clearance). */
   insetBottom?: number;
   /** Shorthand: same inset on top and bottom. Overridden by insetTop/insetBottom. */
   inset?: number;
@@ -29,6 +30,7 @@ interface Props {
 /**
  * Custom scrollbar that stays inside rounded corners.
  * Native iOS overlay scrollbars ignore CSS track margins — this paints our own.
+ * Content is wrapped so ResizeObserver always sees the full scroll height.
  */
 export function InsetScrollArea({
   children,
@@ -44,6 +46,7 @@ export function InsetScrollArea({
   const top = insetTop ?? inset;
   const bottom = insetBottom ?? inset;
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState({ top: 0, height: 0, visible: false });
 
   const updateThumb = useCallback(() => {
@@ -55,20 +58,25 @@ export function InsetScrollArea({
       return;
     }
     const track = Math.max(0, clientHeight - top - bottom);
-    const height = Math.max(24, (clientHeight / scrollHeight) * track);
-    const maxTop = track - height;
-    const thumbTop =
-      top + (scrollTop / (scrollHeight - clientHeight)) * maxTop;
+    const height = Math.max(20, (clientHeight / scrollHeight) * track);
+    const maxTop = Math.max(0, track - height);
+    const range = scrollHeight - clientHeight;
+    const thumbTop = top + (range > 0 ? (scrollTop / range) * maxTop : 0);
     setThumb({ top: thumbTop, height, visible: true });
   }, [top, bottom]);
 
+  useLayoutEffect(() => {
+    updateThumb();
+  }, [updateThumb, children]);
+
   useEffect(() => {
     const el = scrollerRef.current;
+    const content = contentRef.current;
     if (!el) return;
     updateThumb();
-    const ro = new ResizeObserver(updateThumb);
+    const ro = new ResizeObserver(() => updateThumb());
     ro.observe(el);
-    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    if (content) ro.observe(content);
     return () => ro.disconnect();
   }, [updateThumb, children]);
 
@@ -93,10 +101,9 @@ export function InsetScrollArea({
         ref={scrollerRef}
         {...restScroller}
         onScroll={onScroll}
-        data-vaul-no-drag={vaulNoDrag ? true : undefined}
+        data-vaul-no-drag={vaulNoDrag ? "" : undefined}
         className={cn(
           "h-full min-h-0 overflow-y-auto overflow-x-hidden scrollbar-none overscroll-contain",
-          contentClassName,
           scrollerClassName
         )}
         style={{
@@ -104,12 +111,14 @@ export function InsetScrollArea({
           ...scrollerStyle,
         }}
       >
-        {children}
+        <div ref={contentRef} className={cn(contentClassName)}>
+          {children}
+        </div>
       </div>
       {thumb.visible && (
         <div
           aria-hidden
-          className="pointer-events-none absolute right-1 w-[3px] rounded-full bg-muted-foreground/30"
+          className="pointer-events-none absolute right-1.5 w-[3px] rounded-full bg-foreground/25"
           style={{ top: thumb.top, height: thumb.height }}
         />
       )}

@@ -5,6 +5,9 @@ import { type CalendarEvent, colorHslFor } from "@/lib/events-store";
 import { formatEventSchedule } from "@/lib/event-display";
 import { useI18n } from "@/lib/i18n";
 
+/** Approx. row height — scroll kicks in once the list would exceed ~7 events. */
+const EVENT_ROW_MAX = "min(52vh, 420px)";
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -34,14 +37,20 @@ export function DayEventsSheet({
     <DrawerPrimitive.Root open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
-        <DrawerPrimitive.Content className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background max-h-[65vh] min-h-0 overflow-hidden outline-none">
-          <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-muted shrink-0" />
+        <DrawerPrimitive.Content
+          className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background min-h-0 overflow-hidden outline-none"
+          style={{ maxHeight: "72vh" }}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
 
+          {/* Fixed header */}
           <div className="flex items-center justify-between px-5 pt-3 pb-3 border-b border-border/50 shrink-0">
             <DrawerPrimitive.Title className="text-base font-semibold">
               {dateLabel}
             </DrawerPrimitive.Title>
             <button
+              type="button"
               onClick={onNewEvent}
               className="flex items-center gap-1.5 bg-accent text-accent-foreground rounded-xl px-3 py-1.5 text-sm font-medium hover:opacity-90 transition-opacity"
             >
@@ -50,10 +59,23 @@ export function DayEventsSheet({
             </button>
           </div>
 
-          <InsetScrollArea contentClassName="px-4 py-3" inset={16} vaulNoDrag>
-            {events.length > 0 ? (
-              <div className="space-y-2">
-                {events.map((ev) => (
+          {/* Scrollable list only; caps around ~7 rows then scrolls. */}
+          <div
+            className="min-h-0 flex flex-col"
+            style={{ maxHeight: EVENT_ROW_MAX }}
+          >
+            <InsetScrollArea
+              style={{ flex: "1 1 auto", minHeight: 0, maxHeight: EVENT_ROW_MAX }}
+              contentClassName="px-4 py-3 space-y-2"
+              insetTop={10}
+              insetBottom={18}
+              vaulNoDrag
+              scrollerProps={{
+                onPointerDown: (e) => e.stopPropagation(),
+              }}
+            >
+              {events.length > 0 ? (
+                events.map((ev) => (
                   <button
                     key={ev.id}
                     type="button"
@@ -88,16 +110,16 @@ export function DayEventsSheet({
                       )}
                     </div>
                   </button>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <p className="text-sm font-medium">{t("noEventsOnDay")}</p>
-                <p className="text-xs opacity-60 mt-1">{t("tapToAdd")}</p>
-              </div>
-            )}
-            <div className="h-4" />
-          </InsetScrollArea>
+                ))
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p className="text-sm font-medium">{t("noEventsOnDay")}</p>
+                  <p className="text-xs opacity-60 mt-1">{t("tapToAdd")}</p>
+                </div>
+              )}
+              <div className="h-2" />
+            </InsetScrollArea>
+          </div>
         </DrawerPrimitive.Content>
       </DrawerPrimitive.Portal>
     </DrawerPrimitive.Root>

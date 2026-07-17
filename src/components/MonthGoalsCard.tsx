@@ -19,11 +19,34 @@ import { hideKeyboard } from "@/lib/keyboard-avoidance";
 interface Props {
   monthKey: string;
   onMinimizedChange?: (minimized: boolean) => void;
-  /** Increment to force-minimize (calendar scroll / event editing). */
+  /** Increment to force-minimize (calendar scroll / event sheets). */
   collapseSignal?: number;
 }
 
 type PromptState = { goalId: string } | null;
+
+function PageDots({
+  count,
+  active,
+}: {
+  count: number;
+  active: number;
+}) {
+  if (count < 2) return null;
+  return (
+    <div className="flex items-center justify-center gap-1.5 h-3 shrink-0">
+      {Array.from({ length: count }, (_, i) => (
+        <span
+          key={i}
+          className={cn(
+            "h-1.5 rounded-full transition-all",
+            i === active ? "w-3.5 bg-accent" : "w-1.5 bg-muted-foreground/30"
+          )}
+        />
+      ))}
+    </div>
+  );
+}
 
 export function MonthGoalsCard({
   monthKey,
@@ -37,7 +60,6 @@ export function MonthGoalsCard({
   const [prompt, setPrompt] = useState<PromptState>(null);
   const [draftText, setDraftText] = useState("");
   const [composing, setComposing] = useState(false);
-  /** When true, compose UI slides in from the right over the completed goal. */
   const [slideCompose, setSlideCompose] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -66,7 +88,6 @@ export function MonthGoalsCard({
     [monthKey, onMinimizedChange]
   );
 
-  // Auto-minimize when calendar scrolls or event sheets open.
   useEffect(() => {
     if (!collapseSignal || collapseSignal === lastCollapse.current) return;
     lastCollapse.current = collapseSignal;
@@ -84,6 +105,10 @@ export function MonthGoalsCard({
   const active = goals.find((g) => !g.completed) ?? null;
   const showCarousel = goals.length >= 2 && !composing && !prompt;
   const drafting = !prompt && (composing || goals.length === 0);
+  const fromGoal = slideFromGoalRef.current;
+  /** Page control when 2+ goals, or while sliding in a new goal after history. */
+  const showPager =
+    !prompt && (goals.length >= 2 || (!!fromGoal && drafting && goals.length >= 1));
 
   useLayoutEffect(() => {
     if (!showCarousel || !carouselRef.current) return;
@@ -97,20 +122,19 @@ export function MonthGoalsCard({
   useEffect(() => {
     if (!focusDraftAfter.current) return;
     focusDraftAfter.current = false;
-    // Wait for slide animation to settle a bit.
     const t = window.setTimeout(() => draftRef.current?.focus(), 220);
     return () => clearTimeout(t);
   }, [composing, drafting, slideCompose]);
 
-  const startCompose = (fromGoal?: MonthGoal | null) => {
-    slideFromGoalRef.current = fromGoal ?? null;
+  const startCompose = (from?: MonthGoal | null) => {
+    slideFromGoalRef.current = from ?? null;
     setComposing(true);
     setDraftText("");
     focusDraftAfter.current = true;
     if (bundle.minimized) persist({ ...bundle, minimized: false });
-    if (fromGoal) {
-      // Paint at 0%, then slide to show the draft input from the right.
+    if (from) {
       setSlideCompose(false);
+      setPageIndex(goals.length); // new page after existing goals
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setSlideCompose(true));
       });
@@ -204,22 +228,22 @@ export function MonthGoalsCard({
   const renderGoalRow = (goal: MonthGoal, opts?: { showPlus?: boolean }) => {
     const done = goal.completed;
     return (
-      <div className="flex items-center gap-2.5 min-h-[40px]">
+      <div className="flex items-center gap-2 min-h-[36px]">
         <button
           type="button"
           disabled={done}
           onClick={() => onCheckActive(goal)}
           aria-label={done ? "Completed" : "Mark complete"}
-          className="flex-shrink-0 w-9 h-9 flex items-center justify-center touch-manipulation"
+          className="flex-shrink-0 w-8 h-8 flex items-center justify-center touch-manipulation"
         >
           <span
             className={cn(
-              "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
+              "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors",
               done ? "bg-accent border-accent" : "border-muted-foreground/30"
             )}
           >
             {done && (
-              <Check className="w-3.5 h-3.5 text-accent-foreground" strokeWidth={3} />
+              <Check className="w-3 h-3 text-accent-foreground" strokeWidth={3} />
             )}
           </span>
         </button>
@@ -250,9 +274,9 @@ export function MonthGoalsCard({
             type="button"
             onClick={() => startCompose(goal)}
             aria-label={t("add")}
-            className="flex-shrink-0 w-9 h-9 rounded-full bg-accent text-accent-foreground flex items-center justify-center touch-manipulation"
+            className="flex-shrink-0 w-8 h-8 rounded-full bg-accent text-accent-foreground flex items-center justify-center touch-manipulation"
           >
-            <Plus className="w-4 h-4" strokeWidth={2.5} />
+            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
           </button>
         )}
       </div>
@@ -260,9 +284,9 @@ export function MonthGoalsCard({
   };
 
   const draftRow = (
-    <div className="flex items-center gap-2.5 min-h-[40px]">
-      <span className="flex-shrink-0 w-9 h-9 flex items-center justify-center">
-        <span className="w-6 h-6 rounded-full border-2 border-muted-foreground/30" />
+    <div className="flex items-center gap-2 min-h-[36px]">
+      <span className="flex-shrink-0 w-8 h-8 flex items-center justify-center">
+        <span className="w-5 h-5 rounded-full border-2 border-muted-foreground/30" />
       </span>
       <input
         ref={draftRef}
@@ -289,40 +313,27 @@ export function MonthGoalsCard({
     </div>
   );
 
-  const fromGoal = slideFromGoalRef.current;
-
-  return (
-    <div className="w-full h-full rounded-2xl bg-card/95 backdrop-blur-sm shadow-card border border-border/50 flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-3.5 pt-2 pb-1 shrink-0">
-        <p className="text-sm font-semibold">{t("monthGoals")}</p>
-        <button
-          type="button"
-          onClick={toggleMinimized}
-          className="p-1.5 text-muted-foreground hover:text-foreground touch-manipulation"
-          aria-label="Minimize"
-        >
-          <ChevronUp className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="flex-1 min-h-0 px-3.5 pb-2.5 flex flex-col justify-center">
+  /** Fixed body layout so rows don't jump when focusing / paging. */
+  const body = (
+    <div className="flex-1 min-h-0 flex flex-col justify-start gap-1 pt-0.5">
+      <div className="min-h-[36px] flex flex-col justify-center">
         {prompt ? (
-          <div className="space-y-2.5">
-            <p className="text-sm font-medium text-center leading-snug">
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-center leading-snug">
               {t("setNewGoalPrompt")}
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               <button
                 type="button"
                 onClick={() => confirmComplete(true)}
-                className="flex-1 rounded-xl bg-accent text-accent-foreground text-sm font-medium py-2.5"
+                className="flex-1 rounded-lg bg-accent text-accent-foreground text-xs font-medium py-1.5"
               >
                 {t("yes")}
               </button>
               <button
                 type="button"
                 onClick={() => confirmComplete(false)}
-                className="flex-1 rounded-xl bg-secondary text-foreground text-sm font-medium py-2.5"
+                className="flex-1 rounded-lg bg-secondary text-foreground text-xs font-medium py-1.5"
               >
                 {t("no")}
               </button>
@@ -345,34 +356,19 @@ export function MonthGoalsCard({
         ) : drafting ? (
           draftRow
         ) : showCarousel ? (
-          <div className="flex flex-col gap-1.5 min-h-0">
-            <div
-              ref={carouselRef}
-              onScroll={onCarouselScroll}
-              className="flex overflow-x-auto snap-x snap-mandatory scrollbar-none min-h-[40px] items-center"
-              style={{ WebkitOverflowScrolling: "touch" }}
-            >
-              {goals.map((g) => (
-                <div key={g.id} className="w-full shrink-0 snap-center">
-                  {renderGoalRow(g, {
-                    showPlus: g.completed && !goals.some((x) => !x.completed),
-                  })}
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center justify-center gap-1.5 pb-0.5">
-              {goals.map((g, i) => (
-                <span
-                  key={g.id}
-                  className={cn(
-                    "h-1.5 rounded-full transition-all",
-                    i === pageIndex
-                      ? "w-3.5 bg-accent"
-                      : "w-1.5 bg-muted-foreground/30"
-                  )}
-                />
-              ))}
-            </div>
+          <div
+            ref={carouselRef}
+            onScroll={onCarouselScroll}
+            className="flex overflow-x-auto snap-x snap-mandatory scrollbar-none items-center"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
+            {goals.map((g) => (
+              <div key={g.id} className="w-full shrink-0 snap-center">
+                {renderGoalRow(g, {
+                  showPlus: g.completed && !goals.some((x) => !x.completed),
+                })}
+              </div>
+            ))}
           </div>
         ) : active ? (
           renderGoalRow(active)
@@ -380,6 +376,41 @@ export function MonthGoalsCard({
           renderGoalRow(goals[goals.length - 1], { showPlus: true })
         ) : null}
       </div>
+
+      {/* Same slot as carousel pager — keeps rows from shifting when editing. */}
+      {showPager && (
+        <PageDots
+          count={drafting && fromGoal ? goals.length + 1 : goals.length}
+          active={
+            drafting && fromGoal
+              ? slideCompose
+                ? goals.length
+                : Math.max(0, goals.findIndex((g) => g.id === fromGoal.id))
+              : pageIndex
+          }
+        />
+      )}
+    </div>
+  );
+
+  return (
+    <div
+      className="w-full h-full rounded-2xl bg-card/95 backdrop-blur-sm shadow-card border border-border/50 flex flex-col overflow-hidden"
+      data-kb-ignore
+    >
+      <div className="flex items-center justify-between px-3 pt-1.5 pb-0.5 shrink-0">
+        <p className="text-sm font-semibold">{t("monthGoals")}</p>
+        <button
+          type="button"
+          onClick={toggleMinimized}
+          className="p-1 text-muted-foreground hover:text-foreground touch-manipulation"
+          aria-label="Minimize"
+        >
+          <ChevronUp className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 px-3 pb-1.5 flex flex-col">{body}</div>
     </div>
   );
 }

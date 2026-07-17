@@ -58,6 +58,7 @@ export function MonthWheel({
   const onMonthStepRef = useRef(onMonthStep);
   const onInteractionStartRef = useRef(onInteractionStart);
   onInteractionStartRef.current = onInteractionStart;
+  const interactionNotifiedRef = useRef(false);
 
   const itemH = Math.max(0, viewportH - PEEK_PX * 2);
   const stride = itemH + GAP_PX;
@@ -177,7 +178,7 @@ export function MonthWheel({
       setAnimating(false);
       draggingRef.current = true;
       setDragging(true);
-      onInteractionStartRef.current?.();
+      interactionNotifiedRef.current = false;
       startYRef.current = t.clientY;
       startOffsetRef.current = offsetRef.current;
       lastYRef.current = t.clientY;
@@ -191,6 +192,15 @@ export function MonthWheel({
       const t = e.touches[0];
       if (!t) return;
       e.preventDefault();
+
+      // Only treat as "calendar scroll" after a real drag — taps must still open day sheets.
+      if (
+        !interactionNotifiedRef.current &&
+        Math.abs(t.clientY - startYRef.current) > 10
+      ) {
+        interactionNotifiedRef.current = true;
+        onInteractionStartRef.current?.();
+      }
 
       const now = performance.now();
       const dy = t.clientY - lastYRef.current;
