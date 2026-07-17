@@ -8,7 +8,6 @@ import {
   upcomingOccurrenceStarts,
   type CalendarEvent,
 } from "./events-store";
-import { liveActivityWakeTimes } from "./live-activity";
 import { formatEventSchedule } from "./event-display";
 
 const MAX_SCHEDULED = 60;
@@ -89,29 +88,6 @@ function buildBody(e: CalendarEvent): string {
 interface ScheduledItem {
   at: Date;
   event: CalendarEvent;
-  kind: "reminder" | "liveActivityWake";
-}
-
-function currentLocale(): "en" | "ja" {
-  try {
-    const saved = localStorage.getItem("growth-app-lang");
-    if (saved === "ja" || saved === "en") return saved;
-  } catch {
-    /* ignore */
-  }
-  return (navigator.language || "en").startsWith("ja") ? "ja" : "en";
-}
-
-function buildLaWakeTitle(e: CalendarEvent): string {
-  const locale = currentLocale();
-  return locale === "ja" ? `予定：${e.title}` : `Event: ${e.title}`;
-}
-
-function buildLaWakeBody(): string {
-  const locale = currentLocale();
-  return locale === "ja"
-    ? "タップしてロック画面にカウントダウンを表示"
-    : "Tap to show the countdown on your Lock Screen";
 }
 
 export async function rescheduleAll(): Promise<void> {
@@ -143,15 +119,9 @@ export async function rescheduleAll(): Promise<void> {
         if (offset === null) continue;
         const at = new Date(start.getTime() - offset * 60_000);
         if (at.getTime() > now.getTime()) {
-          items.push({ at, event, kind: "reminder" });
+          items.push({ at, event });
         }
       }
-    }
-  }
-
-  if (Capacitor.getPlatform() === "ios") {
-    for (const { at, event } of liveActivityWakeTimes(now, HORIZON_DAYS)) {
-      items.push({ at, event, kind: "liveActivityWake" });
     }
   }
 
@@ -161,10 +131,10 @@ export async function rescheduleAll(): Promise<void> {
 
   let id = 1;
   await LocalNotifications.schedule({
-    notifications: slice.map(({ at, event, kind }) => ({
+    notifications: slice.map(({ at, event }) => ({
       id: id++,
-      title: kind === "liveActivityWake" ? buildLaWakeTitle(event) : buildTitle(event),
-      body: kind === "liveActivityWake" ? buildLaWakeBody() : buildBody(event),
+      title: buildTitle(event),
+      body: buildBody(event),
       schedule: { at, allowWhileIdle: true },
     })),
   });

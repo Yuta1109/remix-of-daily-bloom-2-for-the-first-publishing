@@ -1,12 +1,19 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import {
-  loadEvents,
-  liveActivityLeadMinutes,
-  upcomingOccurrenceStarts,
-  type CalendarEvent,
-} from "./events-store";
+import { collectLiveActivityWindows } from "./live-activity-window";
+import { loadEvents, upcomingOccurrenceStarts, effectiveLiveActivityLeadMinutes } from "./events-store";
 
-/** Up to this many events are shown inside a single Live Activity. */
+/**
+ * Live Activity design (ActivityKit / Apple HIG):
+ *
+ * - Minimum iOS 17.2 (ActivityKit push-to-start; no wake-notification fallback).
+ * - One shared Lock Screen + Dynamic Island activity (max 3 event rows).
+ * - If the user enables LA while already inside the lead window (e.g. lead=4h
+ *   but event is in 3h), we start **immediately** on save (and remote push
+ *   uses showAt=now). Future windows are scheduled for start − lead.
+ * - Target path: Firebase / APNs push-to-start when killed.
+ * - Active ≤ 8h; Lock Screen may linger ≤ 12h total.
+ */
+
 const MAX_ITEMS = 3;
 
 export interface LiveActivityItem {
@@ -19,12 +26,15 @@ export interface LiveActivityPayload {
   locale: "en" | "ja";
   items: LiveActivityItem[];
   overflow: number;
+  endEpochMs: number;
 }
 
 export interface LiveActivitiesPlugin {
   areEnabled(): Promise<{ enabled: boolean }>;
   startOrUpdate(payload: LiveActivityPayload): Promise<{ activityId: string | null }>;
   endAll(): Promise<void>;
+  /** Observe ActivityKit push-to-start token (iOS 17.2+). */
+  startPushToStartTokenUpdates(): Promise<void>;
 }
 
 export const LiveActivities = registerPlugin<LiveActivitiesPlugin>("LiveActivities");
@@ -44,25 +54,14 @@ function currentLocale(): "en" | "ja" {
 }
 
 function collectActiveItems(now: Date): LiveActivityItem[] {
-  const active: LiveActivityItem[] = [];
-
-  for (const event of loadEvents()) {
-    if (!event.liveActivity || event.allDay) continue;
-    const leadMin = liveActivityLeadMinutes(event.liveActivityLead);
-    const [next] = upcomingOccurrenceStarts(event, now, 14, 1);
-    if (!next) continue;
-    const windowStart = next.getTime() - leadMin * 60_000;
-    if (now.getTime() >= windowStart && now.getTime() < next.getTime()) {
-      active.push({
-        title: event.title,
-        startEpochMs: next.getTime(),
-        color: event.color || "blue",
-      });
-    }
-  }
-
-  active.sort((a, b) => a.startEpochMs - b.startEpochMs);
-  return active;
+  return collectLiveActivityWindows(now)
+    .filter((w) => w.activeNow)
+    .map((w) => ({
+      title: w.title,
+      startEpochMs: w.startEpochMs,
+      color: w.color,
+    }))
+    .sort((a, b) => a.startEpochMs - b.startEpochMs);
 }
 
 /** Milliseconds until the next Live Activity window opens or closes. */
@@ -72,11 +71,12 @@ export function msUntilNextLiveActivityBoundary(from = new Date()): number | nul
 
   for (const event of loadEvents()) {
     if (!event.liveActivity || event.allDay) continue;
-    const leadMin = liveActivityLeadMinutes(event.liveActivityLead);
+    const leadMin = effectiveLiveActivityLeadMinutes(event.liveActivityLead);
     const starts = upcomingOccurrenceStarts(event, from, 14, 5);
     for (const start of starts) {
-      const boundaries = [start.getTime() - leadMin * 60_000, start.getTime()];
-      for (const boundary of boundaries) {
+      const windowOpen = start.getTime() - leadMin * 60_000;
+      // Boundary at window open (may be in the past → skip) and at start.
+      for (const boundary of [windowOpen, start.getTime()]) {
         if (boundary > now) {
           nextMs = nextMs === null ? boundary : Math.min(nextMs, boundary);
         }
@@ -99,7 +99,6 @@ function scheduleNextBoundary(): void {
   }, ms);
 }
 
-/** Schedule start/end refreshes only (countdown runs natively in the widget). */
 export function scheduleLiveActivityBoundaries(): void {
   if (!isLiveActivitySupported()) return;
   scheduleNextBoundary();
@@ -111,8 +110,8 @@ export function stopLiveActivityBoundaries(): void {
 }
 
 /**
- * Starts/updates/end Live Activities for events in their lead window.
- * The widget uses SwiftUI `.timer` — no periodic JS updates for the countdown.
+ * Starts/updates/ends Live Activities for events already in their lead window.
+ * Called after save: if lead=4h and event is in 3h, starts immediately.
  */
 export async function refreshLiveActivities(): Promise<void> {
   if (!isLiveActivitySupported()) return;
@@ -139,12 +138,14 @@ export async function refreshLiveActivities(): Promise<void> {
 
   const items = active.slice(0, MAX_ITEMS);
   const overflow = active.length - items.length;
+  const endEpochMs = items[0]?.startEpochMs ?? now.getTime();
 
   try {
     await LiveActivities.startOrUpdate({
       locale: currentLocale(),
       items,
       overflow,
+      endEpochMs,
     });
   } catch (err) {
     console.warn("[LiveActivity] startOrUpdate failed:", err);
@@ -153,26 +154,4 @@ export async function refreshLiveActivities(): Promise<void> {
   scheduleNextBoundary();
 }
 
-/** Events with Live Activity enabled that are eligible for a wake notification. */
-export function liveActivityWakeTimes(
-  from: Date,
-  horizonDays = 14,
-): { at: Date; event: CalendarEvent }[] {
-  const results: { at: Date; event: CalendarEvent }[] = [];
-  const now = from.getTime();
-
-  for (const event of loadEvents()) {
-    if (!event.liveActivity || event.allDay) continue;
-    const leadMin = liveActivityLeadMinutes(event.liveActivityLead);
-    const starts = upcomingOccurrenceStarts(event, from, horizonDays, 10);
-    for (const start of starts) {
-      const at = new Date(start.getTime() - leadMin * 60_000);
-      if (at.getTime() > now) {
-        results.push({ at, event });
-      }
-    }
-  }
-
-  results.sort((a, b) => a.at.getTime() - b.at.getTime());
-  return results;
-}
+export { currentLocale };

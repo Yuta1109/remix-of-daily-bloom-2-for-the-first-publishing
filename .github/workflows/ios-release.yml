@@ -7,6 +7,8 @@ name: iOS Release (App Store / TestFlight)
 #   APP_STORE_CONNECT_ISSUER_ID    App Store Connect API issuer ID
 #   APP_STORE_CONNECT_PRIVATE_KEY  Contents of the AuthKey_XXXX.p8 file (paste as-is)
 #   APPLE_TEAM_ID                  Your 10-character Apple Developer Team ID
+#   GOOGLE_SERVICE_INFO_PLIST      Base64 of GoogleService-Info.plist (required)
+#   FIREBASE_WEB_CONFIG            JSON string for Vite Firebase web SDK (optional but needed for remote LA)
 #
 # Signing strategy:
 #   Archive WITHOUT code signing. Ephemeral CI runners + Automatic signing +
@@ -47,6 +49,8 @@ jobs:
         run: npm ci
 
       - name: Build web assets
+        env:
+          VITE_FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
         run: npm run build
 
       - name: Sync Capacitor iOS project
@@ -58,6 +62,18 @@ jobs:
       - name: Wire Live Activity widget extension
         working-directory: ios/App
         run: ruby ../scripts/setup_widget.rb
+
+      - name: Write GoogleService-Info.plist from secret
+        env:
+          PLIST_B64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -z "$PLIST_B64" ]; then
+            echo "GOOGLE_SERVICE_INFO_PLIST is required for release builds"
+            exit 1
+          fi
+          echo "$PLIST_B64" | base64 --decode > ios/App/App/GoogleService-Info.plist
+          grep -q "GOOGLE_APP_ID\|API_KEY\|GCM_SENDER_ID" ios/App/App/GoogleService-Info.plist \
+            || { echo "Decoded file does not look like GoogleService-Info.plist"; exit 1; }
 
       - name: Prepare App Store Connect API key
         env:

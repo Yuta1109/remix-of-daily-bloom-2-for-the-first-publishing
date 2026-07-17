@@ -9,11 +9,14 @@ import {
   scheduleLiveActivityBoundaries,
   stopLiveActivityBoundaries,
 } from "./live-activity";
+import { initLiveActivityRemote, syncLiveActivitySchedulesRemote } from "./la-remote";
+import { initFcmRegistration } from "./fcm";
 import { initKeyboardAvoidance } from "./keyboard-avoidance";
 
 function syncSchedules() {
   void rescheduleAll();
   void refreshLiveActivities();
+  void syncLiveActivitySchedulesRemote();
 }
 
 export async function initNative(): Promise<void> {
@@ -42,6 +45,8 @@ export async function initNative(): Promise<void> {
 
   syncSchedules();
   scheduleLiveActivityBoundaries();
+  void initLiveActivityRemote();
+  void initFcmRegistration();
 
   App.addListener("appStateChange", ({ isActive }) => {
     if (isActive) {

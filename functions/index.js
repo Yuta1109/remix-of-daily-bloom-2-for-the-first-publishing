@@ -1,0 +1,149 @@
+/**
+ * Essences Live Activity dispatcher (Firebase project: todolist-app-project-4fd37).
+ *
+ * Schedules use showAtEpochMs = max(start − lead, now). So if the user sets
+ * lead=4h while the event is only 3h away, status becomes "due" and we push
+ * immediately (and the app also starts locally while foregrounded).
+ *
+ * Deploy (Blaze plan required for scheduled functions):
+ *   cd functions && npm i && firebase deploy --only functions,firestore
+ */
+
+import { initializeApp } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getMessaging } from "firebase-admin/messaging";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import { setGlobalOptions } from "firebase-functions/v2/options";
+import { logger } from "firebase-functions";
+
+initializeApp();
+setGlobalOptions({ region: "asia-northeast1" });
+
+const db = getFirestore();
+const messaging = getMessaging();
+
+const ATTRIBUTES_TYPE = "EssencesWidgetAttributes";
+
+async function sendStartForSchedule(scheduleId, data) {
+  const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
+  if (!deviceSnap.exists) {
+    logger.warn("No device doc", data.deviceId);
+    return false;
+  }
+  const device = deviceSnap.data() || {};
+  const fcmToken = device.fcmToken;
+  const liveToken = device.pushToStartToken;
+  if (!fcmToken || !liveToken) {
+    logger.warn("Missing tokens for device", data.deviceId, {
+      hasFcm: !!fcmToken,
+      hasLive: !!liveToken,
+    });
+    return false;
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const staleSec = Math.floor(Number(data.endAtEpochMs) / 1000);
+
+  const contentState = {
+    items: [
+      {
+        title: data.title || "",
+        startEpochMs: Number(data.startEpochMs),
+        color: data.color || "blue",
+      },
+    ],
+    overflow: 0,
+    locale: data.locale || "ja",
+  };
+
+  try {
+    await messaging.send({
+      token: fcmToken,
+      apns: {
+        liveActivityToken: liveToken,
+        headers: {
+          "apns-push-type": "liveactivity",
+          "apns-topic": "com.confast.essences.push-type.liveactivity",
+          "apns-priority": "10",
+        },
+        payload: {
+          aps: {
+            timestamp: nowSec,
+            event: "start",
+            "content-state": contentState,
+            "attributes-type": ATTRIBUTES_TYPE,
+            attributes: { name: "Essences" },
+            "stale-date": staleSec,
+            alert: {
+              title: data.locale === "en" ? "Upcoming" : "まもなくの予定",
+              body: data.title || "",
+            },
+          },
+        },
+      },
+    });
+    await db.collection("laSchedules").doc(scheduleId).update({
+      status: "started",
+      startedAt: Date.now(),
+      lastError: FieldValue.delete(),
+    });
+    return true;
+  } catch (err) {
+    logger.error("FCM live activity start failed", err);
+    await db.collection("laSchedules").doc(scheduleId).update({
+      lastError: String(err?.message || err),
+      status: "error",
+    });
+    return false;
+  }
+}
+
+async function dispatchDue(limit = 40) {
+  const now = Date.now();
+  // Keep the query simple (one equality + one inequality) to avoid composite indexes.
+  const pending = await db
+    .collection("laSchedules")
+    .where("status", "==", "pending")
+    .where("showAtEpochMs", "<=", now)
+    .limit(limit)
+    .get();
+  const due = await db
+    .collection("laSchedules")
+    .where("status", "==", "due")
+    .where("showAtEpochMs", "<=", now)
+    .limit(limit)
+    .get();
+
+  const docs = [...pending.docs, ...due.docs];
+  let sent = 0;
+  for (const docSnap of docs) {
+    const data = docSnap.data();
+    if (Number(data.endAtEpochMs) <= now) continue;
+    const ok = await sendStartForSchedule(docSnap.id, data);
+    if (ok) sent += 1;
+  }
+  return sent;
+}
+
+/** Immediate path when a schedule is written as already due (in-window save). */
+export const onLaScheduleWrite = onDocumentWritten(
+  "laSchedules/{scheduleId}",
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) return;
+    const data = after.data();
+    if (!data) return;
+    if (data.status !== "pending" && data.status !== "due") return;
+    const now = Date.now();
+    if (data.showAtEpochMs <= now && data.endAtEpochMs > now) {
+      await sendStartForSchedule(after.id, data);
+    }
+  },
+);
+
+/** Catch future windows when the app is killed (poll every minute). */
+export const dispatchLiveActivities = onSchedule("every 1 minutes", async () => {
+  const sent = await dispatchDue();
+  logger.info("dispatchLiveActivities sent", { sent });
+});

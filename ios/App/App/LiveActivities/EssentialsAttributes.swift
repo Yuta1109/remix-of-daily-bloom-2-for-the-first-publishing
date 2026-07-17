@@ -1,9 +1,11 @@
 import Foundation
 import ActivityKit
 
-/// Shared Live Activity definition. This file is compiled into BOTH the app
-/// target (to start/update/end activities) and the widget extension (to render
-/// them on the Lock Screen).
+/// Shared Live Activity definition. Compiled into BOTH the app target
+/// (start/update/end) and the widget extension (Lock Screen + Dynamic Island).
+///
+/// System limits (Apple): active ≤ ~8h; Lock Screen may linger ≤ ~12h total.
+/// App deployment target is iOS 17.2+ (push-to-start). JS clamps leads to 8h.
 @available(iOS 16.1, *)
 public struct EssencesWidgetAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {

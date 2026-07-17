@@ -3,7 +3,7 @@
 
 # Idempotently wires the Essentials Live Activity into the Capacitor iOS project:
 #   * adds the ActivityKit plugin + shared attributes to the App target
-#   * creates the "EssentialsWidget" widget-extension target (iOS 16.1+)
+#   * creates the "EssentialsWidget" widget-extension target (iOS 17.2+)
 #   * embeds the widget extension into the app
 #   * sets CODE_SIGN_ENTITLEMENTS for the main app
 #
@@ -12,6 +12,9 @@
 #   ruby ../scripts/setup_widget.rb
 #
 # Safe to run repeatedly; existing wiring is detected and skipped.
+#
+# iOS 17.2+ is required for ActivityKit push-to-start (start Live Activities
+# while the app is killed, via APNs / Firebase).
 
 require "xcodeproj"
 
@@ -20,7 +23,7 @@ WIDGET_NAME = "EssentialsWidget"
 APP_BUNDLE_ID = "com.confast.essences"
 # Lowercase suffix — Apple Developer Portal rejects some mixed-case IDs.
 WIDGET_BUNDLE_ID = "com.confast.essences.widget"
-DEPLOYMENT_TARGET = "16.1"
+DEPLOYMENT_TARGET = "17.2"
 SWIFT_VERSION = "5.0"
 
 project_path = File.expand_path("App.xcodeproj", Dir.pwd)
@@ -158,3 +161,20 @@ end
 
 project.save
 puts "EssencesWidget wiring complete."
+
+# --- GoogleService-Info.plist (from CI secret or local file) -----------------
+plist_path = File.expand_path("App/GoogleService-Info.plist", Dir.pwd)
+if File.exist?(plist_path)
+  plist_ref = project.files.find { |f| f.real_path.to_s == plist_path.to_s }
+  unless plist_ref
+    plist_ref = app_group.new_reference("GoogleService-Info.plist")
+  end
+  resources = app_target.resources_build_phase
+  unless resources.files_references.include?(plist_ref)
+    resources.add_file_reference(plist_ref)
+  end
+  project.save
+  puts "Bundled GoogleService-Info.plist into App target."
+else
+  puts "GoogleService-Info.plist not found — Firebase native config skipped."
+end

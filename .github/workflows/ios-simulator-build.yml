@@ -39,6 +39,8 @@ jobs:
         run: npm ci
 
       - name: Build web assets
+        env:
+          VITE_FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
         run: npm run build
 
       - name: Sync Capacitor iOS project
@@ -50,6 +52,20 @@ jobs:
       - name: Wire Live Activity widget extension
         working-directory: ios/App
         run: ruby ../scripts/setup_widget.rb
+
+      - name: Write GoogleService-Info.plist from secret
+        env:
+          PLIST_B64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -z "$PLIST_B64" ]; then
+            echo "GOOGLE_SERVICE_INFO_PLIST secret not set — skipping (local LA still builds)."
+            exit 0
+          fi
+          echo "$PLIST_B64" | base64 --decode > ios/App/App/GoogleService-Info.plist
+          # Sanity: must look like a plist
+          grep -q "GOOGLE_APP_ID\|API_KEY\|GCM_SENDER_ID" ios/App/App/GoogleService-Info.plist \
+            || { echo "Decoded file does not look like GoogleService-Info.plist"; exit 1; }
+          echo "Wrote ios/App/App/GoogleService-Info.plist"
 
       - name: Show schemes
         run: xcodebuild -list -project ios/App/App.xcodeproj

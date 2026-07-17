@@ -2,8 +2,12 @@ import Foundation
 import Capacitor
 import ActivityKit
 
-/// Capacitor bridge for Lock Screen Live Activities.
+/// Capacitor bridge for Lock Screen / Dynamic Island Live Activities.
 /// JS name: `LiveActivities` (see src/lib/live-activity.ts).
+///
+/// - Foreground start/update when already inside the lead window (e.g. lead 4h,
+///   event in 3h → start immediately on save).
+/// - push-to-start token observation for Firebase / APNs (iOS 17.2+).
 @objc(LiveActivitiesPlugin)
 public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "LiveActivitiesPlugin"
@@ -12,7 +16,11 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "areEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startOrUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "endAll", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startPushToStartTokenUpdates", returnType: CAPPluginReturnPromise),
     ]
+
+    private var endWorkItem: DispatchWorkItem?
+    private var pushToStartTask: Task<Void, Never>?
 
     @objc func areEnabled(_ call: CAPPluginCall) {
         if #available(iOS 16.1, *) {
@@ -20,6 +28,21 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             call.resolve(["enabled": false])
         }
+    }
+
+    @objc func startPushToStartTokenUpdates(_ call: CAPPluginCall) {
+        guard #available(iOS 17.2, *) else {
+            call.resolve()
+            return
+        }
+        pushToStartTask?.cancel()
+        pushToStartTask = Task { [weak self] in
+            for await tokenData in Activity<EssencesWidgetAttributes>.pushToStartTokenUpdates {
+                let token = tokenData.map { String(format: "%02x", $0) }.joined()
+                self?.notifyListeners("pushToStartToken", data: ["token": token])
+            }
+        }
+        call.resolve()
     }
 
     @objc func startOrUpdate(_ call: CAPPluginCall) {
@@ -55,48 +78,48 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             items.append(.init(title: title, startEpochMs: start, color: color))
         }
 
+        guard !items.isEmpty else {
+            Task { await self.endAllActivities() }
+            call.resolve(["activityId": NSNull()])
+            return
+        }
+
         let state = EssencesWidgetAttributes.ContentState(
             items: items,
             overflow: overflow,
             locale: locale
         )
 
-        let staleDate: Date? = {
+        let earliestStart: Date? = {
             guard let earliest = items.map(\.startEpochMs).min(), earliest > 0 else {
                 return nil
             }
             return Date(timeIntervalSince1970: earliest / 1000.0)
         }()
 
+        let endDate: Date = {
+            if let endMs = call.getDouble("endEpochMs"), endMs > 0 {
+                return Date(timeIntervalSince1970: endMs / 1000.0)
+            }
+            return earliestStart ?? Date().addingTimeInterval(60)
+        }()
+
+        let staleDate = earliestStart
+        let relevance: Double = {
+            guard let start = earliestStart else { return 0 }
+            let hours = max(0, start.timeIntervalSinceNow / 3600.0)
+            return max(0, 100.0 - hours)
+        }()
+
         Task {
             do {
-                if let existing = Activity<EssencesWidgetAttributes>.activities.first {
-                    if #available(iOS 16.2, *) {
-                        await existing.update(
-                            ActivityContent(state: state, staleDate: staleDate)
-                        )
-                    } else {
-                        await existing.update(using: state)
-                    }
-                    call.resolve(["activityId": existing.id])
-                    return
-                }
-
-                let activity: Activity<EssencesWidgetAttributes>
-                if #available(iOS 16.2, *) {
-                    activity = try Activity.request(
-                        attributes: EssencesWidgetAttributes(name: "Essences"),
-                        content: ActivityContent(state: state, staleDate: staleDate),
-                        pushType: nil
-                    )
-                } else {
-                    activity = try Activity.request(
-                        attributes: EssencesWidgetAttributes(name: "Essences"),
-                        contentState: state,
-                        pushType: nil
-                    )
-                }
-                call.resolve(["activityId": activity.id])
+                let activityId = try await self.apply(
+                    state: state,
+                    staleDate: staleDate,
+                    relevanceScore: relevance
+                )
+                self.scheduleEnd(at: endDate)
+                call.resolve(["activityId": activityId as Any])
             } catch {
                 call.reject("Live Activity error: \(error.localizedDescription)")
             }
@@ -108,15 +131,85 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve()
             return
         }
+        endWorkItem?.cancel()
+        endWorkItem = nil
         Task {
-            for activity in Activity<EssencesWidgetAttributes>.activities {
-                if #available(iOS 16.2, *) {
-                    await activity.end(nil, dismissalPolicy: .immediate)
-                } else {
-                    await activity.end(dismissalPolicy: .immediate)
-                }
-            }
+            await self.endAllActivities()
             call.resolve()
         }
+    }
+
+    @available(iOS 16.1, *)
+    private func apply(
+        state: EssencesWidgetAttributes.ContentState,
+        staleDate: Date?,
+        relevanceScore: Double
+    ) async throws -> String {
+        if let existing = Activity<EssencesWidgetAttributes>.activities.first {
+            if #available(iOS 16.2, *) {
+                await existing.update(
+                    ActivityContent(
+                        state: state,
+                        staleDate: staleDate,
+                        relevanceScore: relevanceScore
+                    )
+                )
+            } else {
+                await existing.update(using: state)
+            }
+            return existing.id
+        }
+
+        // Prefer .token so ActivityKit can later accept push updates / end.
+        let activity: Activity<EssencesWidgetAttributes>
+        if #available(iOS 16.2, *) {
+            activity = try Activity.request(
+                attributes: EssencesWidgetAttributes(name: "Essences"),
+                content: ActivityContent(
+                    state: state,
+                    staleDate: staleDate,
+                    relevanceScore: relevanceScore
+                ),
+                pushType: .token
+            )
+        } else {
+            activity = try Activity.request(
+                attributes: EssencesWidgetAttributes(name: "Essences"),
+                contentState: state,
+                pushType: .token
+            )
+        }
+        return activity.id
+    }
+
+    @available(iOS 16.1, *)
+    private func endAllActivities() async {
+        for activity in Activity<EssencesWidgetAttributes>.activities {
+            if #available(iOS 16.2, *) {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            } else {
+                await activity.end(dismissalPolicy: .immediate)
+            }
+        }
+    }
+
+    private func scheduleEnd(at date: Date) {
+        endWorkItem?.cancel()
+        let delay = date.timeIntervalSinceNow
+        if delay <= 0 {
+            if #available(iOS 16.1, *) {
+                Task { await self.endAllActivities() }
+            }
+            return
+        }
+        let capped = min(delay, 8 * 60 * 60)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if #available(iOS 16.1, *) {
+                Task { await self.endAllActivities() }
+            }
+        }
+        endWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + capped, execute: work)
     }
 }

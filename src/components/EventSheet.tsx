@@ -22,6 +22,8 @@ import {
   type ReminderOffset,
   type RepeatFreq,
   type LiveActivityLead,
+  LIVE_ACTIVITY_MAX_ACTIVE_MINUTES,
+  liveActivityLeadMinutes,
 } from "@/lib/events-store";
 import {
   rescheduleAll,
@@ -32,6 +34,7 @@ import {
   setNotificationsUserEnabled,
 } from "@/lib/notifications";
 import { refreshLiveActivities, isLiveActivitySupported } from "@/lib/live-activity";
+import { syncLiveActivitySchedulesRemote } from "@/lib/la-remote";
 import { useI18n } from "@/lib/i18n";
 import { hideKeyboard, onDoneKey } from "@/lib/keyboard-avoidance";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
@@ -85,9 +88,8 @@ const REPEATS: { key: RepeatFreq; tk: string }[] = [
   { key: "yearly",  tk: "repeatYearly" },
 ];
 
+/** Max lead is 8h — Apple's active Live Activity ceiling (see events-store). */
 const LIVE_ACTIVITY_LEADS: { key: LiveActivityLead; tk: string }[] = [
-  { key: "24h", tk: "la24h" },
-  { key: "12h", tk: "la12h" },
   { key: "8h",  tk: "la8h" },
   { key: "6h",  tk: "la6h" },
   { key: "4h",  tk: "la4h" },
@@ -99,6 +101,12 @@ const LIVE_ACTIVITY_LEADS: { key: LiveActivityLead; tk: string }[] = [
   { key: "10m", tk: "la10m" },
   { key: "5m",  tk: "la5m" },
 ];
+
+function clampLiveActivityLead(l?: LiveActivityLead): LiveActivityLead {
+  if (!l) return "1h";
+  if (liveActivityLeadMinutes(l) > LIVE_ACTIVITY_MAX_ACTIVE_MINUTES) return "8h";
+  return l;
+}
 
 /* ─── Form helpers ──────────────────────────────────────────────────────── */
 
@@ -410,7 +418,7 @@ function FormBody({
                 {t("liveActivityShow")}
               </span>
               <Select
-                value={form.liveActivityLead ?? "1h"}
+                value={clampLiveActivityLead(form.liveActivityLead)}
                 onValueChange={(v) =>
                   patch({ liveActivityLead: v as LiveActivityLead })
                 }
@@ -512,6 +520,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   const syncSchedules = () => {
     void rescheduleAll();
     void refreshLiveActivities();
+    void syncLiveActivitySchedulesRemote();
   };
 
   const save = () => {

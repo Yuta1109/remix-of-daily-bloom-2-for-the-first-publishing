@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Firebase / secrets (never commit)
+ios/App/App/GoogleService-Info.plist
+GoogleService-Info.plist
+.env
+.env.*
+!.env.example
+functions/node_modules
+functions/.env*
+no-keepalive.cjs
+
+

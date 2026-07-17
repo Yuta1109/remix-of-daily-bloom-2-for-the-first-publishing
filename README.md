@@ -8,6 +8,7 @@ A calm calendar for the plans that matter. Schedule events, receive reminders, a
 - Tailwind CSS + shadcn/ui
 - Capacitor (iOS)
 - Local Notifications + ActivityKit Live Activities (iOS native)
+- Firebase (`todolist-app-project-4fd37`) for ActivityKit push-to-start when the app is killed
 
 ## Getting started (web)
 
@@ -25,56 +26,96 @@ cd ios/App && gem install xcodeproj && ruby ../scripts/setup_widget.rb   # Mac o
 npx cap open ios   # open in Xcode (Mac only)
 ```
 
-iOS builds are produced in CI via GitHub Actions (see `.github/workflows/`).
-The app is distributed to the App Store / TestFlight; no local Mac is required.
-
 - Main app Bundle ID: `com.confast.essences`
 - Widget extension Bundle ID: `com.confast.essences.widget`
-- Minimum iOS version: 16.1 (required for Live Activities)
+- Minimum iOS version: **17.2** (ActivityKit push-to-start)
 
-### Apple Developer Portal (Live Activities)
+### Lead window behavior (important)
 
-Register **two** App IDs (Identifiers → + → App IDs → App):
+`showAt = max(eventStart − lead, now)`.
+
+| Setting | Event time | Result |
+|---------|------------|--------|
+| Lead **4 hours** | Event in **3 hours** | Already inside the window → **starts immediately on save** (and remote status `due`) |
+| Lead **4 hours** | Event in **5 hours** | Starts in **1 hour** (at start − 4h), including via push if the app is killed |
+
+### GitHub Secrets — `GoogleService-Info.plist`
+
+Do **not** commit the plist. Put a Base64 copy in GitHub Actions secrets.
+
+**1. Encode on your PC (PowerShell)**
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\GoogleService-Info.plist")) | Set-Clipboard
+```
+
+(The Base64 string is now on the clipboard.)
+
+**2. Add the secret**
+
+GitHub → repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+
+| Name | Value |
+|------|--------|
+| `GOOGLE_SERVICE_INFO_PLIST` | paste the Base64 string |
+
+CI writes `ios/App/App/GoogleService-Info.plist` before Xcode build (`setup_widget.rb` bundles it).
+
+**3. Firebase web config (for schedule sync from the app)**
+
+1. Firebase Console → Project settings → **Add app** → **Web** (`</>`).
+2. Copy the `firebaseConfig` object.
+3. New secret `FIREBASE_WEB_CONFIG` = one-line JSON, e.g.
+
+```json
+{"apiKey":"...","authDomain":"todolist-app-project-4fd37.firebaseapp.com","projectId":"todolist-app-project-4fd37","storageBucket":"...","messagingSenderId":"...","appId":"..."}
+```
+
+Locally you can use `.env.local` (see `.env.example`).
+
+### Firebase Console checklist (your side)
+
+1. **Authentication** → Sign-in method → enable **Anonymous**.
+2. **Firestore** → Create database (production mode is fine; we deploy `firestore.rules`).
+3. Upgrade to **Blaze** if you have not (needed for scheduled Cloud Functions).
+4. APNs Auth Key already uploaded under Cloud Messaging — good.
+5. Deploy backend (from a machine with Firebase CLI logged in):
+
+```bash
+cd functions && npm install && cd ..
+npx firebase login
+npx firebase deploy --only functions,firestore --project todolist-app-project-4fd37
+```
+
+### Apple Developer Portal
 
 | App ID | Capabilities |
 |--------|-------------|
-| `com.confast.essences` | **Live Activities** (Push Notifications optional) |
-| `com.confast.essences.widget` | none required (App Groups **not** needed) |
+| `com.confast.essences` | **Push Notifications** (skip SSL certificate creation; use Auth Key) |
+| `com.confast.essences.widget` | registered only |
 
-WidgetKit does not appear as a separate portal capability — the widget extension
-is identified by its bundle ID and `com.apple.widgetkit-extension` in Info.plist.
-App Groups is only needed if the app and widget share data via an app group;
-this project passes Live Activity state directly from the main app, so skip it.
+`NSSupportsLiveActivities` is already in the app `Info.plist`. Widget target is wired by CI.
 
-### TestFlight: Live Activities checklist
+### Live Activity design notes
 
-**Before running iOS Release (GitHub Actions)**
+| Constraint | Handling |
+|------------|----------|
+| Lock Screen + Dynamic Island | Both in `EssentialsWidgetLiveActivity` |
+| Active ≤ 8h / Lock Screen ≤ 12h total | Lead capped at 8h |
+| Already inside lead when saving | Immediate local start + Firestore `due` → Cloud Function push |
+| App killed at future `showAt` | Cloud Function `dispatchLiveActivities` (every 1 min) + FCM |
 
-1. **App Store Connect** — App exists for `com.confast.essences`.
-2. **Developer Portal → Identifiers**
-   - `com.confast.essences` → Capabilities → **Live Activities** enabled.
-   - `com.confast.essences.widget` → registered (no extra capabilities).
-3. **GitHub Secrets** — `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, `APP_STORE_CONNECT_PRIVATE_KEY`, `APPLE_TEAM_ID`.
-4. **Push `main`** — confirm **iOS Simulator Build** workflow passes (compiles widget + plugin).
+**Note:** Kill-state push also needs an **FCM registration token** on the device doc (in addition to the ActivityKit push-to-start token). Token upload for push-to-start is implemented; wiring Firebase Messaging for the FCM token is the next native step if pushes log `Missing tokens` in Functions.
 
-**On your iPhone (TestFlight build)**
+### Next steps after Functions deploy
 
-1. Install from TestFlight.
-2. **Settings → Essences → Notifications** → Allow.
-3. **Settings → Face ID & Passcode → Live Activities** (or **Settings → Essences**) → Live Activities allowed.
-4. In the app: create a timed event **5–10 minutes from now**, enable **Live Activity**, lead time **5 minutes before**.
-5. **Open the app once** when inside the lead window (or tap the wake notification).
-6. Lock the screen — you should see the countdown on the Lock Screen / Dynamic Island.
+1. Confirm GitHub secrets `GOOGLE_SERVICE_INFO_PLIST` and `FIREBASE_WEB_CONFIG` are set.
+2. Push / run **iOS Release** so TestFlight includes `@capacitor-firebase/messaging`.
+3. On device (iOS 17.2+): open Essences once, allow notifications, create an event with Live Activity + short lead, then lock / kill the app and wait for `showAt`.
+4. In Firestore Console → `devices` → your anonymous uid: both `fcmToken` and `pushToStartToken` should be non-null after first launch.
 
-**If nothing appears**
-
-- Confirm iOS **16.1+** and a **physical device** (Simulator Live Activities are limited).
-- Confirm the event is **not all-day** and has a **start time**.
-- Open the app while inside the lead window (iOS requires foreground to *start* without push).
-- Check **Focus / Do Not Disturb** is not blocking Live Activities.
+If Functions logs show `Missing tokens`, the device has not registered FCM yet — open the app once with notification permission granted.
 
 ## Data & privacy
 
-All data (tasks, events, settings) is stored locally on device via the WebView
-`localStorage`. Nothing is sent to a server. See `PRIVACY.md` / the in-app
-Privacy Policy for details.
+Tasks/events stay in on-device `localStorage` by default. With Firebase Live Activity sync enabled, the app also sends an anonymous device id, push tokens, and schedule metadata (title, times, color) to Firebase to start Lock Screen activities. Update the in-app Privacy Policy before shipping that path widely.

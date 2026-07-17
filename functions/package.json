@@ -1,0 +1,14 @@
+{
+  "name": "essences-functions",
+  "description": "Cloud Functions for Essences Live Activity push-to-start",
+  "engines": {
+    "node": "22"
+  },
+  "main": "index.js",
+  "type": "module",
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.0.0"
+  },
+  "private": true
+}

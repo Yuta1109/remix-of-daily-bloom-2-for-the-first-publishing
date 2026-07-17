@@ -8,7 +8,12 @@ export type ReminderOffset =
   | "at" | "5m" | "10m" | "20m" | "30m"
   | "1h" | "2h" | "3h" | "4h" | "6h" | "8h" | "12h" | "24h";
 
-/** Live Activity lead time: how long before the event start it appears on the Lock Screen. */
+/**
+ * Live Activity lead time: how long before the event start it appears.
+ * Apple keeps a Live Activity *active* for at most 8 hours (Lock Screen can
+ * linger up to 12 hours total). Options above 8h are accepted for migration
+ * but clamped by `effectiveLiveActivityLeadMinutes`.
+ */
 export type LiveActivityLead =
   | "24h"
   | "12h"
@@ -22,6 +27,12 @@ export type LiveActivityLead =
   | "20m"
   | "10m"
   | "5m";
+
+/** ActivityKit active-window ceiling (Dynamic Island / updates). */
+export const LIVE_ACTIVITY_MAX_ACTIVE_MINUTES = 8 * 60;
+
+/** Lock Screen visibility ceiling after the activity becomes inactive. */
+export const LIVE_ACTIVITY_MAX_LOCK_SCREEN_HOURS = 12;
 
 export interface CalendarEvent {
   id: string;
@@ -80,7 +91,7 @@ export function getReminders(e: CalendarEvent): ReminderOffset[] {
   return [];
 }
 
-/** Minutes-before-start for each Live Activity lead time. */
+/** Minutes-before-start for each Live Activity lead time (unclamped). */
 export function liveActivityLeadMinutes(l?: LiveActivityLead): number {
   switch (l) {
     case "24h":
@@ -110,6 +121,11 @@ export function liveActivityLeadMinutes(l?: LiveActivityLead): number {
     default:
       return 60;
   }
+}
+
+/** Lead minutes clamped to Apple's 8-hour active Live Activity limit. */
+export function effectiveLiveActivityLeadMinutes(l?: LiveActivityLead): number {
+  return Math.min(liveActivityLeadMinutes(l), LIVE_ACTIVITY_MAX_ACTIVE_MINUTES);
 }
 
 const KEY = "calendar-events";
