@@ -1,0 +1,18 @@
+diff --git a/node_modules/@capacitor-firebase/messaging/ios/Plugin/FirebaseMessaging.swift b/node_modules/@capacitor-firebase/messaging/ios/Plugin/FirebaseMessaging.swift
+index 6c8d642..9eb4283 100644
+--- a/node_modules/@capacitor-firebase/messaging/ios/Plugin/FirebaseMessaging.swift
++++ b/node_modules/@capacitor-firebase/messaging/ios/Plugin/FirebaseMessaging.swift
+@@ -14,7 +14,12 @@ import FirebaseCore
+         self.config = config
+         super.init()
+         if FirebaseApp.app() == nil {
+-            FirebaseApp.configure()
++            if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
++                FirebaseApp.configure()
++            } else {
++                print("[FirebaseMessaging] GoogleService-Info.plist missing from bundle - skipping Firebase Messaging init")
++                return
++            }
+         }
+         UIApplication.shared.registerForRemoteNotifications()
+         Messaging.messaging().delegate = self

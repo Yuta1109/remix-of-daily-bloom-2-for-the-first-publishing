@@ -59,10 +59,8 @@ jobs:
       - name: Install xcodeproj gem
         run: gem install xcodeproj --no-document
 
-      - name: Wire Live Activity widget extension
-        working-directory: ios/App
-        run: ruby ../scripts/setup_widget.rb
-
+      # Must exist BEFORE setup_widget.rb so it is added to Copy Bundle Resources.
+      # Missing plist → FirebaseMessaging.configure() crashes the app on launch.
       - name: Write GoogleService-Info.plist from secret
         env:
           PLIST_B64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
@@ -74,6 +72,16 @@ jobs:
           echo "$PLIST_B64" | base64 --decode > ios/App/App/GoogleService-Info.plist
           grep -q "GOOGLE_APP_ID\|API_KEY\|GCM_SENDER_ID" ios/App/App/GoogleService-Info.plist \
             || { echo "Decoded file does not look like GoogleService-Info.plist"; exit 1; }
+
+      - name: Wire Live Activity widget extension
+        working-directory: ios/App
+        run: ruby ../scripts/setup_widget.rb
+
+      - name: Verify GoogleService-Info.plist is in the Xcode project
+        run: |
+          grep -q "GoogleService-Info.plist" ios/App/App.xcodeproj/project.pbxproj \
+            || { echo "GoogleService-Info.plist was not added to the Xcode project"; exit 1; }
+          test -f ios/App/App/GoogleService-Info.plist
 
       - name: Prepare App Store Connect API key
         env:

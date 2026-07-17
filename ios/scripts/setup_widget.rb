@@ -159,22 +159,24 @@ unless already_embedded
   build_file.settings = { "ATTRIBUTES" => ["RemoveHeadersOnCopy"] }
 end
 
-project.save
-puts "EssencesWidget wiring complete."
-
-# --- GoogleService-Info.plist (from CI secret or local file) -----------------
+# --- GoogleService-Info.plist (CI secret or local) ---------------------------
+# Always wire into Copy Bundle Resources so the IPA includes it when the file
+# exists at archive time. Writing the file AFTER this script used to leave it
+# off the target → FirebaseMessaging.configure() crashed on every launch.
 plist_path = File.expand_path("App/GoogleService-Info.plist", Dir.pwd)
+plist_ref = project.files.find { |f| f.path.to_s.end_with?("GoogleService-Info.plist") }
+unless plist_ref
+  plist_ref = app_group.new_reference("GoogleService-Info.plist")
+end
+resources = app_target.resources_build_phase
+unless resources.files_references.include?(plist_ref)
+  resources.add_file_reference(plist_ref)
+end
 if File.exist?(plist_path)
-  plist_ref = project.files.find { |f| f.real_path.to_s == plist_path.to_s }
-  unless plist_ref
-    plist_ref = app_group.new_reference("GoogleService-Info.plist")
-  end
-  resources = app_target.resources_build_phase
-  unless resources.files_references.include?(plist_ref)
-    resources.add_file_reference(plist_ref)
-  end
-  project.save
   puts "Bundled GoogleService-Info.plist into App target."
 else
-  puts "GoogleService-Info.plist not found — Firebase native config skipped."
+  puts "WARNING: GoogleService-Info.plist not on disk yet — wired in Xcode; write the file before archive."
 end
+
+project.save
+puts "EssencesWidget wiring complete."

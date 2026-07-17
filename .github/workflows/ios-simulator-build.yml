@@ -49,10 +49,7 @@ jobs:
       - name: Install xcodeproj gem
         run: gem install xcodeproj --no-document
 
-      - name: Wire Live Activity widget extension
-        working-directory: ios/App
-        run: ruby ../scripts/setup_widget.rb
-
+      # Prefer writing before setup_widget so the resource is present when wired.
       - name: Write GoogleService-Info.plist from secret
         env:
           PLIST_B64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
@@ -62,10 +59,13 @@ jobs:
             exit 0
           fi
           echo "$PLIST_B64" | base64 --decode > ios/App/App/GoogleService-Info.plist
-          # Sanity: must look like a plist
           grep -q "GOOGLE_APP_ID\|API_KEY\|GCM_SENDER_ID" ios/App/App/GoogleService-Info.plist \
             || { echo "Decoded file does not look like GoogleService-Info.plist"; exit 1; }
           echo "Wrote ios/App/App/GoogleService-Info.plist"
+
+      - name: Wire Live Activity widget extension
+        working-directory: ios/App
+        run: ruby ../scripts/setup_widget.rb
 
       - name: Show schemes
         run: xcodebuild -list -project ios/App/App.xcodeproj

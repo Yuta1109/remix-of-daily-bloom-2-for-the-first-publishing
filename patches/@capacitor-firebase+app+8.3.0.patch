@@ -1,0 +1,17 @@
+diff --git a/node_modules/@capacitor-firebase/app/ios/Plugin/FirebaseAppPlugin.swift b/node_modules/@capacitor-firebase/app/ios/Plugin/FirebaseAppPlugin.swift
+index 130b108..77a2e89 100644
+--- a/node_modules/@capacitor-firebase/app/ios/Plugin/FirebaseAppPlugin.swift
++++ b/node_modules/@capacitor-firebase/app/ios/Plugin/FirebaseAppPlugin.swift
+@@ -18,7 +18,11 @@ public class FirebaseAppPlugin: CAPPlugin, CAPBridgedPlugin {
+ 
+     override public func load() {
+         if FirebaseApp.app() == nil {
+-            FirebaseApp.configure()
++            if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
++                FirebaseApp.configure()
++            } else {
++                print("[FirebaseApp] GoogleService-Info.plist missing from bundle - skipping configure")
++            }
+         }
+     }
+ 
