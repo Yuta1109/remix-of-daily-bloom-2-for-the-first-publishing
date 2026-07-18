@@ -6,7 +6,7 @@ import { loadEvents, upcomingOccurrenceStarts, effectiveLiveActivityLeadMinutes 
  * Live Activity design (ActivityKit / Apple HIG):
  *
  * - Minimum iOS 17.2 (ActivityKit push-to-start; no wake-notification fallback).
- * - One shared Lock Screen + Dynamic Island activity (max 3 event rows).
+ * - One shared Lock Screen activity (max 3 event rows).
  * - If the user enables LA while already inside the lead window (e.g. lead=4h
  *   but event is in 3h), we start **immediately** on save (and remote push
  *   uses showAt=now). Future windows are scheduled for start − lead.

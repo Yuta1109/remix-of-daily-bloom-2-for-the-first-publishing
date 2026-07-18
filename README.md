@@ -100,7 +100,7 @@ npx firebase deploy --only functions,firestore --project todolist-app-project-4f
 
 | Constraint | Handling |
 |------------|----------|
-| Lock Screen + Dynamic Island | Both in `EssentialsWidgetLiveActivity` |
+| Lock Screen Live Activity | `EssentialsWidgetLiveActivity` (no Dynamic Island design) |
 | Active ≤ 8h / Lock Screen ≤ 12h total | Lead capped at 8h |
 | Already inside lead when saving | Immediate local start + Firestore `due` → Cloud Function push |
 | App killed at future `showAt` | Cloud Function `dispatchLiveActivities` (every 1 min) + FCM |

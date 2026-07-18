@@ -187,6 +187,23 @@ html.overlay-open #root {
   scrollbar-width: none;
 }
 
+/* Settings reusable-tasks modal: clip under the input and show a thin scrollbar. */
+.settings-modal-scroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+}
+.settings-modal-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.settings-modal-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.35);
+  border-radius: 999px;
+}
+
 /* Event sheet body: reliable nested scroll inside modal / vaul drawer. */
 .event-sheet-scroll {
   -webkit-overflow-scrolling: touch;

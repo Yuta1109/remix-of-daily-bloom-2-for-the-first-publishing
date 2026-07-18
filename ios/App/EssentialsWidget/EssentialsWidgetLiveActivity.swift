@@ -41,6 +41,8 @@ private struct CountdownLabel: View {
     }
 }
 
+/// Lock Screen presentation only. ActivityConfiguration still requires a
+/// `dynamicIsland` trailing closure; we leave it empty (no DI design).
 @available(iOS 16.1, *)
 struct LockScreenView: View {
     let state: EssencesWidgetAttributes.ContentState
@@ -89,21 +91,18 @@ struct EssencesWidgetLiveActivity: Widget {
                 .padding(14)
                 .activityBackgroundTint(Color.black.opacity(0.35))
                 .activitySystemActionForegroundColor(Color.white)
-        } dynamicIsland: { context in
+        } dynamicIsland: { _ in
+            // Required by ActivityKit API — intentionally empty (Lock Screen only).
             DynamicIsland {
-                DynamicIslandExpandedRegion(.center) {
-                    LockScreenView(state: context.state)
-                        .padding(.vertical, 4)
+                DynamicIslandExpandedRegion(.leading) {
+                    EmptyView()
                 }
             } compactLeading: {
-                Image(systemName: "calendar")
+                EmptyView()
             } compactTrailing: {
-                if let first = context.state.items.first {
-                    CountdownLabel(target: first.startDate)
-                        .frame(maxWidth: 52)
-                }
+                EmptyView()
             } minimal: {
-                Image(systemName: "calendar")
+                EmptyView()
             }
         }
     }

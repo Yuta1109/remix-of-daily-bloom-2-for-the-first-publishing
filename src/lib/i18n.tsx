@@ -91,7 +91,7 @@ const translations = {
     liveActivity: "Live Activity",
     liveActivityShow: "Show on Lock Screen",
     liveActivityHint:
-      "Shows a countdown on the Lock Screen / Dynamic Island. If the event is already within the lead window (e.g. 4h lead, event in 3h), it appears as soon as you save. Otherwise it starts at (start − lead). Active up to 8h; Lock Screen may linger up to 12h total.",
+      "Shows a countdown on the Lock Screen. If the event is already within the lead window (e.g. 4h lead, event in 3h), it appears as soon as you save. Otherwise it starts at (start − lead). Active up to 8h; Lock Screen may linger up to 12h total.",
     liveActivityForegroundNote:
       "Requires iOS 17.2+. Works while the app is closed via push. Countdown updates on its own once shown.",
     la24h: "1 day before",
@@ -210,7 +210,7 @@ const translations = {
     liveActivity: "ライブアクティビティ",
     liveActivityShow: "ロック画面に表示",
     liveActivityHint:
-      "ロック画面／Dynamic Island にカウントダウンを表示します。すでにリード時間内なら（例: 4時間前設定で予定が3時間後）保存した直後に表示します。それ以外は「開始−リード」で開始します。アクティブ最大8時間、ロック画面上は合計最大12時間です。",
+      "ロック画面にカウントダウンを表示します。すでにリード時間内なら（例: 4時間前設定で予定が3時間後）保存した直後に表示します。それ以外は「開始−リード」で開始します。アクティブ最大8時間、ロック画面上は合計最大12時間です。",
     liveActivityForegroundNote:
       "iOS 17.2 以上が必要です。アプリ終了中も Push で開始できます。表示後のタイマーは自動更新されます。",
     la24h: "1日前",

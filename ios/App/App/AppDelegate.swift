@@ -7,7 +7,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Start ActivityKit push-to-start token observation early and keep the
+        // Task alive for the process lifetime (see LiveActivityPushTokenCenter).
+        LiveActivityPushTokenCenter.start()
         return true
     }
 

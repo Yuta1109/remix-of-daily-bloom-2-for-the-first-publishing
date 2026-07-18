@@ -2,12 +2,12 @@ import Foundation
 import Capacitor
 import ActivityKit
 
-/// Capacitor bridge for Lock Screen / Dynamic Island Live Activities.
+/// Capacitor bridge for Lock Screen Live Activities.
 /// JS name: `LiveActivities` (see src/lib/live-activity.ts).
 ///
 /// - Foreground start/update when already inside the lead window (e.g. lead 4h,
 ///   event in 3h → start immediately on save).
-/// - push-to-start token observation for Firebase / APNs (iOS 17.2+).
+/// - push-to-start token observation via `LiveActivityPushTokenCenter` (iOS 17.2+).
 @objc(LiveActivitiesPlugin)
 public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "LiveActivitiesPlugin"
@@ -20,7 +20,26 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var endWorkItem: DispatchWorkItem?
-    private var pushToStartTask: Task<Void, Never>?
+    private var tokenObserver: NSObjectProtocol?
+
+    public override func load() {
+        super.load()
+        tokenObserver = NotificationCenter.default.addObserver(
+            forName: .essencesPushToStartToken,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let token = note.userInfo?["token"] as? String else { return }
+            self?.notifyListeners("pushToStartToken", data: ["token": token])
+        }
+        LiveActivityPushTokenCenter.start()
+    }
+
+    deinit {
+        if let tokenObserver {
+            NotificationCenter.default.removeObserver(tokenObserver)
+        }
+    }
 
     @objc func areEnabled(_ call: CAPPluginCall) {
         if #available(iOS 16.1, *) {
@@ -35,12 +54,9 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve()
             return
         }
-        pushToStartTask?.cancel()
-        pushToStartTask = Task { [weak self] in
-            for await tokenData in Activity<EssencesWidgetAttributes>.pushToStartTokenUpdates {
-                let token = tokenData.map { String(format: "%02x", $0) }.joined()
-                self?.notifyListeners("pushToStartToken", data: ["token": token])
-            }
+        LiveActivityPushTokenCenter.start()
+        if let token = LiveActivityPushTokenCenter.currentToken {
+            notifyListeners("pushToStartToken", data: ["token": token])
         }
         call.resolve()
     }

@@ -5,6 +5,13 @@
  * lead=4h while the event is only 3h away, status becomes "due" and we push
  * immediately (and the app also starts locally while foregrounded).
  *
+ * Payload shape follows:
+ *   https://firebase.google.com/docs/cloud-messaging/customize-messages/live-activity
+ *   (FCM registration token + apns.live_activity_token + start event)
+ * Headers follow Apple ActivityKit push requirements:
+ *   apns-push-type: liveactivity
+ *   apns-topic: <bundleId>.push-type.liveactivity
+ *
  * Deploy (Blaze plan required for scheduled functions):
  *   cd functions && npm i && firebase deploy --only functions,firestore
  */
@@ -23,7 +30,9 @@ setGlobalOptions({ region: "asia-northeast1" });
 const db = getFirestore();
 const messaging = getMessaging();
 
+/** Must match the Swift `ActivityAttributes` type name exactly. */
 const ATTRIBUTES_TYPE = "EssencesWidgetAttributes";
+const BUNDLE_ID = "com.confast.essences";
 
 async function sendStartForSchedule(scheduleId, data) {
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
@@ -32,6 +41,8 @@ async function sendStartForSchedule(scheduleId, data) {
     return false;
   }
   const device = deviceSnap.data() || {};
+  // Pitfall A: need BOTH the FCM registration token and the ActivityKit
+  // push-to-start token (not FCM alone).
   const fcmToken = device.fcmToken;
   const liveToken = device.pushToStartToken;
   if (!fcmToken || !liveToken) {
@@ -45,16 +56,17 @@ async function sendStartForSchedule(scheduleId, data) {
   const nowSec = Math.floor(Date.now() / 1000);
   const staleSec = Math.floor(Number(data.endAtEpochMs) / 1000);
 
+  // Must match EssencesWidgetAttributes.ContentState Codable keys exactly.
   const contentState = {
     items: [
       {
-        title: data.title || "",
+        title: String(data.title || ""),
         startEpochMs: Number(data.startEpochMs),
-        color: data.color || "blue",
+        color: String(data.color || "blue"),
       },
     ],
     overflow: 0,
-    locale: data.locale || "ja",
+    locale: String(data.locale || "ja"),
   };
 
   try {
@@ -63,8 +75,9 @@ async function sendStartForSchedule(scheduleId, data) {
       apns: {
         liveActivityToken: liveToken,
         headers: {
+          // Pitfall C: ActivityKit pushes are ignored without these headers.
           "apns-push-type": "liveactivity",
-          "apns-topic": "com.confast.essences.push-type.liveactivity",
+          "apns-topic": `${BUNDLE_ID}.push-type.liveactivity`,
           "apns-priority": "10",
         },
         payload: {
@@ -77,7 +90,7 @@ async function sendStartForSchedule(scheduleId, data) {
             "stale-date": staleSec,
             alert: {
               title: data.locale === "en" ? "Upcoming" : "まもなくの予定",
-              body: data.title || "",
+              body: String(data.title || ""),
             },
           },
         },

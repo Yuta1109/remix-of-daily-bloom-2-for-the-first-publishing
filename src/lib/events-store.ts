@@ -28,7 +28,7 @@ export type LiveActivityLead =
   | "10m"
   | "5m";
 
-/** ActivityKit active-window ceiling (Dynamic Island / updates). */
+/** ActivityKit active-window ceiling (Lock Screen Live Activity updates). */
 export const LIVE_ACTIVITY_MAX_ACTIVE_MINUTES = 8 * 60;
 
 /** Lock Screen visibility ceiling after the activity becomes inactive. */

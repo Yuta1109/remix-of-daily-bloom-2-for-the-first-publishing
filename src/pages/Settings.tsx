@@ -16,7 +16,6 @@ import {
   type NotificationPermissionState,
 } from "@/lib/notifications";
 import { Switch } from "@/components/ui/switch";
-import { InsetScrollArea } from "@/components/InsetScrollArea";
 import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { App } from "@capacitor/app";
 
@@ -290,7 +289,7 @@ export default function Settings({ staticPreview = false }: Props) {
                 </button>
               </div>
 
-              <InsetScrollArea contentClassName="px-4 py-3 space-y-2" inset={16}>
+              <div className="settings-modal-scroll min-h-0 flex-1 px-4 py-3 space-y-2">
                 {reusable.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
                     {t("addReusable")}
@@ -312,7 +311,7 @@ export default function Settings({ staticPreview = false }: Props) {
                     </div>
                   ))
                 )}
-              </InsetScrollArea>
+              </div>
 
               <div className="shrink-0 border-t border-border/50 px-4 py-3 flex items-center gap-2">
                 <input

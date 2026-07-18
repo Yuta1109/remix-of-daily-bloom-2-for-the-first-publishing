@@ -2,7 +2,7 @@ import Foundation
 import ActivityKit
 
 /// Shared Live Activity definition. Compiled into BOTH the app target
-/// (start/update/end) and the widget extension (Lock Screen + Dynamic Island).
+/// (start/update/end) and the widget extension (Lock Screen presentation).
 ///
 /// System limits (Apple): active ≤ ~8h; Lock Screen may linger ≤ ~12h total.
 /// App deployment target is iOS 17.2+ (push-to-start). JS clamps leads to 8h.
