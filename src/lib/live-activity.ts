@@ -113,22 +113,52 @@ export function stopLiveActivityBoundaries(): void {
  * Starts/updates/ends Live Activities for events already in their lead window.
  * Called after save: if lead=4h and event is in 3h, starts immediately.
  */
+export type LiveActivityLocalStatus = {
+  supported: boolean;
+  systemEnabled: boolean | null;
+  activeCount: number;
+  lastError: string | null;
+};
+
+let lastLocalError: string | null = null;
+let lastSystemEnabled: boolean | null = null;
+let lastActiveCount = 0;
+
+export function getLiveActivityLocalStatus(): LiveActivityLocalStatus {
+  return {
+    supported: isLiveActivitySupported(),
+    systemEnabled: lastSystemEnabled,
+    activeCount: lastActiveCount,
+    lastError: lastLocalError,
+  };
+}
+
 export async function refreshLiveActivities(): Promise<void> {
   if (!isLiveActivitySupported()) return;
 
   try {
     const { enabled } = await LiveActivities.areEnabled();
-    if (!enabled) return;
-  } catch {
+    lastSystemEnabled = enabled;
+    if (!enabled) {
+      lastLocalError =
+        "Live Activities are off for Essences in iOS Settings → Essences → Live Activities";
+      scheduleNextBoundary();
+      return;
+    }
+  } catch (err) {
+    lastLocalError = err instanceof Error ? err.message : String(err);
+    scheduleNextBoundary();
     return;
   }
 
   const now = new Date();
   const active = collectActiveItems(now);
+  lastActiveCount = active.length;
 
   if (active.length === 0) {
     try {
       await LiveActivities.endAll();
+      lastLocalError = null;
     } catch {
       /* ignore */
     }
@@ -147,7 +177,9 @@ export async function refreshLiveActivities(): Promise<void> {
       overflow,
       endEpochMs,
     });
+    lastLocalError = null;
   } catch (err) {
+    lastLocalError = err instanceof Error ? err.message : String(err);
     console.warn("[LiveActivity] startOrUpdate failed:", err);
   }
 

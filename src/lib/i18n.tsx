@@ -133,12 +133,16 @@ const translations = {
     about: "About",
     version: "Version",
     privacyPolicy: "Privacy Policy",
-    remoteLaStatus: "Live Activity cloud sync",
+    remoteLaStatus: "Live Activity status",
     remoteLaOk: "Connected to Firestore",
     remoteLaNoConfig: "Firebase config missing in this build",
     remoteLaAuthFail: "Sign-in failed (enable Anonymous Auth?)",
     remoteLaWaiting: "Connecting…",
     remoteLaError: "Error",
+    localLaOff:
+      "Live Activities are disabled for this app. iPhone Settings → Essences → Live Activities → On",
+    localLaActive: "Local Live Activity windows active",
+    localLaNone: "No event currently inside its lead window",
   },
   ja: {
     today: "今日",
@@ -257,12 +261,16 @@ const translations = {
     about: "アプリについて",
     version: "バージョン",
     privacyPolicy: "プライバシーポリシー",
-    remoteLaStatus: "ライブアクティビティのクラウド同期",
+    remoteLaStatus: "ライブアクティビティの状態",
     remoteLaOk: "Firestore に接続済み",
     remoteLaNoConfig: "このビルドに Firebase 設定がありません",
     remoteLaAuthFail: "サインイン失敗（Anonymous 認証を有効化してください）",
     remoteLaWaiting: "接続中…",
     remoteLaError: "エラー",
+    localLaOff:
+      "このアプリの Live Activities がオフです。iPhoneの「設定」→ Essences → Live Activities をオンにしてください",
+    localLaActive: "リード時間内の予定あり（端末側は開始を試み済み）",
+    localLaNone: "いまリード時間内の予定はありません",
   },
 } as const;
 

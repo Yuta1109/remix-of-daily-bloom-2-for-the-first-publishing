@@ -176,26 +176,49 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             return existing.id
         }
 
-        // Prefer .token so ActivityKit can later accept push updates / end.
-        let activity: Activity<EssencesWidgetAttributes>
+        // Prefer .token for later push updates. If APNs/push entitlement is not
+        // ready, Activity.request(..., pushType: .token) can fail entirely and
+        // the Lock Screen never appears — fall back to a local-only activity.
         if #available(iOS 16.2, *) {
-            activity = try Activity.request(
-                attributes: EssencesWidgetAttributes(name: "Essences"),
-                content: ActivityContent(
-                    state: state,
-                    staleDate: staleDate,
-                    relevanceScore: relevanceScore
-                ),
-                pushType: .token
+            let content = ActivityContent(
+                state: state,
+                staleDate: staleDate,
+                relevanceScore: relevanceScore
             )
+            let attrs = EssencesWidgetAttributes(name: "Essences")
+            do {
+                let activity = try Activity.request(
+                    attributes: attrs,
+                    content: content,
+                    pushType: .token
+                )
+                return activity.id
+            } catch {
+                let activity = try Activity.request(
+                    attributes: attrs,
+                    content: content,
+                    pushType: nil
+                )
+                return activity.id
+            }
         } else {
-            activity = try Activity.request(
-                attributes: EssencesWidgetAttributes(name: "Essences"),
-                contentState: state,
-                pushType: .token
-            )
+            let attrs = EssencesWidgetAttributes(name: "Essences")
+            do {
+                let activity = try Activity.request(
+                    attributes: attrs,
+                    contentState: state,
+                    pushType: .token
+                )
+                return activity.id
+            } catch {
+                let activity = try Activity.request(
+                    attributes: attrs,
+                    contentState: state,
+                    pushType: nil
+                )
+                return activity.id
+            }
         }
-        return activity.id
     }
 
     @available(iOS 16.1, *)

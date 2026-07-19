@@ -117,6 +117,22 @@ export function getLiveActivityRemoteStatus(): LiveActivityRemoteStatus {
   };
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 async function ensureFirebase(): Promise<boolean> {
   if (initPromise) return initPromise;
   initPromise = (async () => {
@@ -131,27 +147,31 @@ async function ensureFirebase(): Promise<boolean> {
     app = getApps().length ? getApps()[0]! : initializeApp(config);
     auth = getAuth(app);
     db = getFirestore(app);
-    await new Promise<void>((resolve, reject) => {
-      const unsub = onAuthStateChanged(
-        auth!,
-        async (user) => {
-          unsub();
-          try {
-            if (!user) {
-              const cred = await signInAnonymously(auth!);
-              deviceUid = cred.user.uid;
-            } else {
-              deviceUid = user.uid;
+    await withTimeout(
+      new Promise<void>((resolve, reject) => {
+        const unsub = onAuthStateChanged(
+          auth!,
+          async (user) => {
+            unsub();
+            try {
+              if (!user) {
+                const cred = await signInAnonymously(auth!);
+                deviceUid = cred.user.uid;
+              } else {
+                deviceUid = user.uid;
+              }
+              lastError = null;
+              resolve();
+            } catch (err) {
+              reject(err);
             }
-            lastError = null;
-            resolve();
-          } catch (err) {
-            reject(err);
-          }
-        },
-        reject,
-      );
-    });
+          },
+          reject,
+        );
+      }),
+      15_000,
+      "Firebase Auth",
+    );
     return true;
   })().catch((err) => {
     setError(err);

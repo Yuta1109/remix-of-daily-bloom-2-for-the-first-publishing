@@ -23,7 +23,12 @@ import {
   initLiveActivityRemote,
   type LiveActivityRemoteStatus,
 } from "@/lib/la-remote";
-import { isLiveActivitySupported } from "@/lib/live-activity";
+import {
+  getLiveActivityLocalStatus,
+  isLiveActivitySupported,
+  refreshLiveActivities,
+  type LiveActivityLocalStatus,
+} from "@/lib/live-activity";
 
 const APP_VERSION = "1.0.0";
 const PREVIEW_LIMIT = 4;
@@ -42,7 +47,13 @@ export default function Settings({ staticPreview = false }: Props) {
   const [userEnabled, setUserEnabled] = useState(getNotificationsUserEnabled());
   const [listOpen, setListOpen] = useState(false);
   const [requesting, setRequesting] = useState(false);
-  const [remoteStatus, setRemoteStatus] = useState<LiveActivityRemoteStatus | null>(null);
+  const showLaStatus = isLiveActivitySupported();
+  const [remoteStatus, setRemoteStatus] = useState<LiveActivityRemoteStatus | null>(() =>
+    isLiveActivitySupported() ? getLiveActivityRemoteStatus() : null,
+  );
+  const [localStatus, setLocalStatus] = useState<LiveActivityLocalStatus | null>(() =>
+    isLiveActivitySupported() ? getLiveActivityLocalStatus() : null,
+  );
 
   const refreshPermission = async () => {
     if (!isNative()) return;
@@ -50,19 +61,38 @@ export default function Settings({ staticPreview = false }: Props) {
     setPerm(s);
   };
 
-  const refreshRemoteStatus = async () => {
-    if (!isLiveActivitySupported()) {
+  const refreshLaStatus = async () => {
+    if (!showLaStatus) {
       setRemoteStatus(null);
+      setLocalStatus(null);
       return;
     }
-    await initLiveActivityRemote();
+    // Paint status immediately — never hide the card while Auth/Firestore hangs.
+    setRemoteStatus(getLiveActivityRemoteStatus());
+    setLocalStatus(getLiveActivityLocalStatus());
+    try {
+      await refreshLiveActivities();
+      setLocalStatus(getLiveActivityLocalStatus());
+    } catch {
+      /* ignore */
+    }
+    try {
+      await initLiveActivityRemote();
+    } catch {
+      /* ignore */
+    }
+    setLocalStatus(getLiveActivityLocalStatus());
     setRemoteStatus(getLiveActivityRemoteStatus());
   };
 
   useEffect(() => setReusable(loadReusable()), []);
   useEffect(() => {
     void refreshPermission();
-    void refreshRemoteStatus();
+    if (showLaStatus) {
+      setRemoteStatus(getLiveActivityRemoteStatus());
+      setLocalStatus(getLiveActivityLocalStatus());
+      void refreshLaStatus();
+    }
   }, []);
 
   useEffect(() => {
@@ -265,11 +295,20 @@ export default function Settings({ staticPreview = false }: Props) {
           </div>
         </div>
 
-        {remoteStatus && (
+        {showLaStatus && (
           <div className="bg-card rounded-2xl p-5 shadow-soft">
             <p className="text-sm font-semibold mb-2">{t("remoteLaStatus")}</p>
+            <p className="text-xs text-muted-foreground leading-relaxed mb-2">
+              {localStatus?.systemEnabled === false
+                ? t("localLaOff")
+                : localStatus?.lastError
+                  ? `${t("remoteLaError")}: ${localStatus.lastError}`
+                  : (localStatus?.activeCount ?? 0) > 0
+                    ? t("localLaActive")
+                    : t("localLaNone")}
+            </p>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              {!remoteStatus.configPresent
+              {!remoteStatus?.configPresent
                 ? t("remoteLaNoConfig")
                 : remoteStatus.authenticated
                   ? t("remoteLaOk")
@@ -277,7 +316,7 @@ export default function Settings({ staticPreview = false }: Props) {
                     ? `${t("remoteLaError")}: ${remoteStatus.lastError}`
                     : t("remoteLaWaiting")}
             </p>
-            {remoteStatus.projectId && (
+            {remoteStatus?.projectId && (
               <p className="text-[11px] text-muted-foreground/80 mt-2 font-mono break-all">
                 {remoteStatus.projectId}
                 {remoteStatus.deviceUid ? ` · ${remoteStatus.deviceUid.slice(0, 8)}…` : ""}
@@ -285,6 +324,13 @@ export default function Settings({ staticPreview = false }: Props) {
                 {remoteStatus.hasPushToStartToken ? " · LA✓" : " · LA✗"}
               </p>
             )}
+            <button
+              type="button"
+              onClick={() => void refreshLaStatus()}
+              className="mt-3 text-xs text-accent font-medium"
+            >
+              {locale === "ja" ? "再チェック" : "Recheck"}
+            </button>
           </div>
         )}
 
