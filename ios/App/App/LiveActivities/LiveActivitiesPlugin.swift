@@ -113,14 +113,19 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             return Date(timeIntervalSince1970: earliest / 1000.0)
         }()
 
+        // Linger past event start so Lock Screen can show "It's time" without
+        // the system stale spinner (staleDate must be after the start instant).
         let endDate: Date = {
             if let endMs = call.getDouble("endEpochMs"), endMs > 0 {
                 return Date(timeIntervalSince1970: endMs / 1000.0)
             }
-            return earliestStart ?? Date().addingTimeInterval(60)
+            if let start = earliestStart {
+                return start.addingTimeInterval(30 * 60)
+            }
+            return Date().addingTimeInterval(60)
         }()
 
-        let staleDate = earliestStart
+        let staleDate = endDate
         let relevance: Double = {
             guard let start = earliestStart else { return 0 }
             let hours = max(0, start.timeIntervalSinceNow / 3600.0)

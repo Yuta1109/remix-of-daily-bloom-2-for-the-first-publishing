@@ -110,28 +110,57 @@ function clampLiveActivityLead(l?: LiveActivityLead): LiveActivityLead {
 
 /* ─── Form helpers ──────────────────────────────────────────────────────── */
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function formatYMD(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function formatHHMM(d: Date): string {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 function makeInitial(target: EventSheetTarget | null): CalendarEvent | null {
   if (!target) return null;
   if (target.mode === "edit") {
     const existing = getEvent(target.id);
     return existing ?? null;
   }
+  const now = new Date();
+  const end = new Date(now.getTime() + 60 * 60_000);
   return {
     id: crypto.randomUUID(),
     title: "",
     date: target.date,
-    endDate: target.date,
+    endDate: formatYMD(end) !== formatYMD(now) && target.date === formatYMD(now)
+      ? formatYMD(end)
+      : target.date,
     allDay: false,
-    startTime: "09:00",
-    endTime: "10:00",
+    startTime: formatHHMM(now),
+    endTime: formatHHMM(end),
     color: "blue",
     reminders: [],
     repeat: "none",
     location: "",
     notes: "",
-    liveActivity: false,
+    liveActivity: true,
     liveActivityLead: "1h",
   };
+}
+
+function eventRangeStartMs(e: CalendarEvent): number {
+  const [y, m, d] = e.date.split("-").map(Number);
+  const [hh, mm] = (e.startTime || "00:00").split(":").map(Number);
+  return new Date(y, m - 1, d, hh, mm, 0, 0).getTime();
+}
+
+function eventRangeEndMs(e: CalendarEvent): number {
+  const endDate = !e.endDate || e.endDate < e.date ? e.date : e.endDate;
+  const [y, m, d] = endDate.split("-").map(Number);
+  const [hh, mm] = (e.endTime || "00:00").split(":").map(Number);
+  return new Date(y, m - 1, d, hh, mm, 0, 0).getTime();
 }
 
 /* ─── Form body (shared between drawer & modal) ─────────────────────────── */
@@ -525,6 +554,16 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
 
   const save = () => {
     if (!form.title.trim()) return;
+    if (!form.allDay) {
+      if (!form.startTime || !form.endTime) {
+        window.alert(t("timeRequired"));
+        return;
+      }
+      if (eventRangeStartMs(form) >= eventRangeEndMs(form)) {
+        window.alert(t("endBeforeStart"));
+        return;
+      }
+    }
     const endDate =
       !form.endDate || form.endDate < form.date ? form.date : form.endDate;
     upsertEvent({

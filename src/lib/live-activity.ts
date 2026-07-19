@@ -1,6 +1,5 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { collectLiveActivityWindows } from "./live-activity-window";
-import { loadEvents, upcomingOccurrenceStarts, effectiveLiveActivityLeadMinutes } from "./events-store";
 
 /**
  * Live Activity design (ActivityKit / Apple HIG):
@@ -55,7 +54,7 @@ function currentLocale(): "en" | "ja" {
 
 function collectActiveItems(now: Date): LiveActivityItem[] {
   return collectLiveActivityWindows(now)
-    .filter((w) => w.activeNow)
+    .filter((w) => w.visibleNow)
     .map((w) => ({
       title: w.title,
       startEpochMs: w.startEpochMs,
@@ -69,17 +68,10 @@ export function msUntilNextLiveActivityBoundary(from = new Date()): number | nul
   const now = from.getTime();
   let nextMs: number | null = null;
 
-  for (const event of loadEvents()) {
-    if (!event.liveActivity || event.allDay) continue;
-    const leadMin = effectiveLiveActivityLeadMinutes(event.liveActivityLead);
-    const starts = upcomingOccurrenceStarts(event, from, 14, 5);
-    for (const start of starts) {
-      const windowOpen = start.getTime() - leadMin * 60_000;
-      // Boundary at window open (may be in the past → skip) and at start.
-      for (const boundary of [windowOpen, start.getTime()]) {
-        if (boundary > now) {
-          nextMs = nextMs === null ? boundary : Math.min(nextMs, boundary);
-        }
+  for (const w of collectLiveActivityWindows(from)) {
+    for (const boundary of [w.showAtEpochMs, w.startEpochMs, w.endEpochMs]) {
+      if (boundary > now) {
+        nextMs = nextMs === null ? boundary : Math.min(nextMs, boundary);
       }
     }
   }
@@ -168,7 +160,10 @@ export async function refreshLiveActivities(): Promise<void> {
 
   const items = active.slice(0, MAX_ITEMS);
   const overflow = active.length - items.length;
-  const endEpochMs = items[0]?.startEpochMs ?? now.getTime();
+  const windows = collectLiveActivityWindows(now).filter((w) => w.visibleNow);
+  const endEpochMs =
+    windows.map((w) => w.endEpochMs).sort((a, b) => a - b)[0] ??
+    (items[0]?.startEpochMs ?? now.getTime()) + 30 * 60_000;
 
   try {
     await LiveActivities.startOrUpdate({

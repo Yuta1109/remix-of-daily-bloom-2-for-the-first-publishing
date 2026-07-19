@@ -143,6 +143,8 @@ const translations = {
       "Live Activities are disabled for this app. iPhone Settings → Essences → Live Activities → On",
     localLaActive: "Local Live Activity windows active",
     localLaNone: "No event currently inside its lead window",
+    endBeforeStart: "End must be after the start. Please fix the date or time.",
+    timeRequired: "Please set both start and end times.",
   },
   ja: {
     today: "今日",
@@ -271,6 +273,8 @@ const translations = {
       "このアプリの Live Activities がオフです。iPhoneの「設定」→ Essences → Live Activities をオンにしてください",
     localLaActive: "リード時間内の予定あり（端末側は開始を試み済み）",
     localLaNone: "いまリード時間内の予定はありません",
+    endBeforeStart: "終了は開始より後にしてください。日付または時刻を修正してください。",
+    timeRequired: "開始時刻と終了時刻を入力してください。",
   },
 } as const;
 

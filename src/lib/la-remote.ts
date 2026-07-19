@@ -1,6 +1,12 @@
 import { Capacitor } from "@capacitor/core";
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getAuth, signInAnonymously, type Auth } from "firebase/auth";
+import {
+  getAuth,
+  initializeAuth,
+  indexedDBLocalPersistence,
+  signInAnonymously,
+  type Auth,
+} from "firebase/auth";
 import {
   getFirestore,
   doc,
@@ -55,7 +61,10 @@ function readWebConfig(): FirebaseWebConfig | null {
     try {
       const parsed = JSON.parse(raw) as FirebaseWebConfig;
       if (parsed?.apiKey && parsed?.projectId && parsed?.appId && parsed?.messagingSenderId) {
-        return parsed;
+        return {
+          ...parsed,
+          authDomain: parsed.authDomain || `${parsed.projectId}.firebaseapp.com`,
+        };
       }
       console.warn("[la-remote] VITE_FIREBASE_WEB_CONFIG missing required keys");
     } catch {
@@ -93,7 +102,12 @@ function webConfig(): FirebaseWebConfig | null {
 }
 
 function setError(err: unknown): void {
-  lastError = err instanceof Error ? err.message : String(err);
+  const code =
+    err && typeof err === "object" && "code" in err
+      ? String((err as { code?: string }).code)
+      : "";
+  const msg = err instanceof Error ? err.message : String(err);
+  lastError = code ? `${code}: ${msg}` : msg;
   console.warn("[la-remote]", lastError);
 }
 
@@ -128,6 +142,17 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+function getOrInitAuth(firebaseApp: FirebaseApp): Auth {
+  try {
+    // WKWebView: default getAuth() persistence can hang; indexedDB is reliable.
+    return initializeAuth(firebaseApp, {
+      persistence: indexedDBLocalPersistence,
+    });
+  } catch {
+    return getAuth(firebaseApp);
+  }
+}
+
 async function ensureFirebase(): Promise<boolean> {
   if (initPromise) return initPromise;
   initPromise = (async () => {
@@ -140,10 +165,8 @@ async function ensureFirebase(): Promise<boolean> {
       return false;
     }
     app = getApps().length ? getApps()[0]! : initializeApp(config);
-    auth = getAuth(app);
+    auth = getOrInitAuth(app);
     db = getFirestore(app);
-    // Prefer direct anonymous sign-in. Waiting only on onAuthStateChanged can
-    // hang forever in WKWebView when persistence never emits.
     await withTimeout(
       (async () => {
         if (auth!.currentUser) {
@@ -155,7 +178,7 @@ async function ensureFirebase(): Promise<boolean> {
         deviceUid = cred.user.uid;
         lastError = null;
       })(),
-      15_000,
+      30_000,
       "Firebase Auth",
     );
     return true;
@@ -181,7 +204,7 @@ async function upsertDeviceDoc(): Promise<void> {
       { merge: true },
     );
     lastSyncAt = Date.now();
-    lastError = null;
+    if (!lastError?.startsWith("auth/")) lastError = null;
   } catch (err) {
     setError(err);
   }
@@ -228,7 +251,8 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
   try {
     const now = new Date();
     const locale = currentLocale();
-    const windows = collectLiveActivityWindows(now);
+    // Only schedule remote push for not-yet-started windows.
+    const windows = collectLiveActivityWindows(now).filter((w) => w.activeNow || w.showAtEpochMs > now.getTime());
 
     const existing = await getDocs(
       query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid)),
@@ -237,6 +261,7 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
     existing.forEach((d) => batch.delete(d.ref));
 
     for (const w of windows) {
+      if (w.startEpochMs <= now.getTime()) continue; // don't re-push after start
       const ref = doc(collection(db, "laSchedules"), `${deviceUid}_${w.eventId}`);
       batch.set(ref, {
         deviceId: deviceUid,

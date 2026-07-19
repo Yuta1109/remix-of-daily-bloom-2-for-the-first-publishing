@@ -7,6 +7,13 @@ import {
 } from "./events-store";
 
 /**
+ * After event start, keep the Lock Screen card briefly so the widget can show
+ * "It's time" instead of the system stale spinner. Cleared when the user opens
+ * the app (refresh ends activities with no visible windows) or linger elapses.
+ */
+export const LIVE_ACTIVITY_LINGER_MS = 30 * 60_000;
+
+/**
  * Live Activity lead window for one occurrence.
  *
  * Example: lead = 4h, event starts in 3h → window already open → showAt = now
@@ -20,10 +27,13 @@ export interface LiveActivityWindow {
   startEpochMs: number;
   /** When the LA should appear (never after start; never before window open). */
   showAtEpochMs: number;
+  /** When the LA should dismiss if the app never opens (start + linger). */
   endEpochMs: number;
   leadMinutes: number;
-  /** True when now is already inside [showAt, end). */
+  /** True when inside [showAt, start) — schedule push / local start. */
   activeNow: boolean;
+  /** True when the Lock Screen should still show (includes post-start linger). */
+  visibleNow: boolean;
 }
 
 export function computeLiveActivityWindow(
@@ -32,25 +42,28 @@ export function computeLiveActivityWindow(
 ): LiveActivityWindow | null {
   if (!event.liveActivity || event.allDay) return null;
   const leadMinutes = effectiveLiveActivityLeadMinutes(event.liveActivityLead);
-  const [next] = upcomingOccurrenceStarts(event, now, 14, 1);
+  // Include current occurrence even if start just passed (linger window).
+  const [next] = upcomingOccurrenceStarts(event, new Date(now.getTime() - LIVE_ACTIVITY_LINGER_MS), 14, 1);
   if (!next) return null;
 
   const startEpochMs = next.getTime();
+  const endEpochMs = startEpochMs + LIVE_ACTIVITY_LINGER_MS;
   const windowOpen = startEpochMs - leadMinutes * 60_000;
   const nowMs = now.getTime();
-  if (nowMs >= startEpochMs) return null;
+  if (nowMs >= endEpochMs) return null;
 
   // Already inside the lead window → start immediately (not wait until "4h before").
-  const showAtEpochMs = Math.max(windowOpen, nowMs);
+  const showAtEpochMs = Math.max(windowOpen, Math.min(nowMs, startEpochMs));
   return {
     eventId: event.id,
     title: event.title,
     color: event.color || "blue",
     startEpochMs,
     showAtEpochMs,
-    endEpochMs: startEpochMs,
+    endEpochMs,
     leadMinutes,
     activeNow: nowMs >= showAtEpochMs && nowMs < startEpochMs,
+    visibleNow: nowMs >= showAtEpochMs && nowMs < endEpochMs,
   };
 }
 
