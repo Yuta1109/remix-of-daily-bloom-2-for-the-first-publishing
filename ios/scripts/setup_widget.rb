@@ -17,6 +17,7 @@
 # while the app is killed, via APNs / Firebase).
 
 require "xcodeproj"
+require "json"
 
 APP_NAME = "App"
 WIDGET_NAME = "EssentialsWidget"
@@ -182,3 +183,23 @@ end
 
 project.save
 puts "EssencesWidget wiring complete."
+
+# --- Register in-app Capacitor plugin (not an npm package) -------------------
+# Capacitor 8 only loads classes listed in capacitor.config.json packageClassList.
+# `cap sync` fills that list from node_modules plugins and never sees App/*.swift,
+# so without this step JS gets: "LiveActivities" plugin is not implemented on ios.
+cap_json_path = File.expand_path("App/capacitor.config.json", Dir.pwd)
+if File.exist?(cap_json_path)
+  cap_json = JSON.parse(File.read(cap_json_path))
+  class_list = Array(cap_json["packageClassList"])
+  unless class_list.include?("LiveActivitiesPlugin")
+    class_list << "LiveActivitiesPlugin"
+    cap_json["packageClassList"] = class_list
+    File.write(cap_json_path, JSON.pretty_generate(cap_json) + "\n")
+    puts "Registered LiveActivitiesPlugin in capacitor.config.json packageClassList."
+  else
+    puts "LiveActivitiesPlugin already in packageClassList."
+  end
+else
+  puts "WARNING: #{cap_json_path} missing — run npx cap sync ios first."
+end

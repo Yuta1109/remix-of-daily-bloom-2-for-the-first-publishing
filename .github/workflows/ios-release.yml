@@ -94,6 +94,13 @@ jobs:
             || { echo "GoogleService-Info.plist was not added to the Xcode project"; exit 1; }
           test -f ios/App/App/GoogleService-Info.plist
 
+      - name: Verify LiveActivitiesPlugin is registered with Capacitor
+        run: |
+          grep -q 'LiveActivitiesPlugin' ios/App/App/capacitor.config.json \
+            || { echo "LiveActivitiesPlugin missing from packageClassList"; exit 1; }
+          grep -q 'LiveActivitiesPlugin.swift' ios/App/App.xcodeproj/project.pbxproj \
+            || { echo "LiveActivitiesPlugin.swift not in Xcode project"; exit 1; }
+
       - name: Prepare App Store Connect API key
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}

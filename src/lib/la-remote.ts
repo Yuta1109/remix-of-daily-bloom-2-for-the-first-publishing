@@ -1,11 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import {
-  getAuth,
-  signInAnonymously,
-  onAuthStateChanged,
-  type Auth,
-} from "firebase/auth";
+import { getAuth, signInAnonymously, type Auth } from "firebase/auth";
 import {
   getFirestore,
   doc,
@@ -147,28 +142,19 @@ async function ensureFirebase(): Promise<boolean> {
     app = getApps().length ? getApps()[0]! : initializeApp(config);
     auth = getAuth(app);
     db = getFirestore(app);
+    // Prefer direct anonymous sign-in. Waiting only on onAuthStateChanged can
+    // hang forever in WKWebView when persistence never emits.
     await withTimeout(
-      new Promise<void>((resolve, reject) => {
-        const unsub = onAuthStateChanged(
-          auth!,
-          async (user) => {
-            unsub();
-            try {
-              if (!user) {
-                const cred = await signInAnonymously(auth!);
-                deviceUid = cred.user.uid;
-              } else {
-                deviceUid = user.uid;
-              }
-              lastError = null;
-              resolve();
-            } catch (err) {
-              reject(err);
-            }
-          },
-          reject,
-        );
-      }),
+      (async () => {
+        if (auth!.currentUser) {
+          deviceUid = auth!.currentUser.uid;
+          lastError = null;
+          return;
+        }
+        const cred = await signInAnonymously(auth!);
+        deviceUid = cred.user.uid;
+        lastError = null;
+      })(),
       15_000,
       "Firebase Auth",
     );

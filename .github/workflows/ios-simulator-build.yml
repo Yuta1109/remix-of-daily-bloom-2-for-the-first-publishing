@@ -74,6 +74,11 @@ jobs:
         working-directory: ios/App
         run: ruby ../scripts/setup_widget.rb
 
+      - name: Verify LiveActivitiesPlugin is registered with Capacitor
+        run: |
+          grep -q 'LiveActivitiesPlugin' ios/App/App/capacitor.config.json \
+            || { echo "LiveActivitiesPlugin missing from packageClassList"; exit 1; }
+
       - name: Show schemes
         run: xcodebuild -list -project ios/App/App.xcodeproj
 
