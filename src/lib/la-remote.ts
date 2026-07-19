@@ -111,6 +111,18 @@ function setError(err: unknown): void {
   console.warn("[la-remote]", lastError);
 }
 
+/** Surface non-fatal FCM / token hints in Settings without clearing Auth success. */
+export function setRemoteDiagnosticHint(hint: string): void {
+  if (!deviceUid) {
+    lastError = hint;
+    return;
+  }
+  // Keep Auth/Firestore success visible; append token hint.
+  if (!lastError || lastError.startsWith("FCM:") || lastError.startsWith("FirebaseApp:")) {
+    lastError = hint;
+  }
+}
+
 export function getLiveActivityRemoteStatus(): LiveActivityRemoteStatus {
   const config = webConfig();
   return {

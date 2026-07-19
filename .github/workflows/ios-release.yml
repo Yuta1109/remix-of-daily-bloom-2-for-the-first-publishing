@@ -94,10 +94,12 @@ jobs:
             || { echo "GoogleService-Info.plist was not added to the Xcode project"; exit 1; }
           test -f ios/App/App/GoogleService-Info.plist
 
-      - name: Verify LiveActivitiesPlugin is registered with Capacitor
+      - name: Verify LiveActivities + Firebase plugins are registered
         run: |
-          grep -q 'LiveActivitiesPlugin' ios/App/App/capacitor.config.json \
-            || { echo "LiveActivitiesPlugin missing from packageClassList"; exit 1; }
+          for name in LiveActivitiesPlugin FirebaseAppPlugin FirebaseMessagingPlugin; do
+            grep -q "$name" ios/App/App/capacitor.config.json \
+              || { echo "$name missing from packageClassList"; exit 1; }
+          done
           grep -q 'LiveActivitiesPlugin.swift' ios/App/App.xcodeproj/project.pbxproj \
             || { echo "LiveActivitiesPlugin.swift not in Xcode project"; exit 1; }
 

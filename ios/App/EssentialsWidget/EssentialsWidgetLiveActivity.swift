@@ -2,26 +2,26 @@ import ActivityKit
 import WidgetKit
 import SwiftUI
 
-// Warm dark palette aligned with Essences accent (HSL ~25 80% 58%) on charcoal.
+// Match in-app page background (HSL 40 20% 98%) with Essences orange accent.
 @available(iOS 16.1, *)
 private enum EssencesLAStyle {
-    static let background = Color(red: 0.11, green: 0.09, blue: 0.08)
-    static let cream = Color(red: 0.98, green: 0.96, blue: 0.93)
-    static let muted = Color(red: 0.72, green: 0.66, blue: 0.60)
+    static let background = Color(red: 0.980, green: 0.973, blue: 0.961)
+    static let title = Color(red: 0.08, green: 0.09, blue: 0.12)
+    static let muted = Color(red: 0.42, green: 0.43, blue: 0.46)
     static let accent = Color(red: 0.92, green: 0.48, blue: 0.22)
 }
 
 @available(iOS 16.1, *)
 private func colorFor(_ key: String) -> Color {
     switch key {
-    case "green": return Color(hue: 145 / 360, saturation: 0.55, brightness: 0.72)
+    case "green": return Color(hue: 145 / 360, saturation: 0.55, brightness: 0.55)
     case "orange": return EssencesLAStyle.accent
-    case "pink": return Color(hue: 335 / 360, saturation: 0.70, brightness: 0.88)
-    case "purple": return Color(hue: 265 / 360, saturation: 0.55, brightness: 0.82)
-    case "red": return Color(hue: 0 / 360, saturation: 0.70, brightness: 0.85)
-    case "teal": return Color(hue: 180 / 360, saturation: 0.55, brightness: 0.70)
-    case "gray": return Color(hue: 220 / 360, saturation: 0.08, brightness: 0.65)
-    default: return Color(hue: 212 / 360, saturation: 0.75, brightness: 0.85)
+    case "pink": return Color(hue: 335 / 360, saturation: 0.70, brightness: 0.72)
+    case "purple": return Color(hue: 265 / 360, saturation: 0.55, brightness: 0.65)
+    case "red": return Color(hue: 0 / 360, saturation: 0.70, brightness: 0.68)
+    case "teal": return Color(hue: 180 / 360, saturation: 0.55, brightness: 0.55)
+    case "gray": return Color(hue: 220 / 360, saturation: 0.08, brightness: 0.50)
+    default: return Color(hue: 212 / 360, saturation: 0.75, brightness: 0.62)
     }
 }
 
@@ -40,7 +40,6 @@ private func overflowText(_ locale: String, _ n: Int) -> String {
     locale == "ja" ? "ほか\(n)件" : "+\(n) more"
 }
 
-/// "1時間2分後" / "1h 2m" — no seconds. Refreshes via TimelineView.
 @available(iOS 16.1, *)
 private func relativeRemaining(from now: Date, to target: Date, locale: String) -> String {
     let total = max(0, Int(target.timeIntervalSince(now)))
@@ -66,57 +65,54 @@ private struct RelativeOrArrivedLabel: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = context.date
-            if now >= target {
-                Text(arrivedText(locale))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(EssencesLAStyle.accent)
-                    .multilineTextAlignment(.trailing)
-            } else {
-                Text(relativeRemaining(from: now, to: target, locale: locale))
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(EssencesLAStyle.accent)
-                    .multilineTextAlignment(.trailing)
+            Group {
+                if now >= target {
+                    Text(arrivedText(locale))
+                } else {
+                    Text(relativeRemaining(from: now, to: target, locale: locale))
+                }
             }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(EssencesLAStyle.accent)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
         }
     }
 }
 
-/// Lock Screen presentation only. ActivityConfiguration still requires a
-/// `dynamicIsland` trailing closure; we leave it empty (no DI design).
+/// Compact Lock Screen card — fits up to 3 rows without clipping.
 @available(iOS 16.1, *)
 struct LockScreenView: View {
     let state: EssencesWidgetAttributes.ContentState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
                 Image(systemName: "calendar")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(EssencesLAStyle.accent)
                 Text(headerText(state.locale))
-                    .font(.caption.weight(.bold))
+                    .font(.caption2.weight(.bold))
                     .foregroundStyle(EssencesLAStyle.muted)
                 Spacer(minLength: 0)
             }
 
             ForEach(Array(state.items.enumerated()), id: \.offset) { _, item in
-                HStack(alignment: .center, spacing: 10) {
+                HStack(alignment: .center, spacing: 8) {
                     Capsule()
                         .fill(colorFor(item.color))
-                        .frame(width: 4, height: 36)
+                        .frame(width: 3, height: 22)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.title)
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(EssencesLAStyle.cream)
-                            .lineLimit(1)
-                        RelativeOrArrivedLabel(target: item.startDate, locale: state.locale)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    Text(item.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(EssencesLAStyle.title)
+                        .lineLimit(1)
 
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 6)
+
+                    RelativeOrArrivedLabel(target: item.startDate, locale: state.locale)
+                        .frame(minWidth: 72, alignment: .trailing)
                 }
-                .padding(.vertical, 2)
             }
 
             if state.overflow > 0 {
@@ -125,7 +121,8 @@ struct LockScreenView: View {
                     .foregroundStyle(EssencesLAStyle.muted)
             }
         }
-        .padding(16)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(EssencesLAStyle.background)
     }
@@ -136,8 +133,9 @@ struct EssencesWidgetLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: EssencesWidgetAttributes.self) { context in
             LockScreenView(state: context.state)
+                .widgetURL(URL(string: "essences://live-activity"))
                 .activityBackgroundTint(EssencesLAStyle.background)
-                .activitySystemActionForegroundColor(EssencesLAStyle.cream)
+                .activitySystemActionForegroundColor(EssencesLAStyle.title)
         } dynamicIsland: { _ in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {

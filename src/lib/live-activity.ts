@@ -52,9 +52,14 @@ function currentLocale(): "en" | "ja" {
   return (navigator.language || "en").startsWith("ja") ? "ja" : "en";
 }
 
+/**
+ * Items to show while managing from the app.
+ * Only pre-start windows — arrived events are dropped so opening the app
+ * (or tapping the Live Activity) clears "予定時間になりました" rows.
+ */
 function collectActiveItems(now: Date): LiveActivityItem[] {
   return collectLiveActivityWindows(now)
-    .filter((w) => w.visibleNow)
+    .filter((w) => w.activeNow)
     .map((w) => ({
       title: w.title,
       startEpochMs: w.startEpochMs,
@@ -160,9 +165,13 @@ export async function refreshLiveActivities(): Promise<void> {
 
   const items = active.slice(0, MAX_ITEMS);
   const overflow = active.length - items.length;
-  const windows = collectLiveActivityWindows(now).filter((w) => w.visibleNow);
+  // Keep ActivityKit alive a bit past each start so Lock Screen can show
+  // "It's time" until the user opens/taps the app (then this refresh ends it).
   const endEpochMs =
-    windows.map((w) => w.endEpochMs).sort((a, b) => a - b)[0] ??
+    collectLiveActivityWindows(now)
+      .filter((w) => w.activeNow)
+      .map((w) => w.endEpochMs)
+      .sort((a, b) => a - b)[0] ??
     (items[0]?.startEpochMs ?? now.getTime()) + 30 * 60_000;
 
   try {

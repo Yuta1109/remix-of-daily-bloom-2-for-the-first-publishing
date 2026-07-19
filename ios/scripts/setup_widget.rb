@@ -192,13 +192,25 @@ cap_json_path = File.expand_path("App/capacitor.config.json", Dir.pwd)
 if File.exist?(cap_json_path)
   cap_json = JSON.parse(File.read(cap_json_path))
   class_list = Array(cap_json["packageClassList"])
-  unless class_list.include?("LiveActivitiesPlugin")
-    class_list << "LiveActivitiesPlugin"
+  # In-app plugin + Firebase plugins required for FCM / remote Live Activity.
+  required_plugins = %w[
+    LiveActivitiesPlugin
+    FirebaseAppPlugin
+    FirebaseMessagingPlugin
+  ]
+  added = []
+  required_plugins.each do |name|
+    next if class_list.include?(name)
+
+    class_list << name
+    added << name
+  end
+  if added.any?
     cap_json["packageClassList"] = class_list
     File.write(cap_json_path, JSON.pretty_generate(cap_json) + "\n")
-    puts "Registered LiveActivitiesPlugin in capacitor.config.json packageClassList."
+    puts "Registered in packageClassList: #{added.join(', ')}"
   else
-    puts "LiveActivitiesPlugin already in packageClassList."
+    puts "Capacitor packageClassList already has Live Activities + Firebase plugins."
   end
 else
   puts "WARNING: #{cap_json_path} missing — run npx cap sync ios first."

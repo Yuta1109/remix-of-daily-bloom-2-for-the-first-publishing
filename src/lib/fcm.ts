@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { FirebaseApp } from "@capacitor-firebase/app";
 import { FirebaseMessaging } from "@capacitor-firebase/messaging";
-import { setRemoteFcmToken } from "./la-remote";
+import { setRemoteFcmToken, setRemoteDiagnosticHint } from "./la-remote";
 
 /**
  * Request notification permission (if needed) and upload the FCM registration
@@ -17,7 +17,9 @@ export async function initFcmRegistration(): Promise<void> {
     // Touches the native FirebaseApp plugin so GoogleService-Info.plist is loaded.
     await FirebaseApp.getName();
   } catch (err) {
-    console.warn("[fcm] FirebaseApp not ready (is GoogleService-Info.plist bundled?):", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn("[fcm] FirebaseApp not ready:", msg);
+    setRemoteDiagnosticHint(`FirebaseApp: ${msg}`);
   }
 
   try {
@@ -25,9 +27,7 @@ export async function initFcmRegistration(): Promise<void> {
     if (perm.receive !== "granted") {
       const req = await FirebaseMessaging.requestPermissions();
       if (req.receive !== "granted") {
-        console.info(
-          "[fcm] notification permission not granted — Live Activity push may not start while killed",
-        );
+        setRemoteDiagnosticHint("FCM: notification permission not granted");
         return;
       }
     }
@@ -35,12 +35,16 @@ export async function initFcmRegistration(): Promise<void> {
     const { token } = await FirebaseMessaging.getToken();
     if (token) {
       setRemoteFcmToken(token);
+    } else {
+      setRemoteDiagnosticHint("FCM: getToken returned empty");
     }
 
     await FirebaseMessaging.addListener("tokenReceived", (event) => {
       if (event.token) setRemoteFcmToken(event.token);
     });
   } catch (err) {
-    console.warn("[fcm] registration failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn("[fcm] registration failed:", msg);
+    setRemoteDiagnosticHint(`FCM: ${msg}`);
   }
 }

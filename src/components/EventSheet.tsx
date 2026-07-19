@@ -156,8 +156,9 @@ function eventRangeStartMs(e: CalendarEvent): number {
   return new Date(y, m - 1, d, hh, mm, 0, 0).getTime();
 }
 
+/** Uses the user's endDate as-entered (no silent clamp to start date). */
 function eventRangeEndMs(e: CalendarEvent): number {
-  const endDate = !e.endDate || e.endDate < e.date ? e.date : e.endDate;
+  const endDate = e.endDate?.trim() || e.date;
   const [y, m, d] = endDate.split("-").map(Number);
   const [hh, mm] = (e.endTime || "00:00").split(":").map(Number);
   return new Date(y, m - 1, d, hh, mm, 0, 0).getTime();
@@ -554,6 +555,11 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
 
   const save = () => {
     if (!form.title.trim()) return;
+    const endDateRaw = form.endDate?.trim() || form.date;
+    if (endDateRaw < form.date) {
+      window.alert(t("endBeforeStart"));
+      return;
+    }
     if (!form.allDay) {
       if (!form.startTime || !form.endTime) {
         window.alert(t("timeRequired"));
@@ -564,12 +570,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         return;
       }
     }
-    const endDate =
-      !form.endDate || form.endDate < form.date ? form.date : form.endDate;
     upsertEvent({
       ...form,
       title: form.title.trim(),
-      endDate,
+      endDate: endDateRaw,
       location: form.location?.trim() || undefined,
       notes: form.notes?.trim() || undefined,
       startTime: form.allDay ? undefined : form.startTime,

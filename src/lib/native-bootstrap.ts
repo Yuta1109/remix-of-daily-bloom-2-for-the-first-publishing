@@ -50,6 +50,7 @@ export async function initNative(): Promise<void> {
 
   App.addListener("appStateChange", ({ isActive }) => {
     if (isActive) {
+      // Opening the app (or tapping the Live Activity) drops arrived rows.
       syncSchedules();
       scheduleLiveActivityBoundaries();
     } else {
@@ -57,4 +58,7 @@ export async function initNative(): Promise<void> {
     }
   });
   App.addListener("resume", () => syncSchedules());
+  App.addListener("appUrlOpen", () => {
+    syncSchedules();
+  });
 }
