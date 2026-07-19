@@ -133,6 +133,12 @@ const translations = {
     about: "About",
     version: "Version",
     privacyPolicy: "Privacy Policy",
+    remoteLaStatus: "Live Activity cloud sync",
+    remoteLaOk: "Connected to Firestore",
+    remoteLaNoConfig: "Firebase config missing in this build",
+    remoteLaAuthFail: "Sign-in failed (enable Anonymous Auth?)",
+    remoteLaWaiting: "Connecting…",
+    remoteLaError: "Error",
   },
   ja: {
     today: "今日",
@@ -251,6 +257,12 @@ const translations = {
     about: "アプリについて",
     version: "バージョン",
     privacyPolicy: "プライバシーポリシー",
+    remoteLaStatus: "ライブアクティビティのクラウド同期",
+    remoteLaOk: "Firestore に接続済み",
+    remoteLaNoConfig: "このビルドに Firebase 設定がありません",
+    remoteLaAuthFail: "サインイン失敗（Anonymous 認証を有効化してください）",
+    remoteLaWaiting: "接続中…",
+    remoteLaError: "エラー",
   },
 } as const;
 

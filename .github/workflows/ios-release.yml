@@ -8,7 +8,8 @@ name: iOS Release (App Store / TestFlight)
 #   APP_STORE_CONNECT_PRIVATE_KEY  Contents of the AuthKey_XXXX.p8 file (paste as-is)
 #   APPLE_TEAM_ID                  Your 10-character Apple Developer Team ID
 #   GOOGLE_SERVICE_INFO_PLIST      Base64 of GoogleService-Info.plist (required)
-#   FIREBASE_WEB_CONFIG            JSON string for Vite Firebase web SDK (optional but needed for remote LA)
+#   FIREBASE_WEB_CONFIG            Optional one-line JSON firebaseConfig; if unset,
+#                                  CI derives it from GoogleService-Info.plist
 #
 # Signing strategy:
 #   Archive WITHOUT code signing. Ephemeral CI runners + Automatic signing +
@@ -48,19 +49,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web assets
-        env:
-          VITE_FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
-        run: npm run build
-
-      - name: Sync Capacitor iOS project
-        run: npx cap sync ios
-
       - name: Install xcodeproj gem
         run: gem install xcodeproj --no-document
 
-      # Must exist BEFORE setup_widget.rb so it is added to Copy Bundle Resources.
+      # Plist must exist before: (1) Vite web config derivation, (2) setup_widget wiring.
       # Missing plist → FirebaseMessaging.configure() crashes the app on launch.
+      # Missing web config → Firestore never written (remote Live Activity broken).
       - name: Write GoogleService-Info.plist from secret
         env:
           PLIST_B64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
@@ -72,6 +66,23 @@ jobs:
           echo "$PLIST_B64" | base64 --decode > ios/App/App/GoogleService-Info.plist
           grep -q "GOOGLE_APP_ID\|API_KEY\|GCM_SENDER_ID" ios/App/App/GoogleService-Info.plist \
             || { echo "Decoded file does not look like GoogleService-Info.plist"; exit 1; }
+
+      - name: Resolve Firebase web config for Vite
+        env:
+          FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
+        run: node scripts/build-firebase-web-config.mjs --write-env
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Verify Firebase web config was baked into the bundle
+        run: |
+          # Vite inlines import.meta.env.VITE_* as string literals.
+          grep -R --include='*.js' -l 'todolist-app-project-4fd37' dist \
+            || { echo "Built JS does not contain Firebase projectId — VITE_FIREBASE_WEB_CONFIG missing at build time"; exit 1; }
+
+      - name: Sync Capacitor iOS project
+        run: npx cap sync ios
 
       - name: Wire Live Activity widget extension
         working-directory: ios/App

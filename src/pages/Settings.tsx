@@ -18,6 +18,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { App } from "@capacitor/app";
+import {
+  getLiveActivityRemoteStatus,
+  initLiveActivityRemote,
+  type LiveActivityRemoteStatus,
+} from "@/lib/la-remote";
+import { isLiveActivitySupported } from "@/lib/live-activity";
 
 const APP_VERSION = "1.0.0";
 const PREVIEW_LIMIT = 4;
@@ -36,6 +42,7 @@ export default function Settings({ staticPreview = false }: Props) {
   const [userEnabled, setUserEnabled] = useState(getNotificationsUserEnabled());
   const [listOpen, setListOpen] = useState(false);
   const [requesting, setRequesting] = useState(false);
+  const [remoteStatus, setRemoteStatus] = useState<LiveActivityRemoteStatus | null>(null);
 
   const refreshPermission = async () => {
     if (!isNative()) return;
@@ -43,9 +50,19 @@ export default function Settings({ staticPreview = false }: Props) {
     setPerm(s);
   };
 
+  const refreshRemoteStatus = async () => {
+    if (!isLiveActivitySupported()) {
+      setRemoteStatus(null);
+      return;
+    }
+    await initLiveActivityRemote();
+    setRemoteStatus(getLiveActivityRemoteStatus());
+  };
+
   useEffect(() => setReusable(loadReusable()), []);
   useEffect(() => {
     void refreshPermission();
+    void refreshRemoteStatus();
   }, []);
 
   useEffect(() => {
@@ -247,6 +264,29 @@ export default function Settings({ staticPreview = false }: Props) {
             </button>
           </div>
         </div>
+
+        {remoteStatus && (
+          <div className="bg-card rounded-2xl p-5 shadow-soft">
+            <p className="text-sm font-semibold mb-2">{t("remoteLaStatus")}</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {!remoteStatus.configPresent
+                ? t("remoteLaNoConfig")
+                : remoteStatus.authenticated
+                  ? t("remoteLaOk")
+                  : remoteStatus.lastError
+                    ? `${t("remoteLaError")}: ${remoteStatus.lastError}`
+                    : t("remoteLaWaiting")}
+            </p>
+            {remoteStatus.projectId && (
+              <p className="text-[11px] text-muted-foreground/80 mt-2 font-mono break-all">
+                {remoteStatus.projectId}
+                {remoteStatus.deviceUid ? ` · ${remoteStatus.deviceUid.slice(0, 8)}…` : ""}
+                {remoteStatus.hasFcmToken ? " · FCM✓" : " · FCM✗"}
+                {remoteStatus.hasPushToStartToken ? " · LA✓" : " · LA✗"}
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="bg-card rounded-2xl p-5 shadow-soft mb-6">
           <div className="flex items-center gap-2 mb-4">

@@ -38,18 +38,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web assets
-        env:
-          VITE_FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
-        run: npm run build
-
-      - name: Sync Capacitor iOS project
-        run: npx cap sync ios
-
       - name: Install xcodeproj gem
         run: gem install xcodeproj --no-document
 
-      # Prefer writing before setup_widget so the resource is present when wired.
       - name: Write GoogleService-Info.plist from secret
         env:
           PLIST_B64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
@@ -62,6 +53,22 @@ jobs:
           grep -q "GOOGLE_APP_ID\|API_KEY\|GCM_SENDER_ID" ios/App/App/GoogleService-Info.plist \
             || { echo "Decoded file does not look like GoogleService-Info.plist"; exit 1; }
           echo "Wrote ios/App/App/GoogleService-Info.plist"
+
+      - name: Resolve Firebase web config for Vite
+        env:
+          FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
+        run: |
+          if [ ! -f ios/App/App/GoogleService-Info.plist ] && [ -z "$FIREBASE_WEB_CONFIG" ]; then
+            echo "No plist / FIREBASE_WEB_CONFIG — building without remote Firebase (simulator OK)."
+            exit 0
+          fi
+          node scripts/build-firebase-web-config.mjs --write-env
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Sync Capacitor iOS project
+        run: npx cap sync ios
 
       - name: Wire Live Activity widget extension
         working-directory: ios/App

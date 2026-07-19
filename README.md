@@ -63,15 +63,14 @@ CI writes `ios/App/App/GoogleService-Info.plist` before Xcode build (`setup_widg
 
 **3. Firebase web config (for schedule sync from the app)**
 
-1. Firebase Console → Project settings → **Add app** → **Web** (`</>`).
-2. Copy the `firebaseConfig` object.
-3. New secret `FIREBASE_WEB_CONFIG` = one-line JSON, e.g.
-
-```json
-{"apiKey":"...","authDomain":"todolist-app-project-4fd37.firebaseapp.com","projectId":"todolist-app-project-4fd37","storageBucket":"...","messagingSenderId":"...","appId":"..."}
-```
+CI **derives** `VITE_FIREBASE_WEB_CONFIG` from `GoogleService-Info.plist` at build time
+(`scripts/build-firebase-web-config.mjs`). Optional secret `FIREBASE_WEB_CONFIG`
+(one-line JSON) overrides the plist-derived values.
 
 Locally you can use `.env.local` (see `.env.example`).
+
+**Critical:** Without this baked into the Vite bundle, the app never writes to
+Firestore (Usage stays at zero) and kill-state Live Activities cannot be scheduled.
 
 ### Firebase Console checklist (your side)
 

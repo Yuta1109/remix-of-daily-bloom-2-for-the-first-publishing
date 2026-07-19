@@ -112,26 +112,32 @@ async function sendStartForSchedule(scheduleId, data) {
   }
 }
 
+async function loadByStatus(status, limit) {
+  // Equality-only query — no composite index required.
+  // (status + showAtEpochMs inequality was failing 100% without an index.)
+  try {
+    const snap = await db
+      .collection("laSchedules")
+      .where("status", "==", status)
+      .limit(limit)
+      .get();
+    return snap.docs;
+  } catch (err) {
+    logger.error(`loadByStatus(${status}) failed`, err);
+    return [];
+  }
+}
+
 async function dispatchDue(limit = 40) {
   const now = Date.now();
-  // Keep the query simple (one equality + one inequality) to avoid composite indexes.
-  const pending = await db
-    .collection("laSchedules")
-    .where("status", "==", "pending")
-    .where("showAtEpochMs", "<=", now)
-    .limit(limit)
-    .get();
-  const due = await db
-    .collection("laSchedules")
-    .where("status", "==", "due")
-    .where("showAtEpochMs", "<=", now)
-    .limit(limit)
-    .get();
-
-  const docs = [...pending.docs, ...due.docs];
+  const docs = [
+    ...(await loadByStatus("pending", limit)),
+    ...(await loadByStatus("due", limit)),
+  ];
   let sent = 0;
   for (const docSnap of docs) {
     const data = docSnap.data();
+    if (Number(data.showAtEpochMs) > now) continue;
     if (Number(data.endAtEpochMs) <= now) continue;
     const ok = await sendStartForSchedule(docSnap.id, data);
     if (ok) sent += 1;
@@ -155,8 +161,12 @@ export const onLaScheduleWrite = onDocumentWritten(
   },
 );
 
-/** Catch future windows when the app is killed (poll every minute). */
-export const dispatchLiveActivities = onSchedule("every 1 minutes", async () => {
+/**
+ * Poll for future showAt windows when the app is killed.
+ * every 15 minutes (was 1 minute) to keep Blaze spend tiny while debugging.
+ * In-window saves still fire immediately via onLaScheduleWrite.
+ */
+export const dispatchLiveActivities = onSchedule("every 15 minutes", async () => {
   const sent = await dispatchDue();
   logger.info("dispatchLiveActivities sent", { sent });
 });
