@@ -3,6 +3,28 @@ import { FirebaseApp } from "@capacitor-firebase/app";
 import { FirebaseMessaging } from "@capacitor-firebase/messaging";
 import { setRemoteFcmToken, setRemoteDiagnosticHint } from "./la-remote";
 
+let listenersBound = false;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchFcmTokenWithRetry(attempts = 6): Promise<string | null> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const { token } = await FirebaseMessaging.getToken();
+      if (token) return token;
+    } catch (err) {
+      lastErr = err;
+    }
+    // APNs device token often arrives a moment after launch; wait and retry.
+    await sleep(1500 * (i + 1));
+  }
+  if (lastErr) throw lastErr;
+  return null;
+}
+
 /**
  * Request notification permission (if needed) and upload the FCM registration
  * token to Firestore via setRemoteFcmToken. Required for ActivityKit
@@ -14,7 +36,6 @@ export async function initFcmRegistration(): Promise<void> {
   }
 
   try {
-    // Touches the native FirebaseApp plugin so GoogleService-Info.plist is loaded.
     await FirebaseApp.getName();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -32,16 +53,28 @@ export async function initFcmRegistration(): Promise<void> {
       }
     }
 
-    const { token } = await FirebaseMessaging.getToken();
+    if (!listenersBound) {
+      listenersBound = true;
+      await FirebaseMessaging.addListener("tokenReceived", (event) => {
+        if (event.token) setRemoteFcmToken(event.token);
+      });
+      try {
+        await FirebaseMessaging.addListener("apnsTokenReceived", () => {
+          void fetchFcmTokenWithRetry(3).then((token) => {
+            if (token) setRemoteFcmToken(token);
+          });
+        });
+      } catch {
+        /* older plugin builds may not expose this event */
+      }
+    }
+
+    const token = await fetchFcmTokenWithRetry();
     if (token) {
       setRemoteFcmToken(token);
     } else {
-      setRemoteDiagnosticHint("FCM: getToken returned empty");
+      setRemoteDiagnosticHint("FCM: getToken empty after retries (waiting for APNs?)");
     }
-
-    await FirebaseMessaging.addListener("tokenReceived", (event) => {
-      if (event.token) setRemoteFcmToken(event.token);
-    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[fcm] registration failed:", msg);

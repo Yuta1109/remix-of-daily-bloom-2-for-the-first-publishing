@@ -145,6 +145,8 @@ const translations = {
     localLaNone: "No event currently inside its lead window",
     endBeforeStart: "End must be after the start. Please fix the date or time.",
     timeRequired: "Please set both start and end times.",
+    liveActivityStartInPast:
+      "Start time is in the past. Turn off Live Activity, or set a start time in the future.",
   },
   ja: {
     today: "今日",
@@ -275,6 +277,8 @@ const translations = {
     localLaNone: "いまリード時間内の予定はありません",
     endBeforeStart: "終了は開始より後にしてください。日付または時刻を修正してください。",
     timeRequired: "開始時刻と終了時刻を入力してください。",
+    liveActivityStartInPast:
+      "開始時刻が現在より前です。ライブアクティビティをオフにするか、開始時刻をこれから先に修正してください。",
   },
 } as const;
 

@@ -1,31 +1,31 @@
 /**
  * Essences Live Activity dispatcher (Firebase project: todolist-app-project-4fd37).
  *
- * Schedules use showAtEpochMs = max(start − lead, now). So if the user sets
- * lead=4h while the event is only 3h away, status becomes "due" and we push
- * immediately (and the app also starts locally while foregrounded).
+ * Schedules use showAtEpochMs = max(start − lead, now).
+ * Future windows are enqueued as Cloud Tasks that fire at showAt (exact).
+ * Already-due writes push immediately via onLaScheduleWrite.
  *
- * Payload shape follows:
+ * Payload shape:
  *   https://firebase.google.com/docs/cloud-messaging/customize-messages/live-activity
- *   (FCM registration token + apns.live_activity_token + start event)
- * Headers follow Apple ActivityKit push requirements:
- *   apns-push-type: liveactivity
- *   apns-topic: <bundleId>.push-type.liveactivity
  *
- * Deploy (Blaze plan required for scheduled functions):
+ * Deploy:
  *   cd functions && npm i && firebase deploy --only functions,firestore
  */
 
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
+import { getFunctions } from "firebase-admin/functions";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onTaskDispatched } from "firebase-functions/v2/tasks";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import { logger } from "firebase-functions";
+import { GoogleAuth } from "google-auth-library";
 
 initializeApp();
-setGlobalOptions({ region: "asia-northeast1" });
+
+const REGION = "asia-northeast1";
+setGlobalOptions({ region: REGION });
 
 const db = getFirestore();
 const messaging = getMessaging();
@@ -33,6 +33,103 @@ const messaging = getMessaging();
 /** Must match the Swift `ActivityAttributes` type name exactly. */
 const ATTRIBUTES_TYPE = "EssencesWidgetAttributes";
 const BUNDLE_ID = "com.confast.essences";
+/** Exported task-queue function name — must match `taskQueue(...)` below. */
+const TASK_FN = "dispatchLiveActivityTask";
+
+let googleAuth;
+
+/** Resolve the Cloud Run URI for a 2nd-gen function (needed when enqueuing). */
+async function getFunctionUrl(name, location = REGION) {
+  if (!googleAuth) {
+    googleAuth = new GoogleAuth({
+      scopes: "https://www.googleapis.com/auth/cloud-platform",
+    });
+  }
+  const projectId = await googleAuth.getProjectId();
+  const url =
+    "https://cloudfunctions.googleapis.com/v2beta/" +
+    `projects/${projectId}/locations/${location}/functions/${name}`;
+  const client = await googleAuth.getClient();
+  const res = await client.request({ url });
+  const uri = res.data?.serviceConfig?.uri;
+  if (!uri) {
+    throw new Error(`Unable to retrieve uri for function at ${url}`);
+  }
+  return uri;
+}
+
+function taskQueue() {
+  return getFunctions().taskQueue(`locations/${REGION}/functions/${TASK_FN}`);
+}
+
+/**
+ * Cloud Tasks IDs must be [A-Za-z0-9_-]+. Reverse the schedule id so sequential
+ * Firestore ids do not hotspot the queue; append showAt for uniqueness when
+ * the lead window changes (deleted ids cannot be reused for ~1h).
+ */
+function makeTaskId(scheduleId, showAtEpochMs) {
+  const reversed = String(scheduleId).split("").reverse().join("");
+  const safe = reversed.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 400);
+  return `${safe}-${Number(showAtEpochMs)}`;
+}
+
+async function deleteTaskBestEffort(taskId) {
+  if (!taskId) return;
+  try {
+    await taskQueue().delete(taskId);
+  } catch (err) {
+    // Already ran / missing — fine.
+    logger.info("deleteTask ignored", { taskId, message: String(err?.message || err) });
+  }
+}
+
+async function enqueueAtShowAt(scheduleId, data) {
+  const showAt = Number(data.showAtEpochMs);
+  const taskId = makeTaskId(scheduleId, showAt);
+  if (data.cloudTaskId && data.cloudTaskId !== taskId) {
+    await deleteTaskBestEffort(data.cloudTaskId);
+  }
+
+  const uri = await getFunctionUrl(TASK_FN);
+  try {
+    await taskQueue().enqueue(
+      { scheduleId },
+      {
+        id: taskId,
+        scheduleTime: new Date(showAt),
+        dispatchDeadlineSeconds: 60 * 5,
+        uri,
+      },
+    );
+  } catch (err) {
+    // Same id still reserved (~1h after delete/execute) — try without fixed id.
+    const code = err?.code || err?.errorInfo?.code;
+    if (String(code).includes("already-exists") || /already.exists/i.test(String(err?.message))) {
+      logger.warn("task id collision; enqueue without id", { scheduleId, taskId });
+      await taskQueue().enqueue(
+        { scheduleId },
+        {
+          scheduleTime: new Date(showAt),
+          dispatchDeadlineSeconds: 60 * 5,
+          uri,
+        },
+      );
+      await db.collection("laSchedules").doc(scheduleId).update({
+        cloudTaskId: FieldValue.delete(),
+        taskEnqueuedForShowAt: showAt,
+        updatedAt: Date.now(),
+      });
+      return;
+    }
+    throw err;
+  }
+
+  await db.collection("laSchedules").doc(scheduleId).update({
+    cloudTaskId: taskId,
+    taskEnqueuedForShowAt: showAt,
+    updatedAt: Date.now(),
+  });
+}
 
 async function sendStartForSchedule(scheduleId, data) {
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
@@ -41,8 +138,6 @@ async function sendStartForSchedule(scheduleId, data) {
     return false;
   }
   const device = deviceSnap.data() || {};
-  // Pitfall A: need BOTH the FCM registration token and the ActivityKit
-  // push-to-start token (not FCM alone).
   const fcmToken = device.fcmToken;
   const liveToken = device.pushToStartToken;
   if (!fcmToken || !liveToken) {
@@ -56,7 +151,6 @@ async function sendStartForSchedule(scheduleId, data) {
   const nowSec = Math.floor(Date.now() / 1000);
   const staleSec = Math.floor(Number(data.endAtEpochMs) / 1000);
 
-  // Must match EssencesWidgetAttributes.ContentState Codable keys exactly.
   const contentState = {
     items: [
       {
@@ -75,7 +169,6 @@ async function sendStartForSchedule(scheduleId, data) {
       apns: {
         liveActivityToken: liveToken,
         headers: {
-          // Pitfall C: ActivityKit pushes are ignored without these headers.
           "apns-push-type": "liveactivity",
           "apns-topic": `${BUNDLE_ID}.push-type.liveactivity`,
           "apns-priority": "10",
@@ -89,7 +182,7 @@ async function sendStartForSchedule(scheduleId, data) {
             attributes: { name: "Essences" },
             "stale-date": staleSec,
             alert: {
-              title: data.locale === "en" ? "Upcoming" : "まもなくの予定",
+              title: data.locale === "en" ? "Upcoming" : "今後の予定",
               body: String(data.title || ""),
             },
           },
@@ -100,6 +193,7 @@ async function sendStartForSchedule(scheduleId, data) {
       status: "started",
       startedAt: Date.now(),
       lastError: FieldValue.delete(),
+      cloudTaskId: FieldValue.delete(),
     });
     return true;
   } catch (err) {
@@ -112,61 +206,117 @@ async function sendStartForSchedule(scheduleId, data) {
   }
 }
 
-async function loadByStatus(status, limit) {
-  // Equality-only query — no composite index required.
-  // (status + showAtEpochMs inequality was failing 100% without an index.)
-  try {
-    const snap = await db
-      .collection("laSchedules")
-      .where("status", "==", status)
-      .limit(limit)
-      .get();
-    return snap.docs;
-  } catch (err) {
-    logger.error(`loadByStatus(${status}) failed`, err);
-    return [];
-  }
-}
-
-async function dispatchDue(limit = 40) {
-  const now = Date.now();
-  const docs = [
-    ...(await loadByStatus("pending", limit)),
-    ...(await loadByStatus("due", limit)),
-  ];
-  let sent = 0;
-  for (const docSnap of docs) {
-    const data = docSnap.data();
-    if (Number(data.showAtEpochMs) > now) continue;
-    if (Number(data.endAtEpochMs) <= now) continue;
-    const ok = await sendStartForSchedule(docSnap.id, data);
-    if (ok) sent += 1;
-  }
-  return sent;
-}
-
-/** Immediate path when a schedule is written as already due (in-window save). */
-export const onLaScheduleWrite = onDocumentWritten(
-  "laSchedules/{scheduleId}",
-  async (event) => {
-    const after = event.data?.after;
-    if (!after?.exists) return;
-    const data = after.data();
-    if (!data) return;
-    if (data.status !== "pending" && data.status !== "due") return;
-    const now = Date.now();
-    if (data.showAtEpochMs <= now && data.endAtEpochMs > now) {
-      await sendStartForSchedule(after.id, data);
+/**
+ * Fires at showAt (enqueued by onLaScheduleWrite).
+ * Payload: { scheduleId: string }
+ */
+export const dispatchLiveActivityTask = onTaskDispatched(
+  {
+    retryConfig: {
+      maxAttempts: 5,
+      minBackoffSeconds: 30,
+    },
+    rateLimits: {
+      maxConcurrentDispatches: 10,
+    },
+  },
+  async (req) => {
+    const scheduleId = req.data?.scheduleId;
+    if (!scheduleId) {
+      logger.warn("Task missing scheduleId");
+      return;
     }
+    const snap = await db.collection("laSchedules").doc(scheduleId).get();
+    if (!snap.exists) {
+      logger.info("Schedule gone; skip", scheduleId);
+      return;
+    }
+    const data = snap.data();
+    if (data.status !== "pending" && data.status !== "due") {
+      logger.info("Schedule not pending/due; skip", scheduleId, data.status);
+      return;
+    }
+    const now = Date.now();
+    if (Number(data.endAtEpochMs) <= now) {
+      await snap.ref.update({ status: "expired", cloudTaskId: FieldValue.delete() });
+      return;
+    }
+    // Early dispatch (clock skew) — still OK if showAt is within a minute; otherwise re-enqueue.
+    if (Number(data.showAtEpochMs) > now + 60_000) {
+      logger.info("Task early; re-enqueue", scheduleId);
+      await enqueueAtShowAt(scheduleId, data);
+      return;
+    }
+    await sendStartForSchedule(scheduleId, data);
   },
 );
 
 /**
- * Poll for future showAt windows when the app is killed.
- * every 15 minutes (was 1 minute) to keep Blaze spend tiny while debugging.
- * In-window saves still fire immediately via onLaScheduleWrite.
+ * On every laSchedules write:
+ *  - due now → push immediately
+ *  - future showAt → enqueue Cloud Task at showAt
+ *  - delete / non-pending → cancel pending task
  */
-export const dispatchLiveActivities = onSchedule("every 15 minutes", async () => {
-  const sent = await dispatchDue();
-  logger.info("dispatchLiveActivities sent", { sent });
-});
+export const onLaScheduleWrite = onDocumentWritten(
+  "laSchedules/{scheduleId}",
+  async (event) => {
+    const scheduleId = event.params.scheduleId;
+    const before = event.data?.before?.exists ? event.data.before.data() : null;
+    const afterSnap = event.data?.after;
+    const after = afterSnap?.exists ? afterSnap.data() : null;
+
+    if (!after) {
+      await deleteTaskBestEffort(before?.cloudTaskId);
+      return;
+    }
+
+    // Ignore metadata-only updates and title/color edits (payload is read at fire time).
+    if (
+      before &&
+      before.showAtEpochMs === after.showAtEpochMs &&
+      before.status === after.status &&
+      before.endAtEpochMs === after.endAtEpochMs &&
+      before.deviceId === after.deviceId
+    ) {
+      return;
+    }
+
+    if (after.status !== "pending" && after.status !== "due") {
+      await deleteTaskBestEffort(after.cloudTaskId || before?.cloudTaskId);
+      return;
+    }
+
+    const now = Date.now();
+    if (Number(after.endAtEpochMs) <= now) {
+      await deleteTaskBestEffort(after.cloudTaskId || before?.cloudTaskId);
+      return;
+    }
+
+    if (Number(after.showAtEpochMs) <= now) {
+      await deleteTaskBestEffort(after.cloudTaskId || before?.cloudTaskId);
+      await sendStartForSchedule(scheduleId, after);
+      return;
+    }
+
+    // Already enqueued for this exact showAt — nothing to do.
+    if (
+      after.taskEnqueuedForShowAt === after.showAtEpochMs &&
+      after.cloudTaskId
+    ) {
+      return;
+    }
+
+    try {
+      await enqueueAtShowAt(scheduleId, after);
+      logger.info("Enqueued LA task", {
+        scheduleId,
+        showAtEpochMs: after.showAtEpochMs,
+      });
+    } catch (err) {
+      logger.error("Failed to enqueue LA task", err);
+      await afterSnap.ref.update({
+        lastError: `enqueue: ${String(err?.message || err)}`,
+      });
+    }
+  },
+);

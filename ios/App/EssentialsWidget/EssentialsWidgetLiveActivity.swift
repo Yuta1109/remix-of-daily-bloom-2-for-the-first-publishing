@@ -27,7 +27,7 @@ private func colorFor(_ key: String) -> Color {
 
 @available(iOS 16.1, *)
 private func headerText(_ locale: String) -> String {
-    locale == "ja" ? "まもなくの予定" : "Upcoming"
+    locale == "ja" ? "今後の予定" : "Upcoming"
 }
 
 @available(iOS 16.1, *)
@@ -41,35 +41,24 @@ private func overflowText(_ locale: String, _ n: Int) -> String {
 }
 
 @available(iOS 16.1, *)
-private func relativeRemaining(from now: Date, to target: Date, locale: String) -> String {
-    let total = max(0, Int(target.timeIntervalSince(now)))
-    let hours = total / 3600
-    let minutes = (total % 3600) / 60
-    if locale == "ja" {
-        if total < 60 { return "まもなく" }
-        if hours > 0 && minutes > 0 { return "\(hours)時間\(minutes)分後" }
-        if hours > 0 { return "\(hours)時間後" }
-        return "\(minutes)分後"
-    }
-    if total < 60 { return "soon" }
-    if hours > 0 && minutes > 0 { return "in \(hours)h \(minutes)m" }
-    if hours > 0 { return "in \(hours)h" }
-    return "in \(minutes)m"
-}
-
-@available(iOS 16.1, *)
 private struct RelativeOrArrivedLabel: View {
     let target: Date
     let locale: String
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
+        // Text(timerInterval:) is updated by the system on the Lock Screen.
+        // Custom TimelineView strings often stay frozen until the app refreshes
+        // the Live Activity — which matched the “reopen app to update” bug.
+        TimelineView(.periodic(from: .now, by: 30)) { context in
             let now = context.date
             Group {
                 if now >= target {
                     Text(arrivedText(locale))
+                } else if target.timeIntervalSince(now) < 60 {
+                    Text(locale == "ja" ? "まもなく" : "soon")
                 } else {
-                    Text(relativeRemaining(from: now, to: target, locale: locale))
+                    Text(timerInterval: now...target, countsDown: true)
+                        .monospacedDigit()
                 }
             }
             .font(.caption.weight(.semibold))

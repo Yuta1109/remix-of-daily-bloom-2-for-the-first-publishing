@@ -38,13 +38,14 @@ That is rendered by the system. It does **not** require FCM/APNs pushes every se
 
 What runs on a schedule is **only the decision to start** the Live Activity when the app is not running:
 
-| Mechanism | Interval | Purpose |
-|-----------|----------|---------|
-| Cloud Function `dispatchLiveActivities` | every **1 minute** | Poll Firestore for schedules with `showAtEpochMs <= now` and send **one** push-to-start |
+| Mechanism | Timing | Purpose |
+|-----------|--------|---------|
+| Cloud Task → `dispatchLiveActivityTask` | exact `showAt` | Send **one** push-to-start when the lead window opens |
+| `onLaScheduleWrite` | on Firestore write | Immediate start if already due; else enqueue the Cloud Task |
 | JS `scheduleLiveActivityBoundaries` | at next window open/close | Local start/end while app process is alive |
-| System `Text(timerInterval:)` | continuous UI | Countdown digits; no network |
+| Widget `TimelineView` | ~every 60s UI | Relative countdown; no network |
 
-**Conclusion:** Minute-level Cloud Scheduler polling is **not** “countdown auto-update.” It cannot cause APNs rate-limit failure for ticking timers. Apple’s ActivityKit update budget matters for **content-state push updates** after start; this app does **not** send periodic update pushes for the countdown.
+**Conclusion:** Cloud Tasks scheduling is **not** “countdown auto-update.” It cannot cause APNs rate-limit failure for ticking timers. Apple’s ActivityKit update budget matters for **content-state push updates** after start; this app does **not** send periodic update pushes for the countdown.
 
 ### 2.2 “What does the Live Activity show, and for how long?”
 
@@ -53,7 +54,7 @@ What runs on a schedule is **only the decision to start** the Live Activity when
 | Phase | Shown? | What |
 |-------|--------|------|
 | Before `showAt` | No | Nothing |
-| `showAt` ≤ now < **event start** | Yes | Lock Screen card: header (“まもなくの予定” / “Upcoming”), up to 3 rows (color, title, countdown to **start**) |
+| `showAt` ≤ now < **event start** | Yes | Lock Screen card: header (“今後の予定” / “Upcoming”), up to 3 rows (color, title, countdown to **start**) |
 | After **event start** | No (ended) | Activity is ended at `endEpochMs = startEpochMs` |
 | During event until event **end** time | No | **Not implemented** — end time is unused for LA |
 
@@ -222,8 +223,13 @@ Region: `asia-northeast1`
 
 ### 7.1 Triggers
 
-1. **`onLaScheduleWrite`** — on `laSchedules/{id}` write, if status is `pending`/`due` and `showAt <= now < endAt`, send start immediately  
-2. **`dispatchLiveActivities`** — Cloud Scheduler **every 15 minutes**, equality query on `status` then filter `showAt` in memory (avoids composite-index failures)
+1. **`onLaScheduleWrite`** — on `laSchedules/{id}` write:
+   - if `showAt <= now < endAt` → send FCM start immediately  
+   - if `showAt` is in the future → enqueue **Cloud Task** (`dispatchLiveActivityTask`) with `scheduleTime = showAt`  
+   - on delete / non-pending → delete pending task (`cloudTaskId`)
+2. **`dispatchLiveActivityTask`** — Cloud Tasks worker; at `showAt` re-reads the schedule and sends FCM start  
+
+(The old scheduled poller `dispatchLiveActivities` is removed.)
 
 ### 7.2 Send path (must match Firebase + Apple docs)
 
@@ -299,7 +305,8 @@ User saves event (LA on, lead 4h, start in 3h)
 User saves event (lead 1h, start in 3h) then force-quits
   → devices doc has fcmToken + pushToStartToken (from earlier open)
   → laSchedules status=pending, showAt = start−1h
-  → every 1 min: dispatchLiveActivities
+  → Cloud Task enqueued with scheduleTime = showAt
+  → at showAt: dispatchLiveActivityTask
   → when showAt ≤ now: FCM start with live_activity_token
   → APNs delivers → system starts LA → Lock Screen UI
 ```
@@ -375,7 +382,7 @@ User saves event (lead 1h, start in 3h) then force-quits
 Please evaluate:
 
 1. Is ending the Live Activity at **event start** (not event end) consistent with ActivityKit best practices for a pre-start countdown?  
-2. Is polling Firestore every **1 minute** for push-to-start acceptable vs. Cloud Tasks / exact scheduling? Any risk of duplicate starts?  
+2. Cloud Tasks exact `showAt` scheduling — any operational gotchas (IAM, 30-day max schedule, task-id reuse ~1h)?  
 3. Is `content-state` with nested `items[]` and `startEpochMs` as JSON numbers safe for ActivityKit’s default Codable decoding (no custom strategies)?  
 4. Given Lock Screen uses `Text(timerInterval:)`, is omitting `event: "update"` pushes correct?  
 5. Are there missing pieces for reliable push-to-start on TestFlight (production APNs): e.g. `input-push-token`, alert localization shape, stale-date semantics, or token refresh after reinstall?  

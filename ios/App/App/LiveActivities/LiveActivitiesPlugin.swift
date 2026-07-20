@@ -17,6 +17,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "startOrUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "endAll", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startPushToStartTokenUpdates", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPushToStartToken", returnType: CAPPluginReturnPromise),
     ]
 
     private var endWorkItem: DispatchWorkItem?
@@ -59,6 +60,19 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             notifyListeners("pushToStartToken", data: ["token": token])
         }
         call.resolve()
+    }
+
+    @objc func getPushToStartToken(_ call: CAPPluginCall) {
+        guard #available(iOS 17.2, *) else {
+            call.resolve(["token": NSNull()])
+            return
+        }
+        LiveActivityPushTokenCenter.start()
+        if let token = LiveActivityPushTokenCenter.currentToken {
+            call.resolve(["token": token])
+        } else {
+            call.resolve(["token": NSNull()])
+        }
     }
 
     @objc func startOrUpdate(_ call: CAPPluginCall) {

@@ -76,15 +76,48 @@ Firestore (Usage stays at zero) and kill-state Live Activities cannot be schedul
 
 1. **Authentication** → Sign-in method → enable **Anonymous**.
 2. **Firestore** → Create database (production mode is fine; we deploy `firestore.rules`).
-3. Upgrade to **Blaze** if you have not (needed for scheduled Cloud Functions).
+3. Upgrade to **Blaze** if you have not (needed for Cloud Functions + Cloud Tasks).
 4. APNs Auth Key already uploaded under Cloud Messaging — good.
-5. Deploy backend (from a machine with Firebase CLI logged in):
+5. Deploy backend (from a machine with Firebase CLI logged in).
+6. After first deploy of the task function, fix IAM if enqueue logs show `PERMISSION DENIED` (steps below).
 
-```bash
-cd functions && npm install && cd ..
+PowerShell (Norton / corporate SSL workaround included):
+
+```powershell
+cd C:\Users\yutaa\remix-of-daily-bloom-2-for-the-first-publishing
+cd functions; npm install; cd ..
 npx firebase login
+$env:NODE_OPTIONS = "--use-system-ca --require=./no-keepalive.cjs"
 npx firebase deploy --only functions,firestore --project todolist-app-project-4fd37
 ```
+
+After deploy, Console → Functions should show:
+
+| Function | Role |
+|----------|------|
+| `onLaScheduleWrite` | Schedule write → push now **or** enqueue Cloud Task at `showAt` |
+| `dispatchLiveActivityTask` | Cloud Tasks worker — fires at `showAt` and sends FCM start |
+
+If an old `dispatchLiveActivities` (scheduled poller) still exists, delete it:
+
+```powershell
+$env:NODE_OPTIONS = "--use-system-ca --require=./no-keepalive.cjs"
+npx firebase functions:delete dispatchLiveActivities --region asia-northeast1 --project todolist-app-project-4fd37
+```
+
+#### IAM (only if enqueue / invoke fails)
+
+In [Google Cloud Console](https://console.cloud.google.com/) → project `todolist-app-project-4fd37`:
+
+1. Enable API **Cloud Tasks** (APIs & Services → Library) if deploy did not already.
+2. **IAM** — App Engine default service account  
+   `todolist-app-project-4fd37@appspot.gserviceaccount.com`  
+   (and/or the Compute default `…-compute@developer.gserviceaccount.com` used by 2nd-gen functions) needs:
+   - `Cloud Tasks Enqueuer` (`roles/cloudtasks.enqueuer`)
+   - Permission to **act as itself** (Service Account User on that same SA) so Tasks can OIDC-invoke the function
+3. On function `dispatchLiveActivityTask`, grant that SA **Cloud Functions Invoker** if Tasks cannot call it.
+
+Often the first `firebase deploy` of a task-queue function wires most of this; only chase IAM if Functions logs show permission errors.
 
 ### Apple Developer Portal
 
@@ -102,7 +135,7 @@ npx firebase deploy --only functions,firestore --project todolist-app-project-4f
 | Lock Screen Live Activity | `EssentialsWidgetLiveActivity` (no Dynamic Island design) |
 | Active ≤ 8h / Lock Screen ≤ 12h total | Lead capped at 8h |
 | Already inside lead when saving | Immediate local start + Firestore `due` → Cloud Function push |
-| App killed at future `showAt` | Cloud Function `dispatchLiveActivities` (every 1 min) + FCM |
+| App killed at future `showAt` | Cloud Task at exact `showAt` → `dispatchLiveActivityTask` + FCM |
 
 **Note:** Kill-state push also needs an **FCM registration token** on the device doc (in addition to the ActivityKit push-to-start token). Token upload for push-to-start is implemented; wiring Firebase Messaging for the FCM token is the next native step if pushes log `Missing tokens` in Functions.
 

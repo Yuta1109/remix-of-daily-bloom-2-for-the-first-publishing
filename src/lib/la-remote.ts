@@ -95,6 +95,7 @@ let fcmToken: string | null = null;
 let lastError: string | null = null;
 let lastSyncAt: number | null = null;
 let cachedConfig: FirebaseWebConfig | null | undefined;
+let pushToStartListenerBound = false;
 
 function webConfig(): FirebaseWebConfig | null {
   if (cachedConfig === undefined) cachedConfig = readWebConfig();
@@ -226,24 +227,50 @@ async function upsertDeviceDoc(): Promise<void> {
  * Call once on native boot. Starts push-to-start token observation and
  * syncs schedules to Firestore when config is present.
  */
+async function ingestPushToStartToken(token: string | null | undefined): Promise<void> {
+  if (!token) return;
+  pushToStartToken = token;
+  const ok = await ensureFirebase();
+  if (ok) {
+    await upsertDeviceDoc();
+    await syncLiveActivitySchedulesRemote();
+  }
+}
+
 export async function initLiveActivityRemote(): Promise<void> {
   if (!isLiveActivitySupported()) return;
 
   try {
-    await LiveActivities.startPushToStartTokenUpdates();
     const cap = LiveActivities as unknown as {
       addListener?: (
         event: string,
         cb: (data: { token: string }) => void,
       ) => Promise<{ remove: () => void }>;
     };
-    if (cap.addListener) {
+    // Register the listener BEFORE starting updates so the first token is not missed.
+    if (cap.addListener && !pushToStartListenerBound) {
+      pushToStartListenerBound = true;
       await cap.addListener("pushToStartToken", (data) => {
-        pushToStartToken = data.token;
-        void ensureFirebase().then((ok) => {
-          if (ok) void upsertDeviceDoc().then(() => syncLiveActivitySchedulesRemote());
-        });
+        void ingestPushToStartToken(data.token);
       });
+    }
+    await LiveActivities.startPushToStartTokenUpdates();
+
+    // Poll a few times — ActivityKit may emit the token shortly after launch.
+    for (let i = 0; i < 8 && !pushToStartToken; i++) {
+      try {
+        const { token } = await LiveActivities.getPushToStartToken();
+        if (token) {
+          await ingestPushToStartToken(token);
+          break;
+        }
+      } catch {
+        /* plugin may be older mid-upgrade */
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    if (!pushToStartToken) {
+      setRemoteDiagnosticHint("LA: push-to-start token not available yet");
     }
   } catch (err) {
     setError(err);

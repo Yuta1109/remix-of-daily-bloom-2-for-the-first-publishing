@@ -81,7 +81,7 @@ export function DayEventsSheet({
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                       <Clock className="w-3 h-3 flex-shrink-0" />
                       <span className="tabular-nums">
-                        {formatEventSchedule(ev, locale)}
+                        {formatEventSchedule(ev, locale, { emoji: false })}
                       </span>
                       {ev.location && (
                         <>

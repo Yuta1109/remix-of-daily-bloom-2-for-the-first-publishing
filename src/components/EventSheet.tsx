@@ -569,6 +569,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         window.alert(t("endBeforeStart"));
         return;
       }
+      if (form.liveActivity && eventRangeStartMs(form) < Date.now()) {
+        window.alert(t("liveActivityStartInPast"));
+        return;
+      }
     }
     upsertEvent({
       ...form,

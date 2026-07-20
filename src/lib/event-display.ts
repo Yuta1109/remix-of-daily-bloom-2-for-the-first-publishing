@@ -8,8 +8,12 @@ function parseYmd(iso: string): { y: number; m: number; d: number } {
 /** Human-readable schedule string for notifications & calendar lists. */
 export function formatEventSchedule(
   e: CalendarEvent,
-  locale: "en" | "ja" = "ja"
+  locale: "en" | "ja" = "ja",
+  /** Keep ⏰ for notification body text; omit when a Clock icon is shown beside it. */
+  opts?: { emoji?: boolean },
 ): string {
+  const prefix = opts?.emoji === false ? "" : "⏰ ";
+
   if (e.allDay) return locale === "ja" ? "終日" : "All day";
 
   const startDate = e.date;
@@ -19,8 +23,8 @@ export function formatEventSchedule(
 
   if (startDate === endDate) {
     if (!startTime && !endTime) return "";
-    if (startTime && endTime) return `⏰ ${startTime} - ${endTime}`;
-    return `⏰ ${startTime || endTime}`;
+    if (startTime && endTime) return `${prefix}${startTime} - ${endTime}`;
+    return `${prefix}${startTime || endTime}`;
   }
 
   const s = parseYmd(startDate);
@@ -41,7 +45,7 @@ export function formatEventSchedule(
   const endLabel = dayLabel(t.y, t.m, t.d, true);
 
   if (startTime && endTime) {
-    return `⏰ ${startLabel} ${startTime} - ${endLabel} ${endTime}`;
+    return `${prefix}${startLabel} ${startTime} - ${endLabel} ${endTime}`;
   }
-  return `⏰ ${startLabel} - ${endLabel}`;
+  return `${prefix}${startLabel} - ${endLabel}`;
 }

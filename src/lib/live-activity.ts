@@ -34,6 +34,8 @@ export interface LiveActivitiesPlugin {
   endAll(): Promise<void>;
   /** Observe ActivityKit push-to-start token (iOS 17.2+). */
   startPushToStartTokenUpdates(): Promise<void>;
+  /** Cached push-to-start token if ActivityKit has already emitted one. */
+  getPushToStartToken(): Promise<{ token: string | null }>;
 }
 
 export const LiveActivities = registerPlugin<LiveActivitiesPlugin>("LiveActivities");

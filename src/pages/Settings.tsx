@@ -29,6 +29,7 @@ import {
   refreshLiveActivities,
   type LiveActivityLocalStatus,
 } from "@/lib/live-activity";
+import { initFcmRegistration } from "@/lib/fcm";
 
 const APP_VERSION = "1.0.0";
 const PREVIEW_LIMIT = 4;
@@ -73,6 +74,11 @@ export default function Settings({ staticPreview = false }: Props) {
     try {
       await refreshLiveActivities();
       setLocalStatus(getLiveActivityLocalStatus());
+    } catch {
+      /* ignore */
+    }
+    try {
+      await initFcmRegistration();
     } catch {
       /* ignore */
     }
