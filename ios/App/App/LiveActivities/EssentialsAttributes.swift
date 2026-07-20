@@ -15,11 +15,15 @@ public struct EssencesWidgetAttributes: ActivityAttributes {
         public var overflow: Int
         /// UI language, synced with the in-app language setting ("en" | "ja").
         public var locale: String
+        /// Bumped by the app (or remote update push) to force Lock Screen redraw
+        /// so TimelineView relative strings can advance while the process lives.
+        public var tick: Int
 
-        public init(items: [Item], overflow: Int, locale: String) {
+        public init(items: [Item], overflow: Int, locale: String, tick: Int = 0) {
             self.items = items
             self.overflow = overflow
             self.locale = locale
+            self.tick = tick
         }
     }
 

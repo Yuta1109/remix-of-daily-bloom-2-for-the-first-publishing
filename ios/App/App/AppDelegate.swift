@@ -10,6 +10,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Start ActivityKit push-to-start token observation early and keep the
         // Task alive for the process lifetime (see LiveActivityPushTokenCenter).
         LiveActivityPushTokenCenter.start()
+        if #available(iOS 16.2, *) {
+            LiveActivityRefreshCenter.start()
+        }
         return true
     }
 

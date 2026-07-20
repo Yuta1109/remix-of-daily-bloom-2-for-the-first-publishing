@@ -35,6 +35,9 @@ const ATTRIBUTES_TYPE = "EssencesWidgetAttributes";
 const BUNDLE_ID = "com.confast.essences";
 /** Exported task-queue function name — must match `taskQueue(...)` below. */
 const TASK_FN = "dispatchLiveActivityTask";
+const REFRESH_FN = "refreshLiveActivityTask";
+/** Remote Lock Screen redraw while custom TimelineView text is used (app may be killed). */
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 let googleAuth;
 
@@ -60,6 +63,38 @@ async function getFunctionUrl(name, location = REGION) {
 
 function taskQueue() {
   return getFunctions().taskQueue(`locations/${REGION}/functions/${TASK_FN}`);
+}
+
+function refreshTaskQueue() {
+  return getFunctions().taskQueue(`locations/${REGION}/functions/${REFRESH_FN}`);
+}
+
+function buildContentState(data, tick = 0) {
+  return {
+    items: [
+      {
+        title: String(data.title || ""),
+        startEpochMs: Number(data.startEpochMs),
+        color: String(data.color || "blue"),
+      },
+    ],
+    overflow: 0,
+    locale: String(data.locale || "ja"),
+    tick: Number(tick) || 0,
+  };
+}
+
+async function enqueueRefresh(scheduleId, atMs) {
+  if (atMs <= Date.now()) atMs = Date.now() + 15_000;
+  const uri = await getFunctionUrl(REFRESH_FN);
+  await refreshTaskQueue().enqueue(
+    { scheduleId },
+    {
+      scheduleTime: new Date(atMs),
+      dispatchDeadlineSeconds: 60 * 5,
+      uri,
+    },
+  );
 }
 
 /**
@@ -150,18 +185,7 @@ async function sendStartForSchedule(scheduleId, data) {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const staleSec = Math.floor(Number(data.endAtEpochMs) / 1000);
-
-  const contentState = {
-    items: [
-      {
-        title: String(data.title || ""),
-        startEpochMs: Number(data.startEpochMs),
-        color: String(data.color || "blue"),
-      },
-    ],
-    overflow: 0,
-    locale: String(data.locale || "ja"),
-  };
+  const contentState = buildContentState(data, 0);
 
   try {
     await messaging.send({
@@ -195,6 +219,14 @@ async function sendStartForSchedule(scheduleId, data) {
       lastError: FieldValue.delete(),
       cloudTaskId: FieldValue.delete(),
     });
+    const nextRefresh = Date.now() + REFRESH_INTERVAL_MS;
+    if (nextRefresh < Number(data.startEpochMs)) {
+      try {
+        await enqueueRefresh(scheduleId, nextRefresh);
+      } catch (err) {
+        logger.warn("Failed to enqueue LA refresh", err);
+      }
+    }
     return true;
   } catch (err) {
     logger.error("FCM live activity start failed", err);
@@ -202,6 +234,49 @@ async function sendStartForSchedule(scheduleId, data) {
       lastError: String(err?.message || err),
       status: "error",
     });
+    return false;
+  }
+}
+
+async function sendUpdateForSchedule(scheduleId, data) {
+  const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
+  if (!deviceSnap.exists) return false;
+  const device = deviceSnap.data() || {};
+  const fcmToken = device.fcmToken;
+  const updateToken = device.liveActivityUpdateToken;
+  if (!fcmToken || !updateToken) {
+    logger.info("Skip LA refresh — missing update token", scheduleId, {
+      hasFcm: !!fcmToken,
+      hasUpdate: !!updateToken,
+    });
+    return false;
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const staleSec = Math.floor(Number(data.endAtEpochMs) / 1000);
+  try {
+    await messaging.send({
+      token: fcmToken,
+      apns: {
+        liveActivityToken: updateToken,
+        headers: {
+          "apns-push-type": "liveactivity",
+          "apns-topic": `${BUNDLE_ID}.push-type.liveactivity`,
+          "apns-priority": "10",
+        },
+        payload: {
+          aps: {
+            timestamp: nowSec,
+            event: "update",
+            "content-state": buildContentState(data, Date.now()),
+            "stale-date": staleSec,
+          },
+        },
+      },
+    });
+    return true;
+  } catch (err) {
+    logger.warn("FCM live activity update failed", scheduleId, err);
     return false;
   }
 }
@@ -248,6 +323,43 @@ export const dispatchLiveActivityTask = onTaskDispatched(
       return;
     }
     await sendStartForSchedule(scheduleId, data);
+  },
+);
+
+/**
+ * Every ~5 minutes while a Live Activity is active: FCM `update` bumps `tick`
+ * so Lock Screen TimelineView relative labels redraw without the system timer UI.
+ */
+export const refreshLiveActivityTask = onTaskDispatched(
+  {
+    retryConfig: {
+      maxAttempts: 3,
+      minBackoffSeconds: 60,
+    },
+    rateLimits: {
+      maxConcurrentDispatches: 10,
+    },
+  },
+  async (req) => {
+    const scheduleId = req.data?.scheduleId;
+    if (!scheduleId) return;
+    const snap = await db.collection("laSchedules").doc(scheduleId).get();
+    if (!snap.exists) return;
+    const data = snap.data();
+    if (data.status !== "started") return;
+    const now = Date.now();
+    if (Number(data.startEpochMs) <= now) return;
+
+    await sendUpdateForSchedule(scheduleId, data);
+
+    const next = now + REFRESH_INTERVAL_MS;
+    if (next < Number(data.startEpochMs)) {
+      try {
+        await enqueueRefresh(scheduleId, next);
+      } catch (err) {
+        logger.warn("Failed to re-enqueue LA refresh", err);
+      }
+    }
   },
 );
 

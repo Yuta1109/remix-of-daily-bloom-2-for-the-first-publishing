@@ -62,13 +62,15 @@ la_group = app_group["LiveActivities"] || app_group.new_group("LiveActivities", 
 attributes_path = File.expand_path("App/LiveActivities/EssentialsAttributes.swift", Dir.pwd)
 plugin_path = File.expand_path("App/LiveActivities/LiveActivitiesPlugin.swift", Dir.pwd)
 token_center_path = File.expand_path("App/LiveActivities/LiveActivityPushTokenCenter.swift", Dir.pwd)
+refresh_center_path = File.expand_path("App/LiveActivities/LiveActivityRefreshCenter.swift", Dir.pwd)
 
 attributes_ref = ref_for(project, la_group, attributes_path, "EssentialsAttributes.swift")
 plugin_ref = ref_for(project, la_group, plugin_path, "LiveActivitiesPlugin.swift")
 token_center_ref = ref_for(project, la_group, token_center_path, "LiveActivityPushTokenCenter.swift")
+refresh_center_ref = ref_for(project, la_group, refresh_center_path, "LiveActivityRefreshCenter.swift")
 
 app_sources = app_target.source_build_phase
-[attributes_ref, plugin_ref, token_center_ref].each do |ref|
+[attributes_ref, plugin_ref, token_center_ref, refresh_center_ref].each do |ref|
   next if app_sources.files_references.include?(ref)
 
   app_sources.add_file_reference(ref)

@@ -22,6 +22,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private var endWorkItem: DispatchWorkItem?
     private var tokenObserver: NSObjectProtocol?
+    private var updateTokenObserver: NSObjectProtocol?
 
     public override func load() {
         super.load()
@@ -33,12 +34,26 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let token = note.userInfo?["token"] as? String else { return }
             self?.notifyListeners("pushToStartToken", data: ["token": token])
         }
+        updateTokenObserver = NotificationCenter.default.addObserver(
+            forName: .essencesLiveActivityUpdateToken,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let token = note.userInfo?["token"] as? String else { return }
+            self?.notifyListeners("liveActivityUpdateToken", data: ["token": token])
+        }
         LiveActivityPushTokenCenter.start()
+        if #available(iOS 16.2, *) {
+            LiveActivityRefreshCenter.start()
+        }
     }
 
     deinit {
         if let tokenObserver {
             NotificationCenter.default.removeObserver(tokenObserver)
+        }
+        if let updateTokenObserver {
+            NotificationCenter.default.removeObserver(updateTokenObserver)
         }
     }
 
@@ -117,7 +132,8 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         let state = EssencesWidgetAttributes.ContentState(
             items: items,
             overflow: overflow,
-            locale: locale
+            locale: locale,
+            tick: 0
         )
 
         let earliestStart: Date? = {
@@ -153,6 +169,10 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                     staleDate: staleDate,
                     relevanceScore: relevance
                 )
+                if #available(iOS 16.2, *) {
+                    LiveActivityRefreshCenter.start()
+                    LiveActivityRefreshCenter.noteActivitiesChanged()
+                }
                 self.scheduleEnd(at: endDate)
                 call.resolve(["activityId": activityId as Any])
             } catch {

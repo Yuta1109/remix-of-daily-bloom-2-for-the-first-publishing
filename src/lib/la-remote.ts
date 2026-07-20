@@ -92,10 +92,12 @@ let initPromise: Promise<boolean> | null = null;
 let deviceUid: string | null = null;
 let pushToStartToken: string | null = null;
 let fcmToken: string | null = null;
+let liveActivityUpdateToken: string | null = null;
 let lastError: string | null = null;
 let lastSyncAt: number | null = null;
 let cachedConfig: FirebaseWebConfig | null | undefined;
 let pushToStartListenerBound = false;
+let updateTokenListenerBound = false;
 
 function webConfig(): FirebaseWebConfig | null {
   if (cachedConfig === undefined) cachedConfig = readWebConfig();
@@ -211,6 +213,7 @@ async function upsertDeviceDoc(): Promise<void> {
       {
         pushToStartToken: pushToStartToken ?? null,
         fcmToken: fcmToken ?? null,
+        liveActivityUpdateToken: liveActivityUpdateToken ?? null,
         platform: Capacitor.getPlatform(),
         updatedAt: Date.now(),
       },
@@ -252,6 +255,16 @@ export async function initLiveActivityRemote(): Promise<void> {
       pushToStartListenerBound = true;
       await cap.addListener("pushToStartToken", (data) => {
         void ingestPushToStartToken(data.token);
+      });
+    }
+    if (cap.addListener && !updateTokenListenerBound) {
+      updateTokenListenerBound = true;
+      await cap.addListener("liveActivityUpdateToken", (data) => {
+        if (!data.token) return;
+        liveActivityUpdateToken = data.token;
+        void ensureFirebase().then((ok) => {
+          if (ok) void upsertDeviceDoc();
+        });
       });
     }
     await LiveActivities.startPushToStartTokenUpdates();
