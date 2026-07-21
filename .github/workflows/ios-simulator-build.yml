@@ -2,6 +2,7 @@ name: iOS Simulator Build
 
 # Validates that the app + Live Activity widget compile for iOS, without any
 # Apple Developer account or code signing. Runs on every push to main.
+# (Public repos: free Actions minutes; re-run after private-minute limit hits.)
 on:
   workflow_dispatch:
   push:
