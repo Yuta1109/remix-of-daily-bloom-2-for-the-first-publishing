@@ -234,6 +234,14 @@ pkg = File.read(package_swift)
     FCM / Live Activity push tokens will stay null on device.
     Fix: remove experimental.ios.spm.packageOptions symlink settings, then run:
       npx cap sync ios
+      node scripts/ensure-spm-firebase-app-link.mjs
+  MSG
+end
+unless pkg.include?("symlinks/CapacitorFirebaseApp")
+  abort <<~MSG
+    ERROR: CapacitorFirebaseApp must point at symlinks/CapacitorFirebaseApp
+    (otherwise SPM identity collides with @capacitor/app → both basename "app").
+    Run: node scripts/ensure-spm-firebase-app-link.mjs
   MSG
 end
 puts "Verified Firebase SPM packages in CapApp-SPM/Package.swift."

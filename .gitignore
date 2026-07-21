@@ -33,4 +33,7 @@ GoogleService-Info.plist
 !.env.example
 functions/.env*
 
+# SPM identity symlink created by scripts/ensure-spm-firebase-app-link.mjs
+ios/App/CapApp-SPM/symlinks/
+
 

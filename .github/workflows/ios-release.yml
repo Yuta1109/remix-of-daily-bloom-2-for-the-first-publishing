@@ -84,6 +84,9 @@ jobs:
       - name: Sync Capacitor iOS project
         run: npx cap sync ios
 
+      - name: Fix SPM identity collision (@capacitor/app vs @capacitor-firebase/app)
+        run: node scripts/ensure-spm-firebase-app-link.mjs
+
       - name: Wire Live Activity widget extension
         working-directory: ios/App
         run: ruby ../scripts/setup_widget.rb
@@ -106,6 +109,10 @@ jobs:
             grep -q "$name" ios/App/CapApp-SPM/Package.swift \
               || { echo "$name missing from CapApp-SPM/Package.swift — FCM tokens will be null"; exit 1; }
           done
+          grep -q 'symlinks/CapacitorFirebaseApp' ios/App/CapApp-SPM/Package.swift \
+            || { echo "CapacitorFirebaseApp must use symlinks/ path to avoid SPM identity 'app' collision"; exit 1; }
+          test -e ios/App/CapApp-SPM/symlinks/CapacitorFirebaseApp \
+            || { echo "Missing CapApp-SPM/symlinks/CapacitorFirebaseApp link"; exit 1; }
 
       - name: Prepare App Store Connect API key
         env:

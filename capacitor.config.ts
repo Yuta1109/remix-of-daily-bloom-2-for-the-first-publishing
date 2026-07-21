@@ -9,6 +9,18 @@ const config: CapacitorConfig = {
     // intermittent black bars + oversized bottom gaps on notched iPhones.
     contentInset: "never",
   },
+  experimental: {
+    ios: {
+      spm: {
+        // @capacitor/app and @capacitor-firebase/app both basename to "app".
+        // Symlink gives CapacitorFirebaseApp a unique SPM identity. Creation may
+        // fail on Windows (EPERM); scripts/ensure-spm-firebase-app-link.mjs fixes that.
+        packageOptions: {
+          "@capacitor-firebase/app": { symlink: true },
+        },
+      },
+    },
+  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 600,
