@@ -35,6 +35,8 @@ enum LiveActivityRefreshCenter {
 
     private static func startHeartbeat() {
         let task = Task.detached(priority: .utility) {
+            // Immediate first refresh so Lock Screen is not stuck on the initial label.
+            await bumpTicks()
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 await bumpTicks()

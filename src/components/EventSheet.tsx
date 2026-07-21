@@ -54,6 +54,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { buttonVariants } from "@/components/ui/button";
 
 export type EventSheetTarget =
   | { mode: "new"; date: string }
@@ -769,47 +779,41 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     onEnableNotif: handleEnableNotif,
   };
 
-  const deleteMenu = deleteMenuOpen
-    ? createPortal(
-        <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-4">
+  const deleteMenu = (
+    <AlertDialog open={deleteMenuOpen} onOpenChange={setDeleteMenuOpen}>
+      <AlertDialogContent className="max-w-sm gap-3">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="text-base leading-snug">
+            {t(deleteTitleTk)}
+          </AlertDialogTitle>
+          <AlertDialogDescription className="sr-only">
+            {t(deleteTitleTk)}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="flex flex-col gap-2">
           <button
             type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label={t("cancel")}
-            onClick={() => setDeleteMenuOpen(false)}
-          />
-          <div className="relative w-full max-w-md bg-background rounded-2xl shadow-float overflow-hidden">
-            <p className="px-5 pt-5 pb-3 text-sm font-medium text-foreground">
-              {t(deleteTitleTk)}
-            </p>
-            <div className="flex flex-col divide-y divide-border/60">
-              <button
-                type="button"
-                onClick={deleteOnlyThis}
-                className="px-5 py-3.5 text-left text-sm text-foreground hover:bg-secondary/60"
-              >
-                {t(deleteOnlyTk)}
-              </button>
-              <button
-                type="button"
-                onClick={deleteThisAndFuture}
-                className="px-5 py-3.5 text-left text-sm text-destructive hover:bg-secondary/60"
-              >
-                {t(deleteFutureTk)}
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeleteMenuOpen(false)}
-                className="px-5 py-3.5 text-center text-sm font-medium text-muted-foreground hover:bg-secondary/60"
-              >
-                {t("cancel")}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )
-    : null;
+            className={cn(buttonVariants({ variant: "secondary" }), "h-auto w-full whitespace-normal py-3 text-left text-sm")}
+            onClick={deleteOnlyThis}
+          >
+            {t(deleteOnlyTk)}
+          </button>
+          <button
+            type="button"
+            className={cn(buttonVariants({ variant: "destructive" }), "h-auto w-full whitespace-normal py-3 text-left text-sm")}
+            onClick={deleteThisAndFuture}
+          >
+            {t(deleteFutureTk)}
+          </button>
+        </div>
+        <AlertDialogFooter className="sm:justify-center">
+          <AlertDialogCancel className="mt-0 w-full sm:w-auto">
+            {t("cancel")}
+          </AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 
 
   /* ── Modal variant ──────────────────────────────────────────────────── */

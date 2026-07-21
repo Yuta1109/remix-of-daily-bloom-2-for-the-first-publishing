@@ -26,6 +26,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        if #available(iOS 16.2, *) {
+            LiveActivityRefreshCenter.start()
+            LiveActivityRefreshCenter.noteActivitiesChanged()
+        }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

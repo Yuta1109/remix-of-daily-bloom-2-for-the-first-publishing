@@ -40,64 +40,40 @@ private func overflowText(_ locale: String, _ n: Int) -> String {
     locale == "ja" ? "ほか\(n)件" : "+\(n) more"
 }
 
-/// Always include minutes when hours remain so the label visibly changes each minute
-/// (e.g. avoid a frozen-looking "3時間後" for a full hour).
+/// Relative countdown — evaluated at Activity.update time (see LiveActivityRefreshCenter).
+/// TimelineView is intentionally not used: Lock Screen often freezes custom TimelineView
+/// text until the app refreshes the activity.
 @available(iOS 16.1, *)
-private func relativeRemaining(from now: Date, to target: Date, locale: String) -> String {
+func essencesRelativeRemaining(from now: Date, to target: Date, locale: String) -> String {
     let total = max(0, Int(target.timeIntervalSince(now)))
     let hours = total / 3600
     let minutes = (total % 3600) / 60
     if locale == "ja" {
+        if now >= target { return arrivedText(locale) }
         if total < 60 { return "まもなく" }
         if hours > 0 { return "\(hours)時間\(minutes)分後" }
         return "\(minutes)分後"
     }
+    if now >= target { return arrivedText(locale) }
     if total < 60 { return "soon" }
     if hours > 0 { return "in \(hours)h \(minutes)m" }
     return "in \(minutes)m"
-}
-
-/// Minute-aligned entries — Live Activities honor these better than a loose periodic clock.
-@available(iOS 16.1, *)
-private struct MinuteAlignedSchedule: TimelineSchedule {
-    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
-        let cal = Calendar.current
-        var next = cal.nextDate(
-            after: startDate.addingTimeInterval(-0.001),
-            matching: DateComponents(second: 0),
-            matchingPolicy: .nextTime
-        ) ?? startDate
-        return AnyIterator {
-            let current = next
-            next = next.addingTimeInterval(60)
-            return current
-        }
-    }
 }
 
 @available(iOS 16.1, *)
 private struct RelativeOrArrivedLabel: View {
     let target: Date
     let locale: String
-    /// From ContentState — changing tick rebuilds this view after Activity.update.
+    /// Bumped by heartbeat / FCM update → view re-renders with a fresh `Date()`.
     let tick: Int
 
     var body: some View {
-        TimelineView(MinuteAlignedSchedule()) { context in
-            let now = context.date
-            Group {
-                if now >= target {
-                    Text(arrivedText(locale))
-                } else {
-                    Text(relativeRemaining(from: now, to: target, locale: locale))
-                }
-            }
+        Text(essencesRelativeRemaining(from: Date(), to: target, locale: locale))
             .font(.caption.weight(.semibold))
             .foregroundStyle(EssencesLAStyle.accent)
             .lineLimit(1)
             .minimumScaleFactor(0.85)
-        }
-        .id(tick) // force fresh TimelineView when heartbeat / push bumps tick
+            .id(tick)
     }
 }
 
@@ -150,6 +126,8 @@ struct LockScreenView: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(EssencesLAStyle.background)
+        // Re-evaluate relative labels whenever tick changes.
+        .id(state.tick)
     }
 }
 

@@ -36,8 +36,8 @@ const BUNDLE_ID = "com.confast.essences";
 /** Exported task-queue function name — must match `taskQueue(...)` below. */
 const TASK_FN = "dispatchLiveActivityTask";
 const REFRESH_FN = "refreshLiveActivityTask";
-/** Remote Lock Screen redraw while custom TimelineView text is used (app may be killed). */
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+/** Remote Lock Screen redraw every minute (custom relative labels need Activity.update). */
+const REFRESH_INTERVAL_MS = 60 * 1000;
 
 let googleAuth;
 
@@ -327,8 +327,8 @@ export const dispatchLiveActivityTask = onTaskDispatched(
 );
 
 /**
- * Every ~5 minutes while a Live Activity is active: FCM `update` bumps `tick`
- * so Lock Screen TimelineView relative labels redraw without the system timer UI.
+ * Every ~1 minute while a Live Activity is active: FCM `update` bumps `tick`
+ * so Lock Screen relative labels redraw without relying on TimelineView.
  */
 export const refreshLiveActivityTask = onTaskDispatched(
   {
