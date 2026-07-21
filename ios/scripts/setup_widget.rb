@@ -220,7 +220,8 @@ end
 
 # Fail loudly if Firebase Messaging never made it into CapApp-SPM (common when
 # experimental SPM symlink options fail with EPERM and abort Package.swift write).
-package_swift = File.expand_path("App/CapApp-SPM/Package.swift", Dir.pwd)
+# cwd is ios/App (see workflow working-directory), so CapApp-SPM sits next to App/.
+package_swift = File.expand_path("CapApp-SPM/Package.swift", Dir.pwd)
 unless File.exist?(package_swift)
   abort "ERROR: #{package_swift} missing — run npx cap sync ios first."
 end
