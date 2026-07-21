@@ -84,10 +84,16 @@ jobs:
             || { echo "LiveActivitiesPlugin missing from packageClassList"; exit 1; }
           grep -q 'CapacitorFirebaseMessaging' ios/App/CapApp-SPM/Package.swift \
             || { echo "CapacitorFirebaseMessaging missing from CapApp-SPM/Package.swift"; exit 1; }
-          if grep -q '@capacitor-firebase/app' ios/App/CapApp-SPM/Package.swift && grep -q '@capacitor/app' ios/App/CapApp-SPM/Package.swift; then
-            echo "SPM identity collision: both @capacitor/app and @capacitor-firebase/app in Package.swift"
+          grep -q 'symlinks/CapacitorApp' ios/App/CapApp-SPM/Package.swift \
+            || { echo "CapacitorApp must use symlinks/CapacitorApp (avoid SPM identity app)"; exit 1; }
+          if grep -E 'path: "[^"]*/app"' ios/App/CapApp-SPM/Package.swift; then
+            echo "Package.swift still has a path ending in /app — SPM identity collision"
             exit 1
           fi
+          test -f ios/App/CapApp-SPM/symlinks/CapacitorApp/Package.swift \
+            || { echo "Missing CapApp-SPM/symlinks/CapacitorApp copy"; exit 1; }
+          echo "---- CapApp-SPM/Package.swift ----"
+          cat ios/App/CapApp-SPM/Package.swift
 
       - name: Show schemes
         run: xcodebuild -list -project ios/App/App.xcodeproj

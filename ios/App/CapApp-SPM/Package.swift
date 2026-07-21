@@ -1,7 +1,8 @@
 // swift-tools-version: 5.9
 import PackageDescription
 
-// DO NOT MODIFY THIS FILE - managed by Capacitor CLI commands
+// DO NOT MODIFY THIS FILE - managed by Capacitor CLI + scripts/ensure-spm-firebase-app-link.mjs
+// CapacitorApp is under symlinks/CapacitorApp so SPM identity is not "app".
 let package = Package(
     name: "CapApp-SPM",
     platforms: [.iOS(.v17)],
@@ -13,7 +14,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.4.1"),
         .package(name: "CapacitorFirebaseMessaging", path: "../../../node_modules/@capacitor-firebase/messaging"),
-        .package(name: "CapacitorApp", path: "../../../node_modules/@capacitor/app"),
+        .package(name: "CapacitorApp", path: "symlinks/CapacitorApp"),
         .package(name: "CapacitorHaptics", path: "../../../node_modules/@capacitor/haptics"),
         .package(name: "CapacitorKeyboard", path: "../../../node_modules/@capacitor/keyboard"),
         .package(name: "CapacitorLocalNotifications", path: "../../../node_modules/@capacitor/local-notifications"),

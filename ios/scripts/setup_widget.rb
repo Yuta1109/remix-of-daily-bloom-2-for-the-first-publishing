@@ -234,10 +234,16 @@ pkg = File.read(package_swift)
     Run: npx cap sync ios && node scripts/ensure-spm-firebase-app-link.mjs
   MSG
 end
-if pkg.include?("@capacitor-firebase/app") && pkg.include?("@capacitor/app")
+if pkg.include?("@capacitor-firebase/app")
+  abort "ERROR: Package.swift must not reference @capacitor-firebase/app (SPM identity 'app')."
+end
+if pkg.match(%r{path:\s*"[^"]*/app"})
   abort <<~MSG
-    ERROR: Package.swift includes both @capacitor/app and @capacitor-firebase/app.
-    SwiftPM treats both as identity "app". Keep firebase/app out of ios.includePlugins.
+    ERROR: Package.swift still has a path ending in /app (SwiftPM identity "app").
+    Run: node scripts/ensure-spm-firebase-app-link.mjs
   MSG
 end
-puts "Verified Firebase Messaging SPM package in CapApp-SPM/Package.swift."
+unless pkg.include?("symlinks/CapacitorApp")
+  abort "ERROR: CapacitorApp must use path symlinks/CapacitorApp (unique SPM identity)."
+end
+puts "Verified CapApp-SPM Package.swift has no basename-app collision."
