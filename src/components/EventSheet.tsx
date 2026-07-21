@@ -12,6 +12,7 @@ import {
   Activity,
   AlertCircle,
   Check,
+  X,
 } from "lucide-react";
 import {
   getEvent,
@@ -567,6 +568,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     masterId: string;
     occurrenceDate: string;
   } | null>(null);
+  const [repeatDeleteOpen, setRepeatDeleteOpen] = useState(false);
+  const [repeatDeleteKind, setRepeatDeleteKind] = useState<
+    "daily" | "weekly" | "monthly" | "yearly"
+  >("weekly");
   const isNew = target?.mode === "new";
   const lastInitKey = useRef<string | null>(null);
 
@@ -838,32 +843,8 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       ? getEvent(seriesOccurrence.masterId)
       : getEvent(form.id);
     if (master && isRepeating(master)) {
-      const kind = repeatKind((master.repeat ?? "weekly") as RepeatFreq);
-      const onlyTk =
-        kind === "daily"
-          ? "deleteRepeatOnlyThisDaily"
-          : kind === "monthly"
-            ? "deleteRepeatOnlyThisMonthly"
-            : kind === "yearly"
-              ? "deleteRepeatOnlyThisYearly"
-              : "deleteRepeatOnlyThisWeekly";
-      const futureTk =
-        kind === "daily"
-          ? "deleteRepeatThisAndFutureDaily"
-          : kind === "monthly"
-            ? "deleteRepeatThisAndFutureMonthly"
-            : kind === "yearly"
-              ? "deleteRepeatThisAndFutureYearly"
-              : "deleteRepeatThisAndFutureWeekly";
-      if (window.confirm(t(onlyTk))) {
-        excludeOccurrence(masterIdForSeries, occurrenceDateForSeries);
-        finishDelete();
-        return;
-      }
-      if (window.confirm(t(futureTk))) {
-        endSeriesOn(masterIdForSeries, occurrenceDateForSeries);
-        finishDelete();
-      }
+      setRepeatDeleteKind(repeatKind((master.repeat ?? "weekly") as RepeatFreq));
+      setRepeatDeleteOpen(true);
       return;
     }
 
@@ -871,6 +852,18 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       deleteEvent(form.id);
       finishDelete();
     }
+  };
+
+  const confirmDeleteOnlyThis = () => {
+    setRepeatDeleteOpen(false);
+    excludeOccurrence(masterIdForSeries, occurrenceDateForSeries);
+    finishDelete();
+  };
+
+  const confirmDeleteThisAndFuture = () => {
+    setRepeatDeleteOpen(false);
+    endSeriesOn(masterIdForSeries, occurrenceDateForSeries);
+    finishDelete();
   };
 
   const handleEnableNotif = async () => {
@@ -893,49 +886,119 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     onEnableNotif: handleEnableNotif,
   };
 
-  /* ── Modal variant ──────────────────────────────────────────────────── */
-  if (variant === "modal") {
-    if (!open) return null;
-    return createPortal(
-      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+  const deleteTitleTk =
+    repeatDeleteKind === "daily"
+      ? "deleteRepeatTitleDaily"
+      : repeatDeleteKind === "monthly"
+        ? "deleteRepeatTitleMonthly"
+        : repeatDeleteKind === "yearly"
+          ? "deleteRepeatTitleYearly"
+          : "deleteRepeatTitleWeekly";
+
+  const repeatDeleteSheet =
+    repeatDeleteOpen &&
+    createPortal(
+      <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center p-3">
         <div
-          className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-          onClick={() => onOpenChange(false)}
+          className="absolute inset-0 bg-black/40"
+          onClick={() => setRepeatDeleteOpen(false)}
         />
-        <div
-          className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
-          style={{ maxHeight: "88dvh" }}
-        >
-          <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
-          <FormBody {...formBodyProps} />
+        <div className="relative z-10 w-full max-w-md rounded-2xl bg-card shadow-float overflow-hidden">
+          <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-2">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold leading-snug">{t(deleteTitleTk)}</p>
+              <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                {t("deleteRepeatSheetHint")}
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label={t("cancel")}
+              onClick={() => setRepeatDeleteOpen(false)}
+              className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-secondary"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="px-3 pb-3 space-y-2">
+            <button
+              type="button"
+              onClick={confirmDeleteOnlyThis}
+              className="w-full rounded-xl bg-secondary/80 px-4 py-3.5 text-sm font-semibold text-foreground hover:bg-secondary"
+            >
+              {t("deleteRepeatOnlyThis")}
+            </button>
+            <button
+              type="button"
+              onClick={confirmDeleteThisAndFuture}
+              className="w-full rounded-xl bg-destructive/10 px-4 py-3.5 text-sm font-semibold text-destructive hover:bg-destructive/15"
+            >
+              {t("deleteRepeatThisAndFuture")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setRepeatDeleteOpen(false)}
+              className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
+            >
+              {t("cancel")}
+            </button>
+          </div>
         </div>
       </div>,
       document.body,
+    );
+
+  /* ── Modal variant ──────────────────────────────────────────────────── */
+  if (variant === "modal") {
+    if (!open) return null;
+    return (
+      <>
+        {createPortal(
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+              onClick={() => onOpenChange(false)}
+            />
+            <div
+              className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
+              style={{ maxHeight: "88dvh" }}
+            >
+              <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
+              <FormBody {...formBodyProps} />
+            </div>
+          </div>,
+          document.body,
+        )}
+        {repeatDeleteSheet}
+      </>
     );
   }
 
   /* ── Drawer variant ─────────────────────────────────────────────────── */
   return (
-    <DrawerPrimitive.Root
-      open={open}
-      onOpenChange={onOpenChange}
-      shouldScaleBackground={false}
-      dismissible
-    >
-      <DrawerPrimitive.Portal>
-        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
-        <DrawerPrimitive.Content
-          className={cn(
-            "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
-            "min-h-0 overflow-hidden outline-none",
-          )}
-          style={{ maxHeight: "88dvh" }}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
-          <FormBody {...formBodyProps} />
-        </DrawerPrimitive.Content>
-      </DrawerPrimitive.Portal>
-    </DrawerPrimitive.Root>
+    <>
+      <DrawerPrimitive.Root
+        open={open}
+        onOpenChange={onOpenChange}
+        shouldScaleBackground={false}
+        dismissible
+      >
+        <DrawerPrimitive.Portal>
+          <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+          <DrawerPrimitive.Content
+            className={cn(
+              "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
+              "min-h-0 overflow-hidden outline-none",
+            )}
+            style={{ maxHeight: "88dvh" }}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
+            <FormBody {...formBodyProps} />
+          </DrawerPrimitive.Content>
+        </DrawerPrimitive.Portal>
+      </DrawerPrimitive.Root>
+      {repeatDeleteSheet}
+    </>
   );
 }

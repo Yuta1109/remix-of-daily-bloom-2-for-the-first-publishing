@@ -102,6 +102,10 @@ jobs:
           done
           grep -q 'LiveActivitiesPlugin.swift' ios/App/App.xcodeproj/project.pbxproj \
             || { echo "LiveActivitiesPlugin.swift not in Xcode project"; exit 1; }
+          for name in CapacitorFirebaseMessaging CapacitorFirebaseApp; do
+            grep -q "$name" ios/App/CapApp-SPM/Package.swift \
+              || { echo "$name missing from CapApp-SPM/Package.swift — FCM tokens will be null"; exit 1; }
+          done
 
       - name: Prepare App Store Connect API key
         env:

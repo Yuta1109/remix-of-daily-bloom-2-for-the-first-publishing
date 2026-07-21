@@ -79,6 +79,10 @@ jobs:
         run: |
           grep -q 'LiveActivitiesPlugin' ios/App/App/capacitor.config.json \
             || { echo "LiveActivitiesPlugin missing from packageClassList"; exit 1; }
+          for name in CapacitorFirebaseMessaging CapacitorFirebaseApp; do
+            grep -q "$name" ios/App/CapApp-SPM/Package.swift \
+              || { echo "$name missing from CapApp-SPM/Package.swift"; exit 1; }
+          done
 
       - name: Show schemes
         run: xcodebuild -list -project ios/App/App.xcodeproj

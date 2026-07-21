@@ -219,17 +219,16 @@ async function ensureFirebase(): Promise<boolean> {
 async function upsertDeviceDoc(): Promise<void> {
   if (!db || !deviceUid) return;
   try {
-    await setDoc(
-      doc(db, "devices", deviceUid),
-      {
-        pushToStartToken: pushToStartToken ?? null,
-        fcmToken: fcmToken ?? null,
-        liveActivityUpdateToken: liveActivityUpdateToken ?? null,
-        platform: Capacitor.getPlatform(),
-        updatedAt: Date.now(),
-      },
-      { merge: true },
-    );
+    // Never write null over a real token — boot races used to wipe FCM/LA tokens.
+    const payload: Record<string, unknown> = {
+      platform: Capacitor.getPlatform(),
+      updatedAt: Date.now(),
+    };
+    if (pushToStartToken) payload.pushToStartToken = pushToStartToken;
+    if (fcmToken) payload.fcmToken = fcmToken;
+    if (liveActivityUpdateToken) payload.liveActivityUpdateToken = liveActivityUpdateToken;
+
+    await setDoc(doc(db, "devices", deviceUid), payload, { merge: true });
     lastSyncAt = Date.now();
     if (!lastError?.startsWith("auth/")) lastError = null;
   } catch (err) {
@@ -349,8 +348,13 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
 
 /** Optional: set FCM token from native Messaging when available. */
 export function setRemoteFcmToken(token: string | null): void {
+  if (!token) return;
   fcmToken = token;
-  void ensureFirebase().then((ok) => {
-    if (ok) void upsertDeviceDoc();
+  diagnosticHint = null;
+  void ensureFirebase().then(async (ok) => {
+    if (!ok) return;
+    await upsertDeviceDoc();
+    // Re-write schedules so Cloud Functions retry any stuck "due" rows.
+    await syncLiveActivitySchedulesRemote();
   });
 }

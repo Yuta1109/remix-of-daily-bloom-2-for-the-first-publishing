@@ -9,7 +9,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function fetchFcmTokenWithRetry(attempts = 6): Promise<string | null> {
+async function fetchFcmTokenWithRetry(attempts = 8): Promise<string | null> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -18,8 +18,8 @@ async function fetchFcmTokenWithRetry(attempts = 6): Promise<string | null> {
     } catch (err) {
       lastErr = err;
     }
-    // APNs device token often arrives a moment after launch; wait and retry.
-    await sleep(1500 * (i + 1));
+    // APNs device token often arrives a moment after launch / plugin load.
+    await sleep(1000 * (i + 1));
   }
   if (lastErr) throw lastErr;
   return null;
@@ -29,6 +29,9 @@ async function fetchFcmTokenWithRetry(attempts = 6): Promise<string | null> {
  * Request notification permission (if needed) and upload the FCM registration
  * token to Firestore via setRemoteFcmToken. Required for ActivityKit
  * push-to-start through Firebase Cloud Messaging.
+ *
+ * Root cause of long-lived FCM✗: CapApp-SPM used to omit CapacitorFirebaseMessaging
+ * (SPM symlink EPERM aborted Package.swift write), so getToken never worked.
  */
 export async function initFcmRegistration(): Promise<void> {
   if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") {
@@ -53,7 +56,7 @@ export async function initFcmRegistration(): Promise<void> {
       }
     }
 
-    // Ensure APNs registration runs after permission (pairs with AppDelegate).
+    // Triggers native registerForRemoteNotifications + APNs→Messaging.apnsToken.
     try {
       await FirebaseMessaging.requestPermissions();
     } catch {
@@ -67,7 +70,7 @@ export async function initFcmRegistration(): Promise<void> {
       });
       try {
         await FirebaseMessaging.addListener("apnsTokenReceived", () => {
-          void fetchFcmTokenWithRetry(3).then((token) => {
+          void fetchFcmTokenWithRetry(4).then((token) => {
             if (token) setRemoteFcmToken(token);
           });
         });
@@ -80,7 +83,9 @@ export async function initFcmRegistration(): Promise<void> {
     if (token) {
       setRemoteFcmToken(token);
     } else {
-      setRemoteDiagnosticHint("FCM: getToken empty after retries (waiting for APNs?)");
+      setRemoteDiagnosticHint(
+        "FCM: getToken empty after retries. Check CapApp-SPM includes CapacitorFirebaseMessaging and APNs key in Firebase Console.",
+      );
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

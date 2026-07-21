@@ -217,3 +217,22 @@ if File.exist?(cap_json_path)
 else
   puts "WARNING: #{cap_json_path} missing — run npx cap sync ios first."
 end
+
+# Fail loudly if Firebase Messaging never made it into CapApp-SPM (common when
+# experimental SPM symlink options fail with EPERM and abort Package.swift write).
+package_swift = File.expand_path("App/CapApp-SPM/Package.swift", Dir.pwd)
+unless File.exist?(package_swift)
+  abort "ERROR: #{package_swift} missing — run npx cap sync ios first."
+end
+pkg = File.read(package_swift)
+%w[CapacitorFirebaseMessaging CapacitorFirebaseApp].each do |name|
+  next if pkg.include?(name)
+
+  abort <<~MSG
+    ERROR: #{name} is missing from CapApp-SPM/Package.swift.
+    FCM / Live Activity push tokens will stay null on device.
+    Fix: remove experimental.ios.spm.packageOptions symlink settings, then run:
+      npx cap sync ios
+  MSG
+end
+puts "Verified Firebase SPM packages in CapApp-SPM/Package.swift."

@@ -9,16 +9,6 @@ const config: CapacitorConfig = {
     // intermittent black bars + oversized bottom gaps on notched iPhones.
     contentInset: "never",
   },
-  experimental: {
-    ios: {
-      spm: {
-        packageOptions: {
-          "@capacitor-firebase/messaging": { symlink: true },
-          "@capacitor-firebase/app": { symlink: true },
-        },
-      },
-    },
-  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 600,

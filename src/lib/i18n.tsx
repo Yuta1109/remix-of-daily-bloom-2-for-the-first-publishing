@@ -97,22 +97,9 @@ const translations = {
     deleteRepeatTitleWeekly: "This is a weekly repeating event.",
     deleteRepeatTitleMonthly: "This is a monthly repeating event.",
     deleteRepeatTitleYearly: "This is a yearly repeating event.",
-    deleteRepeatOnlyThisDaily:
-      "Delete only this day? (Other daily occurrences stay)\n\nOK = this day only",
-    deleteRepeatOnlyThisWeekly:
-      "Delete only this day? (Other weekly occurrences stay)\n\nOK = this day only",
-    deleteRepeatOnlyThisMonthly:
-      "Delete only this day? (Other monthly occurrences stay)\n\nOK = this day only",
-    deleteRepeatOnlyThisYearly:
-      "Delete only this day? (Other yearly occurrences stay)\n\nOK = this day only",
-    deleteRepeatThisAndFutureDaily:
-      "Delete this day and all later daily repeats? (Earlier days stay)\n\nOK = this day and later",
-    deleteRepeatThisAndFutureWeekly:
-      "Delete this day and all later weekly repeats? (Earlier weeks stay)\n\nOK = this day and later",
-    deleteRepeatThisAndFutureMonthly:
-      "Delete this day and all later monthly repeats? (Earlier months stay)\n\nOK = this day and later",
-    deleteRepeatThisAndFutureYearly:
-      "Delete this day and all later yearly repeats? (Earlier years stay)\n\nOK = this day and later",
+    deleteRepeatOnlyThis: "Delete this day only",
+    deleteRepeatThisAndFuture: "Delete this and all future repeats",
+    deleteRepeatSheetHint: "Earlier occurrences stay unless you choose this and future.",
 
     // Live Activity
     liveActivity: "Live Activity",
@@ -257,22 +244,9 @@ const translations = {
     deleteRepeatTitleWeekly: "週ごとの繰り返しの予定です。",
     deleteRepeatTitleMonthly: "月ごとの繰り返しの予定です。",
     deleteRepeatTitleYearly: "年ごとの繰り返しの予定です。",
-    deleteRepeatOnlyThisDaily:
-      "この日の予定だけ削除しますか？（他の日の繰り返しは残ります）\n\nOK＝この日だけ",
-    deleteRepeatOnlyThisWeekly:
-      "この日の予定だけ削除しますか？（他の週の繰り返しは残ります）\n\nOK＝この日だけ",
-    deleteRepeatOnlyThisMonthly:
-      "この日の予定だけ削除しますか？（他の月の繰り返しは残ります）\n\nOK＝この日だけ",
-    deleteRepeatOnlyThisYearly:
-      "この日の予定だけ削除しますか？（他の年の繰り返しは残ります）\n\nOK＝この日だけ",
-    deleteRepeatThisAndFutureDaily:
-      "この日以降の日ごとの繰り返しをすべて削除しますか？（この日より前は残ります）\n\nOK＝この日以降",
-    deleteRepeatThisAndFutureWeekly:
-      "この日以降の週ごとの繰り返しをすべて削除しますか？（この日より前は残ります）\n\nOK＝この日以降",
-    deleteRepeatThisAndFutureMonthly:
-      "この日以降の月ごとの繰り返しをすべて削除しますか？（この日より前は残ります）\n\nOK＝この日以降",
-    deleteRepeatThisAndFutureYearly:
-      "この日以降の年ごとの繰り返しをすべて削除しますか？（この日より前は残ります）\n\nOK＝この日以降",
+    deleteRepeatOnlyThis: "この日だけ削除",
+    deleteRepeatThisAndFuture: "この日以降の繰り返しをすべて削除",
+    deleteRepeatSheetHint: "「この日以降」を選ぶと、この日より前の予定は残ります。",
 
     // Live Activity
     liveActivity: "ライブアクティビティ",
