@@ -24,6 +24,13 @@ import {
   type LiveActivityLead,
   LIVE_ACTIVITY_MAX_ACTIVE_MINUTES,
   liveActivityLeadMinutes,
+  isRepeating,
+  materializeOccurrence,
+  occurrenceStartForDate,
+  findExceptionFor,
+  saveOccurrenceException,
+  excludeOccurrence,
+  endSeriesOn,
 } from "@/lib/events-store";
 import {
   rescheduleAll,
@@ -50,7 +57,7 @@ import {
 
 export type EventSheetTarget =
   | { mode: "new"; date: string }
-  | { mode: "edit"; id: string };
+  | { mode: "edit"; id: string; occurrenceDate?: string };
 
 interface Props {
   open: boolean;
@@ -126,7 +133,21 @@ function makeInitial(target: EventSheetTarget | null): CalendarEvent | null {
   if (!target) return null;
   if (target.mode === "edit") {
     const existing = getEvent(target.id);
-    return existing ?? null;
+    if (!existing) return null;
+
+    // Already a detached exception — edit it as a normal single event.
+    if (existing.recurrenceMasterId) return { ...existing };
+
+    if (isRepeating(existing) && target.occurrenceDate) {
+      const occStart =
+        occurrenceStartForDate(existing, target.occurrenceDate) ??
+        target.occurrenceDate;
+      const exception = findExceptionFor(existing.id, occStart);
+      if (exception) return { ...exception };
+      // Materialized copy for this day (saved as exception on Save).
+      return { ...materializeOccurrence(existing, occStart), repeat: "none" };
+    }
+    return { ...existing };
   }
   const now = new Date();
   const end = new Date(now.getTime() + 60 * 60_000);
@@ -503,23 +524,54 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     target == null
       ? null
       : target.mode === "edit"
-        ? target.id
+        ? `${target.id}:${target.occurrenceDate ?? ""}`
         : `new:${target.date}`;
 
   const [form, setForm] = useState<CalendarEvent | null>(null);
   const [notifBlocked, setNotifBlocked] = useState(false);
+  const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
+  /** When editing a virtualized series occurrence (not yet detached). */
+  const [seriesOccurrence, setSeriesOccurrence] = useState<{
+    masterId: string;
+    occurrenceDate: string;
+  } | null>(null);
   const isNew = target?.mode === "new";
   const lastInitKey = useRef<string | null>(null);
 
   useEffect(() => {
     if (!open) {
       lastInitKey.current = null;
+      setDeleteMenuOpen(false);
+      setSeriesOccurrence(null);
       return;
     }
     if (!target || targetKey == null) return;
     if (lastInitKey.current === targetKey) return;
     lastInitKey.current = targetKey;
-    setForm(makeInitial(target));
+    const initial = makeInitial(target);
+    setForm(initial);
+
+    if (
+      target.mode === "edit" &&
+      initial &&
+      !initial.recurrenceMasterId &&
+      target.occurrenceDate
+    ) {
+      const master = getEvent(target.id);
+      if (master && isRepeating(master) && !findExceptionFor(
+        master.id,
+        occurrenceStartForDate(master, target.occurrenceDate) ?? target.occurrenceDate,
+      )) {
+        const occ =
+          occurrenceStartForDate(master, target.occurrenceDate) ??
+          target.occurrenceDate;
+        setSeriesOccurrence({ masterId: master.id, occurrenceDate: occ });
+      } else {
+        setSeriesOccurrence(null);
+      }
+    } else {
+      setSeriesOccurrence(null);
+    }
   }, [open, targetKey, target]);
 
   useEffect(() => {
@@ -574,7 +626,8 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         return;
       }
     }
-    upsertEvent({
+
+    const payload: CalendarEvent = {
       ...form,
       title: form.title.trim(),
       endDate: endDateRaw,
@@ -582,20 +635,111 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       notes: form.notes?.trim() || undefined,
       startTime: form.allDay ? undefined : form.startTime,
       endTime: form.allDay ? undefined : form.endTime,
-    });
+    };
+
+    if (seriesOccurrence) {
+      // Detach this day as its own event; keep the series for other days.
+      saveOccurrenceException(
+        seriesOccurrence.masterId,
+        seriesOccurrence.occurrenceDate,
+        { ...payload, repeat: "none" },
+      );
+    } else {
+      upsertEvent(payload);
+    }
     syncSchedules();
     onSaved?.();
     onOpenChange(false);
   };
 
+  const finishDelete = () => {
+    syncSchedules();
+    onDeleted?.();
+    setDeleteMenuOpen(false);
+    onOpenChange(false);
+  };
+
   const remove = () => {
-    if (isNew) { onOpenChange(false); return; }
+    if (isNew) {
+      onOpenChange(false);
+      return;
+    }
+
+    // Detached exception — simple delete.
+    if (form.recurrenceMasterId) {
+      if (confirm(t("confirmDelete"))) {
+        deleteEvent(form.id);
+        finishDelete();
+      }
+      return;
+    }
+
+    const master = seriesOccurrence
+      ? getEvent(seriesOccurrence.masterId)
+      : getEvent(form.id);
+    if (master && isRepeating(master) && (seriesOccurrence || target?.mode === "edit")) {
+      setDeleteMenuOpen(true);
+      return;
+    }
+
     if (confirm(t("confirmDelete"))) {
       deleteEvent(form.id);
-      syncSchedules();
-      onDeleted?.();
-      onOpenChange(false);
+      finishDelete();
     }
+  };
+
+  const repeatKey = ((): "daily" | "weekly" | "monthly" | "yearly" => {
+    const master = seriesOccurrence
+      ? getEvent(seriesOccurrence.masterId)
+      : getEvent(form.id);
+    const r = master?.repeat;
+    if (r === "daily" || r === "weekly" || r === "monthly" || r === "yearly") return r;
+    return "weekly";
+  })();
+
+  const deleteTitleTk =
+    repeatKey === "daily"
+      ? "deleteRepeatTitleDaily"
+      : repeatKey === "monthly"
+        ? "deleteRepeatTitleMonthly"
+        : repeatKey === "yearly"
+          ? "deleteRepeatTitleYearly"
+          : "deleteRepeatTitleWeekly";
+  const deleteOnlyTk =
+    repeatKey === "daily"
+      ? "deleteRepeatOnlyThisDaily"
+      : repeatKey === "monthly"
+        ? "deleteRepeatOnlyThisMonthly"
+        : repeatKey === "yearly"
+          ? "deleteRepeatOnlyThisYearly"
+          : "deleteRepeatOnlyThisWeekly";
+  const deleteFutureTk =
+    repeatKey === "daily"
+      ? "deleteRepeatThisAndFutureDaily"
+      : repeatKey === "monthly"
+        ? "deleteRepeatThisAndFutureMonthly"
+        : repeatKey === "yearly"
+          ? "deleteRepeatThisAndFutureYearly"
+          : "deleteRepeatThisAndFutureWeekly";
+
+  const deleteOnlyThis = () => {
+    const masterId = seriesOccurrence?.masterId ?? form.id;
+    const occ =
+      seriesOccurrence?.occurrenceDate ??
+      (target?.mode === "edit" ? target.occurrenceDate : undefined) ??
+      form.date;
+    excludeOccurrence(masterId, occ);
+    finishDelete();
+  };
+
+  const deleteThisAndFuture = () => {
+    const masterId = seriesOccurrence?.masterId ?? form.id;
+    const occ =
+      seriesOccurrence?.occurrenceDate ??
+      (target?.mode === "edit" ? target.occurrenceDate : undefined) ??
+      form.date;
+    endSeriesOn(masterId, occ);
+    finishDelete();
   };
 
   const handleEnableNotif = async () => {
@@ -611,59 +755,114 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     form,
     isNew,
     notifBlocked,
-    patch,
+    // When editing a single series occurrence, don't let the user change
+    // "repeat" on the detached copy — keep UI but saving forces none.
+    patch: seriesOccurrence
+      ? (p) => {
+          const { repeat: _r, ...rest } = p;
+          patch(rest);
+        }
+      : patch,
     onSave: save,
     onRemove: remove,
     onClose: () => onOpenChange(false),
     onEnableNotif: handleEnableNotif,
   };
 
+  const deleteMenu = deleteMenuOpen
+    ? createPortal(
+        <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label={t("cancel")}
+            onClick={() => setDeleteMenuOpen(false)}
+          />
+          <div className="relative w-full max-w-md bg-background rounded-2xl shadow-float overflow-hidden">
+            <p className="px-5 pt-5 pb-3 text-sm font-medium text-foreground">
+              {t(deleteTitleTk)}
+            </p>
+            <div className="flex flex-col divide-y divide-border/60">
+              <button
+                type="button"
+                onClick={deleteOnlyThis}
+                className="px-5 py-3.5 text-left text-sm text-foreground hover:bg-secondary/60"
+              >
+                {t(deleteOnlyTk)}
+              </button>
+              <button
+                type="button"
+                onClick={deleteThisAndFuture}
+                className="px-5 py-3.5 text-left text-sm text-destructive hover:bg-secondary/60"
+              >
+                {t(deleteFutureTk)}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteMenuOpen(false)}
+                className="px-5 py-3.5 text-center text-sm font-medium text-muted-foreground hover:bg-secondary/60"
+              >
+                {t("cancel")}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+
+
   /* ── Modal variant ──────────────────────────────────────────────────── */
   if (variant === "modal") {
-    if (!open) return null;
-    return createPortal(
-      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-        {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-          onClick={() => onOpenChange(false)}
-        />
-        <div
-          className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
-          style={{ maxHeight: "88dvh" }}
-        >
-          <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
-          <FormBody {...formBodyProps} />
-        </div>
-      </div>,
-      document.body
+    if (!open) return deleteMenu;
+    return (
+      <>
+        {createPortal(
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+              onClick={() => onOpenChange(false)}
+            />
+            <div
+              className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
+              style={{ maxHeight: "88dvh" }}
+            >
+              <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
+              <FormBody {...formBodyProps} />
+            </div>
+          </div>,
+          document.body,
+        )}
+        {deleteMenu}
+      </>
     );
   }
 
   /* ── Drawer variant ─────────────────────────────────────────────────── */
   return (
-    <DrawerPrimitive.Root
-      open={open}
-      onOpenChange={onOpenChange}
-      shouldScaleBackground={false}
-      // Drag-to-dismiss from the handle area only — body scroll must not fight the sheet.
-      dismissible
-    >
-      <DrawerPrimitive.Portal>
-        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
-        <DrawerPrimitive.Content
-          className={cn(
-            "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
-            "min-h-0 overflow-hidden outline-none"
-          )}
-          style={{ maxHeight: "88dvh" }}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          {/* Drag handle — sheet resize / dismiss gesture lives here */}
-          <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
-          <FormBody {...formBodyProps} />
-        </DrawerPrimitive.Content>
-      </DrawerPrimitive.Portal>
-    </DrawerPrimitive.Root>
+    <>
+      <DrawerPrimitive.Root
+        open={open}
+        onOpenChange={onOpenChange}
+        shouldScaleBackground={false}
+        dismissible
+      >
+        <DrawerPrimitive.Portal>
+          <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+          <DrawerPrimitive.Content
+            className={cn(
+              "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
+              "min-h-0 overflow-hidden outline-none"
+            )}
+            style={{ maxHeight: "88dvh" }}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
+            <FormBody {...formBodyProps} />
+          </DrawerPrimitive.Content>
+        </DrawerPrimitive.Portal>
+      </DrawerPrimitive.Root>
+      {deleteMenu}
+    </>
   );
 }

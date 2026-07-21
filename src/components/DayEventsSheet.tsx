@@ -1,7 +1,7 @@
 import { Drawer as DrawerPrimitive } from "vaul";
 import { Clock, MapPin, Plus } from "lucide-react";
 import { type CalendarEvent, colorHslFor } from "@/lib/events-store";
-import { formatEventSchedule } from "@/lib/event-display";
+import { formatEventScheduleOnDate } from "@/lib/event-display";
 import { useI18n } from "@/lib/i18n";
 
 interface Props {
@@ -9,7 +9,7 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   date: string;
   events: CalendarEvent[];
-  onEditEvent: (id: string) => void;
+  onEditEvent: (id: string, occurrenceDate: string) => void;
   onNewEvent: () => void;
 }
 
@@ -68,7 +68,7 @@ export function DayEventsSheet({
                   type="button"
                   onClick={() => {
                     onOpenChange(false);
-                    setTimeout(() => onEditEvent(ev.id), 100);
+                    setTimeout(() => onEditEvent(ev.id, date), 100);
                   }}
                   className="w-full text-left flex items-start gap-3 bg-secondary/40 hover:bg-secondary rounded-xl px-4 py-3 transition-colors"
                 >
@@ -81,7 +81,7 @@ export function DayEventsSheet({
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                       <Clock className="w-3 h-3 flex-shrink-0" />
                       <span className="tabular-nums">
-                        {formatEventSchedule(ev, locale, { emoji: false })}
+                        {formatEventScheduleOnDate(ev, date, locale, { emoji: false })}
                       </span>
                       {ev.location && (
                         <>

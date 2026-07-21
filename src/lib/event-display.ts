@@ -1,4 +1,5 @@
 import type { CalendarEvent } from "./events-store";
+import { materializeOccurrence, occurrenceStartForDate } from "./events-store";
 
 function parseYmd(iso: string): { y: number; m: number; d: number } {
   const [y, m, d] = iso.split("-").map(Number);
@@ -48,4 +49,16 @@ export function formatEventSchedule(
     return `${prefix}${startLabel} ${startTime} - ${endLabel} ${endTime}`;
   }
   return `${prefix}${startLabel} - ${endLabel}`;
+}
+
+/** Schedule text for a specific calendar day (shifts repeating masters to that occurrence). */
+export function formatEventScheduleOnDate(
+  e: CalendarEvent,
+  viewDate: string,
+  locale: "en" | "ja" = "ja",
+  opts?: { emoji?: boolean },
+): string {
+  const occStart = occurrenceStartForDate(e, viewDate);
+  const view = occStart ? materializeOccurrence(e, occStart) : e;
+  return formatEventSchedule(view, locale, opts);
 }

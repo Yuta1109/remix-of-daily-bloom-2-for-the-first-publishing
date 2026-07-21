@@ -54,6 +54,20 @@ export interface CalendarEvent {
   liveActivity?: boolean;
   /** How long before start the Live Activity begins. Defaults to "1h". */
   liveActivityLead?: LiveActivityLead;
+  /**
+   * Occurrence start dates (YYYY-MM-DD) skipped in a repeating series
+   * (deleted this day only, or replaced by a detached exception).
+   */
+  excludeDates?: string[];
+  /**
+   * No series occurrences on or after this YYYY-MM-DD
+   * (“delete this and all future”).
+   */
+  repeatEndDate?: string;
+  /** Detached single-day copy of a repeating series. */
+  recurrenceMasterId?: string;
+  /** Series occurrence date this exception replaces. */
+  recurrenceDate?: string;
 }
 
 /** Minutes-before-start for each reminder offset. Returns null when disabled. */
@@ -179,32 +193,193 @@ export function deleteEvent(id: string) {
   return next;
 }
 
-function parseYMD(s: string): Date {
+export function parseYMD(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d);
 }
-function toYMD(d: Date): string {
+export function toYMD(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function diffDays(a: Date, b: Date): number {
   return Math.round((a.getTime() - b.getTime()) / 86400000);
 }
 
+export function addDaysYMD(ymd: string, days: number): string {
+  const d = parseYMD(ymd);
+  d.setDate(d.getDate() + days);
+  return toYMD(d);
+}
+
+export function isRepeating(e: CalendarEvent): boolean {
+  return !!e.repeat && e.repeat !== "none" && !e.recurrenceMasterId;
+}
+
+export function eventSpanDays(e: CalendarEvent): number {
+  return Math.max(0, diffDays(parseYMD(e.endDate || e.date), parseYMD(e.date)));
+}
+
+/** Find a detached exception for a series occurrence. */
+export function findExceptionFor(
+  masterId: string,
+  occurrenceDate: string,
+  events?: CalendarEvent[],
+): CalendarEvent | undefined {
+  return (events ?? loadEvents()).find(
+    (e) => e.recurrenceMasterId === masterId && e.recurrenceDate === occurrenceDate,
+  );
+}
+
+/**
+ * Start date (YYYY-MM-DD) of the series occurrence that covers `viewDate`,
+ * or null if the series does not cover that day.
+ */
+export function occurrenceStartForDate(e: CalendarEvent, viewDate: string): string | null {
+  if (!eventOccursOn(e, viewDate)) return null;
+  if (!isRepeating(e)) return e.date;
+
+  const target = parseYMD(viewDate);
+  const start = parseYMD(e.date);
+  const span = eventSpanDays(e);
+
+  switch (e.repeat) {
+    case "daily": {
+      // Occurrences start every day from series start; the one covering target
+      // starts at most `span` days before target, on/after series start.
+      const earliest = new Date(target);
+      earliest.setDate(earliest.getDate() - span);
+      const occ = earliest < start ? new Date(start) : earliest;
+      return toYMD(occ);
+    }
+    case "weekly": {
+      const delta = diffDays(target, start);
+      const occOffset = Math.floor(delta / 7) * 7;
+      const occStart = new Date(start);
+      occStart.setDate(occStart.getDate() + occOffset);
+      return toYMD(occStart);
+    }
+    case "monthly": {
+      const occStart = new Date(target.getFullYear(), target.getMonth(), start.getDate());
+      if (occStart.getMonth() !== target.getMonth()) return null;
+      return toYMD(occStart);
+    }
+    case "yearly": {
+      const occStart = new Date(target.getFullYear(), start.getMonth(), start.getDate());
+      return toYMD(occStart);
+    }
+    default:
+      return e.date;
+  }
+}
+
+/** Concrete copy of a series occurrence with dates shifted to that instance. */
+export function materializeOccurrence(
+  e: CalendarEvent,
+  occurrenceStartYmd: string,
+): CalendarEvent {
+  const span = eventSpanDays(e);
+  return {
+    ...e,
+    date: occurrenceStartYmd,
+    endDate: addDaysYMD(occurrenceStartYmd, span),
+  };
+}
+
+/** Exclude one occurrence from a repeating master (delete this day only). */
+export function excludeOccurrence(masterId: string, occurrenceDate: string) {
+  const master = getEvent(masterId);
+  if (!master) return loadEvents();
+  const excludeDates = Array.from(
+    new Set([...(master.excludeDates ?? []), occurrenceDate]),
+  );
+  // Drop a detached exception for that day if present.
+  let events = loadEvents().filter(
+    (e) => !(e.recurrenceMasterId === masterId && e.recurrenceDate === occurrenceDate),
+  );
+  events = events.map((e) =>
+    e.id === masterId ? { ...e, excludeDates } : e,
+  );
+  saveEvents(events);
+  return events;
+}
+
+/**
+ * End the series on/after `occurrenceDate` (delete this and future).
+ * Past occurrences before that date remain.
+ */
+export function endSeriesOn(masterId: string, occurrenceDate: string) {
+  const master = getEvent(masterId);
+  if (!master) return loadEvents();
+  let events = loadEvents().filter((e) => {
+    if (e.recurrenceMasterId !== masterId) return true;
+    // Remove exceptions on/after the cut date.
+    return (e.recurrenceDate ?? e.date) < occurrenceDate;
+  });
+  events = events.map((e) => {
+    if (e.id !== masterId) return e;
+    const excludeDates = (e.excludeDates ?? []).filter((d) => d < occurrenceDate);
+    return {
+      ...e,
+      repeatEndDate: occurrenceDate,
+      excludeDates: excludeDates.length ? excludeDates : undefined,
+    };
+  });
+  saveEvents(events);
+  return events;
+}
+
+/**
+ * Save edits to a single series occurrence as a detached copy (repeat: none)
+ * and exclude that date from the master.
+ */
+export function saveOccurrenceException(
+  masterId: string,
+  occurrenceDate: string,
+  patched: CalendarEvent,
+): CalendarEvent {
+  const master = getEvent(masterId);
+  if (!master) {
+    upsertEvent(patched);
+    return patched;
+  }
+  const existing = findExceptionFor(masterId, occurrenceDate);
+  const exception: CalendarEvent = {
+    ...patched,
+    id: existing?.id ?? crypto.randomUUID(),
+    repeat: "none",
+    excludeDates: undefined,
+    repeatEndDate: undefined,
+    recurrenceMasterId: masterId,
+    recurrenceDate: occurrenceDate,
+  };
+  const excludeDates = Array.from(
+    new Set([...(master.excludeDates ?? []), occurrenceDate]),
+  );
+  const events = loadEvents()
+    .filter((e) => e.id !== exception.id)
+    .map((e) => (e.id === masterId ? { ...e, excludeDates } : e));
+  events.push(exception);
+  saveEvents(events);
+  return exception;
+}
+
 /** Returns true if the event (with its recurrence) occurs on `date`. */
 export function eventOccursOn(e: CalendarEvent, date: string): boolean {
+  if (e.excludeDates?.includes(date)) return false;
+  if (e.repeatEndDate && date >= e.repeatEndDate) return false;
+
   const target = parseYMD(date);
   const start = parseYMD(e.date);
   const end = parseYMD(e.endDate || e.date);
   const spanDays = Math.max(0, diffDays(end, start));
 
-  // helper: does an occurrence starting on `occStart` cover target?
   const covers = (occStart: Date) => {
     const occEnd = new Date(occStart);
     occEnd.setDate(occEnd.getDate() + spanDays);
     return target >= occStart && target <= occEnd;
   };
 
-  if (!e.repeat || e.repeat === "none") return covers(start);
+  // Detached exceptions / non-repeating.
+  if (!isRepeating(e)) return covers(start);
   if (target < start) return false;
 
   switch (e.repeat) {
@@ -212,14 +387,12 @@ export function eventOccursOn(e: CalendarEvent, date: string): boolean {
       return true;
     case "weekly": {
       const delta = diffDays(target, start);
-      // find the occurrence start that could cover target: last multiple of 7 <= delta
       const occOffset = Math.floor(delta / 7) * 7;
       const occStart = new Date(start);
       occStart.setDate(occStart.getDate() + occOffset);
       return covers(occStart);
     }
     case "monthly": {
-      // occurrence starts on same day-of-month each month
       const occStart = new Date(target.getFullYear(), target.getMonth(), start.getDate());
       if (occStart.getMonth() !== target.getMonth()) return false;
       if (occStart < start) return false;
@@ -235,11 +408,14 @@ export function eventOccursOn(e: CalendarEvent, date: string): boolean {
 
 /** Returns true if a fresh occurrence of `e` *starts* on `date` (not just spans it). */
 export function isOccurrenceStart(e: CalendarEvent, date: string): boolean {
+  if (e.excludeDates?.includes(date)) return false;
+  if (e.repeatEndDate && date >= e.repeatEndDate) return false;
+
   const target = parseYMD(date);
   const start = parseYMD(e.date);
   if (target < start) return false;
 
-  if (!e.repeat || e.repeat === "none") {
+  if (!isRepeating(e)) {
     return date === e.date;
   }
   switch (e.repeat) {

@@ -6,6 +6,8 @@ import {
   reminderOffsetMinutes,
   getReminders,
   upcomingOccurrenceStarts,
+  materializeOccurrence,
+  toYMD,
   type CalendarEvent,
 } from "./events-store";
 import { formatEventSchedule } from "./event-display";
@@ -114,12 +116,13 @@ export async function rescheduleAll(): Promise<void> {
 
     const starts = upcomingOccurrenceStarts(event, now, HORIZON_DAYS, 20);
     for (const start of starts) {
+      const occ = materializeOccurrence(event, toYMD(start));
       for (const reminder of reminders) {
         const offset = reminderOffsetMinutes(reminder);
         if (offset === null) continue;
         const at = new Date(start.getTime() - offset * 60_000);
         if (at.getTime() > now.getTime()) {
-          items.push({ at, event });
+          items.push({ at, event: occ });
         }
       }
     }

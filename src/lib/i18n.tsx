@@ -147,6 +147,26 @@ const translations = {
     timeRequired: "Please set both start and end times.",
     liveActivityStartInPast:
       "Start time is in the past. Turn off Live Activity, or set a start time in the future.",
+    deleteRepeatTitleDaily: "This is a daily repeating event. What would you like to delete?",
+    deleteRepeatTitleWeekly: "This is a weekly repeating event. What would you like to delete?",
+    deleteRepeatTitleMonthly: "This is a monthly repeating event. What would you like to delete?",
+    deleteRepeatTitleYearly: "This is a yearly repeating event. What would you like to delete?",
+    deleteRepeatOnlyThisDaily:
+      "Delete only this day (other daily occurrences stay)",
+    deleteRepeatOnlyThisWeekly:
+      "Delete only this day (other weekly occurrences stay)",
+    deleteRepeatOnlyThisMonthly:
+      "Delete only this day (other monthly occurrences stay)",
+    deleteRepeatOnlyThisYearly:
+      "Delete only this day (other yearly occurrences stay)",
+    deleteRepeatThisAndFutureDaily:
+      "Delete this day and all later daily repeats (earlier days stay)",
+    deleteRepeatThisAndFutureWeekly:
+      "Delete this day and all later weekly repeats (earlier weeks stay)",
+    deleteRepeatThisAndFutureMonthly:
+      "Delete this day and all later monthly repeats (earlier months stay)",
+    deleteRepeatThisAndFutureYearly:
+      "Delete this day and all later yearly repeats (earlier years stay)",
   },
   ja: {
     today: "今日",
@@ -279,6 +299,26 @@ const translations = {
     timeRequired: "開始時刻と終了時刻を入力してください。",
     liveActivityStartInPast:
       "開始時刻が現在より前です。ライブアクティビティをオフにするか、開始時刻をこれから先に修正してください。",
+    deleteRepeatTitleDaily: "日ごとの繰り返しの予定です。削除方法を選んでください。",
+    deleteRepeatTitleWeekly: "週ごとの繰り返しの予定です。削除方法を選んでください。",
+    deleteRepeatTitleMonthly: "月ごとの繰り返しの予定です。削除方法を選んでください。",
+    deleteRepeatTitleYearly: "年ごとの繰り返しの予定です。削除方法を選んでください。",
+    deleteRepeatOnlyThisDaily:
+      "この日の予定だけ削除（他の日の繰り返しは残す）",
+    deleteRepeatOnlyThisWeekly:
+      "この日の予定だけ削除（他の週の繰り返しは残す）",
+    deleteRepeatOnlyThisMonthly:
+      "この日の予定だけ削除（他の月の繰り返しは残す）",
+    deleteRepeatOnlyThisYearly:
+      "この日の予定だけ削除（他の年の繰り返しは残す）",
+    deleteRepeatThisAndFutureDaily:
+      "この日以降の日ごとの繰り返しをすべて削除（この日より前は残す）",
+    deleteRepeatThisAndFutureWeekly:
+      "この日以降の週ごとの繰り返しをすべて削除（この日より前は残す）",
+    deleteRepeatThisAndFutureMonthly:
+      "この日以降の月ごとの繰り返しをすべて削除（この日より前は残す）",
+    deleteRepeatThisAndFutureYearly:
+      "この日以降の年ごとの繰り返しをすべて削除（この日より前は残す）",
   },
 } as const;
 

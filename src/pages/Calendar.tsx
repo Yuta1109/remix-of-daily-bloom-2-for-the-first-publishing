@@ -225,8 +225,8 @@ export default function CalendarPage() {
     setTimeout(() => setModalOpen(true), 200);
   };
 
-  const handleEditEvent = (id: string) => {
-    setSheetTarget({ mode: "edit", id });
+  const handleEditEvent = (id: string, occurrenceDate: string) => {
+    setSheetTarget({ mode: "edit", id, occurrenceDate });
     setSheetOpen(true);
   };
 
