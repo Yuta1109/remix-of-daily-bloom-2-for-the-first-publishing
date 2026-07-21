@@ -84,7 +84,7 @@ jobs:
       - name: Sync Capacitor iOS project
         run: npx cap sync ios
 
-      - name: Fix SPM identity collision (@capacitor/app vs @capacitor-firebase/app)
+      - name: Fix SPM Package.swift paths / guard app identity collision
         run: node scripts/ensure-spm-firebase-app-link.mjs
 
       - name: Wire Live Activity widget extension
@@ -99,20 +99,18 @@ jobs:
 
       - name: Verify LiveActivities + Firebase plugins are registered
         run: |
-          for name in LiveActivitiesPlugin FirebaseAppPlugin FirebaseMessagingPlugin; do
+          for name in LiveActivitiesPlugin FirebaseMessagingPlugin; do
             grep -q "$name" ios/App/App/capacitor.config.json \
               || { echo "$name missing from packageClassList"; exit 1; }
           done
           grep -q 'LiveActivitiesPlugin.swift' ios/App/App.xcodeproj/project.pbxproj \
             || { echo "LiveActivitiesPlugin.swift not in Xcode project"; exit 1; }
-          for name in CapacitorFirebaseMessaging CapacitorFirebaseApp; do
-            grep -q "$name" ios/App/CapApp-SPM/Package.swift \
-              || { echo "$name missing from CapApp-SPM/Package.swift — FCM tokens will be null"; exit 1; }
-          done
-          grep -q 'symlinks/CapacitorFirebaseApp' ios/App/CapApp-SPM/Package.swift \
-            || { echo "CapacitorFirebaseApp must use symlinks/ path to avoid SPM identity 'app' collision"; exit 1; }
-          test -e ios/App/CapApp-SPM/symlinks/CapacitorFirebaseApp \
-            || { echo "Missing CapApp-SPM/symlinks/CapacitorFirebaseApp link"; exit 1; }
+          grep -q 'CapacitorFirebaseMessaging' ios/App/CapApp-SPM/Package.swift \
+            || { echo "CapacitorFirebaseMessaging missing from CapApp-SPM/Package.swift — FCM tokens will be null"; exit 1; }
+          if grep -q '@capacitor-firebase/app' ios/App/CapApp-SPM/Package.swift && grep -q '@capacitor/app' ios/App/CapApp-SPM/Package.swift; then
+            echo "SPM identity collision: both @capacitor/app and @capacitor-firebase/app in Package.swift"
+            exit 1
+          fi
 
       - name: Prepare App Store Connect API key
         env:

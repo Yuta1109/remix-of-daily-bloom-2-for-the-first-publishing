@@ -1,5 +1,4 @@
 import { Capacitor } from "@capacitor/core";
-import { FirebaseApp } from "@capacitor-firebase/app";
 import { FirebaseMessaging } from "@capacitor-firebase/messaging";
 import { setRemoteFcmToken, setRemoteDiagnosticHint } from "./la-remote";
 
@@ -30,20 +29,13 @@ async function fetchFcmTokenWithRetry(attempts = 8): Promise<string | null> {
  * token to Firestore via setRemoteFcmToken. Required for ActivityKit
  * push-to-start through Firebase Cloud Messaging.
  *
- * Root cause of long-lived FCM✗: CapApp-SPM used to omit CapacitorFirebaseMessaging
- * (SPM symlink EPERM aborted Package.swift write), so getToken never worked.
+ * Note: @capacitor-firebase/app is intentionally NOT used. Its npm folder
+ * basename ("app") collides with @capacitor/app in SwiftPM. FirebaseMessaging
+ * configures FirebaseCore itself when GoogleService-Info.plist is present.
  */
 export async function initFcmRegistration(): Promise<void> {
   if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "ios") {
     return;
-  }
-
-  try {
-    await FirebaseApp.getName();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn("[fcm] FirebaseApp not ready:", msg);
-    setRemoteDiagnosticHint(`FirebaseApp: ${msg}`);
   }
 
   try {

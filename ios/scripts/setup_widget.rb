@@ -197,7 +197,6 @@ if File.exist?(cap_json_path)
   # In-app plugin + Firebase plugins required for FCM / remote Live Activity.
   required_plugins = %w[
     LiveActivitiesPlugin
-    FirebaseAppPlugin
     FirebaseMessagingPlugin
   ]
   added = []
@@ -226,22 +225,19 @@ unless File.exist?(package_swift)
   abort "ERROR: #{package_swift} missing — run npx cap sync ios first."
 end
 pkg = File.read(package_swift)
-%w[CapacitorFirebaseMessaging CapacitorFirebaseApp].each do |name|
+%w[CapacitorFirebaseMessaging].each do |name|
   next if pkg.include?(name)
 
   abort <<~MSG
     ERROR: #{name} is missing from CapApp-SPM/Package.swift.
     FCM / Live Activity push tokens will stay null on device.
-    Fix: remove experimental.ios.spm.packageOptions symlink settings, then run:
-      npx cap sync ios
-      node scripts/ensure-spm-firebase-app-link.mjs
+    Run: npx cap sync ios && node scripts/ensure-spm-firebase-app-link.mjs
   MSG
 end
-unless pkg.include?("symlinks/CapacitorFirebaseApp")
+if pkg.include?("@capacitor-firebase/app") && pkg.include?("@capacitor/app")
   abort <<~MSG
-    ERROR: CapacitorFirebaseApp must point at symlinks/CapacitorFirebaseApp
-    (otherwise SPM identity collides with @capacitor/app → both basename "app").
-    Run: node scripts/ensure-spm-firebase-app-link.mjs
+    ERROR: Package.swift includes both @capacitor/app and @capacitor-firebase/app.
+    SwiftPM treats both as identity "app". Keep firebase/app out of ios.includePlugins.
   MSG
 end
-puts "Verified Firebase SPM packages in CapApp-SPM/Package.swift."
+puts "Verified Firebase Messaging SPM package in CapApp-SPM/Package.swift."

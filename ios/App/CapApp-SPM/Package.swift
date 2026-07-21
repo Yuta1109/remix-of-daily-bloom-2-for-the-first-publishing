@@ -2,8 +2,6 @@
 import PackageDescription
 
 // DO NOT MODIFY THIS FILE - managed by Capacitor CLI commands
-// CapacitorFirebaseApp uses symlinks/CapacitorFirebaseApp so SPM identity is not
-// "app" (which collides with @capacitor/app). See scripts/ensure-spm-firebase-app-link.mjs.
 let package = Package(
     name: "CapApp-SPM",
     platforms: [.iOS(.v17)],
@@ -14,7 +12,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.4.1"),
-        .package(name: "CapacitorFirebaseApp", path: "symlinks/CapacitorFirebaseApp"),
         .package(name: "CapacitorFirebaseMessaging", path: "../../../node_modules/@capacitor-firebase/messaging"),
         .package(name: "CapacitorApp", path: "../../../node_modules/@capacitor/app"),
         .package(name: "CapacitorHaptics", path: "../../../node_modules/@capacitor/haptics"),
@@ -30,7 +27,6 @@ let package = Package(
             dependencies: [
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
-                .product(name: "CapacitorFirebaseApp", package: "CapacitorFirebaseApp"),
                 .product(name: "CapacitorFirebaseMessaging", package: "CapacitorFirebaseMessaging"),
                 .product(name: "CapacitorApp", package: "CapacitorApp"),
                 .product(name: "CapacitorHaptics", package: "CapacitorHaptics"),
