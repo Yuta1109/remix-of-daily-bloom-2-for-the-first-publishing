@@ -15,15 +15,27 @@ public struct EssencesWidgetAttributes: ActivityAttributes {
         public var overflow: Int
         /// UI language, synced with the in-app language setting ("en" | "ja").
         public var locale: String
-        /// Bumped by the app (or remote update push) to force Lock Screen redraw
-        /// so TimelineView relative strings can advance while the process lives.
+        /// Bumped by the app (or remote update push) to force Lock Screen redraw.
         public var tick: Int
+        /// "countdown" | "arrived" — flipped at event start (local work item or push).
+        public var phase: String
 
-        public init(items: [Item], overflow: Int, locale: String, tick: Int = 0) {
+        public init(items: [Item], overflow: Int, locale: String, tick: Int = 0, phase: String = "countdown") {
             self.items = items
             self.overflow = overflow
             self.locale = locale
             self.tick = tick
+            self.phase = phase
+        }
+
+        /// Accept older payloads that omit `tick` / `phase` (FCM / prior builds).
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            items = try c.decode([Item].self, forKey: .items)
+            overflow = try c.decode(Int.self, forKey: .overflow)
+            locale = try c.decode(String.self, forKey: .locale)
+            tick = try c.decodeIfPresent(Int.self, forKey: .tick) ?? 0
+            phase = try c.decodeIfPresent(String.self, forKey: .phase) ?? "countdown"
         }
     }
 

@@ -1,4 +1,5 @@
 import UIKit
+import UserNotifications
 import Capacitor
 
 @UIApplicationMain
@@ -13,6 +14,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         if #available(iOS 16.2, *) {
             LiveActivityRefreshCenter.start()
         }
+        // Always request the APNs device token. FCM getToken() needs it; waiting
+        // only for "authorized" delayed registration and left Settings at FCM✗.
+        application.registerForRemoteNotifications()
         return true
     }
 
@@ -26,6 +30,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        application.registerForRemoteNotifications()
         if #available(iOS 16.2, *) {
             LiveActivityRefreshCenter.start()
             LiveActivityRefreshCenter.noteActivitiesChanged()

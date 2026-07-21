@@ -51,8 +51,10 @@ export type LiveActivityRemoteStatus = {
   deviceUid: string | null;
   hasFcmToken: boolean;
   hasPushToStartToken: boolean;
+  hasUpdateToken: boolean;
   lastError: string | null;
   lastSyncAt: number | null;
+  diagnosticHint: string | null;
 };
 
 function readWebConfig(): FirebaseWebConfig | null {
@@ -98,6 +100,7 @@ let lastSyncAt: number | null = null;
 let cachedConfig: FirebaseWebConfig | null | undefined;
 let pushToStartListenerBound = false;
 let updateTokenListenerBound = false;
+let diagnosticHint: string | null = null;
 
 function webConfig(): FirebaseWebConfig | null {
   if (cachedConfig === undefined) cachedConfig = readWebConfig();
@@ -116,12 +119,18 @@ function setError(err: unknown): void {
 
 /** Surface non-fatal FCM / token hints in Settings without clearing Auth success. */
 export function setRemoteDiagnosticHint(hint: string): void {
+  diagnosticHint = hint;
   if (!deviceUid) {
     lastError = hint;
     return;
   }
   // Keep Auth/Firestore success visible; append token hint.
-  if (!lastError || lastError.startsWith("FCM:") || lastError.startsWith("FirebaseApp:")) {
+  if (
+    !lastError ||
+    lastError.startsWith("FCM:") ||
+    lastError.startsWith("FirebaseApp:") ||
+    lastError.startsWith("LA:")
+  ) {
     lastError = hint;
   }
 }
@@ -136,8 +145,10 @@ export function getLiveActivityRemoteStatus(): LiveActivityRemoteStatus {
     deviceUid,
     hasFcmToken: !!fcmToken,
     hasPushToStartToken: !!pushToStartToken,
+    hasUpdateToken: !!liveActivityUpdateToken,
     lastError,
     lastSyncAt,
+    diagnosticHint,
   };
 }
 

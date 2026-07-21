@@ -69,7 +69,7 @@ function refreshTaskQueue() {
   return getFunctions().taskQueue(`locations/${REGION}/functions/${REFRESH_FN}`);
 }
 
-function buildContentState(data, tick = 0) {
+function buildContentState(data, tick = 0, phase = "countdown") {
   return {
     items: [
       {
@@ -81,6 +81,7 @@ function buildContentState(data, tick = 0) {
     overflow: 0,
     locale: String(data.locale || "ja"),
     tick: Number(tick) || 0,
+    phase: String(phase || "countdown"),
   };
 }
 
@@ -227,6 +228,15 @@ async function sendStartForSchedule(scheduleId, data) {
         logger.warn("Failed to enqueue LA refresh", err);
       }
     }
+    // Flip Lock Screen to "arrived" at event start even if the app is killed.
+    const startAt = Number(data.startEpochMs);
+    if (startAt > Date.now()) {
+      try {
+        await enqueueRefresh(scheduleId, startAt);
+      } catch (err) {
+        logger.warn("Failed to enqueue LA arrived tick", err);
+      }
+    }
     return true;
   } catch (err) {
     logger.error("FCM live activity start failed", err);
@@ -238,7 +248,7 @@ async function sendStartForSchedule(scheduleId, data) {
   }
 }
 
-async function sendUpdateForSchedule(scheduleId, data) {
+async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
   if (!deviceSnap.exists) return false;
   const device = deviceSnap.data() || {};
@@ -268,7 +278,7 @@ async function sendUpdateForSchedule(scheduleId, data) {
           aps: {
             timestamp: nowSec,
             event: "update",
-            "content-state": buildContentState(data, Date.now()),
+            "content-state": buildContentState(data, Date.now(), phase),
             "stale-date": staleSec,
           },
         },
@@ -348,9 +358,13 @@ export const refreshLiveActivityTask = onTaskDispatched(
     const data = snap.data();
     if (data.status !== "started") return;
     const now = Date.now();
-    if (Number(data.startEpochMs) <= now) return;
+    if (Number(data.startEpochMs) <= now) {
+      // At/after start → mark arrived once, then stop refreshing.
+      await sendUpdateForSchedule(scheduleId, data, "arrived");
+      return;
+    }
 
-    await sendUpdateForSchedule(scheduleId, data);
+    await sendUpdateForSchedule(scheduleId, data, "countdown");
 
     const next = now + REFRESH_INTERVAL_MS;
     if (next < Number(data.startEpochMs)) {
@@ -358,6 +372,12 @@ export const refreshLiveActivityTask = onTaskDispatched(
         await enqueueRefresh(scheduleId, next);
       } catch (err) {
         logger.warn("Failed to re-enqueue LA refresh", err);
+      }
+    } else if (Number(data.startEpochMs) > now) {
+      try {
+        await enqueueRefresh(scheduleId, Number(data.startEpochMs));
+      } catch (err) {
+        logger.warn("Failed to enqueue LA arrived", err);
       }
     }
   },

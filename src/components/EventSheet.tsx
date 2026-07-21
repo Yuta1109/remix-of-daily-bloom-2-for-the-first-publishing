@@ -31,6 +31,12 @@ import {
   saveOccurrenceException,
   excludeOccurrence,
   endSeriesOn,
+  replaceSeriesFromDate,
+  repeatAllowedForEvent,
+  monthlyDayLabel,
+  monthlyWeekdayLabel,
+  eventSpanDays,
+  addDaysYMD,
 } from "@/lib/events-store";
 import {
   rescheduleAll,
@@ -54,16 +60,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { buttonVariants } from "@/components/ui/button";
 
 export type EventSheetTarget =
   | { mode: "new"; date: string }
@@ -101,7 +97,8 @@ const REPEATS: { key: RepeatFreq; tk: string }[] = [
   { key: "none",    tk: "repeatNone" },
   { key: "daily",   tk: "repeatDaily" },
   { key: "weekly",  tk: "repeatWeekly" },
-  { key: "monthly", tk: "repeatMonthly" },
+  { key: "monthly", tk: "repeatMonthlyDay" },
+  { key: "monthlyWeekday", tk: "repeatMonthlyWeekday" },
   { key: "yearly",  tk: "repeatYearly" },
 ];
 
@@ -154,8 +151,12 @@ function makeInitial(target: EventSheetTarget | null): CalendarEvent | null {
         target.occurrenceDate;
       const exception = findExceptionFor(existing.id, occStart);
       if (exception) return { ...exception };
-      // Materialized copy for this day (saved as exception on Save).
-      return { ...materializeOccurrence(existing, occStart), repeat: "none" };
+      // Materialized copy for this day — always keep the master's repeat so
+      // the picker never falls back to "なし" and frequency can be changed.
+      return {
+        ...materializeOccurrence(existing, occStart),
+        repeat: existing.repeat ?? "none",
+      };
     }
     return { ...existing };
   }
@@ -220,7 +221,7 @@ function FormBody({
   onClose,
   onEnableNotif,
 }: FormBodyProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const selectedReminders: ReminderOffset[] = form.reminders ?? [];
 
@@ -443,17 +444,39 @@ function FormBody({
             </div>
             <Select
               value={form.repeat ?? "none"}
-              onValueChange={(v) => patch({ repeat: v as RepeatFreq })}
+              onValueChange={(v) => {
+                const next = v as RepeatFreq;
+                if (!repeatAllowedForEvent(form, next)) {
+                  window.alert(
+                    t(next === "daily" ? "repeatInvalidDaily" : "repeatInvalidWeekly"),
+                  );
+                  return;
+                }
+                patch({ repeat: next });
+              }}
             >
-              <SelectTrigger className="w-[160px] h-8 text-sm">
+              <SelectTrigger className="w-[180px] h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className={selectMenuClass}>
-                {REPEATS.map((r) => (
-                  <SelectItem key={r.key} value={r.key}>
-                    {t(r.tk as never)}
-                  </SelectItem>
-                ))}
+                {REPEATS.map((r) => {
+                  const disabled = !repeatAllowedForEvent(form, r.key);
+                  let label = t(r.tk as never);
+                  if (r.key === "monthly") label = monthlyDayLabel(form.date, locale);
+                  if (r.key === "monthlyWeekday") {
+                    label = monthlyWeekdayLabel(form.date, locale);
+                  }
+                  return (
+                    <SelectItem
+                      key={r.key}
+                      value={r.key}
+                      disabled={disabled}
+                      className={disabled ? "opacity-40" : undefined}
+                    >
+                      {label}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -529,7 +552,7 @@ function FormBody({
 /* ─── Main EventSheet component ─────────────────────────────────────────── */
 
 export function EventSheet({ open, onOpenChange, target, variant = "drawer", onSaved, onDeleted }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const targetKey =
     target == null
       ? null
@@ -539,7 +562,6 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
 
   const [form, setForm] = useState<CalendarEvent | null>(null);
   const [notifBlocked, setNotifBlocked] = useState(false);
-  const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
   /** When editing a virtualized series occurrence (not yet detached). */
   const [seriesOccurrence, setSeriesOccurrence] = useState<{
     masterId: string;
@@ -551,7 +573,6 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   useEffect(() => {
     if (!open) {
       lastInitKey.current = null;
-      setDeleteMenuOpen(false);
       setSeriesOccurrence(null);
       return;
     }
@@ -615,6 +636,48 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     void syncLiveActivitySchedulesRemote();
   };
 
+  const masterIdForSeries = seriesOccurrence?.masterId ?? form.id;
+  const occurrenceDateForSeries =
+    seriesOccurrence?.occurrenceDate ??
+    (target?.mode === "edit" ? target.occurrenceDate : undefined) ??
+    form.date;
+
+  const originalMaster = getEvent(masterIdForSeries);
+  const originalRepeat = (originalMaster?.repeat ?? "none") as RepeatFreq;
+
+  const repeatKind = (
+    r: RepeatFreq,
+  ): "daily" | "weekly" | "monthly" | "yearly" => {
+    if (r === "daily") return "daily";
+    if (r === "monthly" || r === "monthlyWeekday") return "monthly";
+    if (r === "yearly") return "yearly";
+    return "weekly";
+  };
+
+  const applyAllPrompt = (r: RepeatFreq): string => {
+    const kind = repeatKind(r);
+    if (locale === "ja") {
+      const freq =
+        kind === "daily"
+          ? "毎日"
+          : kind === "monthly"
+            ? "毎月"
+            : kind === "yearly"
+              ? "毎年"
+              : "毎週";
+      return `この変更を${freq}の予定にも反映しますか？`;
+    }
+    const freq =
+      kind === "daily"
+        ? "daily"
+        : kind === "monthly"
+          ? "monthly"
+          : kind === "yearly"
+            ? "yearly"
+            : "weekly";
+    return `Apply this change to all ${freq} events in the series as well?`;
+  };
+
   const save = () => {
     if (!form.title.trim()) return;
     const endDateRaw = form.endDate?.trim() || form.date;
@@ -637,6 +700,14 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       }
     }
 
+    const nextRepeat = (form.repeat ?? "none") as RepeatFreq;
+    if (!repeatAllowedForEvent({ ...form, endDate: endDateRaw }, nextRepeat)) {
+      window.alert(
+        t(nextRepeat === "daily" ? "repeatInvalidDaily" : "repeatInvalidWeekly"),
+      );
+      return;
+    }
+
     const payload: CalendarEvent = {
       ...form,
       title: form.title.trim(),
@@ -645,15 +716,96 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       notes: form.notes?.trim() || undefined,
       startTime: form.allDay ? undefined : form.startTime,
       endTime: form.allDay ? undefined : form.endTime,
+      repeat: nextRepeat,
     };
 
-    if (seriesOccurrence) {
-      // Detach this day as its own event; keep the series for other days.
-      saveOccurrenceException(
-        seriesOccurrence.masterId,
-        seriesOccurrence.occurrenceDate,
-        { ...payload, repeat: "none" },
-      );
+    const editingSeries =
+      !!seriesOccurrence ||
+      (!!originalMaster && isRepeating(originalMaster) && !form.recurrenceMasterId);
+
+    if (editingSeries && originalMaster && isRepeating(originalMaster)) {
+      // 1) Turning repeat off → keep earlier occurrences; end series from this day.
+      if (originalRepeat !== "none" && nextRepeat === "none") {
+        // If there are other field edits, ask about series first, then turn-off.
+        const contentChanged =
+          payload.title !== originalMaster.title ||
+          payload.startTime !== originalMaster.startTime ||
+          payload.endTime !== originalMaster.endTime ||
+          payload.allDay !== originalMaster.allDay ||
+          payload.color !== originalMaster.color ||
+          (payload.location || "") !== (originalMaster.location || "") ||
+          (payload.notes || "") !== (originalMaster.notes || "") ||
+          JSON.stringify(payload.reminders || []) !==
+            JSON.stringify(originalMaster.reminders || []) ||
+          !!payload.liveActivity !== !!originalMaster.liveActivity ||
+          payload.liveActivityLead !== originalMaster.liveActivityLead;
+
+        if (contentChanged) {
+          if (!window.confirm(applyAllPrompt(originalRepeat))) return;
+        }
+        if (!window.confirm(t("repeatTurnOffConfirm"))) return;
+        endSeriesOn(masterIdForSeries, occurrenceDateForSeries);
+        upsertEvent({
+          ...payload,
+          id: crypto.randomUUID(),
+          date: occurrenceDateForSeries,
+          endDate: addDaysYMD(occurrenceDateForSeries, eventSpanDays(payload)),
+          repeat: "none",
+          recurrenceMasterId: undefined,
+          recurrenceDate: undefined,
+          excludeDates: undefined,
+          repeatEndDate: undefined,
+        });
+        syncSchedules();
+        onSaved?.();
+        onOpenChange(false);
+        return;
+      }
+
+      // 2) Changing repeat frequency → replace series from this day (no doubles).
+      if (originalRepeat !== nextRepeat && nextRepeat !== "none") {
+        if (!window.confirm(applyAllPrompt(nextRepeat))) return;
+        replaceSeriesFromDate(masterIdForSeries, occurrenceDateForSeries, payload);
+        syncSchedules();
+        onSaved?.();
+        onOpenChange(false);
+        return;
+      }
+
+      // 3) Same frequency — ask whether to apply to whole series.
+      const applyAll = window.confirm(applyAllPrompt(originalRepeat));
+      if (applyAll) {
+        const span = eventSpanDays(payload);
+        upsertEvent({
+          ...originalMaster,
+          title: payload.title,
+          allDay: payload.allDay,
+          startTime: payload.startTime,
+          endTime: payload.endTime,
+          color: payload.color,
+          reminders: payload.reminders,
+          location: payload.location,
+          notes: payload.notes,
+          liveActivity: payload.liveActivity,
+          liveActivityLead: payload.liveActivityLead,
+          repeat: nextRepeat,
+          // Keep series anchor date; apply new duration from that anchor.
+          endDate: addDaysYMD(originalMaster.date, span),
+        });
+      } else {
+        saveOccurrenceException(masterIdForSeries, occurrenceDateForSeries, {
+          ...payload,
+          repeat: "none",
+        });
+      }
+      syncSchedules();
+      onSaved?.();
+      onOpenChange(false);
+      return;
+    }
+
+    if (form.recurrenceMasterId) {
+      upsertEvent(payload);
     } else {
       upsertEvent(payload);
     }
@@ -665,7 +817,6 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   const finishDelete = () => {
     syncSchedules();
     onDeleted?.();
-    setDeleteMenuOpen(false);
     onOpenChange(false);
   };
 
@@ -675,9 +826,8 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       return;
     }
 
-    // Detached exception — simple delete.
     if (form.recurrenceMasterId) {
-      if (confirm(t("confirmDelete"))) {
+      if (window.confirm(t("confirmDelete"))) {
         deleteEvent(form.id);
         finishDelete();
       }
@@ -687,69 +837,40 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     const master = seriesOccurrence
       ? getEvent(seriesOccurrence.masterId)
       : getEvent(form.id);
-    if (master && isRepeating(master) && (seriesOccurrence || target?.mode === "edit")) {
-      setDeleteMenuOpen(true);
+    if (master && isRepeating(master)) {
+      const kind = repeatKind((master.repeat ?? "weekly") as RepeatFreq);
+      const onlyTk =
+        kind === "daily"
+          ? "deleteRepeatOnlyThisDaily"
+          : kind === "monthly"
+            ? "deleteRepeatOnlyThisMonthly"
+            : kind === "yearly"
+              ? "deleteRepeatOnlyThisYearly"
+              : "deleteRepeatOnlyThisWeekly";
+      const futureTk =
+        kind === "daily"
+          ? "deleteRepeatThisAndFutureDaily"
+          : kind === "monthly"
+            ? "deleteRepeatThisAndFutureMonthly"
+            : kind === "yearly"
+              ? "deleteRepeatThisAndFutureYearly"
+              : "deleteRepeatThisAndFutureWeekly";
+      if (window.confirm(t(onlyTk))) {
+        excludeOccurrence(masterIdForSeries, occurrenceDateForSeries);
+        finishDelete();
+        return;
+      }
+      if (window.confirm(t(futureTk))) {
+        endSeriesOn(masterIdForSeries, occurrenceDateForSeries);
+        finishDelete();
+      }
       return;
     }
 
-    if (confirm(t("confirmDelete"))) {
+    if (window.confirm(t("confirmDelete"))) {
       deleteEvent(form.id);
       finishDelete();
     }
-  };
-
-  const repeatKey = ((): "daily" | "weekly" | "monthly" | "yearly" => {
-    const master = seriesOccurrence
-      ? getEvent(seriesOccurrence.masterId)
-      : getEvent(form.id);
-    const r = master?.repeat;
-    if (r === "daily" || r === "weekly" || r === "monthly" || r === "yearly") return r;
-    return "weekly";
-  })();
-
-  const deleteTitleTk =
-    repeatKey === "daily"
-      ? "deleteRepeatTitleDaily"
-      : repeatKey === "monthly"
-        ? "deleteRepeatTitleMonthly"
-        : repeatKey === "yearly"
-          ? "deleteRepeatTitleYearly"
-          : "deleteRepeatTitleWeekly";
-  const deleteOnlyTk =
-    repeatKey === "daily"
-      ? "deleteRepeatOnlyThisDaily"
-      : repeatKey === "monthly"
-        ? "deleteRepeatOnlyThisMonthly"
-        : repeatKey === "yearly"
-          ? "deleteRepeatOnlyThisYearly"
-          : "deleteRepeatOnlyThisWeekly";
-  const deleteFutureTk =
-    repeatKey === "daily"
-      ? "deleteRepeatThisAndFutureDaily"
-      : repeatKey === "monthly"
-        ? "deleteRepeatThisAndFutureMonthly"
-        : repeatKey === "yearly"
-          ? "deleteRepeatThisAndFutureYearly"
-          : "deleteRepeatThisAndFutureWeekly";
-
-  const deleteOnlyThis = () => {
-    const masterId = seriesOccurrence?.masterId ?? form.id;
-    const occ =
-      seriesOccurrence?.occurrenceDate ??
-      (target?.mode === "edit" ? target.occurrenceDate : undefined) ??
-      form.date;
-    excludeOccurrence(masterId, occ);
-    finishDelete();
-  };
-
-  const deleteThisAndFuture = () => {
-    const masterId = seriesOccurrence?.masterId ?? form.id;
-    const occ =
-      seriesOccurrence?.occurrenceDate ??
-      (target?.mode === "edit" ? target.occurrenceDate : undefined) ??
-      form.date;
-    endSeriesOn(masterId, occ);
-    finishDelete();
   };
 
   const handleEnableNotif = async () => {
@@ -765,108 +886,56 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     form,
     isNew,
     notifBlocked,
-    // When editing a single series occurrence, don't let the user change
-    // "repeat" on the detached copy — keep UI but saving forces none.
-    patch: seriesOccurrence
-      ? (p) => {
-          const { repeat: _r, ...rest } = p;
-          patch(rest);
-        }
-      : patch,
+    patch,
     onSave: save,
     onRemove: remove,
     onClose: () => onOpenChange(false),
     onEnableNotif: handleEnableNotif,
   };
 
-  const deleteMenu = (
-    <AlertDialog open={deleteMenuOpen} onOpenChange={setDeleteMenuOpen}>
-      <AlertDialogContent className="max-w-sm gap-3">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="text-base leading-snug">
-            {t(deleteTitleTk)}
-          </AlertDialogTitle>
-          <AlertDialogDescription className="sr-only">
-            {t(deleteTitleTk)}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            className={cn(buttonVariants({ variant: "secondary" }), "h-auto w-full whitespace-normal py-3 text-left text-sm")}
-            onClick={deleteOnlyThis}
-          >
-            {t(deleteOnlyTk)}
-          </button>
-          <button
-            type="button"
-            className={cn(buttonVariants({ variant: "destructive" }), "h-auto w-full whitespace-normal py-3 text-left text-sm")}
-            onClick={deleteThisAndFuture}
-          >
-            {t(deleteFutureTk)}
-          </button>
-        </div>
-        <AlertDialogFooter className="sm:justify-center">
-          <AlertDialogCancel className="mt-0 w-full sm:w-auto">
-            {t("cancel")}
-          </AlertDialogCancel>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-
-
   /* ── Modal variant ──────────────────────────────────────────────────── */
   if (variant === "modal") {
-    if (!open) return deleteMenu;
-    return (
-      <>
-        {createPortal(
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <div
-              className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-              onClick={() => onOpenChange(false)}
-            />
-            <div
-              className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
-              style={{ maxHeight: "88dvh" }}
-            >
-              <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
-              <FormBody {...formBodyProps} />
-            </div>
-          </div>,
-          document.body,
-        )}
-        {deleteMenu}
-      </>
+    if (!open) return null;
+    return createPortal(
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div
+          className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+          onClick={() => onOpenChange(false)}
+        />
+        <div
+          className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
+          style={{ maxHeight: "88dvh" }}
+        >
+          <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
+          <FormBody {...formBodyProps} />
+        </div>
+      </div>,
+      document.body,
     );
   }
 
   /* ── Drawer variant ─────────────────────────────────────────────────── */
   return (
-    <>
-      <DrawerPrimitive.Root
-        open={open}
-        onOpenChange={onOpenChange}
-        shouldScaleBackground={false}
-        dismissible
-      >
-        <DrawerPrimitive.Portal>
-          <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
-          <DrawerPrimitive.Content
-            className={cn(
-              "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
-              "min-h-0 overflow-hidden outline-none"
-            )}
-            style={{ maxHeight: "88dvh" }}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
-            <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
-            <FormBody {...formBodyProps} />
-          </DrawerPrimitive.Content>
-        </DrawerPrimitive.Portal>
-      </DrawerPrimitive.Root>
-      {deleteMenu}
-    </>
+    <DrawerPrimitive.Root
+      open={open}
+      onOpenChange={onOpenChange}
+      shouldScaleBackground={false}
+      dismissible
+    >
+      <DrawerPrimitive.Portal>
+        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+        <DrawerPrimitive.Content
+          className={cn(
+            "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
+            "min-h-0 overflow-hidden outline-none",
+          )}
+          style={{ maxHeight: "88dvh" }}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
+          <FormBody {...formBodyProps} />
+        </DrawerPrimitive.Content>
+      </DrawerPrimitive.Portal>
+    </DrawerPrimitive.Root>
   );
 }

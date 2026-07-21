@@ -2,7 +2,6 @@ import ActivityKit
 import WidgetKit
 import SwiftUI
 
-// Match in-app page background (HSL 40 20% 98%) with Essences orange accent.
 @available(iOS 16.1, *)
 private enum EssencesLAStyle {
     static let background = Color(red: 0.980, green: 0.973, blue: 0.961)
@@ -40,44 +39,32 @@ private func overflowText(_ locale: String, _ n: Int) -> String {
     locale == "ja" ? "ほか\(n)件" : "+\(n) more"
 }
 
-/// Relative countdown — evaluated at Activity.update time (see LiveActivityRefreshCenter).
-/// TimelineView is intentionally not used: Lock Screen often freezes custom TimelineView
-/// text until the app refreshes the activity.
 @available(iOS 16.1, *)
-func essencesRelativeRemaining(from now: Date, to target: Date, locale: String) -> String {
-    let total = max(0, Int(target.timeIntervalSince(now)))
-    let hours = total / 3600
-    let minutes = (total % 3600) / 60
-    if locale == "ja" {
-        if now >= target { return arrivedText(locale) }
-        if total < 60 { return "まもなく" }
-        if hours > 0 { return "\(hours)時間\(minutes)分後" }
-        return "\(minutes)分後"
-    }
-    if now >= target { return arrivedText(locale) }
-    if total < 60 { return "soon" }
-    if hours > 0 { return "in \(hours)h \(minutes)m" }
-    return "in \(minutes)m"
-}
-
-@available(iOS 16.1, *)
-private struct RelativeOrArrivedLabel: View {
+private struct CountdownOrArrivedLabel: View {
     let target: Date
     let locale: String
-    /// Bumped by heartbeat / FCM update → view re-renders with a fresh `Date()`.
-    let tick: Int
+    let phase: String
 
     var body: some View {
-        Text(essencesRelativeRemaining(from: Date(), to: target, locale: locale))
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(EssencesLAStyle.accent)
-            .lineLimit(1)
-            .minimumScaleFactor(0.85)
-            .id(tick)
+        // TimelineView lets Lock Screen flip to "It's time" near start without the
+        // app process. Text(timerInterval:) keeps a smooth countdown between ticks.
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            Group {
+                if phase == "arrived" || context.date >= target {
+                    Text(arrivedText(locale))
+                } else {
+                    Text(timerInterval: context.date...target, countsDown: true)
+                        .monospacedDigit()
+                }
+            }
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(EssencesLAStyle.accent)
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
     }
 }
 
-/// Compact Lock Screen card — fits up to 3 rows without clipping.
 @available(iOS 16.1, *)
 struct LockScreenView: View {
     let state: EssencesWidgetAttributes.ContentState
@@ -107,10 +94,10 @@ struct LockScreenView: View {
 
                     Spacer(minLength: 6)
 
-                    RelativeOrArrivedLabel(
+                    CountdownOrArrivedLabel(
                         target: item.startDate,
                         locale: state.locale,
-                        tick: state.tick
+                        phase: state.phase
                     )
                     .frame(minWidth: 72, alignment: .trailing)
                 }
@@ -126,8 +113,6 @@ struct LockScreenView: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(EssencesLAStyle.background)
-        // Re-evaluate relative labels whenever tick changes.
-        .id(state.tick)
     }
 }
 

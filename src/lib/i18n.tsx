@@ -85,7 +85,34 @@ const translations = {
     repeatDaily: "Every day",
     repeatWeekly: "Every week",
     repeatMonthly: "Every month",
+    repeatMonthlyDay: "Monthly on this day",
+    repeatMonthlyWeekday: "Monthly on this weekday",
     repeatYearly: "Every year",
+    repeatInvalidDaily: "Daily repeat cannot be used for events that span multiple days.",
+    repeatInvalidWeekly: "Weekly repeat cannot be used for events that span 7 or more days.",
+    repeatApplyAll: "Apply this change to all repeating events in the series as well?",
+    repeatTurnOffConfirm:
+      "Turn off repeat from this day onward? Earlier occurrences will stay.",
+    deleteRepeatTitleDaily: "This is a daily repeating event.",
+    deleteRepeatTitleWeekly: "This is a weekly repeating event.",
+    deleteRepeatTitleMonthly: "This is a monthly repeating event.",
+    deleteRepeatTitleYearly: "This is a yearly repeating event.",
+    deleteRepeatOnlyThisDaily:
+      "Delete only this day? (Other daily occurrences stay)\n\nOK = this day only",
+    deleteRepeatOnlyThisWeekly:
+      "Delete only this day? (Other weekly occurrences stay)\n\nOK = this day only",
+    deleteRepeatOnlyThisMonthly:
+      "Delete only this day? (Other monthly occurrences stay)\n\nOK = this day only",
+    deleteRepeatOnlyThisYearly:
+      "Delete only this day? (Other yearly occurrences stay)\n\nOK = this day only",
+    deleteRepeatThisAndFutureDaily:
+      "Delete this day and all later daily repeats? (Earlier days stay)\n\nOK = this day and later",
+    deleteRepeatThisAndFutureWeekly:
+      "Delete this day and all later weekly repeats? (Earlier weeks stay)\n\nOK = this day and later",
+    deleteRepeatThisAndFutureMonthly:
+      "Delete this day and all later monthly repeats? (Earlier months stay)\n\nOK = this day and later",
+    deleteRepeatThisAndFutureYearly:
+      "Delete this day and all later yearly repeats? (Earlier years stay)\n\nOK = this day and later",
 
     // Live Activity
     liveActivity: "Live Activity",
@@ -93,7 +120,7 @@ const translations = {
     liveActivityHint:
       "Shows a countdown on the Lock Screen. If the event is already within the lead window (e.g. 4h lead, event in 3h), it appears as soon as you save. Otherwise it starts at (start − lead). Active up to 8h; Lock Screen may linger up to 12h total.",
     liveActivityForegroundNote:
-      "Requires iOS 17.2+. Works while the app is closed via push. Countdown updates on its own once shown.",
+      "Requires iOS 17.2+. Countdown uses the system timer (updates with the app closed). Start / “It’s time” also need push (FCM✓ and LA✓ in Settings).",
     la24h: "1 day before",
     la12h: "12 hours before",
     la8h: "8 hours before (max)",
@@ -147,26 +174,6 @@ const translations = {
     timeRequired: "Please set both start and end times.",
     liveActivityStartInPast:
       "Start time is in the past. Turn off Live Activity, or set a start time in the future.",
-    deleteRepeatTitleDaily: "This is a daily repeating event. What would you like to delete?",
-    deleteRepeatTitleWeekly: "This is a weekly repeating event. What would you like to delete?",
-    deleteRepeatTitleMonthly: "This is a monthly repeating event. What would you like to delete?",
-    deleteRepeatTitleYearly: "This is a yearly repeating event. What would you like to delete?",
-    deleteRepeatOnlyThisDaily:
-      "Delete only this day (other daily occurrences stay)",
-    deleteRepeatOnlyThisWeekly:
-      "Delete only this day (other weekly occurrences stay)",
-    deleteRepeatOnlyThisMonthly:
-      "Delete only this day (other monthly occurrences stay)",
-    deleteRepeatOnlyThisYearly:
-      "Delete only this day (other yearly occurrences stay)",
-    deleteRepeatThisAndFutureDaily:
-      "Delete this day and all later daily repeats (earlier days stay)",
-    deleteRepeatThisAndFutureWeekly:
-      "Delete this day and all later weekly repeats (earlier weeks stay)",
-    deleteRepeatThisAndFutureMonthly:
-      "Delete this day and all later monthly repeats (earlier months stay)",
-    deleteRepeatThisAndFutureYearly:
-      "Delete this day and all later yearly repeats (earlier years stay)",
   },
   ja: {
     today: "今日",
@@ -238,7 +245,34 @@ const translations = {
     repeatDaily: "毎日",
     repeatWeekly: "毎週",
     repeatMonthly: "毎月",
+    repeatMonthlyDay: "毎月この日",
+    repeatMonthlyWeekday: "毎月この曜日",
     repeatYearly: "毎年",
+    repeatInvalidDaily: "複数日にまたがる予定では「毎日」は設定できません。",
+    repeatInvalidWeekly: "7日以上にまたがる予定では「毎週」は設定できません。",
+    repeatApplyAll: "この変更を繰り返しの予定にも反映しますか？",
+    repeatTurnOffConfirm:
+      "この日以降の繰り返しをオフにしますか？（この日より前の予定は残ります）",
+    deleteRepeatTitleDaily: "日ごとの繰り返しの予定です。",
+    deleteRepeatTitleWeekly: "週ごとの繰り返しの予定です。",
+    deleteRepeatTitleMonthly: "月ごとの繰り返しの予定です。",
+    deleteRepeatTitleYearly: "年ごとの繰り返しの予定です。",
+    deleteRepeatOnlyThisDaily:
+      "この日の予定だけ削除しますか？（他の日の繰り返しは残ります）\n\nOK＝この日だけ",
+    deleteRepeatOnlyThisWeekly:
+      "この日の予定だけ削除しますか？（他の週の繰り返しは残ります）\n\nOK＝この日だけ",
+    deleteRepeatOnlyThisMonthly:
+      "この日の予定だけ削除しますか？（他の月の繰り返しは残ります）\n\nOK＝この日だけ",
+    deleteRepeatOnlyThisYearly:
+      "この日の予定だけ削除しますか？（他の年の繰り返しは残ります）\n\nOK＝この日だけ",
+    deleteRepeatThisAndFutureDaily:
+      "この日以降の日ごとの繰り返しをすべて削除しますか？（この日より前は残ります）\n\nOK＝この日以降",
+    deleteRepeatThisAndFutureWeekly:
+      "この日以降の週ごとの繰り返しをすべて削除しますか？（この日より前は残ります）\n\nOK＝この日以降",
+    deleteRepeatThisAndFutureMonthly:
+      "この日以降の月ごとの繰り返しをすべて削除しますか？（この日より前は残ります）\n\nOK＝この日以降",
+    deleteRepeatThisAndFutureYearly:
+      "この日以降の年ごとの繰り返しをすべて削除しますか？（この日より前は残ります）\n\nOK＝この日以降",
 
     // Live Activity
     liveActivity: "ライブアクティビティ",
@@ -246,7 +280,7 @@ const translations = {
     liveActivityHint:
       "ロック画面にカウントダウンを表示します。すでにリード時間内なら（例: 4時間前設定で予定が3時間後）保存した直後に表示します。それ以外は「開始−リード」で開始します。アクティブ最大8時間、ロック画面上は合計最大12時間です。",
     liveActivityForegroundNote:
-      "iOS 17.2 以上が必要です。アプリ終了中も Push で開始できます。表示後のタイマーは自動更新されます。",
+      "iOS 17.2 以上が必要です。カウントダウンはシステムタイマーでアプリ終了中も進みます。開始／「予定時間になりました」は Push が必要です（設定の FCM✓・LA✓）。",
     la24h: "1日前",
     la12h: "12時間前",
     la8h: "8時間前（上限）",
@@ -299,26 +333,6 @@ const translations = {
     timeRequired: "開始時刻と終了時刻を入力してください。",
     liveActivityStartInPast:
       "開始時刻が現在より前です。ライブアクティビティをオフにするか、開始時刻をこれから先に修正してください。",
-    deleteRepeatTitleDaily: "日ごとの繰り返しの予定です。削除方法を選んでください。",
-    deleteRepeatTitleWeekly: "週ごとの繰り返しの予定です。削除方法を選んでください。",
-    deleteRepeatTitleMonthly: "月ごとの繰り返しの予定です。削除方法を選んでください。",
-    deleteRepeatTitleYearly: "年ごとの繰り返しの予定です。削除方法を選んでください。",
-    deleteRepeatOnlyThisDaily:
-      "この日の予定だけ削除（他の日の繰り返しは残す）",
-    deleteRepeatOnlyThisWeekly:
-      "この日の予定だけ削除（他の週の繰り返しは残す）",
-    deleteRepeatOnlyThisMonthly:
-      "この日の予定だけ削除（他の月の繰り返しは残す）",
-    deleteRepeatOnlyThisYearly:
-      "この日の予定だけ削除（他の年の繰り返しは残す）",
-    deleteRepeatThisAndFutureDaily:
-      "この日以降の日ごとの繰り返しをすべて削除（この日より前は残す）",
-    deleteRepeatThisAndFutureWeekly:
-      "この日以降の週ごとの繰り返しをすべて削除（この日より前は残す）",
-    deleteRepeatThisAndFutureMonthly:
-      "この日以降の月ごとの繰り返しをすべて削除（この日より前は残す）",
-    deleteRepeatThisAndFutureYearly:
-      "この日以降の年ごとの繰り返しをすべて削除（この日より前は残す）",
   },
 } as const;
 

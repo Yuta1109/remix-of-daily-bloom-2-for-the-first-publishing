@@ -323,12 +323,41 @@ export default function Settings({ staticPreview = false }: Props) {
                     : t("remoteLaWaiting")}
             </p>
             {remoteStatus?.projectId && (
-              <p className="text-[11px] text-muted-foreground/80 mt-2 font-mono break-all">
-                {remoteStatus.projectId}
-                {remoteStatus.deviceUid ? ` · ${remoteStatus.deviceUid.slice(0, 8)}…` : ""}
-                {remoteStatus.hasFcmToken ? " · FCM✓" : " · FCM✗"}
-                {remoteStatus.hasPushToStartToken ? " · LA✓" : " · LA✗"}
-              </p>
+              <div className="mt-2 space-y-1 text-[11px] text-muted-foreground/90 font-mono break-all">
+                <p>
+                  {remoteStatus.projectId}
+                  {remoteStatus.deviceUid ? ` · uid ${remoteStatus.deviceUid.slice(0, 8)}…` : ""}
+                </p>
+                <p>
+                  FCM {remoteStatus.hasFcmToken ? "✓" : "✗"}
+                  {" · "}
+                  pushToStart {remoteStatus.hasPushToStartToken ? "✓" : "✗"}
+                  {" · "}
+                  updateToken {remoteStatus.hasUpdateToken ? "✓" : "✗"}
+                </p>
+                {remoteStatus.lastSyncAt ? (
+                  <p>lastSync {new Date(remoteStatus.lastSyncAt).toLocaleString()}</p>
+                ) : null}
+                {(remoteStatus.diagnosticHint || remoteStatus.lastError) && (
+                  <p className="text-destructive/90 whitespace-pre-wrap">
+                    {remoteStatus.diagnosticHint || remoteStatus.lastError}
+                  </p>
+                )}
+                {!remoteStatus.hasFcmToken && (
+                  <p className="text-muted-foreground whitespace-pre-wrap">
+                    {locale === "ja"
+                      ? "FCM✗: 通知許可後に APNs→FCM トークンが必要です。「再チェック」を押すか、通知を一度オフ→オンにしてください。"
+                      : "FCM✗: Needs APNs→FCM token after notification permission. Tap Recheck or toggle notifications."}
+                  </p>
+                )}
+                {!remoteStatus.hasPushToStartToken && (
+                  <p className="text-muted-foreground whitespace-pre-wrap">
+                    {locale === "ja"
+                      ? "LA✗: ActivityKit の push-to-start トークン未取得（iOS 17.2+ / Live Activities オンが必要）。"
+                      : "LA✗: No ActivityKit push-to-start token yet (needs iOS 17.2+ and Live Activities On)."}
+                  </p>
+                )}
+              </div>
             )}
             <button
               type="button"

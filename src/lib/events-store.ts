@@ -1,4 +1,10 @@
-export type RepeatFreq = "none" | "daily" | "weekly" | "monthly" | "yearly";
+export type RepeatFreq =
+  | "none"
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "monthlyWeekday"
+  | "yearly";
 
 /**
  * Reminder lead-time options — same set as Live Activity leads.
@@ -210,6 +216,25 @@ export function addDaysYMD(ymd: string, days: number): string {
   return toYMD(d);
 }
 
+/** 1-based index of this weekday in the month (1=first, 5=fifth/last-ish). */
+export function weekdayOccurrenceInMonth(d: Date): number {
+  return Math.floor((d.getDate() - 1) / 7) + 1;
+}
+
+export function matchesMonthlyWeekday(seriesStart: Date, target: Date): boolean {
+  if (target.getDay() !== seriesStart.getDay()) return false;
+  const want = weekdayOccurrenceInMonth(seriesStart);
+  const got = weekdayOccurrenceInMonth(target);
+  if (got === want) return true;
+  // If series is 5th weekday and month has only 4, treat last as match when want===5.
+  if (want >= 5) {
+    const next = new Date(target);
+    next.setDate(next.getDate() + 7);
+    return next.getMonth() !== target.getMonth() && got === weekdayOccurrenceInMonth(target);
+  }
+  return false;
+}
+
 export function isRepeating(e: CalendarEvent): boolean {
   return !!e.repeat && e.repeat !== "none" && !e.recurrenceMasterId;
 }
@@ -217,6 +242,21 @@ export function isRepeating(e: CalendarEvent): boolean {
 export function eventSpanDays(e: CalendarEvent): number {
   return Math.max(0, diffDays(parseYMD(e.endDate || e.date), parseYMD(e.date)));
 }
+
+/** Whether a repeat rule is allowed for this event's length. */
+export function repeatAllowedForEvent(
+  e: Pick<CalendarEvent, "date" | "endDate">,
+  repeat: RepeatFreq,
+): boolean {
+  const span = Math.max(
+    0,
+    diffDays(parseYMD(e.endDate || e.date), parseYMD(e.date)),
+  );
+  if (repeat === "daily" && span >= 1) return false;
+  if (repeat === "weekly" && span >= 7) return false;
+  return true;
+}
+
 
 /** Find a detached exception for a series occurrence. */
 export function findExceptionFor(
@@ -261,6 +301,15 @@ export function occurrenceStartForDate(e: CalendarEvent, viewDate: string): stri
       const occStart = new Date(target.getFullYear(), target.getMonth(), start.getDate());
       if (occStart.getMonth() !== target.getMonth()) return null;
       return toYMD(occStart);
+    }
+    case "monthlyWeekday": {
+      for (let back = 0; back <= span; back++) {
+        const cand = new Date(target);
+        cand.setDate(cand.getDate() - back);
+        if (cand < start) break;
+        if (matchesMonthlyWeekday(start, cand)) return toYMD(cand);
+      }
+      return null;
     }
     case "yearly": {
       const occStart = new Date(target.getFullYear(), start.getMonth(), start.getDate());
@@ -325,6 +374,52 @@ export function endSeriesOn(masterId: string, occurrenceDate: string) {
   });
   saveEvents(events);
   return events;
+}
+
+/**
+ * End the old series on `fromDate` (keep earlier occurrences) and create a new
+ * master starting at `fromDate` with `next` fields (avoids double-booking).
+ */
+export function replaceSeriesFromDate(
+  masterId: string,
+  fromDate: string,
+  next: CalendarEvent,
+): CalendarEvent {
+  endSeriesOn(masterId, fromDate);
+  // Drop exceptions on/after fromDate that belonged to the old master (endSeriesOn already does).
+  const created: CalendarEvent = {
+    ...next,
+    id: crypto.randomUUID(),
+    date: fromDate,
+    endDate: addDaysYMD(fromDate, eventSpanDays(next)),
+    recurrenceMasterId: undefined,
+    recurrenceDate: undefined,
+    excludeDates: undefined,
+    repeatEndDate: undefined,
+  };
+  upsertEvent(created);
+  return created;
+}
+
+/** Label helpers for monthly weekday (ja/en). */
+export function monthlyWeekdayLabel(ymd: string, locale: "en" | "ja"): string {
+  const d = parseYMD(ymd);
+  const n = weekdayOccurrenceInMonth(d);
+  const weekday = d.getDay();
+  if (locale === "ja") {
+    const days = ["日", "月", "火", "水", "木", "金", "土"];
+    const nth = ["", "第1", "第2", "第3", "第4", "第5"];
+    return `毎月${nth[n] ?? `第${n}`}${days[weekday]}曜日`;
+  }
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const nth = ["", "1st", "2nd", "3rd", "4th", "5th"];
+  return `Monthly on the ${nth[n] ?? `${n}th`} ${days[weekday]}`;
+}
+
+export function monthlyDayLabel(ymd: string, locale: "en" | "ja"): string {
+  const d = parseYMD(ymd);
+  const day = d.getDate();
+  return locale === "ja" ? `毎月${day}日` : `Monthly on day ${day}`;
 }
 
 /**
@@ -398,6 +493,15 @@ export function eventOccursOn(e: CalendarEvent, date: string): boolean {
       if (occStart < start) return false;
       return covers(occStart);
     }
+    case "monthlyWeekday": {
+      for (let back = 0; back <= spanDays; back++) {
+        const cand = new Date(target);
+        cand.setDate(cand.getDate() - back);
+        if (cand < start) break;
+        if (matchesMonthlyWeekday(start, cand)) return covers(cand);
+      }
+      return false;
+    }
     case "yearly": {
       const occStart = new Date(target.getFullYear(), start.getMonth(), start.getDate());
       if (occStart < start) return false;
@@ -425,6 +529,8 @@ export function isOccurrenceStart(e: CalendarEvent, date: string): boolean {
       return diffDays(target, start) % 7 === 0;
     case "monthly":
       return target.getDate() === start.getDate();
+    case "monthlyWeekday":
+      return matchesMonthlyWeekday(start, target);
     case "yearly":
       return target.getDate() === start.getDate() && target.getMonth() === start.getMonth();
     default:

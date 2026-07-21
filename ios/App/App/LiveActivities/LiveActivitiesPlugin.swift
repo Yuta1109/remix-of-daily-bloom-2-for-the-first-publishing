@@ -21,6 +21,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var endWorkItem: DispatchWorkItem?
+    private var arrivedWorkItem: DispatchWorkItem?
     private var tokenObserver: NSObjectProtocol?
     private var updateTokenObserver: NSObjectProtocol?
 
@@ -133,7 +134,8 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             items: items,
             overflow: overflow,
             locale: locale,
-            tick: 0
+            tick: 0,
+            phase: call.getString("phase", "countdown")
         )
 
         let earliestStart: Date? = {
@@ -172,6 +174,9 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                 if #available(iOS 16.2, *) {
                     LiveActivityRefreshCenter.start()
                     LiveActivityRefreshCenter.noteActivitiesChanged()
+                }
+                if let start = earliestStart {
+                    self.scheduleArrived(at: start, locale: locale)
                 }
                 self.scheduleEnd(at: endDate)
                 call.resolve(["activityId": activityId as Any])
@@ -268,6 +273,37 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             } else {
                 await activity.end(dismissalPolicy: .immediate)
             }
+        }
+    }
+
+    private func scheduleArrived(at date: Date, locale: String) {
+        arrivedWorkItem?.cancel()
+        let delay = date.timeIntervalSinceNow
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if #available(iOS 16.2, *) {
+                Task {
+                    for activity in Activity<EssencesWidgetAttributes>.activities {
+                        let cur = activity.content.state
+                        let next = EssencesWidgetAttributes.ContentState(
+                            items: cur.items,
+                            overflow: cur.overflow,
+                            locale: locale.isEmpty ? cur.locale : locale,
+                            tick: cur.tick &+ 1,
+                            phase: "arrived"
+                        )
+                        await activity.update(
+                            ActivityContent(state: next, staleDate: activity.content.staleDate)
+                        )
+                    }
+                }
+            }
+        }
+        arrivedWorkItem = work
+        if delay <= 0 {
+            DispatchQueue.main.async(execute: work)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + min(delay, 8 * 60 * 60), execute: work)
         }
     }
 

@@ -85,7 +85,8 @@ enum LiveActivityRefreshCenter {
                 items: current.items,
                 overflow: current.overflow,
                 locale: current.locale,
-                tick: current.tick &+ 1
+                tick: current.tick &+ 1,
+                phase: current.phase
             )
             await activity.update(
                 ActivityContent(state: next, staleDate: activity.content.staleDate)

@@ -26,6 +26,8 @@ export interface LiveActivityPayload {
   items: LiveActivityItem[];
   overflow: number;
   endEpochMs: number;
+  /** "countdown" | "arrived" — Lock Screen copy after event start. */
+  phase?: "countdown" | "arrived";
 }
 
 export interface LiveActivitiesPlugin {
@@ -55,19 +57,27 @@ function currentLocale(): "en" | "ja" {
 }
 
 /**
- * Items to show while managing from the app.
- * Only pre-start windows — arrived events are dropped so opening the app
- * (or tapping the Live Activity) clears "予定時間になりました" rows.
+ * Items still on the Lock Screen: lead window through post-start linger.
+ * Pre-start → countdown; after start (linger) → arrived phase.
+ * Opening the app after linger ends clears the card.
  */
-function collectActiveItems(now: Date): LiveActivityItem[] {
-  return collectLiveActivityWindows(now)
-    .filter((w) => w.activeNow)
-    .map((w) => ({
+function collectVisibleItems(now: Date): {
+  items: LiveActivityItem[];
+  phase: "countdown" | "arrived";
+} {
+  const windows = collectLiveActivityWindows(now)
+    .filter((w) => w.visibleNow)
+    .sort((a, b) => a.startEpochMs - b.startEpochMs);
+  const nowMs = now.getTime();
+  const anyCounting = windows.some((w) => nowMs < w.startEpochMs);
+  return {
+    items: windows.map((w) => ({
       title: w.title,
       startEpochMs: w.startEpochMs,
       color: w.color,
-    }))
-    .sort((a, b) => a.startEpochMs - b.startEpochMs);
+    })),
+    phase: anyCounting ? "countdown" : "arrived",
+  };
 }
 
 /** Milliseconds until the next Live Activity window opens or closes. */
@@ -151,10 +161,10 @@ export async function refreshLiveActivities(): Promise<void> {
   }
 
   const now = new Date();
-  const active = collectActiveItems(now);
-  lastActiveCount = active.length;
+  const { items: visible, phase } = collectVisibleItems(now);
+  lastActiveCount = visible.length;
 
-  if (active.length === 0) {
+  if (visible.length === 0) {
     try {
       await LiveActivities.endAll();
       lastLocalError = null;
@@ -165,13 +175,12 @@ export async function refreshLiveActivities(): Promise<void> {
     return;
   }
 
-  const items = active.slice(0, MAX_ITEMS);
-  const overflow = active.length - items.length;
-  // Keep ActivityKit alive a bit past each start so Lock Screen can show
-  // "It's time" until the user opens/taps the app (then this refresh ends it).
+  const items = visible.slice(0, MAX_ITEMS);
+  const overflow = visible.length - items.length;
+  // Keep ActivityKit alive through post-start linger for "It's time".
   const endEpochMs =
     collectLiveActivityWindows(now)
-      .filter((w) => w.activeNow)
+      .filter((w) => w.visibleNow)
       .map((w) => w.endEpochMs)
       .sort((a, b) => a - b)[0] ??
     (items[0]?.startEpochMs ?? now.getTime()) + 30 * 60_000;
@@ -182,6 +191,7 @@ export async function refreshLiveActivities(): Promise<void> {
       items,
       overflow,
       endEpochMs,
+      phase,
     });
     lastLocalError = null;
   } catch (err) {

@@ -53,6 +53,13 @@ export async function initFcmRegistration(): Promise<void> {
       }
     }
 
+    // Ensure APNs registration runs after permission (pairs with AppDelegate).
+    try {
+      await FirebaseMessaging.requestPermissions();
+    } catch {
+      /* already granted */
+    }
+
     if (!listenersBound) {
       listenersBound = true;
       await FirebaseMessaging.addListener("tokenReceived", (event) => {

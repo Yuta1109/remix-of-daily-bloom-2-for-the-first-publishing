@@ -22,33 +22,22 @@ export function formatEventSchedule(
   const startTime = e.startTime ?? "";
   const endTime = e.endTime ?? "";
 
+  const md = (iso: string) => {
+    const { m, d } = parseYmd(iso);
+    return `${m}/${d}`;
+  };
+
   if (startDate === endDate) {
     if (!startTime && !endTime) return "";
     if (startTime && endTime) return `${prefix}${startTime} - ${endTime}`;
     return `${prefix}${startTime || endTime}`;
   }
 
-  const s = parseYmd(startDate);
-  const t = parseYmd(endDate);
-  const sameMonth = s.y === t.y && s.m === t.m;
-
-  const dayLabel = (y: number, m: number, d: number, withMonth: boolean) => {
-    if (locale === "ja") {
-      return withMonth ? `${m}/${d}` : `${d}日`;
-    }
-    const date = new Date(y, m - 1, d);
-    return withMonth
-      ? date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-      : date.toLocaleDateString("en-US", { day: "numeric" });
-  };
-
-  const startLabel = dayLabel(s.y, s.m, s.d, !sameMonth);
-  const endLabel = dayLabel(t.y, t.m, t.d, true);
-
+  // Multi-day: always "M/D HH:mm - M/D HH:mm" (same style both sides).
   if (startTime && endTime) {
-    return `${prefix}${startLabel} ${startTime} - ${endLabel} ${endTime}`;
+    return `${prefix}${md(startDate)} ${startTime} - ${md(endDate)} ${endTime}`;
   }
-  return `${prefix}${startLabel} - ${endLabel}`;
+  return `${prefix}${md(startDate)} - ${md(endDate)}`;
 }
 
 /** Schedule text for a specific calendar day (shifts repeating masters to that occurrence). */
