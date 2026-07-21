@@ -198,6 +198,7 @@ if File.exist?(cap_json_path)
   required_plugins = %w[
     LiveActivitiesPlugin
     FirebaseMessagingPlugin
+    AppPlugin
   ]
   added = []
   required_plugins.each do |name|
@@ -234,16 +235,13 @@ pkg = File.read(package_swift)
     Run: npx cap sync ios && node scripts/ensure-spm-firebase-app-link.mjs
   MSG
 end
-if pkg.include?("@capacitor-firebase/app")
-  abort "ERROR: Package.swift must not reference @capacitor-firebase/app (SPM identity 'app')."
+unless pkg.include?("VendoredAppPlugin")
+  abort "ERROR: CapApp-SPM must vendor AppPlugin as VendoredAppPlugin (no /app package path)."
 end
-if pkg.match(%r{path:\s*"[^"]*/app"})
+if pkg.match(%r{path:\s*"[^"]*/app"}) || pkg.include?("node_modules/@capacitor/app")
   abort <<~MSG
-    ERROR: Package.swift still has a path ending in /app (SwiftPM identity "app").
+    ERROR: Package.swift still references a path ending in /app.
     Run: node scripts/ensure-spm-firebase-app-link.mjs
   MSG
 end
-unless pkg.include?("symlinks/CapacitorApp")
-  abort "ERROR: CapacitorApp must use path symlinks/CapacitorApp (unique SPM identity)."
-end
-puts "Verified CapApp-SPM Package.swift has no basename-app collision."
+puts "Verified CapApp-SPM uses VendoredAppPlugin (no SPM identity app)."

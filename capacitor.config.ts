@@ -8,12 +8,11 @@ const config: CapacitorConfig = {
     // Handle safe areas in CSS only — "always" double-counted insets and caused
     // intermittent black bars + oversized bottom gaps on notched iPhones.
     contentInset: "never",
-    // Exclude @capacitor-firebase/app: its folder basename "app" collides with
-    // @capacitor/app in SwiftPM ("Conflicting identity for app"). Messaging
-    // configures FirebaseCore itself when GoogleService-Info.plist is present.
+    // Exclude packages whose npm folder basename is "app" — SwiftPM identity
+    // collision under ios/App/CapApp-SPM. @capacitor/app is vendored into
+    // CapApp-SPM by scripts/ensure-spm-firebase-app-link.mjs instead.
     includePlugins: [
       "@capacitor-firebase/messaging",
-      "@capacitor/app",
       "@capacitor/haptics",
       "@capacitor/keyboard",
       "@capacitor/local-notifications",

@@ -99,7 +99,7 @@ jobs:
 
       - name: Verify LiveActivities + Firebase plugins are registered
         run: |
-          for name in LiveActivitiesPlugin FirebaseMessagingPlugin; do
+          for name in LiveActivitiesPlugin FirebaseMessagingPlugin AppPlugin; do
             grep -q "$name" ios/App/App/capacitor.config.json \
               || { echo "$name missing from packageClassList"; exit 1; }
           done
@@ -107,14 +107,14 @@ jobs:
             || { echo "LiveActivitiesPlugin.swift not in Xcode project"; exit 1; }
           grep -q 'CapacitorFirebaseMessaging' ios/App/CapApp-SPM/Package.swift \
             || { echo "CapacitorFirebaseMessaging missing from CapApp-SPM/Package.swift — FCM tokens will be null"; exit 1; }
-          grep -q 'symlinks/CapacitorApp' ios/App/CapApp-SPM/Package.swift \
-            || { echo "CapacitorApp must use symlinks/CapacitorApp (avoid SPM identity app)"; exit 1; }
+          grep -q 'VendoredAppPlugin' ios/App/CapApp-SPM/Package.swift \
+            || { echo "VendoredAppPlugin missing — AppPlugin must be vendored to avoid SPM identity app"; exit 1; }
           if grep -E 'path: "[^"]*/app"' ios/App/CapApp-SPM/Package.swift; then
             echo "Package.swift still has a path ending in /app — SPM identity collision"
             exit 1
           fi
-          test -f ios/App/CapApp-SPM/symlinks/CapacitorApp/Package.swift \
-            || { echo "Missing CapApp-SPM/symlinks/CapacitorApp copy"; exit 1; }
+          test -f ios/App/CapApp-SPM/Sources/VendoredAppPlugin/AppPlugin.swift \
+            || { echo "Missing vendored AppPlugin.swift"; exit 1; }
           echo "---- CapApp-SPM/Package.swift ----"
           cat ios/App/CapApp-SPM/Package.swift
 
