@@ -208,6 +208,9 @@ export async function refreshLiveActivities(
     }
     scheduleNextBoundary();
     void rescheduleLiveActivityWakes();
+    void import("./la-remote")
+      .then((m) => m.syncLiveActivitySchedulesRemote())
+      .catch(() => {});
     return;
   }
 
@@ -221,8 +224,9 @@ export async function refreshLiveActivities(
     matchingWindows.length > 0
       ? Math.max(...matchingWindows.map((w) => w.endEpochMs))
       : (items[0]?.startEpochMs ?? now.getTime()) + LIVE_ACTIVITY_ARRIVED_MS;
-  // ActivityKit rejects / immediately tears down if staleDate is already past.
-  const safeEndEpochMs = Math.max(endEpochMs, now.getTime() + 120_000);
+  // Only nudge a tiny bit if end is already past (ActivityKit rejects staleDate ≤ now).
+  // Do NOT extend by minutes — that kept "予定時間になりました" on screen forever.
+  const safeEndEpochMs = Math.max(endEpochMs, now.getTime() + 1_500);
 
   try {
     await LiveActivities.startOrUpdate({
@@ -233,6 +237,11 @@ export async function refreshLiveActivities(
       phase,
     });
     lastLocalError = null;
+    // Tell Firestore this device already has a card so remote won't push-to-start
+    // a duplicate (boundary timer refresh does not go through native-bootstrap sync).
+    void import("./la-remote")
+      .then((m) => m.syncLiveActivitySchedulesRemote())
+      .catch(() => {});
   } catch (err) {
     lastLocalError = err instanceof Error ? err.message : String(err);
     console.warn("[LiveActivity] startOrUpdate failed:", err);
@@ -243,15 +252,14 @@ export async function refreshLiveActivities(
 }
 
 /**
- * Schedule local notifications at each upcoming showAt / end so iOS can wake
- * the app when JS timers are frozen (lock screen / background).
+ * Cancel leftover LA wake local-notifications from older builds.
+ * We no longer schedule them: blank banners showed on Lock Screen, and firing
+ * at showAt caused a local Activity.request racing remote push-to-start
+ * (duplicate cards, only one counting down). Kill/lock start is FCM-only.
  */
 export async function rescheduleLiveActivityWakes(): Promise<void> {
   if (!isLiveActivitySupported()) return;
   try {
-    const perm = await LocalNotifications.checkPermissions();
-    if (perm.display !== "granted") return;
-
     const pending = await LocalNotifications.getPending();
     const laPending = pending.notifications.filter(
       (n) => n.id >= LA_NOTIF_ID_BASE && n.id <= LA_NOTIF_ID_MAX,
@@ -261,51 +269,21 @@ export async function rescheduleLiveActivityWakes(): Promise<void> {
         notifications: laPending.map((n) => ({ id: n.id })),
       });
     }
-
-    const now = Date.now();
-    const wakes: { id: number; at: Date; title: string; body: string }[] = [];
-    let id = LA_NOTIF_ID_BASE;
-
-    for (const w of collectLiveActivityWindows(new Date())) {
-      if (w.showAtEpochMs > now && id <= LA_NOTIF_ID_MAX) {
-        wakes.push({
-          id: id++,
-          at: new Date(w.showAtEpochMs),
-          // Intentionally blank — remote FCM starts the card; this only wakes JS.
-          title: " ",
-          body: " ",
+    try {
+      const delivered = await LocalNotifications.getDeliveredNotifications();
+      const laDelivered = delivered.notifications.filter(
+        (n) => n.id >= LA_NOTIF_ID_BASE && n.id <= LA_NOTIF_ID_MAX,
+      );
+      if (laDelivered.length) {
+        await LocalNotifications.removeDeliveredNotifications({
+          notifications: laDelivered,
         });
       }
-      // Refresh when arrived linger ends so the row can drop while backgrounded.
-      if (w.endEpochMs > now && id <= LA_NOTIF_ID_MAX) {
-        wakes.push({
-          id: id++,
-          at: new Date(w.endEpochMs),
-          title: " ",
-          body: " ",
-        });
-      }
+    } catch {
+      /* older plugin / platform */
     }
-
-    wakes.sort((a, b) => a.at.getTime() - b.at.getTime());
-    const slice = wakes.slice(0, 40);
-    if (!slice.length) return;
-
-    await LocalNotifications.schedule({
-      notifications: slice.map((w) => ({
-        id: w.id,
-        title: w.title,
-        body: w.body,
-        schedule: { at: w.at, allowWhileIdle: true },
-        // Wake JS without a Lock Screen banner when possible (iOS foreground).
-        // Remote LA start is silent; these are a backup only.
-        silent: true,
-        sound: undefined,
-        extra: { essencesLaWake: true },
-      })),
-    });
   } catch (err) {
-    console.warn("[LiveActivity] rescheduleLiveActivityWakes failed:", err);
+    console.warn("[LiveActivity] rescheduleLiveActivityWakes cleanup failed:", err);
   }
 }
 

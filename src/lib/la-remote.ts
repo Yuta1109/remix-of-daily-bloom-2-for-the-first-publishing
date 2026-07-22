@@ -19,7 +19,7 @@ import {
   where,
   type Firestore,
 } from "firebase/firestore";
-import { LiveActivities, isLiveActivitySupported, currentLocale } from "./live-activity";
+import { LiveActivities, isLiveActivitySupported, currentLocale, getLiveActivityLocalStatus } from "./live-activity";
 import { collectLiveActivityWindows } from "./live-activity-window";
 import { laDebugLog } from "./la-debug-log";
 
@@ -526,10 +526,13 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
       // due: lead window open — Cloud Functions should push-to-start when killed.
       // Never demote started/arrived → due (that re-triggers push-to-start and
       // stacks duplicate Lock Screen Activities every minute).
+      // If a local Activity is already showing, mark started so FCM updates the
+      // same card instead of push-to-starting a second one.
       const remoteLive =
         prev?.status === "started" || prev?.status === "arrived";
+      const localLive = getLiveActivityLocalStatus().activeCount > 0;
       let status: "pending" | "due" | "started" = "pending";
-      if (remoteLive && w.visibleNow) {
+      if ((remoteLive || localLive) && w.visibleNow) {
         status = "started";
       } else if (w.activeNow) {
         status = "due";

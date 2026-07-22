@@ -404,10 +404,16 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     private func scheduleEnd(at date: Date) {
         endWorkItem?.cancel()
         var delay = date.timeIntervalSinceNow
-        // Never schedule an immediate teardown right after request/update —
-        // that was wiping brand-new Live Activities when staleDate was skewed.
         if delay < 5 {
-            delay = 60
+            // If every row is already past start, dismiss promptly (arrived linger done).
+            // Only stretch when a countdown row is still live (skewed staleDate).
+            let stillCounting: Bool = {
+                guard #available(iOS 16.1, *) else { return false }
+                return Activity<EssencesWidgetAttributes>.activities.contains { activity in
+                    activity.content.state.items.contains { $0.startDate > Date() }
+                }
+            }()
+            delay = stillCounting ? 60 : 0.5
         }
         let capped = min(delay, 8 * 60 * 60)
         let work = DispatchWorkItem { [weak self] in
@@ -418,7 +424,18 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                     let stillCounting = Activity<EssencesWidgetAttributes>.activities.contains { activity in
                         activity.content.state.items.contains { $0.startDate > Date() }
                     }
-                    if stillCounting { return }
+                    if stillCounting {
+                        // Re-arm for arrived linger after the soonest start.
+                        let nextEnd = Activity<EssencesWidgetAttributes>.activities
+                            .flatMap { $0.content.state.items.map(\.startDate) }
+                            .filter { $0 > Date() }
+                            .min()
+                            .map { $0.addingTimeInterval(60) }
+                        if let nextEnd {
+                            self.scheduleEnd(at: nextEnd)
+                        }
+                        return
+                    }
                     await self.endAllActivities()
                 }
             }

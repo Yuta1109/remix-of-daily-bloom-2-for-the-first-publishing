@@ -14,10 +14,12 @@ import { initLiveActivityRemote, syncLiveActivitySchedulesRemote } from "./la-re
 import { initFcmRegistration } from "./fcm";
 import { initKeyboardAvoidance } from "./keyboard-avoidance";
 
-function syncSchedules(opts: { dismissArrived?: boolean } = {}) {
+async function syncSchedules(opts: { dismissArrived?: boolean } = {}) {
   void rescheduleAll();
-  void refreshLiveActivities({ dismissArrived: opts.dismissArrived });
-  void syncLiveActivitySchedulesRemote();
+  // Await local Activity first so Firestore status becomes "started" before
+  // Cloud Functions can race a second push-to-start.
+  await refreshLiveActivities({ dismissArrived: opts.dismissArrived });
+  await syncLiveActivitySchedulesRemote();
   void rescheduleLiveActivityWakes();
 }
 
@@ -42,18 +44,17 @@ export async function initNative(): Promise<void> {
 
   try {
     await LocalNotifications.addListener("localNotificationActionPerformed", () => {
-      syncSchedules({ dismissArrived: true });
+      void syncSchedules({ dismissArrived: true });
     });
     await LocalNotifications.addListener("localNotificationReceived", () => {
-      // Wake at LA showAt / end — start or drop rows without waiting for the user.
-      void refreshLiveActivities();
-      void syncLiveActivitySchedulesRemote();
+      // Reminder taps / any leftover wake — keep LA in sync.
+      void syncSchedules();
     });
   } catch {
     /* notifications plugin not available */
   }
 
-  syncSchedules();
+  void syncSchedules();
   scheduleLiveActivityBoundaries();
   // FCM before remote LA sync so devices/{uid}.fcmToken is more likely present
   // when Cloud Functions evaluate start eligibility.
@@ -65,20 +66,22 @@ export async function initNative(): Promise<void> {
     if (isActive) {
       // Opening the app drops arrived ("It's time") rows immediately.
       setLiveActivityDismissArrivedOnRefresh(true);
-      syncSchedules({ dismissArrived: true });
+      void syncSchedules({ dismissArrived: true });
       scheduleLiveActivityBoundaries();
       void initFcmRegistration();
       void initLiveActivityRemote();
     } else {
-      // JS timers freeze while locked — push schedules + local wakes before suspend.
+      // JS timers freeze while locked — push remote schedules before suspend.
       setLiveActivityDismissArrivedOnRefresh(false);
       void syncLiveActivitySchedulesRemote();
       void rescheduleLiveActivityWakes();
       scheduleLiveActivityBoundaries();
     }
   });
-  App.addListener("resume", () => syncSchedules({ dismissArrived: true }));
+  App.addListener("resume", () => {
+    void syncSchedules({ dismissArrived: true });
+  });
   App.addListener("appUrlOpen", () => {
-    syncSchedules({ dismissArrived: true });
+    void syncSchedules({ dismissArrived: true });
   });
 }

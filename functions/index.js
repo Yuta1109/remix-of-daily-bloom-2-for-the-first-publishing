@@ -453,6 +453,7 @@ async function beginUpdateOnlyMode(scheduleId, data, note) {
 
 async function enqueueOneMinuteAndArrived(scheduleId, data) {
   const startAt = Number(data.startEpochMs);
+  const endAt = Number(data.endAtEpochMs);
   const oneMinBefore = startAt - ONE_MINUTE_MS;
   if (oneMinBefore > Date.now()) {
     try {
@@ -466,6 +467,14 @@ async function enqueueOneMinuteAndArrived(scheduleId, data) {
       await enqueueRefresh(scheduleId, startAt);
     } catch (err) {
       logger.warn("Failed to enqueue LA arrived tick", err);
+    }
+  }
+  // Dismiss Lock Screen card after arrived linger (start + 1m).
+  if (endAt > Date.now()) {
+    try {
+      await enqueueRefresh(scheduleId, endAt);
+    } catch (err) {
+      logger.warn("Failed to enqueue LA end", err);
     }
   }
 }
@@ -581,18 +590,36 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
 }
 
 async function sendEndForSchedule(scheduleId, data) {
+  // Expire this row first so aggregation omits it.
+  await db.collection("laSchedules").doc(scheduleId).update({ status: "expired" });
+
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
   if (!deviceSnap.exists) {
-    await db.collection("laSchedules").doc(scheduleId).update({ status: "expired" });
     return false;
   }
   const device = deviceSnap.data() || {};
   const fcmToken = device.fcmToken;
   const updateToken = device.liveActivityUpdateToken;
   if (!fcmToken || !updateToken) {
-    await db.collection("laSchedules").doc(scheduleId).update({ status: "expired" });
     return false;
   }
+
+  // Other events may still be on the shared card — update instead of ending.
+  const aggregated = await buildAggregatedContentState(data.deviceId, {
+    tick: Date.now(),
+    phase: "countdown",
+  });
+  if (aggregated.contentState.items.length) {
+    logger.info("LA end → update remaining rows", scheduleId, {
+      remaining: aggregated.contentState.items.length,
+    });
+    return sendUpdateForSchedule(scheduleId, { ...data, status: "expired" }, "countdown", {
+      withAlert: false,
+      contentState: aggregated.contentState,
+      staleSec: aggregated.staleSec,
+    });
+  }
+
   const nowSec = Math.floor(Date.now() / 1000);
   try {
     await messaging.send({
@@ -614,12 +641,10 @@ async function sendEndForSchedule(scheduleId, data) {
         },
       },
     });
-    await db.collection("laSchedules").doc(scheduleId).update({ status: "expired" });
     logger.info("LA end sent", scheduleId);
     return true;
   } catch (err) {
     logger.warn("FCM live activity end failed", scheduleId, err);
-    await db.collection("laSchedules").doc(scheduleId).update({ status: "expired" });
     return false;
   }
 }
@@ -777,12 +802,39 @@ export const refreshLiveActivityTask = onTaskDispatched(
     const snap = await db.collection("laSchedules").doc(scheduleId).get();
     if (!snap.exists) return;
     const data = snap.data();
-    if (data.status !== "started") return;
     const now = Date.now();
+
+    // After arrived linger → end the Lock Screen card (no tap required).
+    if (
+      (data.status === "started" || data.status === "arrived") &&
+      Number(data.endAtEpochMs) <= now
+    ) {
+      await sendEndForSchedule(scheduleId, data);
+      return;
+    }
+
+    if (data.status === "arrived") {
+      // Still lingering — wake again at endAt.
+      try {
+        await enqueueRefresh(scheduleId, Number(data.endAtEpochMs));
+      } catch (err) {
+        logger.warn("Failed to enqueue LA end from arrived", err);
+      }
+      return;
+    }
+
+    if (data.status !== "started") return;
+
     if (Number(data.startEpochMs) <= now) {
-      // Only stop the refresh loop after a successful arrived update.
       const ok = await sendUpdateForSchedule(scheduleId, data, "arrived");
-      if (ok) await snap.ref.update({ status: "arrived" });
+      if (ok) {
+        await snap.ref.update({ status: "arrived" });
+        try {
+          await enqueueRefresh(scheduleId, Number(data.endAtEpochMs));
+        } catch (err) {
+          logger.warn("Failed to enqueue LA end after arrived", err);
+        }
+      }
       return;
     }
 
@@ -830,6 +882,21 @@ export const sweepLiveActivityRefresh = onSchedule(
       db.collection("laSchedules").where("status", "==", "due").get(),
     ]);
 
+    // End cards whose arrived linger finished (Lock Screen dismiss without tap).
+    let endedNow = 0;
+    for (const docSnap of [...startedSnap.docs, ...arrivedSnap.docs]) {
+      const data = docSnap.data();
+      if (Number(data.endAtEpochMs) <= now) {
+        try {
+          await sendEndForSchedule(docSnap.id, data);
+          endedNow += 1;
+        } catch (err) {
+          logger.warn("LA sweep end failed", docSnap.id, err);
+          await docSnap.ref.update({ status: "expired" });
+        }
+      }
+    }
+
     // Catch missed Cloud Task starts while the app is force-quit.
     // At most one push-to-start per device per sweep — extras update the same card.
     let startedNow = 0;
@@ -854,12 +921,16 @@ export const sweepLiveActivityRefresh = onSchedule(
     }
 
     const docs = [
-      ...startedSnap.docs,
+      ...startedSnap.docs.filter((d) => Number(d.data()?.endAtEpochMs) > now),
       // Retry arrived rows that never successfully pushed (old bug marked arrived on failure).
-      ...arrivedSnap.docs.filter((d) => d.data()?.lastRemoteUpdateOk === false),
+      ...arrivedSnap.docs.filter(
+        (d) =>
+          Number(d.data()?.endAtEpochMs) > now &&
+          d.data()?.lastRemoteUpdateOk === false,
+      ),
     ];
 
-    if (docs.length === 0 && startedNow === 0) {
+    if (docs.length === 0 && startedNow === 0 && endedNow === 0) {
       logger.info("LA sweep: no started schedules");
       return;
     }
@@ -869,8 +940,8 @@ export const sweepLiveActivityRefresh = onSchedule(
     for (const docSnap of docs) {
       const data = docSnap.data();
       if (Number(data.endAtEpochMs) <= now) {
-        await docSnap.ref.update({ status: "expired" });
-        skipped += 1;
+        await sendEndForSchedule(docSnap.id, data);
+        endedNow += 1;
         continue;
       }
 
@@ -886,8 +957,14 @@ export const sweepLiveActivityRefresh = onSchedule(
 
       if (Number(data.startEpochMs) <= now) {
         const ok = await sendUpdateForSchedule(docSnap.id, data, "arrived");
-        if (ok) await docSnap.ref.update({ status: "arrived" });
-        else if (data.status === "arrived") {
+        if (ok) {
+          await docSnap.ref.update({ status: "arrived" });
+          try {
+            await enqueueRefresh(docSnap.id, Number(data.endAtEpochMs));
+          } catch (err) {
+            logger.warn("Failed to enqueue LA end from sweep", err);
+          }
+        } else if (data.status === "arrived") {
           // Keep retrying: bounce back to started until push succeeds.
           await docSnap.ref.update({ status: "started" });
         }
@@ -908,7 +985,7 @@ export const sweepLiveActivityRefresh = onSchedule(
       if (ok) sent += 1;
       else skipped += 1;
     }
-    logger.info("LA sweep done", { sent, skipped, startedNow, total: docs.length });
+    logger.info("LA sweep done", { sent, skipped, startedNow, endedNow, total: docs.length });
   },
 );
 
