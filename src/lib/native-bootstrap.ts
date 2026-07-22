@@ -45,14 +45,18 @@ export async function initNative(): Promise<void> {
 
   syncSchedules();
   scheduleLiveActivityBoundaries();
-  void initLiveActivityRemote();
-  void initFcmRegistration();
+  // FCM before remote LA sync so devices/{uid}.fcmToken is more likely present
+  // when Cloud Functions evaluate start eligibility.
+  await initFcmRegistration();
+  await initLiveActivityRemote();
 
   App.addListener("appStateChange", ({ isActive }) => {
     if (isActive) {
       // Opening the app (or tapping the Live Activity) drops arrived rows.
       syncSchedules();
       scheduleLiveActivityBoundaries();
+      void initFcmRegistration();
+      void initLiveActivityRemote();
     } else {
       stopLiveActivityBoundaries();
     }

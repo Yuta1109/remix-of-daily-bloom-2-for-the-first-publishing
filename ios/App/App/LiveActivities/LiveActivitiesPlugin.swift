@@ -238,6 +238,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 return activity.id
             } catch {
+                NSLog("[Essences LA] Activity.request(pushType:.token) failed: \(error.localizedDescription) — falling back to local-only (no updateToken)")
                 let activity = try Activity.request(
                     attributes: attrs,
                     content: content,

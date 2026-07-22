@@ -35,6 +35,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             LiveActivityRefreshCenter.start()
             LiveActivityRefreshCenter.noteActivitiesChanged()
         }
+        // Re-broadcast cached push-to-start so JS listeners attached after the
+        // first ActivityKit emission still receive a token.
+        LiveActivityPushTokenCenter.start()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -51,11 +54,21 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // MARK: - Remote notifications (FCM / Live Activity push-to-start)
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        // Cache first — Capacitor Firebase Messaging may not be listening yet.
+        APNsDeviceTokenCache.store(deviceToken)
         NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+        // Second post after a beat in case the plugin observer registered mid-flight.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NotificationCenter.default.post(
+                name: .capacitorDidRegisterForRemoteNotifications,
+                object: deviceToken
+            )
+        }
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+        NSLog("[Essences] APNs registration failed: \(error.localizedDescription)")
     }
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {

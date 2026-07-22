@@ -79,6 +79,11 @@ jobs:
         working-directory: ios/App
         run: ruby ../scripts/setup_widget.rb
 
+      - name: Verify APNsDeviceTokenCache is in the Xcode project
+        run: |
+          grep -q 'APNsDeviceTokenCache.swift' ios/App/App.xcodeproj/project.pbxproj \
+            || { echo "APNsDeviceTokenCache.swift not in Xcode project — FCM APNs race fix missing"; exit 1; }
+
       - name: Verify LiveActivitiesPlugin is registered with Capacitor
         run: |
           grep -q 'LiveActivitiesPlugin' ios/App/App/capacitor.config.json \

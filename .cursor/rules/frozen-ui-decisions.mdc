@@ -1,0 +1,16 @@
+---
+description: Do not revert calendar confirm UX or LA relative Lock Screen text
+alwaysApply: true
+---
+
+# Frozen UI decisions (do not revert)
+
+Until the user explicitly asks to change these back:
+
+1. **Calendar confirm / delete sheets** — Keep confirm and repeat-delete UI **inside** the EventSheet / Vaul drawer so taps work. Do not move them to `document.body` portals alone, and do not switch back to relying on `window.confirm` for those flows. Keep Select menus portaled into the sheet (`SelectContent` `container`).
+
+2. **Live Activity Lock Screen copy** — Keep custom relative labels (`X時間Y分後` / `まもなく` / `予定時間になりました`). Do **not** switch back to `Text(timerInterval:)` style countdowns.
+
+Related files: `src/components/EventSheet.tsx`, `src/components/ui/select.tsx`, `ios/App/EssentialsWidget/EssentialsWidgetLiveActivity.swift`.
+
+Background / architecture: `docs/LIVE_ACTIVITY_DESIGN_AND_ISSUES.md`.

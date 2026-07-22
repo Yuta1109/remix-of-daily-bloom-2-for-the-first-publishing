@@ -230,7 +230,16 @@ async function upsertDeviceDoc(): Promise<void> {
 
     await setDoc(doc(db, "devices", deviceUid), payload, { merge: true });
     lastSyncAt = Date.now();
-    if (!lastError?.startsWith("auth/")) lastError = null;
+    // Do NOT clear FCM/LA token diagnostics here — schedule sync can succeed
+    // while tokens are still missing (the exact Settings FCM✗ · LA✗ case).
+    if (fcmToken && pushToStartToken && lastError?.startsWith("LA:")) {
+      lastError = null;
+      diagnosticHint = null;
+    }
+    if (fcmToken && lastError?.startsWith("FCM:")) {
+      lastError = null;
+      if (diagnosticHint?.startsWith("FCM:")) diagnosticHint = null;
+    }
   } catch (err) {
     setError(err);
   }
@@ -279,8 +288,8 @@ export async function initLiveActivityRemote(): Promise<void> {
     }
     await LiveActivities.startPushToStartTokenUpdates();
 
-    // Poll a few times — ActivityKit may emit the token shortly after launch.
-    for (let i = 0; i < 8 && !pushToStartToken; i++) {
+    // Poll — ActivityKit often emits push-to-start several seconds after launch.
+    for (let i = 0; i < 20 && !pushToStartToken; i++) {
       try {
         const { token } = await LiveActivities.getPushToStartToken();
         if (token) {
@@ -293,7 +302,22 @@ export async function initLiveActivityRemote(): Promise<void> {
       await new Promise((r) => setTimeout(r, 1500));
     }
     if (!pushToStartToken) {
-      setRemoteDiagnosticHint("LA: push-to-start token not available yet");
+      try {
+        const { enabled } = await LiveActivities.areEnabled();
+        if (!enabled) {
+          setRemoteDiagnosticHint(
+            "LA: Live Activities are OFF for Essences (iOS Settings → Essences → Live Activities). push-to-start token will not arrive.",
+          );
+        } else {
+          setRemoteDiagnosticHint(
+            "LA: push-to-start token not available yet (iOS 17.2+, Live Activities On, and ActivityKit must emit a token — reopen app / Recheck after a minute)",
+          );
+        }
+      } catch {
+        setRemoteDiagnosticHint(
+          "LA: push-to-start token not available yet (LiveActivities plugin may be missing from packageClassList — run setup_widget.rb after cap sync)",
+        );
+      }
     }
   } catch (err) {
     setError(err);
@@ -340,7 +364,17 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
     }
     await batch.commit();
     lastSyncAt = Date.now();
-    lastError = null;
+    // Preserve token-acquisition diagnostics (FCM✗ / pushToStart✗).
+    if (
+      lastError &&
+      (lastError.startsWith("FCM:") ||
+        lastError.startsWith("LA:") ||
+        lastError.startsWith("FirebaseApp:"))
+    ) {
+      /* keep */
+    } else {
+      lastError = null;
+    }
   } catch (err) {
     setError(err);
   }

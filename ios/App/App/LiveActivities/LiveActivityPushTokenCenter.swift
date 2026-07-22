@@ -29,6 +29,19 @@ enum LiveActivityPushTokenCenter {
         }
     }
 
+    /// Re-notify listeners with the cached token (if any) without restarting the stream.
+    static func rebroadcastCachedToken() {
+        lock.lock()
+        let cached = lastToken
+        lock.unlock()
+        guard let cached else { return }
+        NotificationCenter.default.post(
+            name: .essencesPushToStartToken,
+            object: nil,
+            userInfo: ["token": cached]
+        )
+    }
+
     @available(iOS 17.2, *)
     private static func startObserving() {
         lock.lock()
@@ -48,17 +61,23 @@ enum LiveActivityPushTokenCenter {
         }
 
         let newTask = Task.detached(priority: .utility) {
+            NSLog("[Essences LA] Watching Activity.pushToStartTokenUpdates…")
             for await tokenData in Activity<EssencesWidgetAttributes>.pushToStartTokenUpdates {
                 let token = tokenData.map { String(format: "%02x", $0) }.joined()
                 lock.lock()
                 lastToken = token
                 lock.unlock()
+                NSLog("[Essences LA] push-to-start token received (\(token.count / 2) bytes)")
                 NotificationCenter.default.post(
                     name: .essencesPushToStartToken,
                     object: nil,
                     userInfo: ["token": token]
                 )
             }
+            NSLog("[Essences LA] pushToStartTokenUpdates sequence ended")
+            lock.lock()
+            task = nil
+            lock.unlock()
         }
 
         lock.lock()

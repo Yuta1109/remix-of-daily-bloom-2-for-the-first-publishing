@@ -1,8 +1,8 @@
 diff --git a/node_modules/@capacitor-firebase/messaging/ios/Plugin/FirebaseMessaging.swift b/node_modules/@capacitor-firebase/messaging/ios/Plugin/FirebaseMessaging.swift
-index 6c8d642..9eb4283 100644
+index 6c8d642..58d01e8 100644
 --- a/node_modules/@capacitor-firebase/messaging/ios/Plugin/FirebaseMessaging.swift
 +++ b/node_modules/@capacitor-firebase/messaging/ios/Plugin/FirebaseMessaging.swift
-@@ -14,7 +14,12 @@ import FirebaseCore
+@@ -14,11 +14,21 @@ import FirebaseCore
          self.config = config
          super.init()
          if FirebaseApp.app() == nil {
@@ -16,3 +16,12 @@ index 6c8d642..9eb4283 100644
          }
          UIApplication.shared.registerForRemoteNotifications()
          Messaging.messaging().delegate = self
+         self.plugin.bridge?.notificationRouter.pushNotificationHandler = self
++        // Apply APNs token cached by AppDelegate before this plugin's observer existed.
++        if let cached = UserDefaults.standard.data(forKey: "essences.apnsDeviceToken") {
++            Messaging.messaging().apnsToken = cached
++            print("[FirebaseMessaging] Applied cached APNs device token (\(cached.count) bytes)")
++        }
+     }
+ 
+     public func requestPermissions(completion: @escaping (_ granted: Bool, _ error: Error?) -> Void) {
