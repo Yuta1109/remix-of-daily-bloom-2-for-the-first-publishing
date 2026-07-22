@@ -1,6 +1,7 @@
 import Foundation
 import Capacitor
 import ActivityKit
+import UIKit
 
 /// Capacitor bridge for Lock Screen Live Activities.
 /// JS name: `LiveActivities` (see src/lib/live-activity.ts).
@@ -18,6 +19,8 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "endAll", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startPushToStartTokenUpdates", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPushToStartToken", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getTokenDebugInfo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "rebroadcastApnsToken", returnType: CAPPluginReturnPromise),
     ]
 
     private var endWorkItem: DispatchWorkItem?
@@ -89,6 +92,40 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             call.resolve(["token": NSNull()])
         }
+    }
+
+    /// Snapshot for Settings / Gemini debugging (APNs cache, LA enablement, etc.).
+    @objc func getTokenDebugInfo(_ call: CAPPluginCall) {
+        var info = APNsDeviceTokenCache.debugDictionary()
+        info["iosVersion"] = UIDevice.current.systemVersion
+        if #available(iOS 16.1, *) {
+            info["activitiesEnabled"] = ActivityAuthorizationInfo().areActivitiesEnabled
+            info["activeActivityCount"] = Activity<EssencesWidgetAttributes>.activities.count
+        } else {
+            info["activitiesEnabled"] = false
+            info["activeActivityCount"] = 0
+        }
+        if #available(iOS 17.2, *) {
+            let pts = LiveActivityPushTokenCenter.currentToken
+            info["hasPushToStartToken"] = pts != nil
+            info["pushToStartPrefix"] = pts.map { String($0.prefix(12)) } as Any
+        } else {
+            info["hasPushToStartToken"] = false
+            info["pushToStartPrefix"] = NSNull()
+            info["pushToStartNote"] = "iOS < 17.2"
+        }
+        call.resolve(info)
+    }
+
+    /// Force Capacitor Firebase Messaging to see the cached APNs device token again.
+    @objc func rebroadcastApnsToken(_ call: CAPPluginCall) {
+        UIApplication.shared.registerForRemoteNotifications()
+        let ok = APNsDeviceTokenCache.rebroadcastToCapacitor()
+        call.resolve([
+            "rebroadcast": ok,
+            "apnsCacheBytes": APNsDeviceTokenCache.current()?.count ?? 0,
+            "apnsRegisterError": APNsDeviceTokenCache.lastError() as Any,
+        ])
     }
 
     @objc func startOrUpdate(_ call: CAPPluginCall) {

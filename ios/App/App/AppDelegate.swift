@@ -64,9 +64,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 object: deviceToken
             )
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            _ = APNsDeviceTokenCache.rebroadcastToCapacitor()
+        }
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        APNsDeviceTokenCache.storeFailure(error)
         NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
         NSLog("[Essences] APNs registration failed: \(error.localizedDescription)")
     }

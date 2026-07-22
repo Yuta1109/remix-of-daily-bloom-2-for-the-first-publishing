@@ -20,6 +20,7 @@ import {
 } from "firebase/firestore";
 import { LiveActivities, isLiveActivitySupported, currentLocale } from "./live-activity";
 import { collectLiveActivityWindows } from "./live-activity-window";
+import { laDebugLog } from "./la-debug-log";
 
 /**
  * Remote Live Activity scheduling via Firebase (project todolist-app-project-4fd37).
@@ -252,6 +253,7 @@ async function upsertDeviceDoc(): Promise<void> {
 async function ingestPushToStartToken(token: string | null | undefined): Promise<void> {
   if (!token) return;
   pushToStartToken = token;
+  laDebugLog("la", `pushToStart ingested (len=${token.length})`, "ok");
   const ok = await ensureFirebase();
   if (ok) {
     await upsertDeviceDoc();
@@ -261,6 +263,7 @@ async function ingestPushToStartToken(token: string | null | undefined): Promise
 
 export async function initLiveActivityRemote(): Promise<void> {
   if (!isLiveActivitySupported()) return;
+  laDebugLog("la", "initLiveActivityRemote start");
 
   try {
     const cap = LiveActivities as unknown as {
@@ -275,16 +278,19 @@ export async function initLiveActivityRemote(): Promise<void> {
       await cap.addListener("pushToStartToken", (data) => {
         void ingestPushToStartToken(data.token);
       });
+      laDebugLog("la", "pushToStartToken listener bound");
     }
     if (cap.addListener && !updateTokenListenerBound) {
       updateTokenListenerBound = true;
       await cap.addListener("liveActivityUpdateToken", (data) => {
         if (!data.token) return;
         liveActivityUpdateToken = data.token;
+        laDebugLog("la", `updateToken ingested (len=${data.token.length})`, "ok");
         void ensureFirebase().then((ok) => {
           if (ok) void upsertDeviceDoc();
         });
       });
+      laDebugLog("la", "liveActivityUpdateToken listener bound");
     }
     await LiveActivities.startPushToStartTokenUpdates();
 
@@ -296,8 +302,15 @@ export async function initLiveActivityRemote(): Promise<void> {
           await ingestPushToStartToken(token);
           break;
         }
-      } catch {
-        /* plugin may be older mid-upgrade */
+        if (i === 0 || i === 4 || i === 9 || i === 19) {
+          laDebugLog("la", `pushToStart poll ${i + 1}/20 — still empty`);
+        }
+      } catch (err) {
+        laDebugLog(
+          "la",
+          `getPushToStartToken failed: ${err instanceof Error ? err.message : String(err)}`,
+          "error",
+        );
       }
       await new Promise((r) => setTimeout(r, 1500));
     }
@@ -308,22 +321,35 @@ export async function initLiveActivityRemote(): Promise<void> {
           setRemoteDiagnosticHint(
             "LA: Live Activities are OFF for Essences (iOS Settings → Essences → Live Activities). push-to-start token will not arrive.",
           );
+          laDebugLog("la", "activitiesEnabled=false", "error");
         } else {
           setRemoteDiagnosticHint(
             "LA: push-to-start token not available yet (iOS 17.2+, Live Activities On, and ActivityKit must emit a token — reopen app / Recheck after a minute)",
           );
+          laDebugLog("la", "activitiesEnabled=true but no pushToStart yet", "warn");
         }
-      } catch {
+      } catch (err) {
         setRemoteDiagnosticHint(
           "LA: push-to-start token not available yet (LiveActivities plugin may be missing from packageClassList — run setup_widget.rb after cap sync)",
+        );
+        laDebugLog(
+          "la",
+          `areEnabled failed: ${err instanceof Error ? err.message : String(err)}`,
+          "error",
         );
       }
     }
   } catch (err) {
     setError(err);
+    laDebugLog(
+      "la",
+      `initLiveActivityRemote error: ${err instanceof Error ? err.message : String(err)}`,
+      "error",
+    );
   }
 
   const ok = await ensureFirebase();
+  laDebugLog("la", `firebase ensure → ${ok} uid=${deviceUid?.slice(0, 8) ?? "none"}`);
   if (!ok) return;
   await upsertDeviceDoc();
   await syncLiveActivitySchedulesRemote();

@@ -38,6 +38,23 @@ export interface LiveActivitiesPlugin {
   startPushToStartTokenUpdates(): Promise<void>;
   /** Cached push-to-start token if ActivityKit has already emitted one. */
   getPushToStartToken(): Promise<{ token: string | null }>;
+  /** Native APNs / LA snapshot for Settings diagnostics. */
+  getTokenDebugInfo(): Promise<{
+    apnsCacheBytes?: number;
+    apnsRegisterError?: string | null;
+    hasGoogleServiceInfoPlist?: boolean;
+    activitiesEnabled?: boolean;
+    activeActivityCount?: number;
+    hasPushToStartToken?: boolean;
+    iosVersion?: string;
+    [key: string]: unknown;
+  }>;
+  /** Re-post cached APNs token to Firebase Messaging. */
+  rebroadcastApnsToken(): Promise<{
+    rebroadcast: boolean;
+    apnsCacheBytes: number;
+    apnsRegisterError?: string;
+  }>;
 }
 
 export const LiveActivities = registerPlugin<LiveActivitiesPlugin>("LiveActivities");

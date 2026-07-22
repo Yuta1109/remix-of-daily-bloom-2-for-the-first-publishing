@@ -30,6 +30,15 @@ import {
   type LiveActivityLocalStatus,
 } from "@/lib/live-activity";
 import { initFcmRegistration } from "@/lib/fcm";
+import {
+  clearLaDebugLog,
+  formatLaDebugLogForCopy,
+  getLaDebugLog,
+  laDebugLog,
+  subscribeLaDebugLog,
+  type LaDebugEntry,
+} from "@/lib/la-debug-log";
+import { LiveActivities } from "@/lib/live-activity";
 
 const APP_VERSION = "1.0.0";
 const PREVIEW_LIMIT = 4;
@@ -55,6 +64,11 @@ export default function Settings({ staticPreview = false }: Props) {
   const [localStatus, setLocalStatus] = useState<LiveActivityLocalStatus | null>(() =>
     isLiveActivitySupported() ? getLiveActivityLocalStatus() : null,
   );
+  const [debugLog, setDebugLog] = useState<readonly LaDebugEntry[]>(() => getLaDebugLog());
+  const [nativeDebugJson, setNativeDebugJson] = useState<string>("");
+  const [copyHint, setCopyHint] = useState<string | null>(null);
+
+  useEffect(() => subscribeLaDebugLog(() => setDebugLog([...getLaDebugLog()])), []);
 
   const refreshPermission = async () => {
     if (!isNative()) return;
@@ -68,9 +82,19 @@ export default function Settings({ staticPreview = false }: Props) {
       setLocalStatus(null);
       return;
     }
+    clearLaDebugLog();
+    laDebugLog("ui", "Recheck tapped");
     // Paint status immediately — never hide the card while Auth/Firestore hangs.
     setRemoteStatus(getLiveActivityRemoteStatus());
     setLocalStatus(getLiveActivityLocalStatus());
+    try {
+      const info = await LiveActivities.getTokenDebugInfo();
+      setNativeDebugJson(JSON.stringify(info, null, 2));
+      laDebugLog("ui", `native snapshot: ${JSON.stringify(info)}`);
+    } catch (err) {
+      setNativeDebugJson(`getTokenDebugInfo failed: ${err instanceof Error ? err.message : String(err)}`);
+      laDebugLog("ui", `native snapshot failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
     try {
       await refreshLiveActivities();
       setLocalStatus(getLiveActivityLocalStatus());
@@ -89,6 +113,26 @@ export default function Settings({ staticPreview = false }: Props) {
     }
     setLocalStatus(getLiveActivityLocalStatus());
     setRemoteStatus(getLiveActivityRemoteStatus());
+    laDebugLog("ui", "Recheck finished");
+  };
+
+  const copyDebugLog = async () => {
+    const text = [
+      "=== Essences LA / FCM debug ===",
+      `at: ${new Date().toISOString()}`,
+      `remote: ${JSON.stringify(getLiveActivityRemoteStatus(), null, 2)}`,
+      `local: ${JSON.stringify(getLiveActivityLocalStatus(), null, 2)}`,
+      `native: ${nativeDebugJson || "(none)"}`,
+      "--- log ---",
+      formatLaDebugLogForCopy(),
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyHint(locale === "ja" ? "ログをコピーしました" : "Copied");
+    } catch {
+      setCopyHint(locale === "ja" ? "コピーに失敗しました" : "Copy failed");
+    }
+    setTimeout(() => setCopyHint(null), 2000);
   };
 
   useEffect(() => setReusable(loadReusable()), []);
@@ -359,13 +403,53 @@ export default function Settings({ staticPreview = false }: Props) {
                 )}
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => void refreshLaStatus()}
-              className="mt-3 text-xs text-accent font-medium"
-            >
-              {locale === "ja" ? "再チェック" : "Recheck"}
-            </button>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void refreshLaStatus()}
+                className="text-xs text-accent font-medium"
+              >
+                {locale === "ja" ? "再チェック" : "Recheck"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyDebugLog()}
+                className="text-xs text-muted-foreground font-medium underline-offset-2 hover:underline"
+              >
+                {locale === "ja" ? "ログをコピー" : "Copy log"}
+              </button>
+              {copyHint && (
+                <span className="text-[11px] text-muted-foreground">{copyHint}</span>
+              )}
+            </div>
+            {(nativeDebugJson || debugLog.length > 0) && (
+              <div className="mt-3 rounded-xl bg-secondary/40 p-3 max-h-64 overflow-y-auto">
+                <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">
+                  {locale === "ja" ? "診断ログ（詳細）" : "Diagnostic log"}
+                </p>
+                {nativeDebugJson ? (
+                  <pre className="text-[10px] font-mono text-muted-foreground/90 whitespace-pre-wrap break-all mb-2">
+                    {nativeDebugJson}
+                  </pre>
+                ) : null}
+                <div className="space-y-1">
+                  {debugLog.map((e) => (
+                    <p
+                      key={e.id}
+                      className={cn(
+                        "text-[10px] font-mono leading-snug break-all",
+                        e.level === "error" && "text-destructive",
+                        e.level === "warn" && "text-amber-700 dark:text-amber-400",
+                        e.level === "ok" && "text-emerald-700 dark:text-emerald-400",
+                        e.level === "info" && "text-muted-foreground",
+                      )}
+                    >
+                      {new Date(e.at).toLocaleTimeString()} [{e.source}] {e.message}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
