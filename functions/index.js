@@ -304,10 +304,11 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
       hasFcm: !!fcmToken,
       hasUpdate: !!updateToken,
     });
-    await db.collection("laSchedules").doc(scheduleId).update({
-      lastRemoteUpdateAt: Date.now(),
-      lastRemoteUpdateOk: false,
-      lastRemoteUpdateError: "missing fcmToken or liveActivityUpdateToken",
+    await recordRemoteResult(scheduleId, data.deviceId, {
+      ok: false,
+      phase,
+      code: "missing-tokens",
+      error: "missing fcmToken or liveActivityUpdateToken",
     });
     return false;
   }
@@ -343,22 +344,104 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
       },
     });
     logger.info("LA update sent", scheduleId, { phase });
-    await db.collection("laSchedules").doc(scheduleId).update({
-      lastRemoteUpdateAt: Date.now(),
-      lastRemoteUpdateOk: true,
-      lastRemoteUpdateError: FieldValue.delete(),
-      lastRemoteUpdatePhase: phase,
+    await recordRemoteResult(scheduleId, data.deviceId, {
+      ok: true,
+      phase,
+      code: null,
+      error: null,
     });
     return true;
   } catch (err) {
-    logger.warn("FCM live activity update failed", scheduleId, err);
-    await db.collection("laSchedules").doc(scheduleId).update({
-      lastRemoteUpdateAt: Date.now(),
-      lastRemoteUpdateOk: false,
-      lastRemoteUpdateError: String(err?.message || err),
+    const code = String(err?.code || err?.errorInfo?.code || "unknown");
+    const message = String(err?.message || err);
+    logger.warn("FCM live activity update failed", scheduleId, { code, message });
+    await recordRemoteResult(scheduleId, data.deviceId, {
+      ok: false,
+      phase,
+      code,
+      error: message,
     });
     return false;
   }
+}
+
+/** Persist per-schedule + per-device remote attempt so TestFlight can copy it. */
+async function recordRemoteResult(scheduleId, deviceId, { ok, phase, code, error }) {
+  const at = Date.now();
+  const hint = hintForRemoteError(code, error);
+  const schedulePatch = {
+    lastRemoteUpdateAt: at,
+    lastRemoteUpdateOk: !!ok,
+    lastRemoteUpdatePhase: phase,
+  };
+  if (ok) {
+    schedulePatch.lastRemoteUpdateError = FieldValue.delete();
+    schedulePatch.lastRemoteUpdateCode = FieldValue.delete();
+    schedulePatch.lastRemoteUpdateHint = FieldValue.delete();
+  } else {
+    schedulePatch.lastRemoteUpdateError = String(error || "unknown").slice(0, 500);
+    schedulePatch.lastRemoteUpdateCode = code || "unknown";
+    if (hint) schedulePatch.lastRemoteUpdateHint = hint;
+  }
+
+  const attempt = {
+    at,
+    scheduleId,
+    phase,
+    ok: !!ok,
+    code: code || null,
+    error: error ? String(error).slice(0, 300) : null,
+    hint: hint || null,
+  };
+
+  try {
+    await db.collection("laSchedules").doc(scheduleId).update(schedulePatch);
+  } catch (err) {
+    logger.warn("Failed to write schedule remote result", err);
+  }
+
+  try {
+    const ref = db.collection("devices").doc(deviceId);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const prev = snap.exists && Array.isArray(snap.data()?.remoteLaAttempts)
+        ? snap.data().remoteLaAttempts
+        : [];
+      const next = [attempt, ...prev].slice(0, 12);
+      tx.set(
+        ref,
+        {
+          remoteLaAttempts: next,
+          lastRemoteLaAttempt: attempt,
+          updatedAt: at,
+        },
+        { merge: true },
+      );
+    });
+  } catch (err) {
+    logger.warn("Failed to write device remote attempts", err);
+  }
+}
+
+function hintForRemoteError(code, error) {
+  const c = String(code || "");
+  const e = String(error || "");
+  if (
+    c.includes("third-party-auth") ||
+    /missing required authentication credential/i.test(e) ||
+    /Auth error from APNS/i.test(e)
+  ) {
+    return (
+      "APNs auth failed between FCM and Apple (messaging/third-party-auth-error). " +
+      "Firebase Console → Project settings → Cloud Messaging → Apple app " +
+      `(${BUNDLE_ID}) → upload APNs Authentication Key (.p8) with correct Key ID + Team ID ` +
+      "(Sandbox & Production). Re-upload if Key ID/Team ID were wrong."
+    );
+  }
+  if (c.includes("registration-token-not-registered") || c.includes("invalid-registration")) {
+    return "FCM or Live Activity token is stale — reopen the app so tokens re-upload.";
+  }
+  return null;
 }
 
 /**
@@ -429,9 +512,9 @@ export const refreshLiveActivityTask = onTaskDispatched(
     if (data.status !== "started") return;
     const now = Date.now();
     if (Number(data.startEpochMs) <= now) {
-      // At/after start → mark arrived once, then stop refreshing.
-      await sendUpdateForSchedule(scheduleId, data, "arrived");
-      await snap.ref.update({ status: "arrived" });
+      // Only stop the refresh loop after a successful arrived update.
+      const ok = await sendUpdateForSchedule(scheduleId, data, "arrived");
+      if (ok) await snap.ref.update({ status: "arrived" });
       return;
     }
 
@@ -466,15 +549,25 @@ export const sweepLiveActivityRefresh = onSchedule(
   },
   async () => {
     const now = Date.now();
-    const snap = await db.collection("laSchedules").where("status", "==", "started").get();
-    if (snap.empty) {
+    const [startedSnap, arrivedSnap] = await Promise.all([
+      db.collection("laSchedules").where("status", "==", "started").get(),
+      db.collection("laSchedules").where("status", "==", "arrived").get(),
+    ]);
+
+    const docs = [
+      ...startedSnap.docs,
+      // Retry arrived rows that never successfully pushed (old bug marked arrived on failure).
+      ...arrivedSnap.docs.filter((d) => d.data()?.lastRemoteUpdateOk === false),
+    ];
+
+    if (docs.length === 0) {
       logger.info("LA sweep: no started schedules");
       return;
     }
 
     let sent = 0;
     let skipped = 0;
-    for (const docSnap of snap.docs) {
+    for (const docSnap of docs) {
       const data = docSnap.data();
       if (Number(data.endAtEpochMs) <= now) {
         await docSnap.ref.update({ status: "expired" });
@@ -493,15 +586,23 @@ export const sweepLiveActivityRefresh = onSchedule(
       if (Number(data.startEpochMs) <= now) {
         const ok = await sendUpdateForSchedule(docSnap.id, data, "arrived");
         if (ok) await docSnap.ref.update({ status: "arrived" });
+        else if (data.status === "arrived") {
+          // Keep retrying: bounce back to started until push succeeds.
+          await docSnap.ref.update({ status: "started" });
+        }
         sent += 1;
         continue;
+      }
+
+      if (data.status === "arrived") {
+        await docSnap.ref.update({ status: "started" });
       }
 
       const ok = await sendUpdateForSchedule(docSnap.id, data, "countdown");
       if (ok) sent += 1;
       else skipped += 1;
     }
-    logger.info("LA sweep done", { sent, skipped, total: snap.size });
+    logger.info("LA sweep done", { sent, skipped, total: docs.length });
   },
 );
 

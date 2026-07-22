@@ -70,3 +70,10 @@ if ($deployExit -ne 0) {
 }
 
 Write-Host "Done." -ForegroundColor Green
+Write-Host ""
+Write-Host "Next (kill-path check):" -ForegroundColor Cyan
+Write-Host "  1. LA を表示してアプリを完全終了"
+Write-Host "  2. 1〜2分待つ"
+Write-Host "  3. Firestore laSchedules で lastRemoteUpdateOk / lastRemoteUpdateCode を確認"
+Write-Host "  4. messaging/third-party-auth-error なら Cloud Messaging の APNs Key ID/Team ID を再確認"
+Write-Host "     (docs/LA_REMOTE_UPDATE_DIAGNOSTICS.md)"

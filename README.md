@@ -77,7 +77,7 @@ Firestore (Usage stays at zero) and kill-state Live Activities cannot be schedul
 1. **Authentication** → Sign-in method → enable **Anonymous**.
 2. **Firestore** → Create database (production mode is fine; we deploy `firestore.rules`).
 3. Upgrade to **Blaze** if you have not (needed for Cloud Functions + Cloud Tasks).
-4. APNs Auth Key already uploaded under Cloud Messaging — good.
+4. APNs Auth Key already uploaded under Cloud Messaging — **verify Key ID + Team ID** for `com.confast.essences`. If kill-state updates fail with `messaging/third-party-auth-error`, re-upload the `.p8` (see `docs/LA_REMOTE_UPDATE_DIAGNOSTICS.md`).
 5. Deploy backend (from a machine with Firebase CLI logged in).
 6. After first deploy of the task function, fix IAM if enqueue logs show `PERMISSION DENIED` (steps below).
 

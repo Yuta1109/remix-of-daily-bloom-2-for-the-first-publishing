@@ -21,7 +21,9 @@ import { App } from "@capacitor/app";
 import {
   getLiveActivityRemoteStatus,
   initLiveActivityRemote,
+  fetchRemoteLaDiagnostics,
   type LiveActivityRemoteStatus,
+  type RemoteLaDiagnostics,
 } from "@/lib/la-remote";
 import {
   getLiveActivityLocalStatus,
@@ -66,6 +68,7 @@ export default function Settings({ staticPreview = false }: Props) {
   );
   const [debugLog, setDebugLog] = useState<readonly LaDebugEntry[]>(() => getLaDebugLog());
   const [nativeDebugJson, setNativeDebugJson] = useState<string>("");
+  const [remoteDiag, setRemoteDiag] = useState<RemoteLaDiagnostics | null>(null);
   const [copyHint, setCopyHint] = useState<string | null>(null);
 
   useEffect(() => subscribeLaDebugLog(() => setDebugLog([...getLaDebugLog()])), []);
@@ -126,16 +129,31 @@ export default function Settings({ staticPreview = false }: Props) {
     }
     setLocalStatus(getLiveActivityLocalStatus());
     setRemoteStatus(getLiveActivityRemoteStatus());
+    try {
+      const diag = await fetchRemoteLaDiagnostics();
+      setRemoteDiag(diag);
+    } catch {
+      setRemoteDiag(null);
+    }
+    setRemoteStatus(getLiveActivityRemoteStatus());
     laDebugLog("ui", "Recheck finished");
   };
 
   const copyDebugLog = async () => {
+    let diag = remoteDiag;
+    try {
+      diag = (await fetchRemoteLaDiagnostics()) ?? diag;
+      setRemoteDiag(diag);
+    } catch {
+      /* keep previous */
+    }
     const text = [
       "=== Essences LA / FCM debug ===",
       `at: ${new Date().toISOString()}`,
       `remote: ${JSON.stringify(getLiveActivityRemoteStatus(), null, 2)}`,
       `local: ${JSON.stringify(getLiveActivityLocalStatus(), null, 2)}`,
       `native: ${nativeDebugJson || "(none)"}`,
+      `server: ${diag ? JSON.stringify(diag, null, 2) : "(none — open Recheck after Cloud Functions run)"}`,
       "--- log ---",
       formatLaDebugLogForCopy(),
     ].join("\n");
@@ -398,6 +416,18 @@ export default function Settings({ staticPreview = false }: Props) {
                 {(remoteStatus.diagnosticHint || remoteStatus.lastError) && (
                   <p className="text-destructive/90 whitespace-pre-wrap">
                     {remoteStatus.diagnosticHint || remoteStatus.lastError}
+                  </p>
+                )}
+                {remoteDiag?.lastAttempt && !remoteDiag.lastAttempt.ok && (
+                  <p className="text-destructive/90 whitespace-pre-wrap mt-1">
+                    {locale === "ja"
+                      ? `サーバー更新失敗: ${remoteDiag.lastAttempt.code || "error"}`
+                      : `Server update failed: ${remoteDiag.lastAttempt.code || "error"}`}
+                    {remoteDiag.lastAttempt.hint
+                      ? `\n${remoteDiag.lastAttempt.hint}`
+                      : remoteDiag.lastAttempt.error
+                        ? `\n${remoteDiag.lastAttempt.error}`
+                        : ""}
                   </p>
                 )}
                 {nativeDebugJson.includes("aps-environment") && (

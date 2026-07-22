@@ -11,6 +11,7 @@ import {
   getFirestore,
   doc,
   setDoc,
+  getDoc,
   collection,
   writeBatch,
   getDocs,
@@ -56,6 +57,36 @@ export type LiveActivityRemoteStatus = {
   lastError: string | null;
   lastSyncAt: number | null;
   diagnosticHint: string | null;
+};
+
+/** Server-side FCM update attempts (written by Cloud Functions). */
+export type RemoteLaAttempt = {
+  at: number;
+  scheduleId?: string;
+  phase?: string;
+  ok: boolean;
+  code?: string | null;
+  error?: string | null;
+  hint?: string | null;
+};
+
+export type RemoteLaScheduleDiag = {
+  id: string;
+  status?: string;
+  title?: string;
+  lastRemoteUpdateAt?: number;
+  lastRemoteUpdateOk?: boolean;
+  lastRemoteUpdateCode?: string;
+  lastRemoteUpdateError?: string;
+  lastRemoteUpdateHint?: string;
+  lastRemoteUpdatePhase?: string;
+};
+
+export type RemoteLaDiagnostics = {
+  fetchedAt: number;
+  attempts: RemoteLaAttempt[];
+  lastAttempt: RemoteLaAttempt | null;
+  schedules: RemoteLaScheduleDiag[];
 };
 
 function readWebConfig(): FirebaseWebConfig | null {
@@ -151,6 +182,87 @@ export function getLiveActivityRemoteStatus(): LiveActivityRemoteStatus {
     lastSyncAt,
     diagnosticHint,
   };
+}
+
+/**
+ * Pull Cloud Functions remote-update results into the Settings copyable log.
+ * Works in TestFlight/release — no Xcode needed.
+ */
+export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | null> {
+  const ok = await ensureFirebase();
+  if (!ok || !db || !deviceUid) return null;
+
+  try {
+    const deviceSnap = await getDoc(doc(db, "devices", deviceUid));
+    const deviceData = deviceSnap.exists() ? deviceSnap.data() : null;
+    const attempts = Array.isArray(deviceData?.remoteLaAttempts)
+      ? (deviceData!.remoteLaAttempts as RemoteLaAttempt[])
+      : [];
+    const lastAttempt =
+      (deviceData?.lastRemoteLaAttempt as RemoteLaAttempt | undefined) ||
+      attempts[0] ||
+      null;
+
+    const scheduleSnap = await getDocs(
+      query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid)),
+    );
+    const schedules: RemoteLaScheduleDiag[] = scheduleSnap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        status: data.status,
+        title: data.title,
+        lastRemoteUpdateAt: data.lastRemoteUpdateAt,
+        lastRemoteUpdateOk: data.lastRemoteUpdateOk,
+        lastRemoteUpdateCode: data.lastRemoteUpdateCode,
+        lastRemoteUpdateError: data.lastRemoteUpdateError,
+        lastRemoteUpdateHint: data.lastRemoteUpdateHint,
+        lastRemoteUpdatePhase: data.lastRemoteUpdatePhase,
+      };
+    });
+
+    const diag: RemoteLaDiagnostics = {
+      fetchedAt: Date.now(),
+      attempts: attempts.slice(0, 12),
+      lastAttempt,
+      schedules,
+    };
+
+    if (lastAttempt && !lastAttempt.ok) {
+      const line = [
+        lastAttempt.code || "remote-fail",
+        lastAttempt.error?.slice(0, 120),
+        lastAttempt.hint?.slice(0, 160),
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      laDebugLog("remote", line, "error");
+      if (lastAttempt.hint) {
+        setRemoteDiagnosticHint(lastAttempt.hint);
+      }
+    } else if (schedules.some((s) => s.lastRemoteUpdateOk === false)) {
+      const bad = schedules.find((s) => s.lastRemoteUpdateOk === false)!;
+      laDebugLog(
+        "remote",
+        `${bad.lastRemoteUpdateCode || "fail"}: ${bad.lastRemoteUpdateError || ""}`.slice(0, 200),
+        "error",
+      );
+      if (bad.lastRemoteUpdateHint) setRemoteDiagnosticHint(bad.lastRemoteUpdateHint);
+    } else if (lastAttempt?.ok) {
+      laDebugLog("remote", `last FCM update ok phase=${lastAttempt.phase}`, "ok");
+    } else {
+      laDebugLog("remote", "no remote FCM update attempts recorded yet", "warn");
+    }
+
+    return diag;
+  } catch (err) {
+    laDebugLog(
+      "remote",
+      `fetch diagnostics failed: ${err instanceof Error ? err.message : String(err)}`,
+      "error",
+    );
+    return null;
+  }
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
