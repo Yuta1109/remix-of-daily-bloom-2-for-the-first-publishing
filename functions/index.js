@@ -438,8 +438,8 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
         });
 
   if (!aggregated.contentState.items.length) {
-    logger.info("Skip LA refresh — no visible items", scheduleId);
-    return false;
+    logger.info("No visible LA items — ending activity", scheduleId);
+    return sendEndForSchedule(scheduleId, data);
   }
 
   const aps = {
@@ -501,6 +501,50 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
       code,
       error: message,
     });
+    return false;
+  }
+}
+
+async function sendEndForSchedule(scheduleId, data) {
+  const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
+  if (!deviceSnap.exists) {
+    await db.collection("laSchedules").doc(scheduleId).update({ status: "expired" });
+    return false;
+  }
+  const device = deviceSnap.data() || {};
+  const fcmToken = device.fcmToken;
+  const updateToken = device.liveActivityUpdateToken;
+  if (!fcmToken || !updateToken) {
+    await db.collection("laSchedules").doc(scheduleId).update({ status: "expired" });
+    return false;
+  }
+  const nowSec = Math.floor(Date.now() / 1000);
+  try {
+    await messaging.send({
+      token: fcmToken,
+      apns: {
+        liveActivityToken: updateToken,
+        headers: {
+          "apns-push-type": "liveactivity",
+          "apns-topic": `${BUNDLE_ID}.push-type.liveactivity`,
+          "apns-priority": "10",
+        },
+        payload: {
+          aps: {
+            timestamp: nowSec,
+            event: "end",
+            "dismissal-date": nowSec,
+            "content-state": buildContentState(data, Date.now(), "arrived"),
+          },
+        },
+      },
+    });
+    await db.collection("laSchedules").doc(scheduleId).update({ status: "expired" });
+    logger.info("LA end sent", scheduleId);
+    return true;
+  } catch (err) {
+    logger.warn("FCM live activity end failed", scheduleId, err);
+    await db.collection("laSchedules").doc(scheduleId).update({ status: "expired" });
     return false;
   }
 }

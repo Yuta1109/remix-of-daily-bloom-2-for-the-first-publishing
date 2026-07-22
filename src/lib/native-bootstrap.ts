@@ -6,17 +6,19 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 import { rescheduleAll } from "./notifications";
 import {
   refreshLiveActivities,
+  rescheduleLiveActivityWakes,
   scheduleLiveActivityBoundaries,
-  stopLiveActivityBoundaries,
+  setLiveActivityDismissArrivedOnRefresh,
 } from "./live-activity";
 import { initLiveActivityRemote, syncLiveActivitySchedulesRemote } from "./la-remote";
 import { initFcmRegistration } from "./fcm";
 import { initKeyboardAvoidance } from "./keyboard-avoidance";
 
-function syncSchedules() {
+function syncSchedules(opts: { dismissArrived?: boolean } = {}) {
   void rescheduleAll();
-  void refreshLiveActivities();
+  void refreshLiveActivities({ dismissArrived: opts.dismissArrived });
   void syncLiveActivitySchedulesRemote();
+  void rescheduleLiveActivityWakes();
 }
 
 export async function initNative(): Promise<void> {
@@ -28,20 +30,28 @@ export async function initNative(): Promise<void> {
   try {
     await StatusBar.setOverlaysWebView({ overlay: true });
     await StatusBar.setStyle({ style: Style.Light });
-  } catch { /* not available */ }
+  } catch {
+    /* not available */
+  }
 
   try {
     await SplashScreen.hide();
-  } catch { /* not available */ }
+  } catch {
+    /* not available */
+  }
 
   try {
     await LocalNotifications.addListener("localNotificationActionPerformed", () => {
-      syncSchedules();
+      syncSchedules({ dismissArrived: true });
     });
     await LocalNotifications.addListener("localNotificationReceived", () => {
+      // Wake at LA showAt / end — start or drop rows without waiting for the user.
       void refreshLiveActivities();
+      void syncLiveActivitySchedulesRemote();
     });
-  } catch { /* notifications plugin not available */ }
+  } catch {
+    /* notifications plugin not available */
+  }
 
   syncSchedules();
   scheduleLiveActivityBoundaries();
@@ -49,20 +59,26 @@ export async function initNative(): Promise<void> {
   // when Cloud Functions evaluate start eligibility.
   await initFcmRegistration();
   await initLiveActivityRemote();
+  void rescheduleLiveActivityWakes();
 
   App.addListener("appStateChange", ({ isActive }) => {
     if (isActive) {
-      // Opening the app (or tapping the Live Activity) drops arrived rows.
-      syncSchedules();
+      // Opening the app drops arrived ("It's time") rows immediately.
+      setLiveActivityDismissArrivedOnRefresh(true);
+      syncSchedules({ dismissArrived: true });
       scheduleLiveActivityBoundaries();
       void initFcmRegistration();
       void initLiveActivityRemote();
     } else {
-      stopLiveActivityBoundaries();
+      // JS timers freeze while locked — push schedules + local wakes before suspend.
+      setLiveActivityDismissArrivedOnRefresh(false);
+      void syncLiveActivitySchedulesRemote();
+      void rescheduleLiveActivityWakes();
+      scheduleLiveActivityBoundaries();
     }
   });
-  App.addListener("resume", () => syncSchedules());
+  App.addListener("resume", () => syncSchedules({ dismissArrived: true }));
   App.addListener("appUrlOpen", () => {
-    syncSchedules();
+    syncSchedules({ dismissArrived: true });
   });
 }

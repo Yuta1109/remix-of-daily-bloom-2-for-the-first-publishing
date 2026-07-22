@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeLiveActivityWindow } from "@/lib/live-activity-window";
+import {
+  computeLiveActivityWindow,
+  LIVE_ACTIVITY_ARRIVED_MS,
+} from "@/lib/live-activity-window";
 import type { CalendarEvent } from "@/lib/events-store";
 
 function eventAt(hoursFromNow: number, lead: CalendarEvent["liveActivityLead"]): CalendarEvent {
@@ -21,14 +24,15 @@ function eventAt(hoursFromNow: number, lead: CalendarEvent["liveActivityLead"]):
 }
 
 describe("computeLiveActivityWindow", () => {
-  it("starts immediately when already inside the lead window (4h lead, 3h away)", () => {
+  it("is active when already inside the lead window (4h lead, 3h away)", () => {
     const now = new Date();
     const w = computeLiveActivityWindow(eventAt(3, "4h"), now);
     expect(w).not.toBeNull();
     expect(w!.activeNow).toBe(true);
     expect(w!.visibleNow).toBe(true);
-    expect(w!.showAtEpochMs).toBe(now.getTime());
-    expect(w!.endEpochMs).toBe(w!.startEpochMs + 30 * 60_000);
+    // showAt is start − lead (in the past), not clamped to now
+    expect(w!.showAtEpochMs).toBeLessThanOrEqual(now.getTime());
+    expect(w!.endEpochMs).toBe(w!.startEpochMs + LIVE_ACTIVITY_ARRIVED_MS);
   });
 
   it("schedules a future showAt when outside the lead window (4h lead, 5h away)", () => {

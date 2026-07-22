@@ -209,14 +209,14 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             return Date(timeIntervalSince1970: earliest / 1000.0)
         }()
 
-        // Linger past event start so Lock Screen can show "It's time" without
-        // the system stale spinner (staleDate must be after the start instant).
+        // Linger 1 minute past event start so Lock Screen can show "It's time",
+        // then the row is dropped (staleDate / end).
         let endDate: Date = {
             if let endMs = call.getDouble("endEpochMs"), endMs > 0 {
                 return Date(timeIntervalSince1970: endMs / 1000.0)
             }
             if let start = earliestStart {
-                return start.addingTimeInterval(30 * 60)
+                return start.addingTimeInterval(60)
             }
             return Date().addingTimeInterval(60)
         }()
@@ -365,12 +365,13 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                 Task {
                     for activity in Activity<EssencesWidgetAttributes>.activities {
                         let cur = activity.content.state
+                        // Per-row UI uses each item's startDate; bump tick so TimelineView redraws.
                         let next = EssencesWidgetAttributes.ContentState(
                             items: cur.items,
                             overflow: cur.overflow,
                             locale: locale.isEmpty ? cur.locale : locale,
                             tick: cur.tick &+ 1,
-                            phase: "arrived"
+                            phase: cur.phase
                         )
                         await activity.update(
                             ActivityContent(state: next, staleDate: activity.content.staleDate)

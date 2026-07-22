@@ -47,7 +47,7 @@ import {
   getNotificationsUserEnabled,
   setNotificationsUserEnabled,
 } from "@/lib/notifications";
-import { refreshLiveActivities, isLiveActivitySupported } from "@/lib/live-activity";
+import { refreshLiveActivities, isLiveActivitySupported, rescheduleLiveActivityWakes } from "@/lib/live-activity";
 import { syncLiveActivitySchedulesRemote } from "@/lib/la-remote";
 import { useI18n } from "@/lib/i18n";
 import { hideKeyboard, onDoneKey } from "@/lib/keyboard-avoidance";
@@ -674,6 +674,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     void rescheduleAll();
     void refreshLiveActivities();
     void syncLiveActivitySchedulesRemote();
+    void rescheduleLiveActivityWakes();
   };
 
   const masterIdForSeries = seriesOccurrence?.masterId ?? form.id;

@@ -7,32 +7,33 @@ import {
 } from "./events-store";
 
 /**
- * After event start, keep the Lock Screen card briefly so the widget can show
- * "It's time" instead of the system stale spinner. Cleared when the user opens
- * the app (refresh ends activities with no visible windows) or linger elapses.
+ * After event start, keep "It's time" briefly, then drop that row.
+ * Cleared sooner when the user opens the app (see dismissArrived).
  */
-export const LIVE_ACTIVITY_LINGER_MS = 30 * 60_000;
+export const LIVE_ACTIVITY_ARRIVED_MS = 60 * 1000;
+
+/** @deprecated Use LIVE_ACTIVITY_ARRIVED_MS — kept for older imports/tests. */
+export const LIVE_ACTIVITY_LINGER_MS = LIVE_ACTIVITY_ARRIVED_MS;
 
 /**
  * Live Activity lead window for one occurrence.
  *
- * Example: lead = 4h, event starts in 3h → window already open → showAt = now
- * (display immediately on save / push). If the event is 5h away, showAt =
- * start − 4h (future), and the activity starts then (push-to-start when killed).
+ * Example: lead = 1h, event at 15:00 → showAt = 14:00 (stable).
+ * If the user saves at 14:30, the window is already open → appear immediately.
  */
 export interface LiveActivityWindow {
   eventId: string;
   title: string;
   color: string;
   startEpochMs: number;
-  /** When the LA should appear (never after start; never before window open). */
+  /** When the LA should appear: always start − lead (never clamped to "now"). */
   showAtEpochMs: number;
-  /** When the LA should dismiss if the app never opens (start + linger). */
+  /** Drop this row after start + arrived linger. */
   endEpochMs: number;
   leadMinutes: number;
-  /** True when inside [showAt, start) — schedule push / local start. */
+  /** True when inside [showAt, start). */
   activeNow: boolean;
-  /** True when the Lock Screen should still show (includes post-start linger). */
+  /** True when the Lock Screen should still show (includes short post-start linger). */
   visibleNow: boolean;
 }
 
@@ -42,18 +43,21 @@ export function computeLiveActivityWindow(
 ): LiveActivityWindow | null {
   if (!event.liveActivity || event.allDay) return null;
   const leadMinutes = effectiveLiveActivityLeadMinutes(event.liveActivityLead);
-  // Include current occurrence even if start just passed (linger window).
-  const [next] = upcomingOccurrenceStarts(event, new Date(now.getTime() - LIVE_ACTIVITY_LINGER_MS), 14, 1);
+  // Include current occurrence even if start just passed (arrived linger).
+  const [next] = upcomingOccurrenceStarts(
+    event,
+    new Date(now.getTime() - LIVE_ACTIVITY_ARRIVED_MS),
+    14,
+    1,
+  );
   if (!next) return null;
 
   const startEpochMs = next.getTime();
-  const endEpochMs = startEpochMs + LIVE_ACTIVITY_LINGER_MS;
-  const windowOpen = startEpochMs - leadMinutes * 60_000;
+  const endEpochMs = startEpochMs + LIVE_ACTIVITY_ARRIVED_MS;
+  const showAtEpochMs = startEpochMs - leadMinutes * 60_000;
   const nowMs = now.getTime();
   if (nowMs >= endEpochMs) return null;
 
-  // Already inside the lead window → start immediately (not wait until "4h before").
-  const showAtEpochMs = Math.max(windowOpen, Math.min(nowMs, startEpochMs));
   return {
     eventId: event.id,
     title: event.title,

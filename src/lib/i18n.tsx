@@ -105,9 +105,8 @@ const translations = {
     liveActivity: "Live Activity",
     liveActivityShow: "Show on Lock Screen",
     liveActivityHint:
-      "Shows a countdown on the Lock Screen. If the event is already within the lead window (e.g. 4h lead, event in 3h), it appears as soon as you save. Otherwise it starts at (start − lead). Active up to 8h; Lock Screen may linger up to 12h total.",
-    liveActivityForegroundNote:
-      "Requires iOS 17.2+. Countdown uses the system timer (updates with the app closed). Start / “It’s time” also need push (FCM✓ and LA✓ in Settings).",
+      "Shows a countdown on the Lock Screen. Example: if you choose “1 hour before” and the event starts at 3:00, the card appears at 2:00. If that time is already past when you save, it appears right away. Stays active up to 8 hours.",
+    liveActivityForegroundNote: "Requires iOS 17.2 or later.",
     la24h: "1 day before",
     la12h: "12 hours before",
     la8h: "8 hours before (max)",
@@ -252,9 +251,8 @@ const translations = {
     liveActivity: "ライブアクティビティ",
     liveActivityShow: "ロック画面に表示",
     liveActivityHint:
-      "ロック画面にカウントダウンを表示します。すでにリード時間内なら（例: 4時間前設定で予定が3時間後）保存した直後に表示します。それ以外は「開始−リード」で開始します。アクティブ最大8時間、ロック画面上は合計最大12時間です。",
-    liveActivityForegroundNote:
-      "iOS 17.2 以上が必要です。カウントダウンはシステムタイマーでアプリ終了中も進みます。開始／「予定時間になりました」は Push が必要です（設定の FCM✓・LA✓）。",
+      "ロック画面にカウントダウンを表示します。例:「1時間前」にすると、15:00の予定は14:00に表示が始まります。保存した時点ですでにその時刻を過ぎている場合は、すぐに表示します。表示は最大8時間です。",
+    liveActivityForegroundNote: "iOS 17.2 以上が必要です。",
     la24h: "1日前",
     la12h: "12時間前",
     la8h: "8時間前（上限）",

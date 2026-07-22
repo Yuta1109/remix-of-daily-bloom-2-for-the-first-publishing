@@ -1,19 +1,25 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { collectLiveActivityWindows } from "./live-activity-window";
+import { LocalNotifications } from "@capacitor/local-notifications";
+import {
+  collectLiveActivityWindows,
+  LIVE_ACTIVITY_ARRIVED_MS,
+} from "./live-activity-window";
 
 /**
  * Live Activity design (ActivityKit / Apple HIG):
  *
  * - Minimum iOS 17.2 (ActivityKit push-to-start; no wake-notification fallback).
  * - One shared Lock Screen activity (max 3 event rows).
- * - If the user enables LA while already inside the lead window (e.g. lead=4h
- *   but event is in 3h), we start **immediately** on save (and remote push
- *   uses showAt=now). Future windows are scheduled for start − lead.
- * - Target path: Firebase / APNs push-to-start when killed.
- * - Active ≤ 8h; Lock Screen may linger ≤ 12h total.
+ * - showAt = start − lead (stable). If already past showAt on save → appear now.
+ * - Kill / lock screen: Cloud Functions push-to-start + local wake notifications.
+ * - After event start, show "It's time" for 1 minute, then drop that row.
+ * - Opening the app dismisses arrived rows immediately.
  */
 
 const MAX_ITEMS = 3;
+/** Local notification id range reserved for LA wake/dismiss (avoid reminder ids). */
+const LA_NOTIF_ID_BASE = 50_000;
+const LA_NOTIF_ID_MAX = 59_999;
 
 export interface LiveActivityItem {
   title: string;
@@ -34,13 +40,9 @@ export interface LiveActivitiesPlugin {
   areEnabled(): Promise<{ enabled: boolean }>;
   startOrUpdate(payload: LiveActivityPayload): Promise<{ activityId: string | null }>;
   endAll(): Promise<void>;
-  /** Observe ActivityKit push-to-start token (iOS 17.2+). */
   startPushToStartTokenUpdates(): Promise<void>;
-  /** Cached push-to-start token if ActivityKit has already emitted one. */
   getPushToStartToken(): Promise<{ token: string | null }>;
-  /** Cached Live Activity update push token (for FCM event:update). */
   getUpdateToken(): Promise<{ token: string | null }>;
-  /** Native APNs / LA snapshot for Settings diagnostics. */
   getTokenDebugInfo(): Promise<{
     apnsCacheBytes?: number;
     apnsRegisterError?: string | null;
@@ -53,7 +55,6 @@ export interface LiveActivitiesPlugin {
     iosVersion?: string;
     [key: string]: unknown;
   }>;
-  /** Re-post cached APNs token to Firebase Messaging. */
   rebroadcastApnsToken(): Promise<{
     rebroadcast: boolean;
     apnsCacheBytes: number;
@@ -78,18 +79,24 @@ function currentLocale(): "en" | "ja" {
 }
 
 /**
- * Items still on the Lock Screen: lead window through post-start linger.
- * Pre-start → countdown; after start (linger) → arrived phase.
- * Opening the app after linger ends clears the card.
+ * Items still on the Lock Screen: lead window through short post-start linger.
+ * When dismissArrived is true (app became active), drop rows at/after start.
  */
-function collectVisibleItems(now: Date): {
+function collectVisibleItems(
+  now: Date,
+  opts: { dismissArrived?: boolean } = {},
+): {
   items: LiveActivityItem[];
   phase: "countdown" | "arrived";
 } {
-  const windows = collectLiveActivityWindows(now)
-    .filter((w) => w.visibleNow)
-    .sort((a, b) => a.startEpochMs - b.startEpochMs);
   const nowMs = now.getTime();
+  const windows = collectLiveActivityWindows(now)
+    .filter((w) => {
+      if (!w.visibleNow) return false;
+      if (opts.dismissArrived && nowMs >= w.startEpochMs) return false;
+      return true;
+    })
+    .sort((a, b) => a.startEpochMs - b.startEpochMs);
   const anyCounting = windows.some((w) => nowMs < w.startEpochMs);
   return {
     items: windows.map((w) => ({
@@ -101,7 +108,7 @@ function collectVisibleItems(now: Date): {
   };
 }
 
-/** Milliseconds until the next Live Activity window opens or closes. */
+/** Milliseconds until the next Live Activity window opens, starts, or ends. */
 export function msUntilNextLiveActivityBoundary(from = new Date()): number | null {
   const now = from.getTime();
   let nextMs: number | null = null;
@@ -119,6 +126,7 @@ export function msUntilNextLiveActivityBoundary(from = new Date()): number | nul
 }
 
 let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
+let preferDismissArrived = false;
 
 function scheduleNextBoundary(): void {
   clearTimeout(boundaryTimer);
@@ -139,10 +147,11 @@ export function stopLiveActivityBoundaries(): void {
   boundaryTimer = undefined;
 }
 
-/**
- * Starts/updates/ends Live Activities for events already in their lead window.
- * Called after save: if lead=4h and event is in 3h, starts immediately.
- */
+/** Next refresh should hide arrived rows (user opened the app). */
+export function setLiveActivityDismissArrivedOnRefresh(value: boolean): void {
+  preferDismissArrived = value;
+}
+
 export type LiveActivityLocalStatus = {
   supported: boolean;
   systemEnabled: boolean | null;
@@ -163,8 +172,13 @@ export function getLiveActivityLocalStatus(): LiveActivityLocalStatus {
   };
 }
 
-export async function refreshLiveActivities(): Promise<void> {
+export async function refreshLiveActivities(
+  opts: { dismissArrived?: boolean } = {},
+): Promise<void> {
   if (!isLiveActivitySupported()) return;
+
+  const dismissArrived = opts.dismissArrived ?? preferDismissArrived;
+  if (opts.dismissArrived) preferDismissArrived = true;
 
   try {
     const { enabled } = await LiveActivities.areEnabled();
@@ -182,7 +196,7 @@ export async function refreshLiveActivities(): Promise<void> {
   }
 
   const now = new Date();
-  const { items: visible, phase } = collectVisibleItems(now);
+  const { items: visible, phase } = collectVisibleItems(now, { dismissArrived });
   lastActiveCount = visible.length;
 
   if (visible.length === 0) {
@@ -193,18 +207,20 @@ export async function refreshLiveActivities(): Promise<void> {
       /* ignore */
     }
     scheduleNextBoundary();
+    void rescheduleLiveActivityWakes();
     return;
   }
 
   const items = visible.slice(0, MAX_ITEMS);
   const overflow = visible.length - items.length;
-  // Keep ActivityKit alive through post-start linger for "It's time".
+  // Keep the Activity alive until the last visible row's arrived linger ends.
+  const matchingWindows = collectLiveActivityWindows(now).filter((w) =>
+    visible.some((v) => v.startEpochMs === w.startEpochMs && v.title === w.title),
+  );
   const endEpochMs =
-    collectLiveActivityWindows(now)
-      .filter((w) => w.visibleNow)
-      .map((w) => w.endEpochMs)
-      .sort((a, b) => a - b)[0] ??
-    (items[0]?.startEpochMs ?? now.getTime()) + 30 * 60_000;
+    matchingWindows.length > 0
+      ? Math.max(...matchingWindows.map((w) => w.endEpochMs))
+      : (items[0]?.startEpochMs ?? now.getTime()) + LIVE_ACTIVITY_ARRIVED_MS;
 
   try {
     await LiveActivities.startOrUpdate({
@@ -221,6 +237,70 @@ export async function refreshLiveActivities(): Promise<void> {
   }
 
   scheduleNextBoundary();
+  void rescheduleLiveActivityWakes();
 }
 
-export { currentLocale };
+/**
+ * Schedule local notifications at each upcoming showAt / end so iOS can wake
+ * the app when JS timers are frozen (lock screen / background).
+ */
+export async function rescheduleLiveActivityWakes(): Promise<void> {
+  if (!isLiveActivitySupported()) return;
+  try {
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== "granted") return;
+
+    const pending = await LocalNotifications.getPending();
+    const laPending = pending.notifications.filter(
+      (n) => n.id >= LA_NOTIF_ID_BASE && n.id <= LA_NOTIF_ID_MAX,
+    );
+    if (laPending.length) {
+      await LocalNotifications.cancel({
+        notifications: laPending.map((n) => ({ id: n.id })),
+      });
+    }
+
+    const now = Date.now();
+    const wakes: { id: number; at: Date; title: string; body: string }[] = [];
+    let id = LA_NOTIF_ID_BASE;
+
+    for (const w of collectLiveActivityWindows(new Date())) {
+      if (w.showAtEpochMs > now && id <= LA_NOTIF_ID_MAX) {
+        wakes.push({
+          id: id++,
+          at: new Date(w.showAtEpochMs),
+          title: currentLocale() === "ja" ? "今後の予定" : "Upcoming",
+          body: w.title,
+        });
+      }
+      // Refresh when arrived linger ends so the row can drop while backgrounded.
+      if (w.endEpochMs > now && id <= LA_NOTIF_ID_MAX) {
+        wakes.push({
+          id: id++,
+          at: new Date(w.endEpochMs),
+          title: currentLocale() === "ja" ? "予定の更新" : "Schedule update",
+          body: w.title,
+        });
+      }
+    }
+
+    wakes.sort((a, b) => a.at.getTime() - b.at.getTime());
+    const slice = wakes.slice(0, 40);
+    if (!slice.length) return;
+
+    await LocalNotifications.schedule({
+      notifications: slice.map((w) => ({
+        id: w.id,
+        title: w.title,
+        body: w.body,
+        schedule: { at: w.at, allowWhileIdle: true },
+        sound: undefined,
+        extra: { essencesLaWake: true },
+      })),
+    });
+  } catch (err) {
+    console.warn("[LiveActivity] rescheduleLiveActivityWakes failed:", err);
+  }
+}
+
+export { currentLocale, LIVE_ACTIVITY_ARRIVED_MS };
