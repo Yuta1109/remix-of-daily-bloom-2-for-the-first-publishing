@@ -271,8 +271,9 @@ export async function rescheduleLiveActivityWakes(): Promise<void> {
         wakes.push({
           id: id++,
           at: new Date(w.showAtEpochMs),
-          title: currentLocale() === "ja" ? "今後の予定" : "Upcoming",
-          body: w.title,
+          // Intentionally blank — remote FCM starts the card; this only wakes JS.
+          title: " ",
+          body: " ",
         });
       }
       // Refresh when arrived linger ends so the row can drop while backgrounded.
@@ -280,8 +281,8 @@ export async function rescheduleLiveActivityWakes(): Promise<void> {
         wakes.push({
           id: id++,
           at: new Date(w.endEpochMs),
-          title: currentLocale() === "ja" ? "予定の更新" : "Schedule update",
-          body: w.title,
+          title: " ",
+          body: " ",
         });
       }
     }
@@ -296,6 +297,9 @@ export async function rescheduleLiveActivityWakes(): Promise<void> {
         title: w.title,
         body: w.body,
         schedule: { at: w.at, allowWhileIdle: true },
+        // Wake JS without a Lock Screen banner when possible (iOS foreground).
+        // Remote LA start is silent; these are a backup only.
+        silent: true,
         sound: undefined,
         extra: { essencesLaWake: true },
       })),

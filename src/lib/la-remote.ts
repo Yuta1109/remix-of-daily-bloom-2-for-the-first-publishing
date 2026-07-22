@@ -524,15 +524,17 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
         | undefined;
 
       // due: lead window open — Cloud Functions should push-to-start when killed.
-      // Do NOT flip to "started" just because an updateToken exists (that token may
-      // be from a previous activity; skipping start leaves the Lock Screen empty).
+      // Never demote started/arrived → due (that re-triggers push-to-start and
+      // stacks duplicate Lock Screen Activities every minute).
+      const remoteLive =
+        prev?.status === "started" || prev?.status === "arrived";
       let status: "pending" | "due" | "started" = "pending";
-      if (w.activeNow) {
-        status = prev?.status === "started" ? "started" : "due";
-      } else if (w.visibleNow && nowMs >= w.startEpochMs) {
-        status = prev?.status === "started" ? "started" : "due";
-      } else if (prev?.status === "started" && w.visibleNow) {
+      if (remoteLive && w.visibleNow) {
         status = "started";
+      } else if (w.activeNow) {
+        status = "due";
+      } else if (w.visibleNow && nowMs >= w.startEpochMs) {
+        status = "due";
       }
 
       // Preserve Cloud Task ids / remote diagnostics — never wipe the doc.

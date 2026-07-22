@@ -278,9 +278,22 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         if needsPushRelaunch {
             NSLog("[Essences LA] Recreating Live Activity with pushType:.token (missing updateToken)")
             await endAllActivities()
-        } else if let existing = Activity<EssencesWidgetAttributes>.activities.first {
+        } else if !Activity<EssencesWidgetAttributes>.activities.isEmpty {
+            // Collapse duplicates from repeated remote push-to-start, then update one.
+            let activities = Activity<EssencesWidgetAttributes>.activities
+            let keeper = activities[0]
+            if activities.count > 1 {
+                NSLog("[Essences LA] Ending %d duplicate Live Activities", activities.count - 1)
+                for activity in activities.dropFirst() {
+                    if #available(iOS 16.2, *) {
+                        await activity.end(nil, dismissalPolicy: .immediate)
+                    } else {
+                        await activity.end(dismissalPolicy: .immediate)
+                    }
+                }
+            }
             if #available(iOS 16.2, *) {
-                await existing.update(
+                await keeper.update(
                     ActivityContent(
                         state: state,
                         staleDate: staleDate,
@@ -290,9 +303,9 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                 LiveActivityRefreshCenter.noteActivitiesChanged()
                 LiveActivityRefreshCenter.rebroadcastCachedUpdateToken()
             } else {
-                await existing.update(using: state)
+                await keeper.update(using: state)
             }
-            return existing.id
+            return keeper.id
         }
 
         // Prefer .token for later push updates. If APNs/push entitlement is not

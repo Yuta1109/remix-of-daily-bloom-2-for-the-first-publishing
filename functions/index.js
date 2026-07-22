@@ -234,7 +234,61 @@ async function enqueueAtShowAt(scheduleId, data) {
   });
 }
 
-async function sendStartForSchedule(scheduleId, data) {
+/**
+ * True when this device already has a Lock Screen card we should UPDATE
+ * (not push-to-start again — each `event: "start"` creates a new Activity).
+ */
+async function deviceHasLiveCard(deviceId) {
+  const snap = await db.collection("laSchedules").where("deviceId", "==", deviceId).get();
+  return snap.docs.some((d) => {
+    const s = d.data()?.status;
+    return s === "started" || s === "arrived";
+  });
+}
+
+/**
+ * Claim the single push-to-start slot for this device (~90s). Concurrent
+ * onLaScheduleWrite / sweep calls for sibling events must UPDATE instead.
+ */
+async function claimDevicePushStart(deviceId, scheduleId) {
+  const ref = db.collection("devices").doc(deviceId);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.data() || {};
+      const lastAt = Number(data.laLastPushStartAt || 0);
+      if (Date.now() - lastAt < 90_000) {
+        return data.laLastPushStartBy === scheduleId;
+      }
+      tx.set(
+        ref,
+        {
+          laLastPushStartAt: Date.now(),
+          laLastPushStartBy: scheduleId,
+        },
+        { merge: true },
+      );
+      return true;
+    });
+  } catch (err) {
+    logger.warn("claimDevicePushStart failed", deviceId, err);
+    return false;
+  }
+}
+
+/**
+ * Ensure a schedule is represented on the Lock Screen.
+ *
+ * - If a card already exists for the device → silent FCM update only
+ *   (never push-to-start; that stacks duplicate Activities).
+ * - Otherwise → one silent push-to-start, then updates.
+ * - No "今後の予定" / "Upcoming" alert on start (user request). Alert+vibrate
+ *   remains only for the T−1m reminder via sendUpdateForSchedule.
+ *
+ * opts.preferUpdateOnly: another start already ran this sweep/batch for the
+ * device — mark started / update, never create a second Activity.
+ */
+async function sendStartForSchedule(scheduleId, data, opts = {}) {
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
   if (!deviceSnap.exists) {
     logger.warn("No device doc", data.deviceId);
@@ -260,12 +314,41 @@ async function sendStartForSchedule(scheduleId, data) {
     return false;
   }
 
-  const alertTitle = data.locale === "en" ? "Upcoming" : "今後の予定";
-  const alertBody = String(data.title || "");
+  const hasLiveCard =
+    opts.preferUpdateOnly === true || (await deviceHasLiveCard(data.deviceId));
 
-  // Always try push-to-start first so a Lock Screen card actually appears.
-  // (updateToken alone often belongs to a dead/previous activity — update-only
-  // then succeeds at FCM but shows nothing.)
+  const finishAsUpdate = async (reason) => {
+    logger.info("LA ensure via update", scheduleId, reason);
+    if (updateToken) {
+      const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
+        withAlert: false,
+        contentState: aggregated.contentState,
+        staleSec: aggregated.staleSec,
+      });
+      if (ok) {
+        await markStartedAndEnqueueRefresh(scheduleId, data);
+        return true;
+      }
+      logger.warn("LA update failed for existing/sibling card", scheduleId);
+    }
+    // Sibling just push-to-started; updateToken may lag. Still mark started so
+    // we never fire another event:"start" for this schedule.
+    await markStartedAndEnqueueRefresh(scheduleId, data);
+    return true;
+  };
+
+  // Existing card (or sibling schedule just started): update only — never start.
+  if (hasLiveCard) {
+    return finishAsUpdate("hasLiveCard");
+  }
+
+  const claimed = await claimDevicePushStart(data.deviceId, scheduleId);
+  if (!claimed) {
+    return finishAsUpdate("siblingClaimedStart");
+  }
+
+  // Cold start: no live card yet. Prefer push-to-start so Lock Screen appears
+  // even when a stale updateToken from a previous activity is still on the device.
   if (liveToken) {
     const nowSec = Math.floor(Date.now() / 1000);
     try {
@@ -286,10 +369,7 @@ async function sendStartForSchedule(scheduleId, data) {
               "attributes-type": ATTRIBUTES_TYPE,
               attributes: { name: "Essences" },
               "stale-date": aggregated.staleSec,
-              alert: {
-                title: alertTitle,
-                body: alertBody,
-              },
+              // Silent start: no banner. (iOS ties LA vibration to alert.)
             },
           },
         },
@@ -303,14 +383,12 @@ async function sendStartForSchedule(scheduleId, data) {
     logger.warn("Missing pushToStart token for device", data.deviceId);
   }
 
-  // Fallback: update existing card (multi-event) or local-started activity.
+  // Fallback: local Activity may already be live with an update token.
   if (updateToken) {
     const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
-      withAlert: true,
+      withAlert: false,
       contentState: aggregated.contentState,
       staleSec: aggregated.staleSec,
-      alertTitle,
-      alertBody,
     });
     if (ok) {
       await markStartedAndEnqueueRefresh(scheduleId, data);
@@ -337,8 +415,17 @@ async function markStartedAndEnqueueRefresh(scheduleId, data) {
     lastError: FieldValue.delete(),
     cloudTaskId: FieldValue.delete(),
   });
-  const nextRefresh = Date.now() + REFRESH_INTERVAL_MS;
-  if (nextRefresh < Number(data.startEpochMs)) {
+  const now = Date.now();
+  const startAt = Number(data.startEpochMs);
+  // Kick soon so the first FCM update can land once updateToken is uploaded
+  // (custom relative countdown freezes without tick updates while killed).
+  try {
+    await enqueueRefresh(scheduleId, now + 15_000);
+  } catch (err) {
+    logger.warn("Failed to enqueue LA kick refresh", err);
+  }
+  const nextRefresh = now + REFRESH_INTERVAL_MS;
+  if (nextRefresh < startAt) {
     try {
       await enqueueRefresh(scheduleId, nextRefresh);
     } catch (err) {
@@ -351,9 +438,7 @@ async function markStartedAndEnqueueRefresh(scheduleId, data) {
 async function beginUpdateOnlyMode(scheduleId, data, note) {
   logger.info("LA update-only mode", scheduleId, note);
   const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
-    withAlert: true,
-    alertTitle: data.locale === "en" ? "Upcoming" : "今後の予定",
-    alertBody: String(data.title || ""),
+    withAlert: false,
   });
   if (ok) {
     await markStartedAndEnqueueRefresh(scheduleId, data);
@@ -387,8 +472,7 @@ async function enqueueOneMinuteAndArrived(scheduleId, data) {
 
 /**
  * Silent content updates by default. Alert (notification + vibration) only for:
- *  - Live Activity start / first appearance
- *  - the single 1-minute-before reminder
+ *  - the single 1-minute-before reminder (not on LA start)
  */
 async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts = {}) {
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
@@ -747,7 +831,9 @@ export const sweepLiveActivityRefresh = onSchedule(
     ]);
 
     // Catch missed Cloud Task starts while the app is force-quit.
+    // At most one push-to-start per device per sweep — extras update the same card.
     let startedNow = 0;
+    const devicesStartedThisSweep = new Set();
     for (const docSnap of [...pendingSnap.docs, ...dueSnap.docs]) {
       const data = docSnap.data();
       if (Number(data.endAtEpochMs) <= now) {
@@ -756,8 +842,12 @@ export const sweepLiveActivityRefresh = onSchedule(
       }
       if (Number(data.showAtEpochMs) > now) continue;
       try {
-        const ok = await sendStartForSchedule(docSnap.id, data);
-        if (ok) startedNow += 1;
+        const preferUpdateOnly = devicesStartedThisSweep.has(data.deviceId);
+        const ok = await sendStartForSchedule(docSnap.id, data, { preferUpdateOnly });
+        if (ok) {
+          startedNow += 1;
+          devicesStartedThisSweep.add(data.deviceId);
+        }
       } catch (err) {
         logger.warn("LA sweep start failed", docSnap.id, err);
       }
@@ -937,7 +1027,10 @@ export const onDeviceTokenWrite = onDocumentWritten(
       if (Number(data.endAtEpochMs) <= Date.now()) continue;
 
       if (status === "due" || status === "error") {
-        await sendStartForSchedule(docSnap.id, data);
+        // Token uploads often arrive after a push-to-start; update the existing
+        // card instead of stacking another Activity.
+        const preferUpdateOnly = await deviceHasLiveCard(deviceId);
+        await sendStartForSchedule(docSnap.id, data, { preferUpdateOnly });
         continue;
       }
       if (status === "started") {
