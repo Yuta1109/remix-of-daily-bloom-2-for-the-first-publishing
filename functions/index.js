@@ -39,6 +39,8 @@ const TASK_FN = "dispatchLiveActivityTask";
 const REFRESH_FN = "refreshLiveActivityTask";
 /** Remote Lock Screen redraw every minute (custom relative labels need Activity.update). */
 const REFRESH_INTERVAL_MS = 60 * 1000;
+/** Fire a single audible/haptic Live Activity alert this far before start. */
+const ONE_MINUTE_MS = 60 * 1000;
 
 let googleAuth;
 
@@ -211,10 +213,6 @@ async function sendStartForSchedule(scheduleId, data) {
             "attributes-type": ATTRIBUTES_TYPE,
             attributes: { name: "Essences" },
             "stale-date": staleSec,
-            alert: {
-              title: data.locale === "en" ? "Upcoming" : "今後の予定",
-              body: String(data.title || ""),
-            },
           },
         },
       },
@@ -254,14 +252,7 @@ async function markStartedAndEnqueueRefresh(scheduleId, data) {
       logger.warn("Failed to enqueue LA refresh", err);
     }
   }
-  const startAt = Number(data.startEpochMs);
-  if (startAt > Date.now()) {
-    try {
-      await enqueueRefresh(scheduleId, startAt);
-    } catch (err) {
-      logger.warn("Failed to enqueue LA arrived tick", err);
-    }
-  }
+  await enqueueOneMinuteAndArrived(scheduleId, data);
 }
 
 async function beginUpdateOnlyMode(scheduleId, data, note) {
@@ -282,18 +273,34 @@ async function beginUpdateOnlyMode(scheduleId, data, note) {
   } catch (err) {
     logger.warn("Failed to enqueue update-only refresh", err);
   }
+  await enqueueOneMinuteAndArrived(scheduleId, data);
+  return true;
+}
+
+async function enqueueOneMinuteAndArrived(scheduleId, data) {
   const startAt = Number(data.startEpochMs);
+  const oneMinBefore = startAt - ONE_MINUTE_MS;
+  if (oneMinBefore > Date.now()) {
+    try {
+      await enqueueRefresh(scheduleId, oneMinBefore);
+    } catch (err) {
+      logger.warn("Failed to enqueue LA 1-minute alert", err);
+    }
+  }
   if (startAt > Date.now()) {
     try {
       await enqueueRefresh(scheduleId, startAt);
     } catch (err) {
-      logger.warn("Failed to enqueue arrived refresh", err);
+      logger.warn("Failed to enqueue LA arrived tick", err);
     }
   }
-  return true;
 }
 
-async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
+/**
+ * Silent content updates by default. Only the single 1-minute-before push
+ * includes `alert` (notification + vibration). Minute redraws must stay quiet.
+ */
+async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts = {}) {
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
   if (!deviceSnap.exists) return false;
   const device = deviceSnap.data() || {};
@@ -313,12 +320,24 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
     return false;
   }
 
-  const nowSec = Math.floor(Date.now() / 1000);
+  const now = Date.now();
+  const withAlert = opts.withAlert === true;
+  const nowSec = Math.floor(now / 1000);
   const staleSec = Math.floor(Number(data.endAtEpochMs) / 1000);
-  // Firebase's Live Activity update samples include `alert`. Omitting it often
-  // succeeds in Admin SDK but never redraws the Lock Screen once the app is killed.
-  const alertTitle = data.locale === "en" ? "Upcoming" : "今後の予定";
-  const alertBody = String(data.title || "");
+  const contentPhase = phase === "notify1m" ? "countdown" : phase;
+  const aps = {
+    timestamp: nowSec,
+    event: "update",
+    "content-state": buildContentState(data, now, contentPhase),
+    "stale-date": staleSec,
+  };
+  if (withAlert) {
+    aps.alert = {
+      title: data.locale === "en" ? "Starting soon" : "まもなく開始",
+      body: String(data.title || ""),
+    };
+  }
+
   try {
     await messaging.send({
       token: fcmToken,
@@ -329,27 +348,25 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
           "apns-topic": `${BUNDLE_ID}.push-type.liveactivity`,
           "apns-priority": "10",
         },
-        payload: {
-          aps: {
-            timestamp: nowSec,
-            event: "update",
-            "content-state": buildContentState(data, Date.now(), phase),
-            "stale-date": staleSec,
-            alert: {
-              title: alertTitle,
-              body: alertBody,
-            },
-          },
-        },
+        payload: { aps },
       },
     });
-    logger.info("LA update sent", scheduleId, { phase });
+    logger.info("LA update sent", scheduleId, { phase, withAlert });
     await recordRemoteResult(scheduleId, data.deviceId, {
       ok: true,
       phase,
       code: null,
       error: null,
     });
+    if (withAlert) {
+      try {
+        await db.collection("laSchedules").doc(scheduleId).update({
+          oneMinuteAlertSentAt: now,
+        });
+      } catch (err) {
+        logger.warn("Failed to mark oneMinuteAlertSentAt", err);
+      }
+    }
     return true;
   } catch (err) {
     const code = String(err?.code || err?.errorInfo?.code || "unknown");
@@ -363,6 +380,15 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
     });
     return false;
   }
+}
+
+function wantsOneMinuteAlert(data, now = Date.now()) {
+  if (data.oneMinuteAlertSentAt) return false;
+  const startAt = Number(data.startEpochMs);
+  if (!(startAt > now)) return false;
+  const oneMinBefore = startAt - ONE_MINUTE_MS;
+  // Allow a small early/late window around the exact 1-minute-before mark.
+  return now >= oneMinBefore - 20_000 && now < startAt;
 }
 
 /** Persist per-schedule + per-device remote attempt so TestFlight can copy it. */
@@ -518,7 +544,13 @@ export const refreshLiveActivityTask = onTaskDispatched(
       return;
     }
 
-    await sendUpdateForSchedule(scheduleId, data, "countdown");
+    const alertNow = wantsOneMinuteAlert(data, now);
+    await sendUpdateForSchedule(
+      scheduleId,
+      data,
+      alertNow ? "notify1m" : "countdown",
+      { withAlert: alertNow },
+    );
 
     const next = now + REFRESH_INTERVAL_MS;
     if (next < Number(data.startEpochMs)) {
@@ -575,10 +607,12 @@ export const sweepLiveActivityRefresh = onSchedule(
         continue;
       }
 
-      // Avoid double-firing within the same ~45s window (task + sweep).
+      // Avoid double-firing within the same ~45s window (task + sweep),
+      // except when we still owe the one-minute alert.
+      const alertNow = wantsOneMinuteAlert(data, now);
       const lastOk = data.lastRemoteUpdateOk === true;
       const lastAt = Number(data.lastRemoteUpdateAt || 0);
-      if (lastOk && now - lastAt < 45_000) {
+      if (lastOk && now - lastAt < 45_000 && !alertNow) {
         skipped += 1;
         continue;
       }
@@ -598,7 +632,12 @@ export const sweepLiveActivityRefresh = onSchedule(
         await docSnap.ref.update({ status: "started" });
       }
 
-      const ok = await sendUpdateForSchedule(docSnap.id, data, "countdown");
+      const ok = await sendUpdateForSchedule(
+        docSnap.id,
+        data,
+        alertNow ? "notify1m" : "countdown",
+        { withAlert: alertNow },
+      );
       if (ok) sent += 1;
       else skipped += 1;
     }

@@ -18,29 +18,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { App } from "@capacitor/app";
-import {
-  getLiveActivityRemoteStatus,
-  initLiveActivityRemote,
-  fetchRemoteLaDiagnostics,
-  type LiveActivityRemoteStatus,
-  type RemoteLaDiagnostics,
-} from "@/lib/la-remote";
-import {
-  getLiveActivityLocalStatus,
-  isLiveActivitySupported,
-  refreshLiveActivities,
-  type LiveActivityLocalStatus,
-} from "@/lib/live-activity";
-import { initFcmRegistration } from "@/lib/fcm";
-import {
-  clearLaDebugLog,
-  formatLaDebugLogForCopy,
-  getLaDebugLog,
-  laDebugLog,
-  subscribeLaDebugLog,
-  type LaDebugEntry,
-} from "@/lib/la-debug-log";
-import { LiveActivities } from "@/lib/live-activity";
 
 const APP_VERSION = "1.0.0";
 const PREVIEW_LIMIT = 4;
@@ -59,19 +36,6 @@ export default function Settings({ staticPreview = false }: Props) {
   const [userEnabled, setUserEnabled] = useState(getNotificationsUserEnabled());
   const [listOpen, setListOpen] = useState(false);
   const [requesting, setRequesting] = useState(false);
-  const showLaStatus = isLiveActivitySupported();
-  const [remoteStatus, setRemoteStatus] = useState<LiveActivityRemoteStatus | null>(() =>
-    isLiveActivitySupported() ? getLiveActivityRemoteStatus() : null,
-  );
-  const [localStatus, setLocalStatus] = useState<LiveActivityLocalStatus | null>(() =>
-    isLiveActivitySupported() ? getLiveActivityLocalStatus() : null,
-  );
-  const [debugLog, setDebugLog] = useState<readonly LaDebugEntry[]>(() => getLaDebugLog());
-  const [nativeDebugJson, setNativeDebugJson] = useState<string>("");
-  const [remoteDiag, setRemoteDiag] = useState<RemoteLaDiagnostics | null>(null);
-  const [copyHint, setCopyHint] = useState<string | null>(null);
-
-  useEffect(() => subscribeLaDebugLog(() => setDebugLog([...getLaDebugLog()])), []);
 
   const refreshPermission = async () => {
     if (!isNative()) return;
@@ -79,101 +43,9 @@ export default function Settings({ staticPreview = false }: Props) {
     setPerm(s);
   };
 
-  const refreshLaStatus = async () => {
-    if (!showLaStatus) {
-      setRemoteStatus(null);
-      setLocalStatus(null);
-      return;
-    }
-    clearLaDebugLog();
-    laDebugLog("ui", "Recheck tapped");
-    // Paint status immediately — never hide the card while Auth/Firestore hangs.
-    setRemoteStatus(getLiveActivityRemoteStatus());
-    setLocalStatus(getLiveActivityLocalStatus());
-    try {
-      const info = await LiveActivities.getTokenDebugInfo();
-      setNativeDebugJson(JSON.stringify(info, null, 2));
-      laDebugLog("ui", `native snapshot: ${JSON.stringify(info)}`);
-    } catch (err) {
-      setNativeDebugJson(`getTokenDebugInfo failed: ${err instanceof Error ? err.message : String(err)}`);
-      laDebugLog("ui", `native snapshot failed: ${err instanceof Error ? err.message : String(err)}`, "error");
-    }
-    try {
-      await refreshLiveActivities();
-      setLocalStatus(getLiveActivityLocalStatus());
-    } catch {
-      /* ignore */
-    }
-    try {
-      await initFcmRegistration();
-    } catch {
-      /* ignore */
-    }
-    try {
-      await initLiveActivityRemote();
-    } catch {
-      /* ignore */
-    }
-    // After APNs/FCM are ready, refresh again so a local-only LA can be
-    // recreated with pushType:.token and yield updateToken.
-    try {
-      await refreshLiveActivities();
-      const { token } = await LiveActivities.getUpdateToken();
-      if (token) {
-        laDebugLog("ui", `updateToken after relaunch poll (len=${token.length})`, "ok");
-      } else {
-        laDebugLog("ui", "updateToken still empty after relaunch poll", "warn");
-      }
-    } catch {
-      /* ignore */
-    }
-    setLocalStatus(getLiveActivityLocalStatus());
-    setRemoteStatus(getLiveActivityRemoteStatus());
-    try {
-      const diag = await fetchRemoteLaDiagnostics();
-      setRemoteDiag(diag);
-    } catch {
-      setRemoteDiag(null);
-    }
-    setRemoteStatus(getLiveActivityRemoteStatus());
-    laDebugLog("ui", "Recheck finished");
-  };
-
-  const copyDebugLog = async () => {
-    let diag = remoteDiag;
-    try {
-      diag = (await fetchRemoteLaDiagnostics()) ?? diag;
-      setRemoteDiag(diag);
-    } catch {
-      /* keep previous */
-    }
-    const text = [
-      "=== Essences LA / FCM debug ===",
-      `at: ${new Date().toISOString()}`,
-      `remote: ${JSON.stringify(getLiveActivityRemoteStatus(), null, 2)}`,
-      `local: ${JSON.stringify(getLiveActivityLocalStatus(), null, 2)}`,
-      `native: ${nativeDebugJson || "(none)"}`,
-      `server: ${diag ? JSON.stringify(diag, null, 2) : "(none — open Recheck after Cloud Functions run)"}`,
-      "--- log ---",
-      formatLaDebugLogForCopy(),
-    ].join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyHint(locale === "ja" ? "ログをコピーしました" : "Copied");
-    } catch {
-      setCopyHint(locale === "ja" ? "コピーに失敗しました" : "Copy failed");
-    }
-    setTimeout(() => setCopyHint(null), 2000);
-  };
-
   useEffect(() => setReusable(loadReusable()), []);
   useEffect(() => {
     void refreshPermission();
-    if (showLaStatus) {
-      setRemoteStatus(getLiveActivityRemoteStatus());
-      setLocalStatus(getLiveActivityLocalStatus());
-      void refreshLaStatus();
-    }
   }, []);
 
   useEffect(() => {
@@ -375,133 +247,6 @@ export default function Settings({ staticPreview = false }: Props) {
             </button>
           </div>
         </div>
-
-        {showLaStatus && (
-          <div className="bg-card rounded-2xl p-5 shadow-soft">
-            <p className="text-sm font-semibold mb-2">{t("remoteLaStatus")}</p>
-            <p className="text-xs text-muted-foreground leading-relaxed mb-2">
-              {localStatus?.systemEnabled === false
-                ? t("localLaOff")
-                : localStatus?.lastError
-                  ? `${t("remoteLaError")}: ${localStatus.lastError}`
-                  : (localStatus?.activeCount ?? 0) > 0
-                    ? t("localLaActive")
-                    : t("localLaNone")}
-            </p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {!remoteStatus?.configPresent
-                ? t("remoteLaNoConfig")
-                : remoteStatus.authenticated
-                  ? t("remoteLaOk")
-                  : remoteStatus.lastError
-                    ? `${t("remoteLaError")}: ${remoteStatus.lastError}`
-                    : t("remoteLaWaiting")}
-            </p>
-            {remoteStatus?.projectId && (
-              <div className="mt-2 space-y-1 text-[11px] text-muted-foreground/90 font-mono break-all">
-                <p>
-                  {remoteStatus.projectId}
-                  {remoteStatus.deviceUid ? ` · uid ${remoteStatus.deviceUid.slice(0, 8)}…` : ""}
-                </p>
-                <p>
-                  FCM {remoteStatus.hasFcmToken ? "✓" : "✗"}
-                  {" · "}
-                  pushToStart {remoteStatus.hasPushToStartToken ? "✓" : "✗"}
-                  {" · "}
-                  updateToken {remoteStatus.hasUpdateToken ? "✓" : "✗"}
-                </p>
-                {remoteStatus.lastSyncAt ? (
-                  <p>lastSync {new Date(remoteStatus.lastSyncAt).toLocaleString()}</p>
-                ) : null}
-                {(remoteStatus.diagnosticHint || remoteStatus.lastError) && (
-                  <p className="text-destructive/90 whitespace-pre-wrap">
-                    {remoteStatus.diagnosticHint || remoteStatus.lastError}
-                  </p>
-                )}
-                {remoteDiag?.lastAttempt && !remoteDiag.lastAttempt.ok && (
-                  <p className="text-destructive/90 whitespace-pre-wrap mt-1">
-                    {locale === "ja"
-                      ? `サーバー更新失敗: ${remoteDiag.lastAttempt.code || "error"}`
-                      : `Server update failed: ${remoteDiag.lastAttempt.code || "error"}`}
-                    {remoteDiag.lastAttempt.hint
-                      ? `\n${remoteDiag.lastAttempt.hint}`
-                      : remoteDiag.lastAttempt.error
-                        ? `\n${remoteDiag.lastAttempt.error}`
-                        : ""}
-                  </p>
-                )}
-                {nativeDebugJson.includes("aps-environment") && (
-                  <p className="text-destructive/90 whitespace-pre-wrap mt-1">
-                    {locale === "ja"
-                      ? "根本原因: 署名済みアプリに Push 用 aps-environment エンタイトルメントがありません。CI の無署名アーカイブが原因でした。Apple Developer → Identifiers → com.confast.essences で Push Notifications を有効にし、修正後の TestFlight を入れ直してください。"
-                      : "Root cause: signed app is missing the aps-environment Push entitlement (unsigned CI archives strip it). Enable Push Notifications on App ID com.confast.essences, then install a newly signed TestFlight build."}
-                  </p>
-                )}
-                {!remoteStatus.hasFcmToken && !nativeDebugJson.includes("aps-environment") && (
-                  <p className="text-muted-foreground whitespace-pre-wrap">
-                    {locale === "ja"
-                      ? "FCM✗: 通知許可後に APNs→FCM トークンが必要です。「再チェック」を押すか、通知を一度オフ→オンにしてください。"
-                      : "FCM✗: Needs APNs→FCM token after notification permission. Tap Recheck or toggle notifications."}
-                  </p>
-                )}
-                {!remoteStatus.hasPushToStartToken && (
-                  <p className="text-muted-foreground whitespace-pre-wrap">
-                    {locale === "ja"
-                      ? "LA✗: ActivityKit の push-to-start トークン未取得（iOS 17.2+ / Live Activities オンが必要）。FCM/APNs が直るまでリモート開始は動きません。"
-                      : "LA✗: No ActivityKit push-to-start token yet (needs iOS 17.2+ and Live Activities On). Remote start waits on FCM/APNs."}
-                  </p>
-                )}
-              </div>
-            )}
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => void refreshLaStatus()}
-                className="text-xs text-accent font-medium"
-              >
-                {locale === "ja" ? "再チェック" : "Recheck"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void copyDebugLog()}
-                className="text-xs text-muted-foreground font-medium underline-offset-2 hover:underline"
-              >
-                {locale === "ja" ? "ログをコピー" : "Copy log"}
-              </button>
-              {copyHint && (
-                <span className="text-[11px] text-muted-foreground">{copyHint}</span>
-              )}
-            </div>
-            {(nativeDebugJson || debugLog.length > 0) && (
-              <div className="mt-3 rounded-xl bg-secondary/40 p-3 max-h-64 overflow-y-auto">
-                <p className="text-[10px] font-semibold text-muted-foreground mb-1.5">
-                  {locale === "ja" ? "診断ログ（詳細）" : "Diagnostic log"}
-                </p>
-                {nativeDebugJson ? (
-                  <pre className="text-[10px] font-mono text-muted-foreground/90 whitespace-pre-wrap break-all mb-2">
-                    {nativeDebugJson}
-                  </pre>
-                ) : null}
-                <div className="space-y-1">
-                  {debugLog.map((e) => (
-                    <p
-                      key={e.id}
-                      className={cn(
-                        "text-[10px] font-mono leading-snug break-all",
-                        e.level === "error" && "text-destructive",
-                        e.level === "warn" && "text-amber-700 dark:text-amber-400",
-                        e.level === "ok" && "text-emerald-700 dark:text-emerald-400",
-                        e.level === "info" && "text-muted-foreground",
-                      )}
-                    >
-                      {new Date(e.at).toLocaleTimeString()} [{e.source}] {e.message}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         <div className="bg-card rounded-2xl p-5 shadow-soft mb-6">
           <div className="flex items-center gap-2 mb-4">
