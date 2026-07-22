@@ -1,6 +1,7 @@
 # Deploy Firebase Cloud Functions the same way as README / prior successful deploys.
 # Usage:
 #   cd C:\Users\yutaa\remix-of-daily-bloom-2-for-the-first-publishing
+#   Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
 #   .\scripts\deploy-functions.ps1
 #
 # If auth fails:
@@ -36,7 +37,7 @@ $SavedNodeOptions = $env:NODE_OPTIONS
 Write-Host "Installing functions dependencies..." -ForegroundColor Cyan
 Push-Location (Join-Path $RepoRoot "functions")
 try {
-  # Clear NODE_OPTIONS for npm — no-keepalive is only needed for firebase CLI TLS.
+  # Clear NODE_OPTIONS for npm - no-keepalive is only needed for firebase CLI TLS.
   Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
   npm install
   if ($LASTEXITCODE -ne 0) { throw "npm install failed (exit $LASTEXITCODE)" }
@@ -70,10 +71,3 @@ if ($deployExit -ne 0) {
 }
 
 Write-Host "Done." -ForegroundColor Green
-Write-Host ""
-Write-Host "Next (kill-path check):" -ForegroundColor Cyan
-Write-Host "  1. LA を表示してアプリを完全終了"
-Write-Host "  2. 1〜2分待つ"
-Write-Host "  3. Firestore laSchedules で lastRemoteUpdateOk / lastRemoteUpdateCode を確認"
-Write-Host "  4. messaging/third-party-auth-error なら Cloud Messaging の APNs Key ID/Team ID を再確認"
-Write-Host "     (docs/LA_REMOTE_UPDATE_DIAGNOSTICS.md)"
