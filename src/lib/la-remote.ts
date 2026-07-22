@@ -339,6 +339,28 @@ export async function initLiveActivityRemote(): Promise<void> {
         );
       }
     }
+
+    // Update token: rebroadcast cache + poll; refreshLiveActivities may relaunch local-only LA with push.
+    try {
+      const { token } = await LiveActivities.getUpdateToken();
+      if (token) {
+        liveActivityUpdateToken = token;
+        laDebugLog("la", `updateToken from native cache (len=${token.length})`, "ok");
+        await upsertDeviceDoc();
+      } else {
+        laDebugLog(
+          "la",
+          "updateToken still empty — will rely on Live Activity relaunch with pushType:.token",
+          "warn",
+        );
+      }
+    } catch (err) {
+      laDebugLog(
+        "la",
+        `getUpdateToken failed: ${err instanceof Error ? err.message : String(err)}`,
+        "warn",
+      );
+    }
   } catch (err) {
     setError(err);
     laDebugLog(

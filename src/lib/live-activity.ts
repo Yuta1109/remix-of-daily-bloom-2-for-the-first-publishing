@@ -38,6 +38,8 @@ export interface LiveActivitiesPlugin {
   startPushToStartTokenUpdates(): Promise<void>;
   /** Cached push-to-start token if ActivityKit has already emitted one. */
   getPushToStartToken(): Promise<{ token: string | null }>;
+  /** Cached Live Activity update push token (for FCM event:update). */
+  getUpdateToken(): Promise<{ token: string | null }>;
   /** Native APNs / LA snapshot for Settings diagnostics. */
   getTokenDebugInfo(): Promise<{
     apnsCacheBytes?: number;
@@ -46,6 +48,8 @@ export interface LiveActivitiesPlugin {
     activitiesEnabled?: boolean;
     activeActivityCount?: number;
     hasPushToStartToken?: boolean;
+    hasUpdateToken?: boolean;
+    laStartedWithoutPush?: boolean;
     iosVersion?: string;
     [key: string]: unknown;
   }>;

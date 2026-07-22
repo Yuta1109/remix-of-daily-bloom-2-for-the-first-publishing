@@ -19,6 +19,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "endAll", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startPushToStartTokenUpdates", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPushToStartToken", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getUpdateToken", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getTokenDebugInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "rebroadcastApnsToken", returnType: CAPPluginReturnPromise),
     ]
@@ -94,6 +95,20 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func getUpdateToken(_ call: CAPPluginCall) {
+        if #available(iOS 16.2, *) {
+            LiveActivityRefreshCenter.start()
+            LiveActivityRefreshCenter.rebroadcastCachedUpdateToken()
+            if let token = LiveActivityRefreshCenter.currentUpdateToken {
+                call.resolve(["token": token])
+            } else {
+                call.resolve(["token": NSNull()])
+            }
+        } else {
+            call.resolve(["token": NSNull()])
+        }
+    }
+
     /// Snapshot for Settings / Gemini debugging (APNs cache, LA enablement, etc.).
     @objc func getTokenDebugInfo(_ call: CAPPluginCall) {
         var info = APNsDeviceTokenCache.debugDictionary()
@@ -114,6 +129,15 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             info["pushToStartPrefix"] = NSNull()
             info["pushToStartNote"] = "iOS < 17.2"
         }
+        if #available(iOS 16.2, *) {
+            let update = LiveActivityRefreshCenter.currentUpdateToken
+            info["hasUpdateToken"] = update != nil
+            info["updateTokenPrefix"] = update.map { String($0.prefix(12)) } as Any
+            info["laStartedWithoutPush"] = LiveActivityRefreshCenter.startedWithoutPush
+        } else {
+            info["hasUpdateToken"] = false
+            info["laStartedWithoutPush"] = NSNull()
+        }
         call.resolve(info)
     }
 
@@ -121,6 +145,9 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func rebroadcastApnsToken(_ call: CAPPluginCall) {
         UIApplication.shared.registerForRemoteNotifications()
         let ok = APNsDeviceTokenCache.rebroadcastToCapacitor()
+        if #available(iOS 16.2, *) {
+            LiveActivityRefreshCenter.rebroadcastCachedUpdateToken()
+        }
         call.resolve([
             "rebroadcast": ok,
             "apnsCacheBytes": APNsDeviceTokenCache.current()?.count ?? 0,
@@ -242,7 +269,16 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         staleDate: Date?,
         relevanceScore: Double
     ) async throws -> String {
-        if let existing = Activity<EssencesWidgetAttributes>.activities.first {
+        let apnsReady = APNsDeviceTokenCache.current() != nil
+        var needsPushRelaunch = false
+        if #available(iOS 16.2, *) {
+            needsPushRelaunch = await LiveActivityRefreshCenter.shouldRelaunchForPush(apnsReady: apnsReady)
+        }
+
+        if needsPushRelaunch {
+            NSLog("[Essences LA] Recreating Live Activity with pushType:.token (missing updateToken)")
+            await endAllActivities()
+        } else if let existing = Activity<EssencesWidgetAttributes>.activities.first {
             if #available(iOS 16.2, *) {
                 await existing.update(
                     ActivityContent(
@@ -251,6 +287,8 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                         relevanceScore: relevanceScore
                     )
                 )
+                LiveActivityRefreshCenter.noteActivitiesChanged()
+                LiveActivityRefreshCenter.rebroadcastCachedUpdateToken()
             } else {
                 await existing.update(using: state)
             }
@@ -273,6 +311,9 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                     content: content,
                     pushType: .token
                 )
+                LiveActivityRefreshCenter.markStartedWithPush()
+                LiveActivityRefreshCenter.noteActivitiesChanged()
+                _ = await LiveActivityRefreshCenter.waitForUpdateToken(timeoutMs: 4000)
                 return activity.id
             } catch {
                 NSLog("[Essences LA] Activity.request(pushType:.token) failed: \(error.localizedDescription) — falling back to local-only (no updateToken)")
@@ -281,6 +322,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                     content: content,
                     pushType: nil
                 )
+                LiveActivityRefreshCenter.markStartedWithoutPush()
                 return activity.id
             }
         } else {

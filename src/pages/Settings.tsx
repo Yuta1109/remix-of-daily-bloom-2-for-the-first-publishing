@@ -111,6 +111,19 @@ export default function Settings({ staticPreview = false }: Props) {
     } catch {
       /* ignore */
     }
+    // After APNs/FCM are ready, refresh again so a local-only LA can be
+    // recreated with pushType:.token and yield updateToken.
+    try {
+      await refreshLiveActivities();
+      const { token } = await LiveActivities.getUpdateToken();
+      if (token) {
+        laDebugLog("ui", `updateToken after relaunch poll (len=${token.length})`, "ok");
+      } else {
+        laDebugLog("ui", "updateToken still empty after relaunch poll", "warn");
+      }
+    } catch {
+      /* ignore */
+    }
     setLocalStatus(getLiveActivityLocalStatus());
     setRemoteStatus(getLiveActivityRemoteStatus());
     laDebugLog("ui", "Recheck finished");
