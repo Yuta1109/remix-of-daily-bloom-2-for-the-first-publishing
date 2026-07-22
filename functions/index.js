@@ -181,6 +181,10 @@ async function sendStartForSchedule(scheduleId, data) {
       hasFcm: !!fcmToken,
       hasLive: !!liveToken,
     });
+    // Local ActivityKit may already be showing the card with an update token.
+    if (fcmToken && device.liveActivityUpdateToken) {
+      return beginUpdateOnlyMode(scheduleId, data, "missing pushToStart; update-only");
+    }
     return false;
   }
 
@@ -214,38 +218,78 @@ async function sendStartForSchedule(scheduleId, data) {
         },
       },
     });
-    await db.collection("laSchedules").doc(scheduleId).update({
-      status: "started",
-      startedAt: Date.now(),
-      lastError: FieldValue.delete(),
-      cloudTaskId: FieldValue.delete(),
-    });
-    const nextRefresh = Date.now() + REFRESH_INTERVAL_MS;
-    if (nextRefresh < Number(data.startEpochMs)) {
-      try {
-        await enqueueRefresh(scheduleId, nextRefresh);
-      } catch (err) {
-        logger.warn("Failed to enqueue LA refresh", err);
-      }
-    }
-    // Flip Lock Screen to "arrived" at event start even if the app is killed.
-    const startAt = Number(data.startEpochMs);
-    if (startAt > Date.now()) {
-      try {
-        await enqueueRefresh(scheduleId, startAt);
-      } catch (err) {
-        logger.warn("Failed to enqueue LA arrived tick", err);
-      }
-    }
+    await markStartedAndEnqueueRefresh(scheduleId, data);
     return true;
   } catch (err) {
     logger.error("FCM live activity start failed", err);
+    // Common when the app already started the activity locally with pushType:.token.
+    if (device.liveActivityUpdateToken && fcmToken) {
+      return beginUpdateOnlyMode(
+        scheduleId,
+        data,
+        `start failed; update-only: ${String(err?.message || err)}`,
+      );
+    }
     await db.collection("laSchedules").doc(scheduleId).update({
       lastError: String(err?.message || err),
       status: "error",
     });
     return false;
   }
+}
+
+async function markStartedAndEnqueueRefresh(scheduleId, data) {
+  await db.collection("laSchedules").doc(scheduleId).update({
+    status: "started",
+    startedAt: Date.now(),
+    lastError: FieldValue.delete(),
+    cloudTaskId: FieldValue.delete(),
+  });
+  const nextRefresh = Date.now() + REFRESH_INTERVAL_MS;
+  if (nextRefresh < Number(data.startEpochMs)) {
+    try {
+      await enqueueRefresh(scheduleId, nextRefresh);
+    } catch (err) {
+      logger.warn("Failed to enqueue LA refresh", err);
+    }
+  }
+  const startAt = Number(data.startEpochMs);
+  if (startAt > Date.now()) {
+    try {
+      await enqueueRefresh(scheduleId, startAt);
+    } catch (err) {
+      logger.warn("Failed to enqueue LA arrived tick", err);
+    }
+  }
+}
+
+async function beginUpdateOnlyMode(scheduleId, data, note) {
+  logger.info("LA update-only mode", scheduleId, note);
+  await db.collection("laSchedules").doc(scheduleId).update({
+    status: "started",
+    startedAt: Date.now(),
+    lastError: note,
+    cloudTaskId: FieldValue.delete(),
+  });
+  try {
+    await sendUpdateForSchedule(scheduleId, data, "countdown");
+  } catch (err) {
+    logger.warn("Immediate LA update failed", err);
+  }
+  try {
+    await enqueueRefresh(scheduleId, Date.now() + 15_000);
+  } catch (err) {
+    logger.warn("Failed to enqueue update-only refresh", err);
+  }
+  const startAt = Number(data.startEpochMs);
+  if (startAt > Date.now()) {
+    try {
+      await enqueueRefresh(scheduleId, startAt);
+    } catch (err) {
+      logger.warn("Failed to enqueue arrived refresh", err);
+    }
+  }
+  return true;
 }
 
 async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
@@ -284,6 +328,7 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
         },
       },
     });
+    logger.info("LA update sent", scheduleId, { phase });
     return true;
   } catch (err) {
     logger.warn("FCM live activity update failed", scheduleId, err);
@@ -413,6 +458,21 @@ export const onLaScheduleWrite = onDocumentWritten(
       return;
     }
 
+    // Local ActivityKit already started the card — kick the minute update loop
+    // when we newly enter "started" (not on every metadata rewrite).
+    if (after.status === "started") {
+      await deleteTaskBestEffort(after.cloudTaskId || before?.cloudTaskId);
+      if (!before || before.status !== "started") {
+        try {
+          await enqueueRefresh(scheduleId, Date.now() + 5_000);
+          logger.info("Enqueued refresh for started schedule", scheduleId);
+        } catch (err) {
+          logger.warn("Failed to enqueue refresh for started schedule", err);
+        }
+      }
+      return;
+    }
+
     if (after.status !== "pending" && after.status !== "due") {
       await deleteTaskBestEffort(after.cloudTaskId || before?.cloudTaskId);
       return;
@@ -449,6 +509,52 @@ export const onLaScheduleWrite = onDocumentWritten(
       await afterSnap.ref.update({
         lastError: `enqueue: ${String(err?.message || err)}`,
       });
+    }
+  },
+);
+
+/**
+ * When the device finally uploads liveActivityUpdateToken (often AFTER a local
+ * Live Activity start), kick the refresh loop for active schedules.
+ */
+export const onDeviceTokenWrite = onDocumentWritten(
+  "devices/{deviceId}",
+  async (event) => {
+    const after = event.data?.after?.exists ? event.data.after.data() : null;
+    const before = event.data?.before?.exists ? event.data.before.data() : null;
+    if (!after) return;
+
+    const tokenNow = after.liveActivityUpdateToken;
+    const tokenBefore = before?.liveActivityUpdateToken;
+    const fcmNow = after.fcmToken;
+    if (!tokenNow || !fcmNow) return;
+    if (tokenNow === tokenBefore && fcmNow === before?.fcmToken) return;
+
+    const deviceId = event.params.deviceId;
+    const snap = await db
+      .collection("laSchedules")
+      .where("deviceId", "==", deviceId)
+      .get();
+
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      const status = data.status;
+      if (status === "pending") continue;
+      if (Number(data.endAtEpochMs) <= Date.now()) continue;
+
+      if (status === "due" || status === "error") {
+        await sendStartForSchedule(docSnap.id, data);
+        continue;
+      }
+      if (status === "started") {
+        try {
+          await sendUpdateForSchedule(docSnap.id, data, "countdown");
+          await enqueueRefresh(docSnap.id, Date.now() + REFRESH_INTERVAL_MS);
+          logger.info("Kicked refresh after device token upload", docSnap.id);
+        } catch (err) {
+          logger.warn("Failed to kick refresh after device token", err);
+        }
+      }
     }
   },
 );

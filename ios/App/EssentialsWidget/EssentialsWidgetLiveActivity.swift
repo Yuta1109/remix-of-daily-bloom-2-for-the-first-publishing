@@ -70,21 +70,28 @@ private struct CountdownOrArrivedLabel: View {
     let target: Date
     let locale: String
     let phase: String
+    /// Bumped by Activity.update / FCM so Lock Screen re-evaluates relative text
+    /// even when TimelineView is throttled (common with the app killed).
+    let tick: Int
 
     var body: some View {
         // Periodic redraw so the relative label advances while the system
         // allows Live Activity timeline refreshes (and after push/local update).
         TimelineView(.periodic(from: .now, by: 60)) { context in
+            let now = context.date
+            // Reference `tick` so content-state updates always invalidate this view.
+            let _ = tick
             Text(
                 phase == "arrived"
                     ? arrivedText(locale)
-                    : relativeRemainingText(to: target, now: context.date, locale: locale)
+                    : relativeRemainingText(to: target, now: now, locale: locale)
             )
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(EssencesLAStyle.accent)
         .lineLimit(1)
         .minimumScaleFactor(0.85)
+        .id(tick)
     }
 }
 
@@ -120,7 +127,8 @@ struct LockScreenView: View {
                     CountdownOrArrivedLabel(
                         target: item.startDate,
                         locale: state.locale,
-                        phase: state.phase
+                        phase: state.phase,
+                        tick: state.tick
                     )
                     .frame(minWidth: 72, alignment: .trailing)
                 }

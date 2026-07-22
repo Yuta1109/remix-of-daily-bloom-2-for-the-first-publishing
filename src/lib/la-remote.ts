@@ -391,12 +391,53 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
     const existing = await getDocs(
       query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid)),
     );
+    const existingById = new Map(existing.docs.map((d) => [d.id, d]));
+    const desiredIds = new Set<string>();
     const batch = writeBatch(db);
-    existing.forEach((d) => batch.delete(d.ref));
 
     for (const w of windows) {
       if (w.startEpochMs <= now.getTime()) continue; // don't re-push after start
-      const ref = doc(collection(db, "laSchedules"), `${deviceUid}_${w.eventId}`);
+      const id = `${deviceUid}_${w.eventId}`;
+      desiredIds.add(id);
+      const ref = doc(collection(db, "laSchedules"), id);
+      const prev = existingById.get(id)?.data() as
+        | { status?: string; showAtEpochMs?: number; startEpochMs?: number; endAtEpochMs?: number }
+        | undefined;
+
+      // Local ActivityKit owns the card when activeNow. Prefer "started" once
+      // we have an updateToken (or CF already marked started) so Functions skip
+      // FCM start and keep the minute refresh loop.
+      let status: "pending" | "due" | "started" = "pending";
+      if (w.activeNow) {
+        if (liveActivityUpdateToken || prev?.status === "started") {
+          status = "started";
+        } else {
+          status = "due";
+        }
+      }
+
+      // Preserve an in-flight "started" row's status lifecycle — only refresh
+      // title/locale if the timing window is unchanged.
+      if (
+        prev?.status === "started" &&
+        status === "started" &&
+        prev.showAtEpochMs === w.showAtEpochMs &&
+        prev.startEpochMs === w.startEpochMs &&
+        prev.endAtEpochMs === w.endEpochMs
+      ) {
+        batch.set(
+          ref,
+          {
+            title: w.title,
+            color: w.color,
+            locale,
+            updatedAt: Date.now(),
+          },
+          { merge: true },
+        );
+        continue;
+      }
+
       batch.set(ref, {
         deviceId: deviceUid,
         eventId: w.eventId,
@@ -406,10 +447,14 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
         showAtEpochMs: w.showAtEpochMs,
         endAtEpochMs: w.endEpochMs,
         startEpochMs: w.startEpochMs,
-        status: w.activeNow ? "due" : "pending",
+        status,
         updatedAt: Date.now(),
       });
     }
+
+    existing.forEach((d) => {
+      if (!desiredIds.has(d.id)) batch.delete(d.ref);
+    });
     await batch.commit();
     lastSyncAt = Date.now();
     // Preserve token-acquisition diagnostics (FCM✗ / pushToStart✗).
