@@ -496,9 +496,12 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
 
   try {
     const now = new Date();
+    const nowMs = now.getTime();
     const locale = currentLocale();
-    // Only schedule remote push for not-yet-started windows.
-    const windows = collectLiveActivityWindows(now).filter((w) => w.activeNow || w.showAtEpochMs > now.getTime());
+    // Keep lead + linger windows so remote aggregates can show up to 3 rows.
+    const windows = collectLiveActivityWindows(now).filter(
+      (w) => w.visibleNow || w.showAtEpochMs > nowMs,
+    );
 
     const existing = await getDocs(
       query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid)),
@@ -508,17 +511,21 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
     const batch = writeBatch(db);
 
     for (const w of windows) {
-      if (w.startEpochMs <= now.getTime()) continue; // don't re-push after start
       const id = `${deviceUid}_${w.eventId}`;
       desiredIds.add(id);
       const ref = doc(collection(db, "laSchedules"), id);
       const prev = existingById.get(id)?.data() as
-        | { status?: string; showAtEpochMs?: number; startEpochMs?: number; endAtEpochMs?: number }
+        | {
+            status?: string;
+            showAtEpochMs?: number;
+            startEpochMs?: number;
+            endAtEpochMs?: number;
+          }
         | undefined;
 
-      // Local ActivityKit owns the card when activeNow. Prefer "started" once
-      // we have an updateToken (or CF already marked started) so Functions skip
-      // FCM start and keep the minute refresh loop.
+      // pending: future showAt
+      // due: lead window open, waiting for FCM start
+      // started: local or remote activity is (or should be) live, including linger
       let status: "pending" | "due" | "started" = "pending";
       if (w.activeNow) {
         if (liveActivityUpdateToken || prev?.status === "started") {
@@ -526,13 +533,16 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
         } else {
           status = "due";
         }
+      } else if (w.visibleNow && nowMs >= w.startEpochMs) {
+        status = "started";
+      } else if (prev?.status === "started" && w.visibleNow) {
+        status = "started";
       }
 
-      // Preserve an in-flight "started" row's status lifecycle — only refresh
-      // title/locale if the timing window is unchanged.
+      // Preserve Cloud Task ids / remote diagnostics — never wipe the doc.
       if (
-        prev?.status === "started" &&
-        status === "started" &&
+        prev &&
+        prev.status === status &&
         prev.showAtEpochMs === w.showAtEpochMs &&
         prev.startEpochMs === w.startEpochMs &&
         prev.endAtEpochMs === w.endEpochMs
@@ -550,18 +560,22 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
         continue;
       }
 
-      batch.set(ref, {
-        deviceId: deviceUid,
-        eventId: w.eventId,
-        title: w.title,
-        color: w.color,
-        locale,
-        showAtEpochMs: w.showAtEpochMs,
-        endAtEpochMs: w.endEpochMs,
-        startEpochMs: w.startEpochMs,
-        status,
-        updatedAt: Date.now(),
-      });
+      batch.set(
+        ref,
+        {
+          deviceId: deviceUid,
+          eventId: w.eventId,
+          title: w.title,
+          color: w.color,
+          locale,
+          showAtEpochMs: w.showAtEpochMs,
+          endAtEpochMs: w.endEpochMs,
+          startEpochMs: w.startEpochMs,
+          status,
+          updatedAt: Date.now(),
+        },
+        { merge: true },
+      );
     }
 
     existing.forEach((d) => {

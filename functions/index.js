@@ -88,6 +88,70 @@ function buildContentState(data, tick = 0, phase = "countdown") {
   };
 }
 
+const MAX_LA_ITEMS = 3;
+
+/**
+ * Lock Screen shows one shared activity with up to 3 concurrent events.
+ * Aggregate all visible schedules for the device (not just the one firing).
+ */
+async function buildAggregatedContentState(
+  deviceId,
+  { tick = Date.now(), phase = "countdown", includeScheduleId = null, includeData = null } = {},
+) {
+  const now = Date.now();
+  const snap = await db.collection("laSchedules").where("deviceId", "==", deviceId).get();
+  const byId = new Map();
+  for (const docSnap of snap.docs) {
+    byId.set(docSnap.id, docSnap.data());
+  }
+  if (includeScheduleId && includeData) {
+    byId.set(includeScheduleId, { ...byId.get(includeScheduleId), ...includeData });
+  }
+
+  const rows = [];
+  let locale = "ja";
+  let maxEndAt = 0;
+  for (const [id, d] of byId) {
+    if (!d) continue;
+    if (d.status === "error" || d.status === "expired") continue;
+    const showAt = Number(d.showAtEpochMs);
+    const endAt = Number(d.endAtEpochMs);
+    const startAt = Number(d.startEpochMs);
+    if (!(endAt > now)) continue;
+
+    const isFocus = id === includeScheduleId;
+    const windowOpen = showAt <= now || isFocus;
+    if (!windowOpen) continue;
+    if (d.status === "pending" && showAt > now && !isFocus) continue;
+
+    locale = String(d.locale || locale);
+    maxEndAt = Math.max(maxEndAt, endAt);
+    rows.push({
+      title: String(d.title || ""),
+      startEpochMs: startAt,
+      color: String(d.color || "blue"),
+    });
+  }
+
+  rows.sort((a, b) => a.startEpochMs - b.startEpochMs);
+  const items = rows.slice(0, MAX_LA_ITEMS);
+  const overflow = Math.max(0, rows.length - MAX_LA_ITEMS);
+  const anyCounting = rows.some((r) => r.startEpochMs > now);
+  const resolvedPhase =
+    phase === "notify1m" ? "countdown" : anyCounting ? "countdown" : "arrived";
+
+  return {
+    contentState: {
+      items,
+      overflow,
+      locale: String(includeData?.locale || locale || "ja"),
+      tick: Number(tick) || 0,
+      phase: resolvedPhase,
+    },
+    staleSec: Math.floor((maxEndAt || Number(includeData?.endAtEpochMs) || now + 30 * 60_000) / 1000),
+  };
+}
+
 async function enqueueRefresh(scheduleId, atMs) {
   if (atMs <= Date.now()) atMs = Date.now() + 15_000;
   const uri = await getFunctionUrl(REFRESH_FN);
@@ -179,22 +243,53 @@ async function sendStartForSchedule(scheduleId, data) {
   const device = deviceSnap.data() || {};
   const fcmToken = device.fcmToken;
   const liveToken = device.pushToStartToken;
-  if (!fcmToken || !liveToken) {
-    logger.warn("Missing tokens for device", data.deviceId, {
-      hasFcm: !!fcmToken,
-      hasLive: !!liveToken,
+  const updateToken = device.liveActivityUpdateToken;
+  if (!fcmToken) {
+    logger.warn("Missing FCM token for device", data.deviceId);
+    return false;
+  }
+
+  const aggregated = await buildAggregatedContentState(data.deviceId, {
+    tick: Date.now(),
+    phase: "countdown",
+    includeScheduleId: scheduleId,
+    includeData: { ...data, status: "due" },
+  });
+  if (!aggregated.contentState.items.length) {
+    logger.warn("No items to start for schedule", scheduleId);
+    return false;
+  }
+
+  const alertTitle = data.locale === "en" ? "Upcoming" : "今後の予定";
+  const alertBody = String(data.title || "");
+
+  // Prefer update when an Activity is already live (multi-event card).
+  if (updateToken) {
+    const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
+      withAlert: true,
+      contentState: aggregated.contentState,
+      staleSec: aggregated.staleSec,
+      alertTitle,
+      alertBody,
     });
-    // Local ActivityKit may already be showing the card with an update token.
-    if (fcmToken && device.liveActivityUpdateToken) {
-      return beginUpdateOnlyMode(scheduleId, data, "missing pushToStart; update-only");
+    if (ok) {
+      await markStartedAndEnqueueRefresh(scheduleId, data);
+      return true;
     }
+    // Avoid a second push-to-start Activity when one is likely already on Lock Screen.
+    return beginUpdateOnlyMode(
+      scheduleId,
+      data,
+      "update failed while updateToken present; keep single card",
+    );
+  }
+
+  if (!liveToken) {
+    logger.warn("Missing pushToStart token for device", data.deviceId);
     return false;
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  const staleSec = Math.floor(Number(data.endAtEpochMs) / 1000);
-  const contentState = buildContentState(data, 0);
-
   try {
     await messaging.send({
       token: fcmToken,
@@ -209,10 +304,14 @@ async function sendStartForSchedule(scheduleId, data) {
           aps: {
             timestamp: nowSec,
             event: "start",
-            "content-state": contentState,
+            "content-state": aggregated.contentState,
             "attributes-type": ATTRIBUTES_TYPE,
             attributes: { name: "Essences" },
-            "stale-date": staleSec,
+            "stale-date": aggregated.staleSec,
+            alert: {
+              title: alertTitle,
+              body: alertBody,
+            },
           },
         },
       },
@@ -222,7 +321,7 @@ async function sendStartForSchedule(scheduleId, data) {
   } catch (err) {
     logger.error("FCM live activity start failed", err);
     // Common when the app already started the activity locally with pushType:.token.
-    if (device.liveActivityUpdateToken && fcmToken) {
+    if (updateToken) {
       return beginUpdateOnlyMode(
         scheduleId,
         data,
@@ -264,7 +363,11 @@ async function beginUpdateOnlyMode(scheduleId, data, note) {
     cloudTaskId: FieldValue.delete(),
   });
   try {
-    await sendUpdateForSchedule(scheduleId, data, "countdown");
+    await sendUpdateForSchedule(scheduleId, data, "countdown", {
+      withAlert: true,
+      alertTitle: data.locale === "en" ? "Upcoming" : "今後の予定",
+      alertBody: String(data.title || ""),
+    });
   } catch (err) {
     logger.warn("Immediate LA update failed", err);
   }
@@ -297,8 +400,9 @@ async function enqueueOneMinuteAndArrived(scheduleId, data) {
 }
 
 /**
- * Silent content updates by default. Only the single 1-minute-before push
- * includes `alert` (notification + vibration). Minute redraws must stay quiet.
+ * Silent content updates by default. Alert (notification + vibration) only for:
+ *  - Live Activity start / first appearance
+ *  - the single 1-minute-before reminder
  */
 async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts = {}) {
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
@@ -323,18 +427,33 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
   const now = Date.now();
   const withAlert = opts.withAlert === true;
   const nowSec = Math.floor(now / 1000);
-  const staleSec = Math.floor(Number(data.endAtEpochMs) / 1000);
-  const contentPhase = phase === "notify1m" ? "countdown" : phase;
+  const aggregated =
+    opts.contentState && opts.staleSec
+      ? { contentState: opts.contentState, staleSec: opts.staleSec }
+      : await buildAggregatedContentState(data.deviceId, {
+          tick: now,
+          phase,
+          includeScheduleId: scheduleId,
+          includeData: data,
+        });
+
+  if (!aggregated.contentState.items.length) {
+    logger.info("Skip LA refresh — no visible items", scheduleId);
+    return false;
+  }
+
   const aps = {
     timestamp: nowSec,
     event: "update",
-    "content-state": buildContentState(data, now, contentPhase),
-    "stale-date": staleSec,
+    "content-state": aggregated.contentState,
+    "stale-date": aggregated.staleSec,
   };
   if (withAlert) {
     aps.alert = {
-      title: data.locale === "en" ? "Starting soon" : "まもなく開始",
-      body: String(data.title || ""),
+      title:
+        opts.alertTitle ||
+        (data.locale === "en" ? "Starting soon" : "まもなく開始"),
+      body: opts.alertBody || String(data.title || ""),
     };
   }
 
@@ -351,14 +470,18 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
         payload: { aps },
       },
     });
-    logger.info("LA update sent", scheduleId, { phase, withAlert });
+    logger.info("LA update sent", scheduleId, {
+      phase,
+      withAlert,
+      itemCount: aggregated.contentState.items.length,
+    });
     await recordRemoteResult(scheduleId, data.deviceId, {
       ok: true,
       phase,
       code: null,
       error: null,
     });
-    if (withAlert) {
+    if (withAlert && phase === "notify1m") {
       try {
         await db.collection("laSchedules").doc(scheduleId).update({
           oneMinuteAlertSentAt: now,
@@ -581,10 +704,29 @@ export const sweepLiveActivityRefresh = onSchedule(
   },
   async () => {
     const now = Date.now();
-    const [startedSnap, arrivedSnap] = await Promise.all([
+    const [startedSnap, arrivedSnap, pendingSnap, dueSnap] = await Promise.all([
       db.collection("laSchedules").where("status", "==", "started").get(),
       db.collection("laSchedules").where("status", "==", "arrived").get(),
+      db.collection("laSchedules").where("status", "==", "pending").get(),
+      db.collection("laSchedules").where("status", "==", "due").get(),
     ]);
+
+    // Catch missed Cloud Task starts while the app is force-quit.
+    let startedNow = 0;
+    for (const docSnap of [...pendingSnap.docs, ...dueSnap.docs]) {
+      const data = docSnap.data();
+      if (Number(data.endAtEpochMs) <= now) {
+        await docSnap.ref.update({ status: "expired" });
+        continue;
+      }
+      if (Number(data.showAtEpochMs) > now) continue;
+      try {
+        const ok = await sendStartForSchedule(docSnap.id, data);
+        if (ok) startedNow += 1;
+      } catch (err) {
+        logger.warn("LA sweep start failed", docSnap.id, err);
+      }
+    }
 
     const docs = [
       ...startedSnap.docs,
@@ -592,7 +734,7 @@ export const sweepLiveActivityRefresh = onSchedule(
       ...arrivedSnap.docs.filter((d) => d.data()?.lastRemoteUpdateOk === false),
     ];
 
-    if (docs.length === 0) {
+    if (docs.length === 0 && startedNow === 0) {
       logger.info("LA sweep: no started schedules");
       return;
     }
@@ -641,7 +783,7 @@ export const sweepLiveActivityRefresh = onSchedule(
       if (ok) sent += 1;
       else skipped += 1;
     }
-    logger.info("LA sweep done", { sent, skipped, total: docs.length });
+    logger.info("LA sweep done", { sent, skipped, startedNow, total: docs.length });
   },
 );
 

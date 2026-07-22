@@ -69,7 +69,6 @@ private func relativeRemainingText(to target: Date, now: Date, locale: String) -
 private struct CountdownOrArrivedLabel: View {
     let target: Date
     let locale: String
-    let phase: String
     /// Bumped by Activity.update / FCM so Lock Screen re-evaluates relative text
     /// even when TimelineView is throttled (common with the app killed).
     let tick: Int
@@ -81,8 +80,10 @@ private struct CountdownOrArrivedLabel: View {
             let now = context.date
             // Reference `tick` so content-state updates always invalidate this view.
             let _ = tick
+            // Per-row: each event has its own start — do not use a global phase
+            // (that made every row flip to "arrived" when the earliest started).
             Text(
-                phase == "arrived"
+                now >= target
                     ? arrivedText(locale)
                     : relativeRemainingText(to: target, now: now, locale: locale)
             )
@@ -127,7 +128,6 @@ struct LockScreenView: View {
                     CountdownOrArrivedLabel(
                         target: item.startDate,
                         locale: state.locale,
-                        phase: state.phase,
                         tick: state.tick
                     )
                     .frame(minWidth: 72, alignment: .trailing)
