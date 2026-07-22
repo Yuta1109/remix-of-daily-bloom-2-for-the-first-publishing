@@ -107,6 +107,14 @@ widget_target.build_configurations.each do |cfg|
   bs["SWIFT_VERSION"] = SWIFT_VERSION
   bs["TARGETED_DEVICE_FAMILY"] = "1,2"
   bs["CODE_SIGN_STYLE"] = "Automatic"
+  # Let xcodebuild / Automatic pick identity — do not force Distribution here.
+  bs.delete("CODE_SIGN_IDENTITY")
+  bs.delete("CODE_SIGN_IDENTITY[sdk=iphoneos*]")
+  if ENV["DEVELOPMENT_TEAM"] && !ENV["DEVELOPMENT_TEAM"].empty?
+    bs["DEVELOPMENT_TEAM"] = ENV["DEVELOPMENT_TEAM"]
+  elsif ENV["APPLE_TEAM_ID"] && !ENV["APPLE_TEAM_ID"].empty?
+    bs["DEVELOPMENT_TEAM"] = ENV["APPLE_TEAM_ID"]
+  end
   bs["GENERATE_INFOPLIST_FILE"] = "NO"
   bs["SKIP_INSTALL"] = "YES"
   bs["CURRENT_PROJECT_VERSION"] = "1"
@@ -116,6 +124,18 @@ widget_target.build_configurations.each do |cfg|
     "@executable_path/Frameworks",
     "@executable_path/../../Frameworks",
   ]
+end
+
+# Keep App target on Automatic too (no forced Distribution identity).
+app_target.build_configurations.each do |cfg|
+  cfg.build_settings["CODE_SIGN_STYLE"] = "Automatic"
+  cfg.build_settings.delete("CODE_SIGN_IDENTITY")
+  cfg.build_settings.delete("CODE_SIGN_IDENTITY[sdk=iphoneos*]")
+  if ENV["DEVELOPMENT_TEAM"] && !ENV["DEVELOPMENT_TEAM"].empty?
+    cfg.build_settings["DEVELOPMENT_TEAM"] = ENV["DEVELOPMENT_TEAM"]
+  elsif ENV["APPLE_TEAM_ID"] && !ENV["APPLE_TEAM_ID"].empty?
+    cfg.build_settings["DEVELOPMENT_TEAM"] = ENV["APPLE_TEAM_ID"]
+  end
 end
 
 # --- 3. Widget source files -------------------------------------------------

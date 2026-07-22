@@ -12,15 +12,16 @@ name: iOS Release (App Store / TestFlight)
 #                                  CI derives it from GoogleService-Info.plist
 #
 # Signing strategy:
-#   Archive WITH Apple Distribution signing (ASC API key).
-#   CODE_SIGNING_ALLOWED=NO was used previously to avoid minting Development
-#   certificates on ephemeral runners, but that strips `aps-environment` from
-#   the binary — APNs registration then fails on device with:
-#   「有効な aps-environment エンタイトルメント文字列が見つかりません」.
-#   Forcing CODE_SIGN_IDENTITY="Apple Distribution" reuses the cloud-managed
-#   Distribution cert instead of creating Development certs.
+#   Archive WITH automatic signing + App Store Connect API auth.
+#   Do NOT set CODE_SIGNING_ALLOWED=NO — that strips `aps-environment` and
+#   breaks APNs on device.
+#   Do NOT force CODE_SIGN_IDENTITY="Apple Distribution" at archive time —
+#   that conflicts with Automatic ("signed for development, but conflicting
+#   identity Apple Distribution"). Archive uses Automatic; exportArchive with
+#   method=app-store re-signs with Distribution for TestFlight.
+#   Keep CODE_SIGN_ENTITLEMENTS=App/App.entitlements so Push is embedded.
 #
-# One-time cleanup if the account is already at the cert limit:
+# One-time cleanup if the account is already at the Development cert limit:
 #   Apple Developer → Certificates → revoke unused "Apple Development" certs
 #   (especially ones named like "Created via API"), then re-run this workflow.
 #
@@ -93,6 +94,8 @@ jobs:
 
       - name: Wire Live Activity widget extension
         working-directory: ios/App
+        env:
+          DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
         run: ruby ../scripts/setup_widget.rb
 
       - name: Verify APNsDeviceTokenCache is in the Xcode project
@@ -163,15 +166,16 @@ jobs:
           </plist>
           EOF
 
-      - name: Archive (Apple Distribution + entitlements)
+      - name: Archive (automatic signing + entitlements)
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
-          # Must sign at archive time so aps-environment is embedded. Unsigned
-          # archives (CODE_SIGNING_ALLOWED=NO) produce TestFlight builds that
-          # fail APNs with missing aps-environment entitlement on device.
+          # Sign at archive time so aps-environment is embedded. Do not force
+          # CODE_SIGN_IDENTITY=Apple Distribution here — it conflicts with
+          # Automatic signing (development vs distribution). Export to
+          # app-store below re-signs with Distribution.
           xcodebuild archive \
             -project ios/App/App.xcodeproj \
             -scheme App \
@@ -185,7 +189,6 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CODE_SIGN_STYLE=Automatic \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             CODE_SIGN_ENTITLEMENTS="App/App.entitlements"
 
       - name: Export .ipa (sign + provision)
