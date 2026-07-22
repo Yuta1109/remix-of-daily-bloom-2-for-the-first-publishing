@@ -91,12 +91,17 @@ $env:NODE_OPTIONS = "--use-system-ca --require=./no-keepalive.cjs"
 npx firebase deploy --only functions,firestore --project todolist-app-project-4fd37
 ```
 
-After deploy, Console → Functions should show:
+After Console → Functions should show:
 
 | Function | Role |
 |----------|------|
 | `onLaScheduleWrite` | Schedule write → push now **or** enqueue Cloud Task at `showAt` |
 | `dispatchLiveActivityTask` | Cloud Tasks worker — fires at `showAt` and sends FCM start |
+| `refreshLiveActivityTask` | Cloud Tasks worker — minute FCM `update` while LA is active |
+| `sweepLiveActivityRefresh` | Every-minute backup push when the app is force-quit |
+| `onDeviceTokenWrite` | Kick refresh when `liveActivityUpdateToken` arrives |
+
+**App alive vs force-quit:** While Essences is running, Lock Screen text can refresh via a local ~60s heartbeat (`Activity.update`). After a force-quit, only FCM Live Activity `update` pushes redraw the card — that is what `refreshLiveActivityTask` / `sweepLiveActivityRefresh` do.
 
 If an old `dispatchLiveActivities` (scheduled poller) still exists, delete it:
 

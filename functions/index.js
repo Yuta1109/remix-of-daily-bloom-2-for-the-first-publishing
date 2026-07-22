@@ -18,6 +18,7 @@ import { getMessaging } from "firebase-admin/messaging";
 import { getFunctions } from "firebase-admin/functions";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onTaskDispatched } from "firebase-functions/v2/tasks";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import { logger } from "firebase-functions";
 import { GoogleAuth } from "google-auth-library";
@@ -303,11 +304,20 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
       hasFcm: !!fcmToken,
       hasUpdate: !!updateToken,
     });
+    await db.collection("laSchedules").doc(scheduleId).update({
+      lastRemoteUpdateAt: Date.now(),
+      lastRemoteUpdateOk: false,
+      lastRemoteUpdateError: "missing fcmToken or liveActivityUpdateToken",
+    });
     return false;
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
   const staleSec = Math.floor(Number(data.endAtEpochMs) / 1000);
+  // Firebase's Live Activity update samples include `alert`. Omitting it often
+  // succeeds in Admin SDK but never redraws the Lock Screen once the app is killed.
+  const alertTitle = data.locale === "en" ? "Upcoming" : "今後の予定";
+  const alertBody = String(data.title || "");
   try {
     await messaging.send({
       token: fcmToken,
@@ -324,14 +334,29 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown") {
             event: "update",
             "content-state": buildContentState(data, Date.now(), phase),
             "stale-date": staleSec,
+            alert: {
+              title: alertTitle,
+              body: alertBody,
+            },
           },
         },
       },
     });
     logger.info("LA update sent", scheduleId, { phase });
+    await db.collection("laSchedules").doc(scheduleId).update({
+      lastRemoteUpdateAt: Date.now(),
+      lastRemoteUpdateOk: true,
+      lastRemoteUpdateError: FieldValue.delete(),
+      lastRemoteUpdatePhase: phase,
+    });
     return true;
   } catch (err) {
     logger.warn("FCM live activity update failed", scheduleId, err);
+    await db.collection("laSchedules").doc(scheduleId).update({
+      lastRemoteUpdateAt: Date.now(),
+      lastRemoteUpdateOk: false,
+      lastRemoteUpdateError: String(err?.message || err),
+    });
     return false;
   }
 }
@@ -406,6 +431,7 @@ export const refreshLiveActivityTask = onTaskDispatched(
     if (Number(data.startEpochMs) <= now) {
       // At/after start → mark arrived once, then stop refreshing.
       await sendUpdateForSchedule(scheduleId, data, "arrived");
+      await snap.ref.update({ status: "arrived" });
       return;
     }
 
@@ -425,6 +451,57 @@ export const refreshLiveActivityTask = onTaskDispatched(
         logger.warn("Failed to enqueue LA arrived", err);
       }
     }
+  },
+);
+
+/**
+ * Backup path when the app is force-quit: Cloud Tasks chains can die after a
+ * single enqueue/IAM failure. Sweep every minute and push FCM updates for any
+ * still-active "started" schedules.
+ */
+export const sweepLiveActivityRefresh = onSchedule(
+  {
+    schedule: "every 1 minutes",
+    timeZone: "Asia/Tokyo",
+  },
+  async () => {
+    const now = Date.now();
+    const snap = await db.collection("laSchedules").where("status", "==", "started").get();
+    if (snap.empty) {
+      logger.info("LA sweep: no started schedules");
+      return;
+    }
+
+    let sent = 0;
+    let skipped = 0;
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      if (Number(data.endAtEpochMs) <= now) {
+        await docSnap.ref.update({ status: "expired" });
+        skipped += 1;
+        continue;
+      }
+
+      // Avoid double-firing within the same ~45s window (task + sweep).
+      const lastOk = data.lastRemoteUpdateOk === true;
+      const lastAt = Number(data.lastRemoteUpdateAt || 0);
+      if (lastOk && now - lastAt < 45_000) {
+        skipped += 1;
+        continue;
+      }
+
+      if (Number(data.startEpochMs) <= now) {
+        const ok = await sendUpdateForSchedule(docSnap.id, data, "arrived");
+        if (ok) await docSnap.ref.update({ status: "arrived" });
+        sent += 1;
+        continue;
+      }
+
+      const ok = await sendUpdateForSchedule(docSnap.id, data, "countdown");
+      if (ok) sent += 1;
+      else skipped += 1;
+    }
+    logger.info("LA sweep done", { sent, skipped, total: snap.size });
   },
 );
 
