@@ -523,18 +523,14 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
           }
         | undefined;
 
-      // pending: future showAt
-      // due: lead window open, waiting for FCM start
-      // started: local or remote activity is (or should be) live, including linger
+      // due: lead window open — Cloud Functions should push-to-start when killed.
+      // Do NOT flip to "started" just because an updateToken exists (that token may
+      // be from a previous activity; skipping start leaves the Lock Screen empty).
       let status: "pending" | "due" | "started" = "pending";
       if (w.activeNow) {
-        if (liveActivityUpdateToken || prev?.status === "started") {
-          status = "started";
-        } else {
-          status = "due";
-        }
+        status = prev?.status === "started" ? "started" : "due";
       } else if (w.visibleNow && nowMs >= w.startEpochMs) {
-        status = "started";
+        status = prev?.status === "started" ? "started" : "due";
       } else if (prev?.status === "started" && w.visibleNow) {
         status = "started";
       }

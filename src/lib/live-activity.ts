@@ -221,13 +221,15 @@ export async function refreshLiveActivities(
     matchingWindows.length > 0
       ? Math.max(...matchingWindows.map((w) => w.endEpochMs))
       : (items[0]?.startEpochMs ?? now.getTime()) + LIVE_ACTIVITY_ARRIVED_MS;
+  // ActivityKit rejects / immediately tears down if staleDate is already past.
+  const safeEndEpochMs = Math.max(endEpochMs, now.getTime() + 120_000);
 
   try {
     await LiveActivities.startOrUpdate({
       locale: currentLocale(),
       items,
       overflow,
-      endEpochMs,
+      endEpochMs: safeEndEpochMs,
       phase,
     });
     lastLocalError = null;

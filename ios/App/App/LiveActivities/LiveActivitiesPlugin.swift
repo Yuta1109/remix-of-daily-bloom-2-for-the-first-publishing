@@ -390,18 +390,24 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func scheduleEnd(at date: Date) {
         endWorkItem?.cancel()
-        let delay = date.timeIntervalSinceNow
-        if delay <= 0 {
-            if #available(iOS 16.1, *) {
-                Task { await self.endAllActivities() }
-            }
-            return
+        var delay = date.timeIntervalSinceNow
+        // Never schedule an immediate teardown right after request/update —
+        // that was wiping brand-new Live Activities when staleDate was skewed.
+        if delay < 5 {
+            delay = 60
         }
         let capped = min(delay, 8 * 60 * 60)
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             if #available(iOS 16.1, *) {
-                Task { await self.endAllActivities() }
+                Task {
+                    // Keep the card if any row is still counting down.
+                    let stillCounting = Activity<EssencesWidgetAttributes>.activities.contains { activity in
+                        activity.content.state.items.contains { $0.startDate > Date() }
+                    }
+                    if stillCounting { return }
+                    await self.endAllActivities()
+                }
             }
         }
         endWorkItem = work

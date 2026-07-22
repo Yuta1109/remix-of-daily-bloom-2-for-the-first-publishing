@@ -263,7 +263,47 @@ async function sendStartForSchedule(scheduleId, data) {
   const alertTitle = data.locale === "en" ? "Upcoming" : "今後の予定";
   const alertBody = String(data.title || "");
 
-  // Prefer update when an Activity is already live (multi-event card).
+  // Always try push-to-start first so a Lock Screen card actually appears.
+  // (updateToken alone often belongs to a dead/previous activity — update-only
+  // then succeeds at FCM but shows nothing.)
+  if (liveToken) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    try {
+      await messaging.send({
+        token: fcmToken,
+        apns: {
+          liveActivityToken: liveToken,
+          headers: {
+            "apns-push-type": "liveactivity",
+            "apns-topic": `${BUNDLE_ID}.push-type.liveactivity`,
+            "apns-priority": "10",
+          },
+          payload: {
+            aps: {
+              timestamp: nowSec,
+              event: "start",
+              "content-state": aggregated.contentState,
+              "attributes-type": ATTRIBUTES_TYPE,
+              attributes: { name: "Essences" },
+              "stale-date": aggregated.staleSec,
+              alert: {
+                title: alertTitle,
+                body: alertBody,
+              },
+            },
+          },
+        },
+      });
+      await markStartedAndEnqueueRefresh(scheduleId, data);
+      return true;
+    } catch (err) {
+      logger.warn("FCM live activity start failed; trying update fallback", err);
+    }
+  } else {
+    logger.warn("Missing pushToStart token for device", data.deviceId);
+  }
+
+  // Fallback: update existing card (multi-event) or local-started activity.
   if (updateToken) {
     const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
       withAlert: true,
@@ -276,64 +316,18 @@ async function sendStartForSchedule(scheduleId, data) {
       await markStartedAndEnqueueRefresh(scheduleId, data);
       return true;
     }
-    // Avoid a second push-to-start Activity when one is likely already on Lock Screen.
-    return beginUpdateOnlyMode(
-      scheduleId,
-      data,
-      "update failed while updateToken present; keep single card",
-    );
-  }
-
-  if (!liveToken) {
-    logger.warn("Missing pushToStart token for device", data.deviceId);
-    return false;
-  }
-
-  const nowSec = Math.floor(Date.now() / 1000);
-  try {
-    await messaging.send({
-      token: fcmToken,
-      apns: {
-        liveActivityToken: liveToken,
-        headers: {
-          "apns-push-type": "liveactivity",
-          "apns-topic": `${BUNDLE_ID}.push-type.liveactivity`,
-          "apns-priority": "10",
-        },
-        payload: {
-          aps: {
-            timestamp: nowSec,
-            event: "start",
-            "content-state": aggregated.contentState,
-            "attributes-type": ATTRIBUTES_TYPE,
-            attributes: { name: "Essences" },
-            "stale-date": aggregated.staleSec,
-            alert: {
-              title: alertTitle,
-              body: alertBody,
-            },
-          },
-        },
-      },
-    });
-    await markStartedAndEnqueueRefresh(scheduleId, data);
-    return true;
-  } catch (err) {
-    logger.error("FCM live activity start failed", err);
-    // Common when the app already started the activity locally with pushType:.token.
-    if (updateToken) {
-      return beginUpdateOnlyMode(
-        scheduleId,
-        data,
-        `start failed; update-only: ${String(err?.message || err)}`,
-      );
-    }
     await db.collection("laSchedules").doc(scheduleId).update({
-      lastError: String(err?.message || err),
+      lastError: "start+update failed",
       status: "error",
     });
     return false;
   }
+
+  await db.collection("laSchedules").doc(scheduleId).update({
+    lastError: "missing pushToStart and updateToken",
+    status: "error",
+  });
+  return false;
 }
 
 async function markStartedAndEnqueueRefresh(scheduleId, data) {
@@ -356,28 +350,20 @@ async function markStartedAndEnqueueRefresh(scheduleId, data) {
 
 async function beginUpdateOnlyMode(scheduleId, data, note) {
   logger.info("LA update-only mode", scheduleId, note);
-  await db.collection("laSchedules").doc(scheduleId).update({
-    status: "started",
-    startedAt: Date.now(),
-    lastError: note,
-    cloudTaskId: FieldValue.delete(),
+  const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
+    withAlert: true,
+    alertTitle: data.locale === "en" ? "Upcoming" : "今後の予定",
+    alertBody: String(data.title || ""),
   });
-  try {
-    await sendUpdateForSchedule(scheduleId, data, "countdown", {
-      withAlert: true,
-      alertTitle: data.locale === "en" ? "Upcoming" : "今後の予定",
-      alertBody: String(data.title || ""),
-    });
-  } catch (err) {
-    logger.warn("Immediate LA update failed", err);
+  if (ok) {
+    await markStartedAndEnqueueRefresh(scheduleId, data);
+    return true;
   }
-  try {
-    await enqueueRefresh(scheduleId, Date.now() + 15_000);
-  } catch (err) {
-    logger.warn("Failed to enqueue update-only refresh", err);
-  }
-  await enqueueOneMinuteAndArrived(scheduleId, data);
-  return true;
+  await db.collection("laSchedules").doc(scheduleId).update({
+    lastError: note,
+    status: "error",
+  });
+  return false;
 }
 
 async function enqueueOneMinuteAndArrived(scheduleId, data) {
@@ -438,8 +424,13 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
         });
 
   if (!aggregated.contentState.items.length) {
-    logger.info("No visible LA items — ending activity", scheduleId);
-    return sendEndForSchedule(scheduleId, data);
+    // Only end when this schedule itself is past its end; otherwise keep waiting.
+    if (Number(data.endAtEpochMs) <= now) {
+      logger.info("No visible LA items — ending activity", scheduleId);
+      return sendEndForSchedule(scheduleId, data);
+    }
+    logger.info("Skip LA refresh — no visible items yet", scheduleId);
+    return false;
   }
 
   const aps = {

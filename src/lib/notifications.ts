@@ -99,9 +99,12 @@ export async function rescheduleAll(): Promise<void> {
   if (perm.display !== "granted") return;
 
   const pending = await LocalNotifications.getPending();
-  if (pending.notifications.length) {
+  const reminderPending = pending.notifications.filter(
+    (n) => n.id < 50_000 || n.id > 59_999,
+  );
+  if (reminderPending.length) {
     await LocalNotifications.cancel({
-      notifications: pending.notifications.map((n) => ({ id: n.id })),
+      notifications: reminderPending.map((n) => ({ id: n.id })),
     });
   }
 
