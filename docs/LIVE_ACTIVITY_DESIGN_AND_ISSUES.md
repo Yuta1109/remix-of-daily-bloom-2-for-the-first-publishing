@@ -299,35 +299,34 @@ UI: `src/pages/Settings.tsx`
 - よって **リモート経路（kill 時の開始・毎分 update）が死んでいる**。
 - 相対表記がロック画面に出ていても、「アプリを開かないと進まない／開始に切り替わらない」は **トークン欠落と整合的**。
 
-### 11.2 最も疑わしい実装欠陥（2026-07-22 調査で特定・修正中）
+### 11.2 最も疑わしい実装欠陥（ログで確定・2026-07-22）
 
-#### A. APNs → FCM の起動レース（FCM✗ の本命）
+#### ★ 確定: 署名済み IPA に `aps-environment` が無い
 
-1. `AppDelegate.didFinishLaunching` がすぐ `registerForRemoteNotifications()` する。
-2. APNs が **Capacitor Firebase Messaging の `load()` より先に** device token を返す。
-3. プラグインは `.capacitorDidRegisterForRemoteNotifications` を `load()` で購読するため、**最初の APNs 通知を取りこぼす**。
-4. `Messaging.messaging().apnsToken` が未設定のまま → `getToken()` が空／エラー → FCM✗。
-5. JS の Firebase Auth / Firestore は `VITE_FIREBASE_WEB_CONFIG` だけで動くため、「Firestore 接続済み」でも FCM✗ になりうる（観測と一致）。
+実機ログ:
 
-**修正:** `APNsDeviceTokenCache`（UserDefaults）+ Messaging init 時にキャッシュ適用 + APNs 通知の遅延再送 + JS 側で `apnsTokenReceived` 待ち。
+```text
+apnsRegisterError: アプリケーションの有効な“aps-environment”エンタイトルメント文字列が見つかりません
+apnsCacheBytes: 0
+hasGoogleServiceInfoPlist: true
+activitiesEnabled: true
+```
 
-#### B. 診断エラーが schedule sync 成功で消える
+意味:
 
-`upsertDeviceDoc` / `syncLiveActivitySchedulesRemote` が成功時に `lastError = null` しており、トークン未取得のヒントが消える／上書きされることがあった。  
-（✗ フラグ自体は in-memory なので残るが、原因メッセージが不安定。）
+- GoogleService-Info.plist / LA 許可 / 通知許可は OK
+- **APNs device token 自体が OS から返らない**（エンタイトルメント欠落）
+- そのため FCM / pushToStart / updateToken はすべて ✗（二次症状）
 
-**修正:** FCM:/LA: 系の診断はトークンが揃うまで消さない。
+原因: CI が `CODE_SIGNING_ALLOWED=NO` でアーカイブしていた。無署名アーカイブでは `aps-environment` がバイナリに埋め込まれず、export 後の TestFlight でも欠落する既知問題。
 
-#### C. `packageClassList` から LiveActivities / App が欠落しうる
+**修正:** Release ワークフローで Apple Distribution 署名付きアーカイブに変更 + IPA に `aps-environment` があることを CI で検証。`CODE_SIGN_ENTITLEMENTS = App/App.entitlements` を pbxproj に恒常設定。
 
-`cap sync` は npm プラグインしか `packageClassList` に入れない。`LiveActivitiesPlugin` と vendored `AppPlugin` は `setup_widget.rb` 後付けが必須。  
-リポジトリ上の `capacitor.config.json` に欠けている状態があり、CI で setup_widget を忘れると LA プラグインが死ぬ。
+**手動確認:** Apple Developer → Identifiers → `com.confast.essences` → **Push Notifications** が有効であること。
 
-**修正:** 設定に恒常登録 + `npm run cap:sync` が `setup_widget.rb` まで実行。
+#### A〜D（以前の候補・二次）
 
-#### D. updateToken✗ は二次症状
-
-`Activity.request(pushType: .token)` が失敗すると **黙って `pushType: nil` にフォールバック**するため、ローカル表示はできても updateToken が一生出ない。APNs/FCM 未準備だと起きやすい。
+以前疑っていた APNs→FCM レースや診断クリアは二次。エンタイトルメントが無い限りトークンは永久に取れない。
 
 ### 11.3 トークン欠落のその他の候補
 

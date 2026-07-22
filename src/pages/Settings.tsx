@@ -387,7 +387,14 @@ export default function Settings({ staticPreview = false }: Props) {
                     {remoteStatus.diagnosticHint || remoteStatus.lastError}
                   </p>
                 )}
-                {!remoteStatus.hasFcmToken && (
+                {nativeDebugJson.includes("aps-environment") && (
+                  <p className="text-destructive/90 whitespace-pre-wrap mt-1">
+                    {locale === "ja"
+                      ? "根本原因: 署名済みアプリに Push 用 aps-environment エンタイトルメントがありません。CI の無署名アーカイブが原因でした。Apple Developer → Identifiers → com.confast.essences で Push Notifications を有効にし、修正後の TestFlight を入れ直してください。"
+                      : "Root cause: signed app is missing the aps-environment Push entitlement (unsigned CI archives strip it). Enable Push Notifications on App ID com.confast.essences, then install a newly signed TestFlight build."}
+                  </p>
+                )}
+                {!remoteStatus.hasFcmToken && !nativeDebugJson.includes("aps-environment") && (
                   <p className="text-muted-foreground whitespace-pre-wrap">
                     {locale === "ja"
                       ? "FCM✗: 通知許可後に APNs→FCM トークンが必要です。「再チェック」を押すか、通知を一度オフ→オンにしてください。"
@@ -397,8 +404,8 @@ export default function Settings({ staticPreview = false }: Props) {
                 {!remoteStatus.hasPushToStartToken && (
                   <p className="text-muted-foreground whitespace-pre-wrap">
                     {locale === "ja"
-                      ? "LA✗: ActivityKit の push-to-start トークン未取得（iOS 17.2+ / Live Activities オンが必要）。"
-                      : "LA✗: No ActivityKit push-to-start token yet (needs iOS 17.2+ and Live Activities On)."}
+                      ? "LA✗: ActivityKit の push-to-start トークン未取得（iOS 17.2+ / Live Activities オンが必要）。FCM/APNs が直るまでリモート開始は動きません。"
+                      : "LA✗: No ActivityKit push-to-start token yet (needs iOS 17.2+ and Live Activities On). Remote start waits on FCM/APNs."}
                   </p>
                 )}
               </div>
