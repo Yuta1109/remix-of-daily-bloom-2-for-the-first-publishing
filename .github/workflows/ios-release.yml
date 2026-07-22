@@ -11,22 +11,21 @@ name: iOS Release (App Store / TestFlight)
 #   FIREBASE_WEB_CONFIG            Optional one-line JSON firebaseConfig; if unset,
 #                                  CI derives it from GoogleService-Info.plist
 #
-# Signing strategy:
-#   Archive WITH automatic signing + App Store Connect API auth.
-#   Do NOT set CODE_SIGNING_ALLOWED=NO — that strips `aps-environment` and
-#   breaks APNs on device.
-#   Do NOT force CODE_SIGN_IDENTITY="Apple Distribution" at archive time —
-#   that conflicts with Automatic ("signed for development, but conflicting
-#   identity Apple Distribution"). Archive uses Automatic; exportArchive with
-#   method=app-store re-signs with Distribution for TestFlight.
-#   Keep CODE_SIGN_ENTITLEMENTS=App/App.entitlements so Push is embedded.
+# Signing strategy (avoids Development certificate churn AND keeps Push entitlements):
+#   1) Archive with CODE_SIGNING_ALLOWED=NO — does not mint Apple Development certs
+#      (account limit was hit by Automatic archive signing).
+#   2) Ad-hoc codesign the archived .app with App/App.entitlements so
+#      `aps-environment` is present (unsigned archives otherwise lose Push).
+#   3) exportArchive method=app-store + ASC API — reuses Apple Distribution cert
+#      (no Development cert creation).
+#   4) Verify the exported IPA contains aps-environment before upload.
 #
-# One-time cleanup if the account is already at the Development cert limit:
-#   Apple Developer → Certificates → revoke unused "Apple Development" certs
-#   (especially ones named like "Created via API"), then re-run this workflow.
+# One-time cleanup if Development certs are already maxed out:
+#   Apple Developer → Certificates → revoke unused "Apple Development" /
+#   "Created via API" certs, then re-run. Export only needs Distribution.
 #
 # Also required in Apple Developer → Identifiers → com.confast.essences:
-#   enable Push Notifications (and Live Activities if listed).
+#   enable Push Notifications.
 on:
   workflow_dispatch:
 
@@ -166,16 +165,13 @@ jobs:
           </plist>
           EOF
 
-      - name: Archive (automatic signing + entitlements)
+      - name: Archive (unsigned — no Development cert churn)
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
-          # Sign at archive time so aps-environment is embedded. Do not force
-          # CODE_SIGN_IDENTITY=Apple Distribution here — it conflicts with
-          # Automatic signing (development vs distribution). Export to
-          # app-store below re-signs with Distribution.
+          # Do not Automatic-sign the archive: ephemeral runners + ASC API mint
+          # a new Apple Development certificate each run and hit the account limit.
+          # Push entitlements are injected in the next step before export.
           xcodebuild archive \
             -project ios/App/App.xcodeproj \
             -scheme App \
@@ -183,15 +179,33 @@ jobs:
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/Essences.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyID "$KEY_ID" \
-            -authenticationKeyIssuerID "$ISSUER_ID" \
-            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
             CODE_SIGN_ENTITLEMENTS="App/App.entitlements"
 
-      - name: Export .ipa (sign + provision)
+      - name: Inject aps-environment into archived app (ad-hoc codesign)
+        run: |
+          APP="$RUNNER_TEMP/Essences.xcarchive/Products/Applications/App.app"
+          ENT="$GITHUB_WORKSPACE/ios/App/App/App.entitlements"
+          test -d "$APP" || { echo "Archived App.app missing at $APP"; exit 1; }
+          test -f "$ENT" || { echo "Entitlements missing at $ENT"; exit 1; }
+          # Sign nested appex first (no Push entitlement required on widget).
+          if [ -d "$APP/PlugIns" ]; then
+            find "$APP/PlugIns" -name "*.appex" -maxdepth 1 | while read -r APPEX; do
+              echo "Ad-hoc signing extension: $APPEX"
+              codesign -f -s - --timestamp=none "$APPEX"
+            done
+          fi
+          echo "Ad-hoc signing app with Push entitlements"
+          codesign -f -s - --timestamp=none --entitlements "$ENT" "$APP"
+          echo "---- archived app entitlements ----"
+          codesign -d --entitlements :- "$APP" 2>/dev/null | tee "$RUNNER_TEMP/archive-entitlements.xml"
+          grep -q 'aps-environment' "$RUNNER_TEMP/archive-entitlements.xml" \
+            || { echo "FATAL: ad-hoc sign did not embed aps-environment"; exit 1; }
+
+      - name: Export .ipa (Apple Distribution via ASC API)
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
