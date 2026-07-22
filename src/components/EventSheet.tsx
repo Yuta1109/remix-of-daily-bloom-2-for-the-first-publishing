@@ -223,6 +223,10 @@ function FormBody({
   onEnableNotif,
 }: FormBodyProps) {
   const { t, locale } = useI18n();
+  /** Keep Radix Select menus inside the sheet — Vaul sets pointer-events:none on body. */
+  const [selectPortalHost, setSelectPortalHost] = useState<HTMLDivElement | null>(
+    null,
+  );
 
   const selectedReminders: ReminderOffset[] = form.reminders ?? [];
 
@@ -235,7 +239,11 @@ function FormBody({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-hidden" data-kb-ignore>
+    <div
+      ref={setSelectPortalHost}
+      className="relative flex flex-col flex-1 min-h-0 overflow-hidden"
+      data-kb-ignore
+    >
       {/* Fixed header — does not scroll */}
       <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0 border-b border-border/40">
         <button
@@ -459,7 +467,10 @@ function FormBody({
               <SelectTrigger className="w-[180px] h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className={selectMenuClass}>
+              <SelectContent
+                container={selectPortalHost}
+                className={selectMenuClass}
+              >
                 {REPEATS.map((r) => {
                   const disabled = !repeatAllowedForEvent(form, r.key);
                   let label = t(r.tk as never);
@@ -511,7 +522,10 @@ function FormBody({
                 <SelectTrigger className="w-[160px] h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className={selectMenuClass}>
+                <SelectContent
+                  container={selectPortalHost}
+                  className={selectMenuClass}
+                >
                   {LIVE_ACTIVITY_LEADS.map((r) => (
                     <SelectItem key={r.key} value={r.key}>
                       {t(r.tk as never)}
@@ -572,13 +586,34 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   const [repeatDeleteKind, setRepeatDeleteKind] = useState<
     "daily" | "weekly" | "monthly" | "yearly"
   >("weekly");
+  /** In-sheet confirm — native window.confirm is untappable under Vaul's pointer lock. */
+  const [confirmPrompt, setConfirmPrompt] = useState<{
+    message: string;
+    resolve: (ok: boolean) => void;
+  } | null>(null);
   const isNew = target?.mode === "new";
   const lastInitKey = useRef<string | null>(null);
+
+  const askConfirm = (message: string) =>
+    new Promise<boolean>((resolve) => {
+      setConfirmPrompt({
+        message,
+        resolve: (ok) => {
+          setConfirmPrompt(null);
+          resolve(ok);
+        },
+      });
+    });
 
   useEffect(() => {
     if (!open) {
       lastInitKey.current = null;
       setSeriesOccurrence(null);
+      setRepeatDeleteOpen(false);
+      setConfirmPrompt((prev) => {
+        prev?.resolve(false);
+        return null;
+      });
       return;
     }
     if (!target || targetKey == null) return;
@@ -683,7 +718,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     return `Apply this change to all ${freq} events in the series as well?`;
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.title.trim()) return;
     const endDateRaw = form.endDate?.trim() || form.date;
     if (endDateRaw < form.date) {
@@ -746,9 +781,9 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
           payload.liveActivityLead !== originalMaster.liveActivityLead;
 
         if (contentChanged) {
-          if (!window.confirm(applyAllPrompt(originalRepeat))) return;
+          if (!(await askConfirm(applyAllPrompt(originalRepeat)))) return;
         }
-        if (!window.confirm(t("repeatTurnOffConfirm"))) return;
+        if (!(await askConfirm(t("repeatTurnOffConfirm")))) return;
         endSeriesOn(masterIdForSeries, occurrenceDateForSeries);
         upsertEvent({
           ...payload,
@@ -769,7 +804,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
 
       // 2) Changing repeat frequency → replace series from this day (no doubles).
       if (originalRepeat !== nextRepeat && nextRepeat !== "none") {
-        if (!window.confirm(applyAllPrompt(nextRepeat))) return;
+        if (!(await askConfirm(applyAllPrompt(nextRepeat)))) return;
         replaceSeriesFromDate(masterIdForSeries, occurrenceDateForSeries, payload);
         syncSchedules();
         onSaved?.();
@@ -778,7 +813,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       }
 
       // 3) Same frequency — ask whether to apply to whole series.
-      const applyAll = window.confirm(applyAllPrompt(originalRepeat));
+      const applyAll = await askConfirm(applyAllPrompt(originalRepeat));
       if (applyAll) {
         const span = eventSpanDays(payload);
         upsertEvent({
@@ -825,14 +860,14 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     onOpenChange(false);
   };
 
-  const remove = () => {
+  const remove = async () => {
     if (isNew) {
       onOpenChange(false);
       return;
     }
 
     if (form.recurrenceMasterId) {
-      if (window.confirm(t("confirmDelete"))) {
+      if (await askConfirm(t("confirmDelete"))) {
         deleteEvent(form.id);
         finishDelete();
       }
@@ -848,7 +883,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       return;
     }
 
-    if (window.confirm(t("confirmDelete"))) {
+    if (await askConfirm(t("confirmDelete"))) {
       deleteEvent(form.id);
       finishDelete();
     }
@@ -895,110 +930,161 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
           ? "deleteRepeatTitleYearly"
           : "deleteRepeatTitleWeekly";
 
-  const repeatDeleteSheet =
-    repeatDeleteOpen &&
-    createPortal(
-      <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center p-3">
-        <div
-          className="absolute inset-0 bg-black/40"
-          onClick={() => setRepeatDeleteOpen(false)}
-        />
-        <div className="relative z-10 w-full max-w-md rounded-2xl bg-card shadow-float overflow-hidden">
-          <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-2">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold leading-snug">{t(deleteTitleTk)}</p>
-              <p className="text-xs text-muted-foreground mt-1 leading-snug">
-                {t("deleteRepeatSheetHint")}
-              </p>
-            </div>
-            <button
-              type="button"
-              aria-label={t("cancel")}
-              onClick={() => setRepeatDeleteOpen(false)}
-              className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-secondary"
-            >
-              <X className="w-4 h-4" />
-            </button>
+  const sheetBlocking = repeatDeleteOpen || !!confirmPrompt;
+
+  /** Must live inside the EventSheet surface — vaul locks pointer-events on body siblings. */
+  const repeatDeleteOverlay = repeatDeleteOpen ? (
+    <div
+      className="absolute inset-0 z-[120] flex items-end justify-center sm:items-center p-3"
+      data-vaul-no-drag=""
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={() => setRepeatDeleteOpen(false)}
+      />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-card shadow-float overflow-hidden pointer-events-auto">
+        <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-2">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold leading-snug">{t(deleteTitleTk)}</p>
+            <p className="text-xs text-muted-foreground mt-1 leading-snug">
+              {t("deleteRepeatSheetHint")}
+            </p>
           </div>
-          <div className="px-3 pb-3 space-y-2">
-            <button
-              type="button"
-              onClick={confirmDeleteOnlyThis}
-              className="w-full rounded-xl bg-secondary/80 px-4 py-3.5 text-sm font-semibold text-foreground hover:bg-secondary"
-            >
-              {t("deleteRepeatOnlyThis")}
-            </button>
-            <button
-              type="button"
-              onClick={confirmDeleteThisAndFuture}
-              className="w-full rounded-xl bg-destructive/10 px-4 py-3.5 text-sm font-semibold text-destructive hover:bg-destructive/15"
-            >
-              {t("deleteRepeatThisAndFuture")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setRepeatDeleteOpen(false)}
-              className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
-            >
-              {t("cancel")}
-            </button>
-          </div>
+          <button
+            type="button"
+            aria-label={t("cancel")}
+            onClick={() => setRepeatDeleteOpen(false)}
+            className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-secondary"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      </div>,
-      document.body,
-    );
+        <div className="px-3 pb-3 space-y-2">
+          <button
+            type="button"
+            onClick={confirmDeleteOnlyThis}
+            className="w-full rounded-xl bg-secondary/80 px-4 py-3.5 text-sm font-semibold text-foreground hover:bg-secondary"
+          >
+            {t("deleteRepeatOnlyThis")}
+          </button>
+          <button
+            type="button"
+            onClick={confirmDeleteThisAndFuture}
+            className="w-full rounded-xl bg-destructive/10 px-4 py-3.5 text-sm font-semibold text-destructive hover:bg-destructive/15"
+          >
+            {t("deleteRepeatThisAndFuture")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setRepeatDeleteOpen(false)}
+            className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
+          >
+            {t("cancel")}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const confirmOverlay = confirmPrompt ? (
+    <div
+      className="absolute inset-0 z-[130] flex items-end justify-center sm:items-center p-3"
+      data-vaul-no-drag=""
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={() => confirmPrompt.resolve(false)}
+      />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-card shadow-float overflow-hidden pointer-events-auto">
+        <div className="px-4 pt-4 pb-2">
+          <p className="text-sm font-semibold leading-snug">{confirmPrompt.message}</p>
+        </div>
+        <div className="px-3 pb-3 space-y-2">
+          <button
+            type="button"
+            onClick={() => confirmPrompt.resolve(true)}
+            className="w-full rounded-xl bg-secondary/80 px-4 py-3.5 text-sm font-semibold text-foreground hover:bg-secondary"
+          >
+            {t("yes")}
+          </button>
+          <button
+            type="button"
+            onClick={() => confirmPrompt.resolve(false)}
+            className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
+          >
+            {t("cancel")}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   /* ── Modal variant ──────────────────────────────────────────────────── */
   if (variant === "modal") {
     if (!open) return null;
-    return (
-      <>
-        {createPortal(
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <div
-              className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-              onClick={() => onOpenChange(false)}
-            />
-            <div
-              className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
-              style={{ maxHeight: "88dvh" }}
-            >
-              <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
-              <FormBody {...formBodyProps} />
-            </div>
-          </div>,
-          document.body,
-        )}
-        {repeatDeleteSheet}
-      </>
+    return createPortal(
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div
+          className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+          onClick={() => {
+            if (confirmPrompt) confirmPrompt.resolve(false);
+            else if (repeatDeleteOpen) setRepeatDeleteOpen(false);
+            else onOpenChange(false);
+          }}
+        />
+        <div
+          className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
+          style={{ maxHeight: "88dvh" }}
+        >
+          <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
+          <FormBody {...formBodyProps} />
+          {repeatDeleteOverlay}
+          {confirmOverlay}
+        </div>
+      </div>,
+      document.body,
     );
   }
 
   /* ── Drawer variant ─────────────────────────────────────────────────── */
   return (
-    <>
-      <DrawerPrimitive.Root
-        open={open}
-        onOpenChange={onOpenChange}
-        shouldScaleBackground={false}
-        dismissible
-      >
-        <DrawerPrimitive.Portal>
-          <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
-          <DrawerPrimitive.Content
-            className={cn(
-              "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
-              "min-h-0 overflow-hidden outline-none",
-            )}
-            style={{ maxHeight: "88dvh" }}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
-            <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
-            <FormBody {...formBodyProps} />
-          </DrawerPrimitive.Content>
-        </DrawerPrimitive.Portal>
-      </DrawerPrimitive.Root>
-      {repeatDeleteSheet}
-    </>
+    <DrawerPrimitive.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && sheetBlocking) {
+          if (confirmPrompt) confirmPrompt.resolve(false);
+          else setRepeatDeleteOpen(false);
+          return;
+        }
+        onOpenChange(next);
+      }}
+      shouldScaleBackground={false}
+      dismissible={!sheetBlocking}
+    >
+      <DrawerPrimitive.Portal>
+        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+        <DrawerPrimitive.Content
+          className={cn(
+            "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
+            "min-h-0 overflow-hidden outline-none",
+          )}
+          style={{ maxHeight: "88dvh" }}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => {
+            if (sheetBlocking) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (sheetBlocking) e.preventDefault();
+          }}
+        >
+          <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
+          <FormBody {...formBodyProps} />
+          {repeatDeleteOverlay}
+          {confirmOverlay}
+        </DrawerPrimitive.Content>
+      </DrawerPrimitive.Portal>
+    </DrawerPrimitive.Root>
   );
 }

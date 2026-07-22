@@ -39,6 +39,32 @@ private func overflowText(_ locale: String, _ n: Int) -> String {
     locale == "ja" ? "ほか\(n)件" : "+\(n) more"
 }
 
+/// Human relative countdown: "2時間30分後" / "まもなく" / "It's time".
+@available(iOS 16.1, *)
+private func relativeRemainingText(to target: Date, now: Date, locale: String) -> String {
+    let secs = target.timeIntervalSince(now)
+    if secs <= 0 {
+        return arrivedText(locale)
+    }
+    if secs < 60 {
+        return locale == "ja" ? "まもなく" : "soon"
+    }
+
+    let totalMinutes = Int(secs / 60)
+    let hours = totalMinutes / 60
+    let minutes = totalMinutes % 60
+
+    if locale == "ja" {
+        if hours > 0 && minutes > 0 { return "\(hours)時間\(minutes)分後" }
+        if hours > 0 { return "\(hours)時間後" }
+        return "\(totalMinutes)分後"
+    }
+
+    if hours > 0 && minutes > 0 { return "in \(hours)h \(minutes)m" }
+    if hours > 0 { return "in \(hours)h" }
+    return "in \(totalMinutes)m"
+}
+
 @available(iOS 16.1, *)
 private struct CountdownOrArrivedLabel: View {
     let target: Date
@@ -46,17 +72,14 @@ private struct CountdownOrArrivedLabel: View {
     let phase: String
 
     var body: some View {
-        // TimelineView lets Lock Screen flip to "It's time" near start without the
-        // app process. Text(timerInterval:) keeps a smooth countdown between ticks.
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            Group {
-                if phase == "arrived" || context.date >= target {
-                    Text(arrivedText(locale))
-                } else {
-                    Text(timerInterval: context.date...target, countsDown: true)
-                        .monospacedDigit()
-                }
-            }
+        // Periodic redraw so the relative label advances while the system
+        // allows Live Activity timeline refreshes (and after push/local update).
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            Text(
+                phase == "arrived"
+                    ? arrivedText(locale)
+                    : relativeRemainingText(to: target, now: context.date, locale: locale)
+            )
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(EssencesLAStyle.accent)
