@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeLiveActivityWindow,
   LIVE_ACTIVITY_ARRIVED_MS,
+  selectLiveActivityRows,
 } from "@/lib/live-activity-window";
 import type { CalendarEvent } from "@/lib/events-store";
 
@@ -45,5 +46,45 @@ describe("computeLiveActivityWindow", () => {
     // ~1 hour from now (5h − 4h), allow clock skew
     expect(w!.showAtEpochMs - now.getTime()).toBeGreaterThan(50 * 60_000);
     expect(w!.showAtEpochMs - now.getTime()).toBeLessThan(70 * 60_000);
+  });
+});
+
+describe("selectLiveActivityRows", () => {
+  const now = 1_000_000;
+
+  it("keeps all rows when 3 or fewer (including arrived)", () => {
+    const rows = [
+      { title: "A", startEpochMs: now - 30_000, color: "blue" },
+      { title: "B", startEpochMs: now + 60_000, color: "green" },
+      { title: "C", startEpochMs: now + 120_000, color: "red" },
+    ];
+    const { items, overflow } = selectLiveActivityRows(rows, now, 3);
+    expect(items).toHaveLength(3);
+    expect(overflow).toBe(0);
+    expect(items.map((i) => i.title)).toEqual(["A", "B", "C"]);
+  });
+
+  it("drops earliest arrived first when more than 3", () => {
+    const rows = [
+      { title: "Arr1", startEpochMs: now - 50_000, color: "blue" },
+      { title: "Arr2", startEpochMs: now - 20_000, color: "green" },
+      { title: "Soon", startEpochMs: now + 60_000, color: "red" },
+      { title: "Later", startEpochMs: now + 120_000, color: "orange" },
+    ];
+    const { items, overflow } = selectLiveActivityRows(rows, now, 3);
+    expect(overflow).toBe(1);
+    expect(items.map((i) => i.title)).toEqual(["Arr2", "Soon", "Later"]);
+  });
+
+  it("keeps soonest countdowns when only countdowns overflow", () => {
+    const rows = [
+      { title: "1", startEpochMs: now + 10_000, color: "blue" },
+      { title: "2", startEpochMs: now + 20_000, color: "green" },
+      { title: "3", startEpochMs: now + 30_000, color: "red" },
+      { title: "4", startEpochMs: now + 40_000, color: "orange" },
+    ];
+    const { items, overflow } = selectLiveActivityRows(rows, now, 3);
+    expect(overflow).toBe(1);
+    expect(items.map((i) => i.title)).toEqual(["1", "2", "3"]);
   });
 });

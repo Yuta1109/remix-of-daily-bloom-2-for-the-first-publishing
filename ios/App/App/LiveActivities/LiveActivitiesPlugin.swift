@@ -404,33 +404,29 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     private func scheduleEnd(at date: Date) {
         endWorkItem?.cancel()
         var delay = date.timeIntervalSinceNow
-        if delay < 5 {
-            // If every row is already past start, dismiss promptly (arrived linger done).
-            // Only stretch when a countdown row is still live (skewed staleDate).
-            let stillCounting: Bool = {
-                guard #available(iOS 16.1, *) else { return false }
-                return Activity<EssencesWidgetAttributes>.activities.contains { activity in
-                    activity.content.state.items.contains { $0.startDate > Date() }
-                }
-            }()
-            delay = stillCounting ? 60 : 0.5
+        if delay < 1 {
+            // Arrived linger finished — dismiss promptly. Do not stretch to +60s
+            // (that made "予定時間になりました" linger ~2 minutes).
+            delay = 0.5
         }
         let capped = min(delay, 8 * 60 * 60)
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             if #available(iOS 16.1, *) {
                 Task {
-                    // Keep the card if any row is still counting down.
-                    let stillCounting = Activity<EssencesWidgetAttributes>.activities.contains { activity in
-                        activity.content.state.items.contains { $0.startDate > Date() }
+                    // Keep the card if any row is still counting down OR still
+                    // inside arrived linger (start + 60s).
+                    let now = Date()
+                    let keep = Activity<EssencesWidgetAttributes>.activities.contains { activity in
+                        activity.content.state.items.contains { item in
+                            item.startDate.addingTimeInterval(60) > now
+                        }
                     }
-                    if stillCounting {
-                        // Re-arm for arrived linger after the soonest start.
+                    if keep {
                         let nextEnd = Activity<EssencesWidgetAttributes>.activities
-                            .flatMap { $0.content.state.items.map(\.startDate) }
-                            .filter { $0 > Date() }
+                            .flatMap { $0.content.state.items.map { $0.startDate.addingTimeInterval(60) } }
+                            .filter { $0 > now }
                             .min()
-                            .map { $0.addingTimeInterval(60) }
                         if let nextEnd {
                             self.scheduleEnd(at: nextEnd)
                         }

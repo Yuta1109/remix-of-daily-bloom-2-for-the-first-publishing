@@ -88,3 +88,49 @@ export function clampedLead(lead?: LiveActivityLead): LiveActivityLead {
   if (mins >= 480) return "8h";
   return lead ?? "1h";
 }
+
+/** Minimal row shape for Lock Screen selection. */
+export type LiveActivityRowLike = {
+  startEpochMs: number;
+  title: string;
+  color: string;
+};
+
+/**
+ * Pick up to `maxItems` rows for the shared Live Activity card.
+ *
+ * - ≤ maxItems: keep all (including "予定時間になりました" arrived rows).
+ * - > maxItems: drop earliest arrived first so countdown rows keep slots;
+ *   if still over capacity, keep the soonest countdowns.
+ */
+export function selectLiveActivityRows<T extends LiveActivityRowLike>(
+  rows: T[],
+  nowMs: number,
+  maxItems = 3,
+): { items: T[]; overflow: number } {
+  const countdown = rows
+    .filter((r) => r.startEpochMs > nowMs)
+    .sort((a, b) => a.startEpochMs - b.startEpochMs);
+  const arrived = rows
+    .filter((r) => r.startEpochMs <= nowMs)
+    .sort((a, b) => a.startEpochMs - b.startEpochMs);
+
+  if (rows.length <= maxItems) {
+    const items = [...rows].sort((a, b) => a.startEpochMs - b.startEpochMs);
+    return { items, overflow: 0 };
+  }
+
+  const keptArrived = [...arrived];
+  while (countdown.length + keptArrived.length > maxItems && keptArrived.length > 0) {
+    keptArrived.shift(); // earliest arrived first
+  }
+  const keptCountdown =
+    countdown.length + keptArrived.length > maxItems
+      ? countdown.slice(0, maxItems - keptArrived.length)
+      : countdown;
+
+  const items = [...keptCountdown, ...keptArrived].sort(
+    (a, b) => a.startEpochMs - b.startEpochMs,
+  );
+  return { items, overflow: Math.max(0, rows.length - items.length) };
+}

@@ -3,6 +3,7 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import {
   collectLiveActivityWindows,
   LIVE_ACTIVITY_ARRIVED_MS,
+  selectLiveActivityRows,
 } from "./live-activity-window";
 
 /**
@@ -11,9 +12,9 @@ import {
  * - Minimum iOS 17.2 (ActivityKit push-to-start; no wake-notification fallback).
  * - One shared Lock Screen activity (max 3 event rows).
  * - showAt = start − lead (stable). If already past showAt on save → appear now.
- * - Kill / lock screen: Cloud Functions push-to-start + local wake notifications.
- * - After event start, show "It's time" for 1 minute, then drop that row.
- * - Opening the app dismisses arrived rows immediately.
+ * - Kill / lock screen: Cloud Functions push-to-start (FCM).
+ * - Arrived ("It's time"): keep while ≤3 rows; if 4+ would show, drop earliest
+ *   arrived first. Also drop on timeout (start+1m), app open, or when replaced.
  */
 
 const MAX_ITEMS = 3;
@@ -87,6 +88,7 @@ function collectVisibleItems(
   opts: { dismissArrived?: boolean } = {},
 ): {
   items: LiveActivityItem[];
+  overflow: number;
   phase: "countdown" | "arrived";
 } {
   const nowMs = now.getTime();
@@ -96,14 +98,17 @@ function collectVisibleItems(
       if (opts.dismissArrived && nowMs >= w.startEpochMs) return false;
       return true;
     })
-    .sort((a, b) => a.startEpochMs - b.startEpochMs);
-  const anyCounting = windows.some((w) => nowMs < w.startEpochMs);
-  return {
-    items: windows.map((w) => ({
+    .map((w) => ({
       title: w.title,
       startEpochMs: w.startEpochMs,
       color: w.color,
-    })),
+    }));
+
+  const { items, overflow } = selectLiveActivityRows(windows, nowMs, MAX_ITEMS);
+  const anyCounting = items.some((w) => nowMs < w.startEpochMs);
+  return {
+    items,
+    overflow,
     phase: anyCounting ? "countdown" : "arrived",
   };
 }
@@ -196,7 +201,7 @@ export async function refreshLiveActivities(
   }
 
   const now = new Date();
-  const { items: visible, phase } = collectVisibleItems(now, { dismissArrived });
+  const { items: visible, overflow, phase } = collectVisibleItems(now, { dismissArrived });
   lastActiveCount = visible.length;
 
   if (visible.length === 0) {
@@ -214,18 +219,16 @@ export async function refreshLiveActivities(
     return;
   }
 
-  const items = visible.slice(0, MAX_ITEMS);
-  const overflow = visible.length - items.length;
-  // Keep the Activity alive until the last visible row's arrived linger ends.
+  const items = visible;
+  // Keep the Activity alive until the last *shown* row's arrived linger ends.
   const matchingWindows = collectLiveActivityWindows(now).filter((w) =>
-    visible.some((v) => v.startEpochMs === w.startEpochMs && v.title === w.title),
+    items.some((v) => v.startEpochMs === w.startEpochMs && v.title === w.title),
   );
   const endEpochMs =
     matchingWindows.length > 0
       ? Math.max(...matchingWindows.map((w) => w.endEpochMs))
       : (items[0]?.startEpochMs ?? now.getTime()) + LIVE_ACTIVITY_ARRIVED_MS;
   // Only nudge a tiny bit if end is already past (ActivityKit rejects staleDate ≤ now).
-  // Do NOT extend by minutes — that kept "予定時間になりました" on screen forever.
   const safeEndEpochMs = Math.max(endEpochMs, now.getTime() + 1_500);
 
   try {

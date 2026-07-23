@@ -523,16 +523,12 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
           }
         | undefined;
 
-      // due: lead window open — Cloud Functions should push-to-start when killed.
-      // Never demote started/arrived → due (that re-triggers push-to-start and
-      // stacks duplicate Lock Screen Activities every minute).
-      // If a local Activity is already showing, mark started so FCM updates the
-      // same card instead of push-to-starting a second one.
-      const remoteLive =
-        prev?.status === "started" || prev?.status === "arrived";
+      // Keep "started" only when a local Activity is actually showing.
+      // Stale Firestore "started" without a card blocked kill-path push-to-start;
+      // re-due lets Cloud Functions start again. (Sync runs after local refresh.)
       const localLive = getLiveActivityLocalStatus().activeCount > 0;
       let status: "pending" | "due" | "started" = "pending";
-      if ((remoteLive || localLive) && w.visibleNow) {
+      if (localLive && w.visibleNow) {
         status = "started";
       } else if (w.activeNow) {
         status = "due";

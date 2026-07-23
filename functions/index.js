@@ -91,6 +91,40 @@ function buildContentState(data, tick = 0, phase = "countdown") {
 const MAX_LA_ITEMS = 3;
 
 /**
+ * Pick up to maxItems rows for the shared Live Activity card.
+ * ≤3: keep all (including arrived). >3: drop earliest arrived first.
+ */
+function selectLiveActivityRows(rows, nowMs, maxItems = MAX_LA_ITEMS) {
+  const countdown = rows
+    .filter((r) => r.startEpochMs > nowMs)
+    .sort((a, b) => a.startEpochMs - b.startEpochMs);
+  const arrived = rows
+    .filter((r) => r.startEpochMs <= nowMs)
+    .sort((a, b) => a.startEpochMs - b.startEpochMs);
+
+  if (rows.length <= maxItems) {
+    return {
+      items: [...rows].sort((a, b) => a.startEpochMs - b.startEpochMs),
+      overflow: 0,
+    };
+  }
+
+  const keptArrived = [...arrived];
+  while (countdown.length + keptArrived.length > maxItems && keptArrived.length > 0) {
+    keptArrived.shift();
+  }
+  const keptCountdown =
+    countdown.length + keptArrived.length > maxItems
+      ? countdown.slice(0, maxItems - keptArrived.length)
+      : countdown;
+
+  const items = [...keptCountdown, ...keptArrived].sort(
+    (a, b) => a.startEpochMs - b.startEpochMs,
+  );
+  return { items, overflow: Math.max(0, rows.length - items.length) };
+}
+
+/**
  * Lock Screen shows one shared activity with up to 3 concurrent events.
  * Aggregate all visible schedules for the device (not just the one firing).
  */
@@ -110,7 +144,6 @@ async function buildAggregatedContentState(
 
   const rows = [];
   let locale = "ja";
-  let maxEndAt = 0;
   for (const [id, d] of byId) {
     if (!d) continue;
     if (d.status === "error" || d.status === "expired") continue;
@@ -125,24 +158,30 @@ async function buildAggregatedContentState(
     if (d.status === "pending" && showAt > now && !isFocus) continue;
 
     locale = String(d.locale || locale);
-    maxEndAt = Math.max(maxEndAt, endAt);
     rows.push({
       title: String(d.title || ""),
       startEpochMs: startAt,
+      endAtEpochMs: endAt,
       color: String(d.color || "blue"),
     });
   }
 
-  rows.sort((a, b) => a.startEpochMs - b.startEpochMs);
-  const items = rows.slice(0, MAX_LA_ITEMS);
-  const overflow = Math.max(0, rows.length - MAX_LA_ITEMS);
-  const anyCounting = rows.some((r) => r.startEpochMs > now);
+  const { items, overflow } = selectLiveActivityRows(rows, now, MAX_LA_ITEMS);
+  const maxEndAt = items.reduce(
+    (m, r) => Math.max(m, Number(r.endAtEpochMs) || 0),
+    0,
+  );
+  const anyCounting = items.some((r) => r.startEpochMs > now);
   const resolvedPhase =
     phase === "notify1m" ? "countdown" : anyCounting ? "countdown" : "arrived";
 
   return {
     contentState: {
-      items,
+      items: items.map(({ title, startEpochMs, color }) => ({
+        title,
+        startEpochMs,
+        color,
+      })),
       overflow,
       locale: String(includeData?.locale || locale || "ja"),
       tick: Number(tick) || 0,
@@ -235,14 +274,28 @@ async function enqueueAtShowAt(scheduleId, data) {
 }
 
 /**
- * True when this device already has a Lock Screen card we should UPDATE
- * (not push-to-start again — each `event: "start"` creates a new Activity).
+ * True when this device likely already has a Lock Screen card we should UPDATE.
+ * Stale "started" without a recent successful remote update is treated as NO card
+ * so kill-path can push-to-start again (otherwise LA never appears after force-quit).
  */
 async function deviceHasLiveCard(deviceId) {
   const snap = await db.collection("laSchedules").where("deviceId", "==", deviceId).get();
+  const now = Date.now();
   return snap.docs.some((d) => {
-    const s = d.data()?.status;
-    return s === "started" || s === "arrived";
+    const data = d.data() || {};
+    const s = data.status;
+    if (s !== "started" && s !== "arrived") return false;
+    const startedAt = Number(data.startedAt || 0);
+    // Very recent start — sibling in the same sweep / local just started.
+    if (startedAt && now - startedAt < 120_000) return true;
+    // Proven live via successful FCM update in the last 15 minutes.
+    if (
+      data.lastRemoteUpdateOk === true &&
+      now - Number(data.lastRemoteUpdateAt || 0) < 15 * 60_000
+    ) {
+      return true;
+    }
+    return false;
   });
 }
 
@@ -330,21 +383,30 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         return true;
       }
       logger.warn("LA update failed for existing/sibling card", scheduleId);
+      // Dead update token / no real card — fall through to push-to-start when allowed.
+      if (reason === "hasLiveCard") return null;
     }
-    // Sibling just push-to-started; updateToken may lag. Still mark started so
-    // we never fire another event:"start" for this schedule.
-    await markStartedAndEnqueueRefresh(scheduleId, data);
-    return true;
+    // Sibling just push-to-started; updateToken may lag. Mark started only for
+    // explicit preferUpdateOnly / sibling claim — never for a stale hasLiveCard.
+    if (reason === "siblingClaimedStart" || opts.preferUpdateOnly === true) {
+      await markStartedAndEnqueueRefresh(scheduleId, data);
+      return true;
+    }
+    return null;
   };
 
-  // Existing card (or sibling schedule just started): update only — never start.
+  // Existing card (or sibling schedule just started): prefer update.
   if (hasLiveCard) {
-    return finishAsUpdate("hasLiveCard");
+    const updated = await finishAsUpdate("hasLiveCard");
+    if (updated !== null) return updated;
+    logger.info("LA hasLiveCard update failed; retrying push-to-start", scheduleId);
   }
 
   const claimed = await claimDevicePushStart(data.deviceId, scheduleId);
   if (!claimed) {
-    return finishAsUpdate("siblingClaimedStart");
+    const updated = await finishAsUpdate("siblingClaimedStart");
+    if (updated !== null) return updated;
+    return false;
   }
 
   // Cold start: no live card yet. Prefer push-to-start so Lock Screen appears
@@ -469,12 +531,15 @@ async function enqueueOneMinuteAndArrived(scheduleId, data) {
       logger.warn("Failed to enqueue LA arrived tick", err);
     }
   }
-  // Dismiss Lock Screen card after arrived linger (start + 1m).
+  // Dismiss after arrived linger — retry soon after endAt so we don't wait for
+  // the next 1-minute sweep (that made dismiss feel like 1m or 2m at random).
   if (endAt > Date.now()) {
-    try {
-      await enqueueRefresh(scheduleId, endAt);
-    } catch (err) {
-      logger.warn("Failed to enqueue LA end", err);
+    for (const at of [endAt, endAt + 15_000, endAt + 35_000]) {
+      try {
+        await enqueueRefresh(scheduleId, at);
+      } catch (err) {
+        logger.warn("Failed to enqueue LA end", at, err);
+      }
     }
   }
 }
@@ -600,11 +665,9 @@ async function sendEndForSchedule(scheduleId, data) {
   const device = deviceSnap.data() || {};
   const fcmToken = device.fcmToken;
   const updateToken = device.liveActivityUpdateToken;
-  if (!fcmToken || !updateToken) {
-    return false;
-  }
 
-  // Other events may still be on the shared card — update instead of ending.
+  // Always re-query remaining visible rows. Never end the whole Activity while
+  // another countdown/arrived row should still be on the card.
   const aggregated = await buildAggregatedContentState(data.deviceId, {
     tick: Date.now(),
     phase: "countdown",
@@ -613,11 +676,20 @@ async function sendEndForSchedule(scheduleId, data) {
     logger.info("LA end → update remaining rows", scheduleId, {
       remaining: aggregated.contentState.items.length,
     });
+    if (!fcmToken || !updateToken) {
+      logger.warn("LA remaining rows but missing tokens; skip end", scheduleId);
+      return false;
+    }
     return sendUpdateForSchedule(scheduleId, { ...data, status: "expired" }, "countdown", {
       withAlert: false,
       contentState: aggregated.contentState,
       staleSec: aggregated.staleSec,
     });
+  }
+
+  if (!fcmToken || !updateToken) {
+    logger.warn("LA end skipped — no tokens (staleDate should dismiss)", scheduleId);
+    return false;
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
@@ -804,7 +876,7 @@ export const refreshLiveActivityTask = onTaskDispatched(
     const data = snap.data();
     const now = Date.now();
 
-    // After arrived linger → end the Lock Screen card (no tap required).
+    // After arrived linger → end/update remaining (no tap required).
     if (
       (data.status === "started" || data.status === "arrived") &&
       Number(data.endAtEpochMs) <= now
@@ -814,7 +886,7 @@ export const refreshLiveActivityTask = onTaskDispatched(
     }
 
     if (data.status === "arrived") {
-      // Still lingering — wake again at endAt.
+      // Still lingering — wake again at endAt (and a short retry).
       try {
         await enqueueRefresh(scheduleId, Number(data.endAtEpochMs));
       } catch (err) {
@@ -826,13 +898,27 @@ export const refreshLiveActivityTask = onTaskDispatched(
     if (data.status !== "started") return;
 
     if (Number(data.startEpochMs) <= now) {
+      // Must land an arrived update so Lock Screen shows "予定時間になりました"
+      // before endAt dismiss (otherwise users see まもなく → gone).
       const ok = await sendUpdateForSchedule(scheduleId, data, "arrived");
       if (ok) {
-        await snap.ref.update({ status: "arrived" });
+        await snap.ref.update({ status: "arrived", arrivedAt: now });
+        for (const at of [
+          Number(data.endAtEpochMs),
+          Number(data.endAtEpochMs) + 15_000,
+        ]) {
+          try {
+            await enqueueRefresh(scheduleId, at);
+          } catch (err) {
+            logger.warn("Failed to enqueue LA end after arrived", err);
+          }
+        }
+      } else {
+        // Retry soon — do not wait for endAt alone.
         try {
-          await enqueueRefresh(scheduleId, Number(data.endAtEpochMs));
+          await enqueueRefresh(scheduleId, now + 20_000);
         } catch (err) {
-          logger.warn("Failed to enqueue LA end after arrived", err);
+          logger.warn("Failed to re-enqueue arrived retry", err);
         }
       }
       return;
@@ -901,6 +987,43 @@ export const sweepLiveActivityRefresh = onSchedule(
     // At most one push-to-start per device per sweep — extras update the same card.
     let startedNow = 0;
     const devicesStartedThisSweep = new Set();
+
+    // Demote zombie "started" (no recent successful update) so push-to-start can run.
+    for (const docSnap of startedSnap.docs) {
+      const data = docSnap.data();
+      if (Number(data.endAtEpochMs) <= now) continue;
+      if (Number(data.showAtEpochMs) > now) continue;
+      const startedAt = Number(data.startedAt || 0);
+      const recentOk =
+        data.lastRemoteUpdateOk === true &&
+        now - Number(data.lastRemoteUpdateAt || 0) < 15 * 60_000;
+      const recentlyStarted = startedAt && now - startedAt < 180_000;
+      if (recentOk || recentlyStarted) continue;
+      logger.info("LA sweep demote stuck started → due", docSnap.id);
+      await docSnap.ref.update({
+        status: "due",
+        lastError: "demoted-stuck-started",
+      });
+      try {
+        await db.collection("devices").doc(data.deviceId).set(
+          { laLastPushStartAt: 0 },
+          { merge: true },
+        );
+        const preferUpdateOnly = devicesStartedThisSweep.has(data.deviceId);
+        const ok = await sendStartForSchedule(
+          docSnap.id,
+          { ...data, status: "due" },
+          { preferUpdateOnly },
+        );
+        if (ok) {
+          startedNow += 1;
+          devicesStartedThisSweep.add(data.deviceId);
+        }
+      } catch (err) {
+        logger.warn("LA sweep restart stuck failed", docSnap.id, err);
+      }
+    }
+
     for (const docSnap of [...pendingSnap.docs, ...dueSnap.docs]) {
       const data = docSnap.data();
       if (Number(data.endAtEpochMs) <= now) {
