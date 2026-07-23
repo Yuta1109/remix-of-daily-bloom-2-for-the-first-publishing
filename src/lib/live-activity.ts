@@ -13,8 +13,7 @@ import {
  * - One shared Lock Screen activity (max 3 event rows).
  * - showAt = start − lead (stable). If already past showAt on save → appear now.
  * - Kill / lock screen: Cloud Functions push-to-start (FCM).
- * - Arrived ("It's time"): keep while ≤3 rows; if 4+ would show, drop earliest
- *   arrived first. Also drop on timeout (start+1m), app open, or when replaced.
+ * - Arrived ("It's time"): keep up to 1 hour (or until app open / displaced when >3).
  */
 
 const MAX_ITEMS = 3;

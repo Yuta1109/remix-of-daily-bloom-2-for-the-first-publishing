@@ -595,18 +595,28 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
           }
         | undefined;
 
-      // Keep "started" only when a local Activity is actually showing.
-      // Stale Firestore "started" without a card blocked kill-path push-to-start;
-      // re-due lets Cloud Functions start again. (Sync runs after local refresh.)
+      // Keep local "started" when a card is showing. Preserve server "arrived"
+      // so client sync does not demote it back to started/due (that cut linger).
       const localLive = getLiveActivityLocalStatus().activeCount > 0;
-      let status: "pending" | "due" | "started" = "pending";
-      if (localLive && w.visibleNow) {
+      let status: "pending" | "due" | "started" | "arrived" = "pending";
+      if (prev?.status === "arrived" && w.visibleNow && nowMs >= w.startEpochMs) {
+        status = "arrived";
+      } else if (localLive && w.visibleNow) {
+        status = nowMs >= w.startEpochMs ? "arrived" : "started";
+      } else if (prev?.status === "started" && w.visibleNow) {
+        // App killed: leave remote started so Cloud Functions keep the card.
         status = "started";
       } else if (w.activeNow) {
         status = "due";
       } else if (w.visibleNow && nowMs >= w.startEpochMs) {
-        status = "due";
+        status = prev?.status === "started" ? "started" : "due";
       }
+
+      // Never shorten endAt the server already extended (arrived linger).
+      const endAtEpochMs =
+        prev && prev.startEpochMs === w.startEpochMs
+          ? Math.max(w.endEpochMs, Number(prev.endAtEpochMs || 0))
+          : w.endEpochMs;
 
       // Preserve Cloud Task ids / remote diagnostics — never wipe the doc.
       if (
@@ -614,7 +624,7 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
         prev.status === status &&
         prev.showAtEpochMs === w.showAtEpochMs &&
         prev.startEpochMs === w.startEpochMs &&
-        prev.endAtEpochMs === w.endEpochMs
+        prev.endAtEpochMs === endAtEpochMs
       ) {
         batch.set(
           ref,
@@ -638,7 +648,7 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
           color: w.color,
           locale,
           showAtEpochMs: w.showAtEpochMs,
-          endAtEpochMs: w.endEpochMs,
+          endAtEpochMs,
           startEpochMs: w.startEpochMs,
           status,
           updatedAt: Date.now(),

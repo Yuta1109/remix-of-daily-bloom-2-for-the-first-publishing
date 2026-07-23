@@ -7,10 +7,10 @@ import {
 } from "./events-store";
 
 /**
- * After event start, keep "It's time" briefly, then drop that row.
- * Cleared sooner when the user opens the app (see dismissArrived).
+ * After event start, keep "It's time" on the Lock Screen for this long
+ * (unless the user opens the app, a new row displaces it when >3, etc.).
  */
-export const LIVE_ACTIVITY_ARRIVED_MS = 60 * 1000;
+export const LIVE_ACTIVITY_ARRIVED_MS = 60 * 60 * 1000;
 
 /** @deprecated Use LIVE_ACTIVITY_ARRIVED_MS — kept for older imports/tests. */
 export const LIVE_ACTIVITY_LINGER_MS = LIVE_ACTIVITY_ARRIVED_MS;

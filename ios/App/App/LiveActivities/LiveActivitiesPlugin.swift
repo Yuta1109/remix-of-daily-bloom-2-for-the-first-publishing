@@ -216,9 +216,9 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                 return Date(timeIntervalSince1970: endMs / 1000.0)
             }
             if let start = earliestStart {
-                return start.addingTimeInterval(60)
+                return start.addingTimeInterval(60 * 60)
             }
-            return Date().addingTimeInterval(60)
+            return Date().addingTimeInterval(60 * 60)
         }()
 
         let staleDate = endDate
@@ -417,14 +417,15 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                     // Keep the card if any row is still counting down OR still
                     // inside arrived linger (start + 60s).
                     let now = Date()
+                    let linger: TimeInterval = 60 * 60
                     let keep = Activity<EssencesWidgetAttributes>.activities.contains { activity in
                         activity.content.state.items.contains { item in
-                            item.startDate.addingTimeInterval(60) > now
+                            item.startDate.addingTimeInterval(linger) > now
                         }
                     }
                     if keep {
                         let nextEnd = Activity<EssencesWidgetAttributes>.activities
-                            .flatMap { $0.content.state.items.map { $0.startDate.addingTimeInterval(60) } }
+                            .flatMap { $0.content.state.items.map { $0.startDate.addingTimeInterval(linger) } }
                             .filter { $0 > now }
                             .min()
                         if let nextEnd {

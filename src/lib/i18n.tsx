@@ -105,7 +105,7 @@ const translations = {
     liveActivity: "Live Activity",
     liveActivityShow: "Show on Lock Screen",
     liveActivityHint:
-      "Shows a countdown on the Lock Screen. Example: if you choose “1 hour before” and the event starts at 3:00, the card appears at 2:00. If that time is already past when you save, it appears right away. Stays active up to 8 hours.",
+      "Shows a countdown on the Lock Screen. Example: if you choose “1 hour before” and the event starts at 3:00, the card appears at 2:00. If that time is already past when you save, it appears right away. After the start time, “It’s time” stays up to 1 hour (or until you open the app). Max lead window 8 hours.",
     liveActivityForegroundNote: "Requires iOS 17.2 or later.",
     la24h: "1 day before",
     la12h: "12 hours before",
@@ -258,7 +258,7 @@ const translations = {
     liveActivity: "ライブアクティビティ",
     liveActivityShow: "ロック画面に表示",
     liveActivityHint:
-      "ロック画面にカウントダウンを表示します。例:「1時間前」にすると、15:00の予定は14:00に表示が始まります。保存した時点ですでにその時刻を過ぎている場合は、すぐに表示します。表示は最大8時間です。",
+      "ロック画面にカウントダウンを表示します。例:「1時間前」にすると、15:00の予定は14:00に表示が始まります。保存した時点ですでにその時刻を過ぎている場合は、すぐに表示します。開始時刻のあとは「予定時間になりました」を最大1時間残します（アプリを開くと消えます）。リード表示は最大8時間です。",
     liveActivityForegroundNote: "iOS 17.2 以上が必要です。",
     la24h: "1日前",
     la12h: "12時間前",
