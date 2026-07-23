@@ -74,6 +74,11 @@ export type RemoteLaScheduleDiag = {
   id: string;
   status?: string;
   title?: string;
+  showAtEpochMs?: number;
+  startEpochMs?: number;
+  endAtEpochMs?: number;
+  lastError?: string;
+  startedAt?: number;
   lastRemoteUpdateAt?: number;
   lastRemoteUpdateOk?: boolean;
   lastRemoteUpdateCode?: string;
@@ -87,6 +92,16 @@ export type RemoteLaDiagnostics = {
   attempts: RemoteLaAttempt[];
   lastAttempt: RemoteLaAttempt | null;
   schedules: RemoteLaScheduleDiag[];
+  device?: {
+    hasFcmToken: boolean;
+    hasPushToStartToken: boolean;
+    hasUpdateToken: boolean;
+    laLastPushStartAt?: number;
+    laLastPushStartBy?: string;
+    lastRemoteLaStartAt?: number;
+    lastRemoteLaStartOk?: boolean;
+    lastRemoteLaStartScheduleId?: string;
+  };
 };
 
 function readWebConfig(): FirebaseWebConfig | null {
@@ -212,6 +227,11 @@ export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | 
         id: d.id,
         status: data.status,
         title: data.title,
+        showAtEpochMs: data.showAtEpochMs,
+        startEpochMs: data.startEpochMs,
+        endAtEpochMs: data.endAtEpochMs,
+        lastError: data.lastError,
+        startedAt: data.startedAt,
         lastRemoteUpdateAt: data.lastRemoteUpdateAt,
         lastRemoteUpdateOk: data.lastRemoteUpdateOk,
         lastRemoteUpdateCode: data.lastRemoteUpdateCode,
@@ -226,6 +246,16 @@ export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | 
       attempts: attempts.slice(0, 12),
       lastAttempt,
       schedules,
+      device: {
+        hasFcmToken: !!deviceData?.fcmToken,
+        hasPushToStartToken: !!deviceData?.pushToStartToken,
+        hasUpdateToken: !!deviceData?.liveActivityUpdateToken,
+        laLastPushStartAt: deviceData?.laLastPushStartAt,
+        laLastPushStartBy: deviceData?.laLastPushStartBy,
+        lastRemoteLaStartAt: deviceData?.lastRemoteLaStartAt,
+        lastRemoteLaStartOk: deviceData?.lastRemoteLaStartOk,
+        lastRemoteLaStartScheduleId: deviceData?.lastRemoteLaStartScheduleId,
+      },
     };
 
     if (lastAttempt && !lastAttempt.ok) {
@@ -263,6 +293,48 @@ export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | 
     );
     return null;
   }
+}
+
+/** Plain-text report for TestFlight screenshots / paste into chat. */
+export function formatLaDiagnosticsReport(
+  remote: LiveActivityRemoteStatus,
+  diag: RemoteLaDiagnostics | null,
+  local: { systemEnabled: boolean | null; activeCount: number; lastError: string | null },
+  clientLog: string,
+): string {
+  const lines: string[] = [];
+  lines.push(`=== Essences LA diagnostics ${new Date().toISOString()} ===`);
+  lines.push(
+    `client: supported=${remote.supported} config=${remote.configPresent} auth=${remote.authenticated} uid=${remote.deviceUid || "-"}`,
+  );
+  lines.push(
+    `tokens: FCM=${remote.hasFcmToken ? "✓" : "✗"} PTS=${remote.hasPushToStartToken ? "✓" : "✗"} update=${remote.hasUpdateToken ? "✓" : "✗"}`,
+  );
+  lines.push(
+    `local: enabled=${local.systemEnabled} activeCount=${local.activeCount} err=${local.lastError || "-"}`,
+  );
+  if (remote.lastError) lines.push(`lastError: ${remote.lastError}`);
+  if (remote.diagnosticHint) lines.push(`hint: ${remote.diagnosticHint}`);
+  if (diag?.device) {
+    const d = diag.device;
+    lines.push(
+      `deviceDoc: FCM=${d.hasFcmToken ? "✓" : "✗"} PTS=${d.hasPushToStartToken ? "✓" : "✗"} update=${d.hasUpdateToken ? "✓" : "✗"} claimAt=${d.laLastPushStartAt || "-"} claimBy=${d.laLastPushStartBy || "-"} lastStartOk=${d.lastRemoteLaStartOk ?? "-"} lastStartAt=${d.lastRemoteLaStartAt || "-"}`,
+    );
+  }
+  if (diag?.lastAttempt) {
+    const a = diag.lastAttempt;
+    lines.push(
+      `lastAttempt: ok=${a.ok} phase=${a.phase || "-"} code=${a.code || "-"} err=${(a.error || "").slice(0, 120)}`,
+    );
+  }
+  for (const s of diag?.schedules || []) {
+    lines.push(
+      `schedule ${s.id.slice(-12)}: status=${s.status} title=${s.title || "-"} showAt=${s.showAtEpochMs || "-"} start=${s.startEpochMs || "-"} endAt=${s.endAtEpochMs || "-"} updOk=${s.lastRemoteUpdateOk ?? "-"} phase=${s.lastRemoteUpdatePhase || "-"} err=${s.lastError || s.lastRemoteUpdateError || "-"}`,
+    );
+  }
+  lines.push("--- client log ---");
+  lines.push(clientLog || "(empty)");
+  return lines.join("\n");
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {

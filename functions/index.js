@@ -37,10 +37,12 @@ const BUNDLE_ID = "com.confast.essences";
 /** Exported task-queue function name — must match `taskQueue(...)` below. */
 const TASK_FN = "dispatchLiveActivityTask";
 const REFRESH_FN = "refreshLiveActivityTask";
-/** Remote Lock Screen redraw every minute (custom relative labels need Activity.update). */
-const REFRESH_INTERVAL_MS = 60 * 1000;
+/** Remote Lock Screen redraw every 30s (custom relative labels need Activity.update). */
+const REFRESH_INTERVAL_MS = 30 * 1000;
 /** Fire a single audible/haptic Live Activity alert this far before start. */
 const ONE_MINUTE_MS = 60 * 1000;
+/** Keep "予定時間になりました" at least this long after the arrived update lands. */
+const ARRIVED_LINGER_MS = 60 * 1000;
 
 let googleAuth;
 
@@ -275,8 +277,8 @@ async function enqueueAtShowAt(scheduleId, data) {
 
 /**
  * True when this device likely already has a Lock Screen card we should UPDATE.
- * Stale "started" without a recent successful remote update is treated as NO card
- * so kill-path can push-to-start again (otherwise LA never appears after force-quit).
+ * Do NOT treat a fresh Firestore "started" alone as proof — after force-quit the
+ * doc can say started with no Activity on the Lock Screen.
  */
 async function deviceHasLiveCard(deviceId) {
   const snap = await db.collection("laSchedules").where("deviceId", "==", deviceId).get();
@@ -285,17 +287,11 @@ async function deviceHasLiveCard(deviceId) {
     const data = d.data() || {};
     const s = data.status;
     if (s !== "started" && s !== "arrived") return false;
-    const startedAt = Number(data.startedAt || 0);
-    // Very recent start — sibling in the same sweep / local just started.
-    if (startedAt && now - startedAt < 120_000) return true;
     // Proven live via successful FCM update in the last 15 minutes.
-    if (
+    return (
       data.lastRemoteUpdateOk === true &&
       now - Number(data.lastRemoteUpdateAt || 0) < 15 * 60_000
-    ) {
-      return true;
-    }
-    return false;
+    );
   });
 }
 
@@ -436,10 +432,37 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
           },
         },
       });
+      // New Activity gets a new update token — clear the stale one so we don't
+      // "update" a dead activity and skip future push-to-starts.
+      try {
+        await db.collection("devices").doc(data.deviceId).set(
+          {
+            liveActivityUpdateToken: FieldValue.delete(),
+            lastRemoteLaStartAt: Date.now(),
+            lastRemoteLaStartOk: true,
+            lastRemoteLaStartScheduleId: scheduleId,
+          },
+          { merge: true },
+        );
+      } catch (err) {
+        logger.warn("Failed to clear stale update token after PTS", err);
+      }
       await markStartedAndEnqueueRefresh(scheduleId, data);
+      await recordRemoteResult(scheduleId, data.deviceId, {
+        ok: true,
+        phase: "start",
+        code: null,
+        error: null,
+      });
       return true;
     } catch (err) {
       logger.warn("FCM live activity start failed; trying update fallback", err);
+      await recordRemoteResult(scheduleId, data.deviceId, {
+        ok: false,
+        phase: "start",
+        code: String(err?.code || err?.errorInfo?.code || "start-fail"),
+        error: String(err?.message || err),
+      });
     }
   } else {
     logger.warn("Missing pushToStart token for device", data.deviceId);
@@ -525,10 +548,15 @@ async function enqueueOneMinuteAndArrived(scheduleId, data) {
     }
   }
   if (startAt > Date.now()) {
-    try {
-      await enqueueRefresh(scheduleId, startAt);
-    } catch (err) {
-      logger.warn("Failed to enqueue LA arrived tick", err);
+    // Hit start time precisely (and nearby) so "予定時間になりました" is not
+    // delayed until the next heartbeat — that made arrived flash then vanish.
+    for (const at of [startAt - 5_000, startAt, startAt + 10_000, startAt + 25_000]) {
+      if (at <= Date.now() - 2_000) continue;
+      try {
+        await enqueueRefresh(scheduleId, at);
+      } catch (err) {
+        logger.warn("Failed to enqueue LA arrived tick", at, err);
+      }
     }
   }
   // Dismiss after arrived linger — retry soon after endAt so we don't wait for
@@ -606,6 +634,12 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
     };
   }
 
+  // Priority 10 counts toward Apple's Live Activity push budget and can trigger
+  // the system "continue allowing Live Activities?" prompt. Use 5 for heartbeats.
+  const urgent =
+    withAlert || phase === "arrived" || phase === "notify1m" || opts.urgent === true;
+  const apnsPriority = urgent ? "10" : "5";
+
   try {
     await messaging.send({
       token: fcmToken,
@@ -614,7 +648,7 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
         headers: {
           "apns-push-type": "liveactivity",
           "apns-topic": `${BUNDLE_ID}.push-type.liveactivity`,
-          "apns-priority": "10",
+          "apns-priority": apnsPriority,
         },
         payload: { aps },
       },
@@ -899,14 +933,24 @@ export const refreshLiveActivityTask = onTaskDispatched(
 
     if (Number(data.startEpochMs) <= now) {
       // Must land an arrived update so Lock Screen shows "予定時間になりました"
-      // before endAt dismiss (otherwise users see まもなく → gone).
-      const ok = await sendUpdateForSchedule(scheduleId, data, "arrived");
+      // before end. Extend linger from *now* so a late tick still shows ~1m.
+      const lingerEnd = Math.max(
+        Number(data.endAtEpochMs) || 0,
+        now + ARRIVED_LINGER_MS,
+      );
+      const ok = await sendUpdateForSchedule(
+        scheduleId,
+        { ...data, endAtEpochMs: lingerEnd },
+        "arrived",
+        { urgent: true },
+      );
       if (ok) {
-        await snap.ref.update({ status: "arrived", arrivedAt: now });
-        for (const at of [
-          Number(data.endAtEpochMs),
-          Number(data.endAtEpochMs) + 15_000,
-        ]) {
+        await snap.ref.update({
+          status: "arrived",
+          arrivedAt: now,
+          endAtEpochMs: lingerEnd,
+        });
+        for (const at of [lingerEnd, lingerEnd + 15_000, lingerEnd + 35_000]) {
           try {
             await enqueueRefresh(scheduleId, at);
           } catch (err) {
@@ -916,7 +960,7 @@ export const refreshLiveActivityTask = onTaskDispatched(
       } else {
         // Retry soon — do not wait for endAt alone.
         try {
-          await enqueueRefresh(scheduleId, now + 20_000);
+          await enqueueRefresh(scheduleId, now + 15_000);
         } catch (err) {
           logger.warn("Failed to re-enqueue arrived retry", err);
         }
@@ -1073,17 +1117,30 @@ export const sweepLiveActivityRefresh = onSchedule(
       const alertNow = wantsOneMinuteAlert(data, now);
       const lastOk = data.lastRemoteUpdateOk === true;
       const lastAt = Number(data.lastRemoteUpdateAt || 0);
-      if (lastOk && now - lastAt < 45_000 && !alertNow) {
+      if (lastOk && now - lastAt < 20_000 && !alertNow) {
         skipped += 1;
         continue;
       }
 
       if (Number(data.startEpochMs) <= now) {
-        const ok = await sendUpdateForSchedule(docSnap.id, data, "arrived");
+        const lingerEnd = Math.max(
+          Number(data.endAtEpochMs) || 0,
+          now + ARRIVED_LINGER_MS,
+        );
+        const ok = await sendUpdateForSchedule(
+          docSnap.id,
+          { ...data, endAtEpochMs: lingerEnd },
+          "arrived",
+          { urgent: true },
+        );
         if (ok) {
-          await docSnap.ref.update({ status: "arrived" });
+          await docSnap.ref.update({
+            status: "arrived",
+            arrivedAt: now,
+            endAtEpochMs: lingerEnd,
+          });
           try {
-            await enqueueRefresh(docSnap.id, Number(data.endAtEpochMs));
+            await enqueueRefresh(docSnap.id, lingerEnd);
           } catch (err) {
             logger.warn("Failed to enqueue LA end from sweep", err);
           }

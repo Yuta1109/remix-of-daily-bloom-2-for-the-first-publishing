@@ -122,7 +122,7 @@ enum LiveActivityRefreshCenter {
         let task = Task.detached(priority: .utility) {
             await bumpTicks()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
                 await bumpTicks()
             }
         }

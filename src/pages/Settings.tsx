@@ -1,6 +1,6 @@
-import { useState, useEffect, type KeyboardEvent } from "react";
+import { useState, useEffect, useSyncExternalStore, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { Globe, ListPlus, Plus, X, Bell, Shield, ChevronRight } from "lucide-react";
+import { Globe, ListPlus, Plus, X, Bell, Shield, ChevronRight, Activity } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n, type Locale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,19 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { App } from "@capacitor/app";
+import {
+  fetchRemoteLaDiagnostics,
+  formatLaDiagnosticsReport,
+  getLiveActivityRemoteStatus,
+  initLiveActivityRemote,
+  type RemoteLaDiagnostics,
+} from "@/lib/la-remote";
+import { getLiveActivityLocalStatus } from "@/lib/live-activity";
+import {
+  formatLaDebugLogForCopy,
+  getLaDebugLog,
+  subscribeLaDebugLog,
+} from "@/lib/la-debug-log";
 
 const APP_VERSION = "1.0.0";
 const PREVIEW_LIMIT = 4;
@@ -36,6 +49,15 @@ export default function Settings({ staticPreview = false }: Props) {
   const [userEnabled, setUserEnabled] = useState(getNotificationsUserEnabled());
   const [listOpen, setListOpen] = useState(false);
   const [requesting, setRequesting] = useState(false);
+  const [laBusy, setLaBusy] = useState(false);
+  const [laCopied, setLaCopied] = useState(false);
+  const [laDiag, setLaDiag] = useState<RemoteLaDiagnostics | null>(null);
+  const [laRemoteTick, setLaRemoteTick] = useState(0);
+  const debugLog = useSyncExternalStore(subscribeLaDebugLog, getLaDebugLog, getLaDebugLog);
+  const laRemote = getLiveActivityRemoteStatus();
+  const laLocal = getLiveActivityLocalStatus();
+  void laRemoteTick;
+  void debugLog;
 
   const refreshPermission = async () => {
     if (!isNative()) return;
@@ -43,16 +65,52 @@ export default function Settings({ staticPreview = false }: Props) {
     setPerm(s);
   };
 
+  const refreshLaDiagnostics = async () => {
+    if (!isNative() || staticPreview) return;
+    setLaBusy(true);
+    try {
+      await initLiveActivityRemote();
+      const diag = await fetchRemoteLaDiagnostics();
+      setLaDiag(diag);
+      setLaRemoteTick((n) => n + 1);
+    } finally {
+      setLaBusy(false);
+    }
+  };
+
+  const copyLaLog = async () => {
+    const report = formatLaDiagnosticsReport(
+      getLiveActivityRemoteStatus(),
+      laDiag,
+      getLiveActivityLocalStatus(),
+      formatLaDebugLogForCopy(),
+    );
+    try {
+      await navigator.clipboard.writeText(report);
+      setLaCopied(true);
+      window.setTimeout(() => setLaCopied(false), 2000);
+    } catch {
+      window.prompt("Copy LA log:", report);
+    }
+  };
+
   useEffect(() => setReusable(loadReusable()), []);
   useEffect(() => {
     void refreshPermission();
   }, []);
+  useEffect(() => {
+    if (!isNative() || staticPreview) return;
+    void refreshLaDiagnostics();
+  }, [staticPreview]);
 
   useEffect(() => {
     if (!isNative()) return;
     let handle: { remove: () => Promise<void> } | undefined;
     void App.addListener("appStateChange", ({ isActive }) => {
-      if (isActive) void refreshPermission();
+      if (isActive) {
+        void refreshPermission();
+        void refreshLaDiagnostics();
+      }
     }).then((h) => {
       handle = h;
     });
@@ -189,6 +247,71 @@ export default function Settings({ staticPreview = false }: Props) {
                 </button>
               </>
             )}
+          </div>
+        )}
+
+        {isNative() && (
+          <div className="bg-card rounded-2xl p-5 shadow-soft">
+            <div className="flex items-center gap-2 mb-1">
+              <Activity className="w-4 h-4 text-accent" />
+              <p className="text-sm font-semibold">{t("remoteLaStatus")}</p>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">{t("remoteLaPermissionHint")}</p>
+            <div className="space-y-1.5 text-xs font-mono bg-secondary/50 rounded-xl px-3 py-2.5 mb-3">
+              <p>
+                {t("remoteLaTokens")}: FCM {laRemote.hasFcmToken ? "✓" : "✗"} · PTS{" "}
+                {laRemote.hasPushToStartToken ? "✓" : "✗"} · upd{" "}
+                {laRemote.hasUpdateToken ? "✓" : "✗"}
+              </p>
+              <p>
+                local: enabled={String(laLocal.systemEnabled)} count={laLocal.activeCount}
+              </p>
+              <p>
+                {laRemote.authenticated
+                  ? t("remoteLaOk")
+                  : laRemote.configPresent
+                    ? t("remoteLaWaiting")
+                    : t("remoteLaNoConfig")}
+              </p>
+              {(laRemote.lastError || laLocal.lastError) && (
+                <p className="text-destructive break-all">
+                  {t("remoteLaError")}: {laRemote.lastError || laLocal.lastError}
+                </p>
+              )}
+              {laDiag?.schedules?.length ? (
+                <div className="pt-1 border-t border-border/40 space-y-1">
+                  <p>{t("remoteLaSchedules")} ({laDiag.schedules.length})</p>
+                  {laDiag.schedules.slice(0, 6).map((s) => (
+                    <p key={s.id} className="break-all">
+                      {s.status} · {s.title || "?"} · upd=
+                      {s.lastRemoteUpdateOk == null
+                        ? "-"
+                        : s.lastRemoteUpdateOk
+                          ? "ok"
+                          : "fail"}
+                      {s.lastError ? ` · ${String(s.lastError).slice(0, 40)}` : ""}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void refreshLaDiagnostics()}
+                disabled={laBusy}
+                className="flex-1 bg-secondary/60 rounded-xl px-3 py-2.5 text-sm font-medium disabled:opacity-60"
+              >
+                {t("remoteLaRecheck")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyLaLog()}
+                className="flex-1 bg-accent text-accent-foreground rounded-xl px-3 py-2.5 text-sm font-medium"
+              >
+                {laCopied ? t("remoteLaCopied") : t("remoteLaCopyLog")}
+              </button>
+            </div>
           </div>
         )}
 

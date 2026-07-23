@@ -76,7 +76,7 @@ private struct CountdownOrArrivedLabel: View {
     var body: some View {
         // Periodic redraw so the relative label advances while the system
         // allows Live Activity timeline refreshes (and after push/local update).
-        TimelineView(.periodic(from: .now, by: 60)) { context in
+        TimelineView(.periodic(from: .now, by: 30)) { context in
             let now = context.date
             // Reference `tick` so content-state updates always invalidate this view.
             let _ = tick

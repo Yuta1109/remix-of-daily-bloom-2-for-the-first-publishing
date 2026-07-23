@@ -152,6 +152,13 @@ const translations = {
     remoteLaAuthFail: "Sign-in failed (enable Anonymous Auth?)",
     remoteLaWaiting: "Connecting…",
     remoteLaError: "Error",
+    remoteLaRecheck: "Refresh diagnostics",
+    remoteLaCopyLog: "Copy log",
+    remoteLaCopied: "Copied",
+    remoteLaTokens: "Tokens",
+    remoteLaSchedules: "Schedules",
+    remoteLaPermissionHint:
+      "If iOS asks “Continue allowing Live Activities?”, tap Always Allow. Apps cannot hide that system prompt.",
     localLaOff:
       "Live Activities are disabled for this app. iPhone Settings → Essences → Live Activities → On",
     localLaActive: "Local Live Activity windows active",
@@ -297,6 +304,13 @@ const translations = {
     remoteLaAuthFail: "サインイン失敗（Anonymous 認証を有効化してください）",
     remoteLaWaiting: "接続中…",
     remoteLaError: "エラー",
+    remoteLaRecheck: "診断を更新",
+    remoteLaCopyLog: "ログをコピー",
+    remoteLaCopied: "コピーしました",
+    remoteLaTokens: "トークン",
+    remoteLaSchedules: "スケジュール",
+    remoteLaPermissionHint:
+      "「ライブアクティビティの許可を継続しますか？」と出たら「常に許可」を選んでください。この表示は iOS のシステムUIで、アプリ側では消せません。",
     localLaOff:
       "このアプリの Live Activities がオフです。iPhoneの「設定」→ Essences → Live Activities をオンにしてください",
     localLaActive: "リード時間内の予定あり（端末側は開始を試み済み）",
