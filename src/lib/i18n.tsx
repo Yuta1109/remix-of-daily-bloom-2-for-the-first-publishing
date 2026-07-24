@@ -227,6 +227,7 @@ const translations = {
     tutorialLaDemoFailedBody:
       "Could not start the demo. Try again, or continue and enable later in Settings.",
     tutorialLaDemoShowAgain: "Show Live Activity demo again",
+    tutorialLaDemoOnLockScreen: "Showing on the Lock Screen",
     tutorialLaDemoLater: "Later",
     tutorialLaDemoSettingsHint:
       "You can also enable Live Activities later in Settings with the same guided steps.",
@@ -459,6 +460,7 @@ const translations = {
     tutorialLaDemoFailedBody:
       "デモを開始できませんでした。再試行するか、あとで設定から有効にしてください。",
     tutorialLaDemoShowAgain: "もう一度ライブアクティビティのデモを表示する",
+    tutorialLaDemoOnLockScreen: "ロック画面に表示されています",
     tutorialLaDemoLater: "後で行う",
     tutorialLaDemoSettingsHint:
       "設定のライブアクティビティ欄でも、同じ手順で後から許可できます。",

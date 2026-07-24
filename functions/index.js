@@ -383,17 +383,21 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     return false;
   }
 
-  // Do NOT "update first" on pending/due starts. A leftover updateToken from a
-  // previous Activity often makes FCM report success while the Lock Screen is
-  // blank when the app is killed — that was blocking push-to-start for 2nd+.
-
+  // Do NOT "update first" with a stale token — that blocks kill-path PTS.
+  // Only skip PTS when the app *just* started a calendar LA locally (survives
+  // force-quit) or a sibling / proven live card exists.
+  const localCalendarRecent =
+    Date.now() - Number(device.lastLocalCalendarLaAt || 0) < 3 * 60_000;
   // Sibling race window only (~claim TTL).
   const recentPtsSibling =
     device.lastRemoteLaStartOk === true &&
     Date.now() - Number(device.lastRemoteLaStartAt || 0) < 90_000;
   const provenLive = await deviceHasLiveCard(data.deviceId);
   const hasLiveCard =
-    opts.preferUpdateOnly === true || recentPtsSibling || provenLive;
+    opts.preferUpdateOnly === true ||
+    recentPtsSibling ||
+    provenLive ||
+    localCalendarRecent;
 
   const finishAsUpdate = async (reason) => {
     logger.info("LA ensure via update", scheduleId, reason);
@@ -410,25 +414,36 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       logger.warn("LA update failed for existing/sibling card", scheduleId);
       if (reason === "hasLiveCard") return null;
     }
-    if (reason === "siblingClaimedStart" || opts.preferUpdateOnly === true) {
+    if (
+      reason === "siblingClaimedStart" ||
+      opts.preferUpdateOnly === true ||
+      reason === "localCalendarRecent"
+    ) {
+      // Local ActivityKit card is already on Lock Screen — never PTS a second one.
       await markStartedAndEnqueueRefresh(scheduleId, data);
       return true;
     }
     return null;
   };
 
-  // Prefer update when a card is proven live or a sibling just claimed PTS.
+  // Prefer update when a card is proven live, local just started, or sibling claimed.
   if (hasLiveCard) {
-    const updated = await finishAsUpdate("hasLiveCard");
+    const reason = localCalendarRecent && !provenLive && !recentPtsSibling
+      ? "localCalendarRecent"
+      : "hasLiveCard";
+    const updated = await finishAsUpdate(reason);
     if (updated !== null) return updated;
-    // Sibling race: never stack a second PTS within the claim window.
-    if (opts.preferUpdateOnly === true || recentPtsSibling) {
-      logger.info("LA sibling/preferUpdate — skip PTS after failed update", scheduleId);
+    // Sibling / local card: never stack a second PTS.
+    if (
+      opts.preferUpdateOnly === true ||
+      recentPtsSibling ||
+      localCalendarRecent
+    ) {
+      logger.info("LA skip second PTS (sibling/local)", scheduleId);
       await markStartedAndEnqueueRefresh(scheduleId, data);
       return true;
     }
-    // Proven card but update token dead → allow one push-to-start recovery
-    // (otherwise kill-path stays dark until the user opens the app).
+    // Proven card but update token dead → allow one push-to-start recovery.
     logger.info("LA proven card update failed — PTS recovery", scheduleId);
   }
 
@@ -448,10 +463,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       data.locale === "en"
         ? "Countdown on Lock Screen"
         : "ロック画面でカウントダウン中";
+    // After the user has already allowed Live Activities (tutorial / Settings),
+    // skip the start alert so iOS does not re-prompt “Always Allow” on every event.
+    const includeAlert = device.laStartAlertDone !== true;
     try {
-      // Apple requires `alert` on push-to-start payloads. Silent starts are
-      // accepted by FCM/APNs but often never present a Lock Screen Activity
-      // (iOS 17.2+ / 18+). See ActivityKit "Construct the payload that starts…".
       const aps = {
         timestamp: nowSec,
         event: "start",
@@ -459,12 +474,15 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         "attributes-type": ATTRIBUTES_TYPE,
         attributes: { name: "Essences" },
         "stale-date": aggregated.staleSec,
-        // iOS 18+: ask the system to mint an update push token for this Activity.
         "input-push-token": 1,
-        alert: {
-          title: alertTitle,
-          body: alertBody,
-        },
+        ...(includeAlert
+          ? {
+              alert: {
+                title: alertTitle,
+                body: alertBody,
+              },
+            }
+          : {}),
       };
       const messageId = await messaging.send({
         token: fcmToken,
@@ -485,10 +503,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
             lastRemoteLaStartOk: true,
             lastRemoteLaStartScheduleId: scheduleId,
             lastRemoteLaStartMessageId: String(messageId || ""),
-            lastRemoteLaStartHadAlert: true,
+            lastRemoteLaStartHadAlert: includeAlert,
             lastRemoteLaStartItemCount: aggregated.contentState.items.length,
-            // Drop pre-PTS update token so +5s/+15s refresh/end cannot dismiss
-            // the new Activity by targeting the previous Activity's token.
+            // After first alerted start, later events should not re-prompt.
+            ...(includeAlert ? { laStartAlertDone: true } : {}),
             liveActivityUpdateToken: FieldValue.delete(),
             liveActivityUpdateTokenAt: FieldValue.delete(),
           },

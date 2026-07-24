@@ -63,9 +63,11 @@ export function LiveActivityDemoPanel({
     allowed: false,
     complete: false,
   });
+  const [flashOnLockScreen, setFlashOnLockScreen] = useState(false);
   const startedRef = useRef(false);
   const demoSessionRef = useRef(false);
   const sawBackgroundRef = useRef(false);
+  const flashTimerRef = useRef<number | null>(null);
 
   const refreshProgress = useCallback(async () => {
     const gate = await getLiveActivityGate();
@@ -134,11 +136,16 @@ export function LiveActivityDemoPanel({
     void next;
   }, [emitOutcome, onCanContinueChange, phase, refreshProgress]);
 
-  const runDemo = useCallback(async () => {
+  const runDemo = useCallback(async (opts?: { fromRetryButton?: boolean }) => {
     if (busy) return;
     setBusy(true);
     setPhase("preparing");
     setDisplayOutcome("unknown");
+    setFlashOnLockScreen(false);
+    if (flashTimerRef.current) {
+      window.clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = null;
+    }
     sawBackgroundRef.current = false;
     demoSessionRef.current = true;
     onCanContinueChange?.(false);
@@ -175,6 +182,14 @@ export function LiveActivityDemoPanel({
       setDisplayOutcome("unknown");
       onCanContinueChange?.(false);
       await refreshProgress();
+      // After “Show again”, briefly confirm the Lock Screen card appeared.
+      if (opts?.fromRetryButton) {
+        setFlashOnLockScreen(true);
+        flashTimerRef.current = window.setTimeout(() => {
+          setFlashOnLockScreen(false);
+          flashTimerRef.current = null;
+        }, 2000);
+      }
     } catch {
       setPhase("failed");
       onCanContinueChange?.(false);
@@ -182,6 +197,12 @@ export function LiveActivityDemoPanel({
       setBusy(false);
     }
   }, [busy, emitOutcome, onCanContinueChange, refreshProgress]);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     void refreshProgress();
@@ -309,13 +330,15 @@ export function LiveActivityDemoPanel({
             phase === "complete") && (
             <button
               type="button"
-              disabled={busy || !progress.systemOn}
-              onClick={() => void runDemo()}
+              disabled={busy || !progress.systemOn || flashOnLockScreen}
+              onClick={() => void runDemo({ fromRetryButton: true })}
               className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-60"
             >
-              {phase === "idle" && !autoStart
-                ? t("liveActivityTryDemo")
-                : t("tutorialLaDemoShowAgain")}
+              {flashOnLockScreen
+                ? t("tutorialLaDemoOnLockScreen")
+                : phase === "idle" && !autoStart
+                  ? t("liveActivityTryDemo")
+                  : t("tutorialLaDemoShowAgain")}
             </button>
           )}
           {!progress.systemOn && phase !== "denied" && (

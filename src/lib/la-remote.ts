@@ -409,13 +409,14 @@ async function ensureFirebase(): Promise<boolean> {
   return initPromise;
 }
 
-async function upsertDeviceDoc(): Promise<void> {
+async function upsertDeviceDoc(extra?: Record<string, unknown>): Promise<void> {
   if (!db || !deviceUid) return;
   try {
     // Never write null over a real token — boot races used to wipe FCM/LA tokens.
     const payload: Record<string, unknown> = {
       platform: Capacitor.getPlatform(),
       updatedAt: Date.now(),
+      ...extra,
     };
     if (pushToStartToken) payload.pushToStartToken = pushToStartToken;
     if (fcmToken) payload.fcmToken = fcmToken;
@@ -423,6 +424,14 @@ async function upsertDeviceDoc(): Promise<void> {
       payload.liveActivityUpdateToken = liveActivityUpdateToken;
       // Server skips update/end with tokens older than last push-to-start.
       payload.liveActivityUpdateTokenAt = Date.now();
+    }
+    try {
+      const { readStoredEnableFlags } = await import("./live-activity-prefs");
+      if (readStoredEnableFlags().allowed) {
+        payload.laStartAlertDone = true;
+      }
+    } catch {
+      /* ignore */
     }
 
     await setDoc(doc(db, "devices", deviceUid), payload, { merge: true });
@@ -440,6 +449,17 @@ async function upsertDeviceDoc(): Promise<void> {
   } catch (err) {
     setError(err);
   }
+}
+
+/**
+ * Call after a *calendar* Live Activity was started locally so Cloud Functions
+ * update that card instead of push-to-start (which would stack a duplicate).
+ */
+export async function markLocalCalendarLiveActivity(): Promise<void> {
+  const ok = await ensureFirebase();
+  if (!ok || !db || !deviceUid) return;
+  await upsertDeviceDoc({ lastLocalCalendarLaAt: Date.now() });
+  await syncLiveActivitySchedulesRemote();
 }
 
 /**

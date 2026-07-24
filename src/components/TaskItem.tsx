@@ -144,15 +144,23 @@ export function TaskItem({
           </button>
         )}
 
-        {selected && !isTutorialActive() && (
+        {selected && (
           <button
             type="button"
+            disabled={isTutorialActive()}
             onClick={(e) => {
               e.stopPropagation();
+              if (isTutorialActive()) return;
               onDelete(task.id);
             }}
-            className="flex-shrink-0 p-2 text-muted-foreground hover:text-destructive touch-manipulation"
+            className={cn(
+              "flex-shrink-0 p-2 text-muted-foreground touch-manipulation",
+              isTutorialActive()
+                ? "opacity-40 pointer-events-none"
+                : "hover:text-destructive",
+            )}
             aria-label="Delete"
+            aria-disabled={isTutorialActive() || undefined}
           >
             <X className="w-4 h-4" />
           </button>

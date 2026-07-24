@@ -354,11 +354,14 @@ export async function refreshLiveActivities(
       phase,
     });
     lastLocalError = null;
-    // Tell Firestore this device already has a card so remote won't push-to-start
-    // a duplicate (boundary timer refresh does not go through native-bootstrap sync).
-    void import("./la-remote")
-      .then((m) => m.syncLiveActivitySchedulesRemote())
-      .catch(() => {});
+    // Await sync + lastLocalCalendarLaAt so a pending Cloud Task does not
+    // push-to-start a second Activity on top of this local card.
+    try {
+      const remote = await import("./la-remote");
+      await remote.markLocalCalendarLiveActivity();
+    } catch {
+      /* ignore */
+    }
   } catch (err) {
     lastLocalError = err instanceof Error ? err.message : String(err);
     console.warn("[LiveActivity] startOrUpdate failed:", err);

@@ -169,7 +169,7 @@ export function AppTutorial() {
             <>
               <LiveActivityDemoPanel
                 autoStart
-                showChecklist
+                showChecklist={false}
                 onOutcome={(outcome) => {
                   setLaAllowed(outcome === "allowed");
                 }}

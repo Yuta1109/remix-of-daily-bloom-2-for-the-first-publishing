@@ -32,6 +32,7 @@ import {
   startDemoLiveActivity,
 } from "@/lib/live-activity";
 import {
+  getLiveActivityEnableProgress,
   getLiveActivityGate,
   getLiveActivityPermissionOutcome,
   getLiveActivityUserEnabled,
@@ -340,25 +341,27 @@ export default function Settings({ staticPreview = false }: Props) {
             )}
             <p className="text-xs text-muted-foreground mt-3">{t("remoteLaPermissionHint")}</p>
 
-            <div className="mt-4 pt-4 border-t border-border/50 space-y-2">
-              <p className="text-sm font-semibold">{t("liveActivitySettingsDemoTitle")}</p>
-              <p className="text-xs text-muted-foreground">
-                {t("liveActivitySettingsDemoBody")}
-              </p>
-              <LiveActivityDemoPanel
-                showChecklist
-                onOutcome={(outcome) => {
-                  setLaOutcome(outcome);
-                  if (outcome === "allowed") {
-                    void refreshLaDiagnostics();
-                    void refreshLiveActivities();
-                  }
-                }}
-                onProgressChange={() => {
-                  void getLiveActivityGate().then(setLaGate);
-                }}
-              />
-            </div>
+            {(!laGate || !getLiveActivityEnableProgress(laGate).complete) && (
+              <div className="mt-4 pt-4 border-t border-border/50 space-y-2">
+                <p className="text-sm font-semibold">{t("liveActivitySettingsDemoTitle")}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t("liveActivitySettingsDemoBody")}
+                </p>
+                <LiveActivityDemoPanel
+                  showChecklist
+                  onOutcome={(outcome) => {
+                    setLaOutcome(outcome);
+                    if (outcome === "allowed") {
+                      void refreshLaDiagnostics();
+                      void refreshLiveActivities();
+                    }
+                  }}
+                  onProgressChange={() => {
+                    void getLiveActivityGate().then(setLaGate);
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
 
