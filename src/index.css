@@ -240,10 +240,17 @@ html.overlay-open #root {
   100% { opacity: 0; transform: translateY(-24px); }
 }
 
+@keyframes tutorial-pop {
+  0%   { opacity: 0; transform: translateY(-50%) scale(0.88); }
+  55%  { opacity: 1; transform: translateY(-50%) scale(1.03); }
+  100% { opacity: 1; transform: translateY(-50%) scale(1); }
+}
+
 .animate-check-pop  { animation: check-pop 0.3s ease-out; }
 .animate-fade-in-up { animation: fade-in-up 0.3s ease-out; }
 .animate-slide-up   { animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .animate-float-up   { animation: float-up 1.2s ease-out forwards; }
+.animate-tutorial-pop { animation: tutorial-pop 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
 
 .month-grid-fade {
   transition: opacity 150ms ease-out;

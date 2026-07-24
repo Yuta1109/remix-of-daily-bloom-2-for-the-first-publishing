@@ -383,23 +383,11 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     return false;
   }
 
-  // If a usable update token exists, UPDATE first. Covers the common race where
-  // the app already started a local Activity (token uploaded) while a Cloud Task
-  // still thinks the schedule is pending — avoids a second Lock Screen card.
-  if (updateToken) {
-    const updatedFirst = await sendUpdateForSchedule(scheduleId, data, "countdown", {
-      withAlert: false,
-      contentState: aggregated.contentState,
-      staleSec: aggregated.staleSec,
-    });
-    if (updatedFirst) {
-      await markStartedAndEnqueueRefresh(scheduleId, data);
-      logger.info("LA start via existing updateToken (no PTS)", scheduleId);
-      return true;
-    }
-  }
+  // Do NOT "update first" on pending/due starts. A leftover updateToken from a
+  // previous Activity often makes FCM report success while the Lock Screen is
+  // blank when the app is killed — that was blocking push-to-start for 2nd+.
 
-  // Sibling race window only (~claim TTL). Do NOT treat 20m-old PTS as a live card.
+  // Sibling race window only (~claim TTL).
   const recentPtsSibling =
     device.lastRemoteLaStartOk === true &&
     Date.now() - Number(device.lastRemoteLaStartAt || 0) < 90_000;

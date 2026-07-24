@@ -5,7 +5,7 @@ import {
   LIVE_ACTIVITY_ARRIVED_MS,
   selectLiveActivityRows,
 } from "./live-activity-window";
-import { getLiveActivityUserEnabled } from "./live-activity-prefs";
+import { getLiveActivityUserEnabled, readStoredEnableFlags } from "./live-activity-prefs";
 
 /**
  * Live Activity design (ActivityKit / Apple HIG):
@@ -184,9 +184,20 @@ let lastActiveCount = 0;
 /** Soft lock so refreshLiveActivities does not endAll during the first-run demo. */
 let demoUntilMs = 0;
 let demoEndTimer: ReturnType<typeof setTimeout> | undefined;
+/** Keys of rows currently on the Lock Screen: `${title}|${startEpochMs}`. */
+let lastVisibleItemKeys = new Set<string>();
 
 export function isDemoLiveActivityActive(): boolean {
   return Date.now() < demoUntilMs;
+}
+
+/** True when this event row is on the local Live Activity card right now. */
+export function isEventOnLocalLiveActivity(title: string, startEpochMs: number): boolean {
+  return lastVisibleItemKeys.has(`${title}|${startEpochMs}`);
+}
+
+function setVisibleItemKeys(items: LiveActivityItem[]): void {
+  lastVisibleItemKeys = new Set(items.map((i) => `${i.title}|${i.startEpochMs}`));
 }
 
 export function getLiveActivityLocalStatus(): LiveActivityLocalStatus {
@@ -261,11 +272,12 @@ export async function refreshLiveActivities(
 ): Promise<void> {
   if (!isLiveActivitySupported()) return;
 
-  if (!getLiveActivityUserEnabled()) {
+  if (!getLiveActivityUserEnabled() || !readStoredEnableFlags().allowed) {
     if (!isDemoLiveActivityActive()) {
       try {
         await LiveActivities.endAll();
         lastActiveCount = 0;
+        lastVisibleItemKeys = new Set();
         lastLocalError = null;
       } catch {
         /* ignore */
@@ -299,12 +311,14 @@ export async function refreshLiveActivities(
     allowEarlyShowMs: opts.allowEarlyShowMs,
   });
   lastActiveCount = visible.length;
+  setVisibleItemKeys(visible);
 
   if (visible.length === 0) {
     if (isDemoLiveActivityActive()) {
       scheduleNextBoundary();
       return;
     }
+    lastVisibleItemKeys = new Set();
     try {
       await LiveActivities.endAll();
       lastLocalError = null;

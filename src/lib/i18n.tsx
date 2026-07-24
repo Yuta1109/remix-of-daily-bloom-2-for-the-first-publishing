@@ -218,25 +218,31 @@ const translations = {
     tutorialLaDemoPreparingHint: "Please wait a moment",
     tutorialLaDemoReadyBody:
       "Check the Lock Screen. If iOS asks to continue allowing Live Activities, choose Always Allow, then return here.",
+    tutorialLaDemoAllowedTitle: "Lock Screen countdown",
     tutorialLaDemoAllowedBody:
       "Live Activities are allowed. You can continue.",
-    tutorialLaDemoDeniedTitle: "Live Activities are off",
+    tutorialLaDemoDeniedTitle: "Live Activities turned off",
     tutorialLaDemoDeniedBody:
-      "You can enable them anytime from Settings. A guided demo is available there.",
+      "If you deny, Live Activities turn off in Settings, so the demo cannot run again here. Open iPhone Settings to turn them back on, or choose Later.",
     tutorialLaDemoFailedBody:
       "Could not start the demo. Try again, or continue and enable later in Settings.",
     tutorialLaDemoShowAgain: "Show Live Activity demo again",
+    tutorialLaDemoLater: "Later",
     tutorialLaDemoSettingsHint:
-      "You can also enable Live Activities later in Settings with the same guided demo.",
+      "You can also enable Live Activities later in Settings with the same guided steps.",
     tutorialLaDemoStarted:
       "Demo started. Check the Lock Screen, then tap Next.",
     tutorialLaDemoNext: "Next",
     tutorialLaDemoRetry: "Try demo again",
-    liveActivitySettingsDemoTitle: "Try Lock Screen countdown",
+    liveActivitySettingsDemoTitle: "Enable Lock Screen countdown",
     liveActivitySettingsDemoBody:
-      "If you skipped or denied Live Activities during the tour, run this short demo and choose Always Allow when iOS asks.",
+      "Follow these steps anytime Live Activities were denied or turned off.",
     liveActivitySettingsDemoSteps:
-      "1) Start the demo  2) Open the Lock Screen  3) Choose Always Allow  4) Return here",
+      "1) On in iPhone Settings  2) Run demo  3) Always Allow  4) Done",
+    liveActivityStepSystem: "Turn on Live Activities in iPhone Settings",
+    liveActivityStepDemo: "Show the Lock Screen demo",
+    liveActivityStepAllow: "Choose Always Allow on the Lock Screen",
+    liveActivityStepDone: "Enabled — ready for calendar events",
     tutorialDoneTitle: "You’re ready",
     tutorialDoneBody: "That’s the tour. Add events, check tasks, and enjoy Essences. Tap to finish.",
     tutorialTapHint: "Tap anywhere to continue",
@@ -444,25 +450,31 @@ const translations = {
     tutorialLaDemoPreparingHint: "しばらくお待ちください",
     tutorialLaDemoReadyBody:
       "ロック画面を確認してください。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選び、この画面に戻ってください。",
+    tutorialLaDemoAllowedTitle: "ロック画面のカウントダウン",
     tutorialLaDemoAllowedBody:
       "ライブアクティビティが許可されました。次へ進めます。",
-    tutorialLaDemoDeniedTitle: "ライブアクティビティがオフです",
+    tutorialLaDemoDeniedTitle: "ライブアクティビティがオフになりました",
     tutorialLaDemoDeniedBody:
-      "設定からいつでも追加可能です。設定ページでも同じ手順のデモを利用できます。",
+      "拒否すると設定でライブアクティビティがオフになるので、もう一度ライブアクティビティのデモを表示することはできません。iPhoneの設定からオンにするか、「後で行う」を選んでください。",
     tutorialLaDemoFailedBody:
       "デモを開始できませんでした。再試行するか、あとで設定から有効にしてください。",
     tutorialLaDemoShowAgain: "もう一度ライブアクティビティのデモを表示する",
+    tutorialLaDemoLater: "後で行う",
     tutorialLaDemoSettingsHint:
       "設定のライブアクティビティ欄でも、同じ手順で後から許可できます。",
     tutorialLaDemoStarted:
       "デモを開始しました。ロック画面を確認してから「次へ」を押してください。",
     tutorialLaDemoNext: "次へ",
     tutorialLaDemoRetry: "デモを再試行",
-    liveActivitySettingsDemoTitle: "ロック画面のカウントダウンを試す",
+    liveActivitySettingsDemoTitle: "ロック画面のカウントダウンを有効化",
     liveActivitySettingsDemoBody:
-      "チュートリアルで許可しなかった場合は、ここで短いデモを実行し、iOSの「常に許可」を選んでください。",
+      "拒否やオフにしたあとも、次のステップでいつでも有効にできます。",
     liveActivitySettingsDemoSteps:
-      "①デモを開始 ②ロック画面を開く ③常に許可 ④この画面に戻る",
+      "①iPhone設定でオン ②デモ表示 ③常に許可 ④完了",
+    liveActivityStepSystem: "iPhoneの設定からライブアクティビティをオンにする",
+    liveActivityStepDemo: "ライブアクティビティのデモを表示する",
+    liveActivityStepAllow: "デモでライブアクティビティを許可する",
+    liveActivityStepDone: "有効完了 — カレンダー予定で利用できます",
     tutorialDoneTitle: "準備完了",
     tutorialDoneBody: "案内は以上です。予定やタスクを追加して Essences を使ってみましょう。タップで終了。",
     tutorialTapHint: "画面をタップして次へ",

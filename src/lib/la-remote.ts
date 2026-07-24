@@ -19,7 +19,7 @@ import {
   where,
   type Firestore,
 } from "firebase/firestore";
-import { LiveActivities, isLiveActivitySupported, currentLocale, getLiveActivityLocalStatus } from "./live-activity";
+import { LiveActivities, isLiveActivitySupported, currentLocale, getLiveActivityLocalStatus, isEventOnLocalLiveActivity } from "./live-activity";
 import { collectLiveActivityWindows } from "./live-activity-window";
 import { laDebugLog } from "./la-debug-log";
 
@@ -579,8 +579,8 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
   if (!ok || !db || !deviceUid) return;
 
   try {
-    const { getLiveActivityUserEnabled } = await import("./live-activity-prefs");
-    const userOn = getLiveActivityUserEnabled();
+    const { getLiveActivityUserEnabled, readStoredEnableFlags } = await import("./live-activity-prefs");
+    const userOn = getLiveActivityUserEnabled() && readStoredEnableFlags().allowed;
     const now = new Date();
     const nowMs = now.getTime();
     const locale = currentLocale();
@@ -619,26 +619,30 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
             showAtEpochMs?: number;
             startEpochMs?: number;
             endAtEpochMs?: number;
+            lastRemoteUpdateOk?: boolean;
           }
         | undefined;
 
-      // Keep local "started" when a card is showing. Preserve server "arrived"
-      // so client sync does not demote it back to started/due (that cut linger).
-      const localLive = getLiveActivityLocalStatus().activeCount > 0;
+      // Keep local "started" only when THIS event is on the Lock Screen card.
+      // A demo / unrelated Activity must not mark real schedules started (that
+      // skips push-to-start while the app is killed).
+      const onLocalCard = isEventOnLocalLiveActivity(w.title, w.startEpochMs);
       let status: "pending" | "due" | "started" | "arrived" = "pending";
       if (prev?.status === "arrived" && w.visibleNow && nowMs >= w.startEpochMs) {
         status = "arrived";
-      } else if (localLive && (w.visibleNow || nowMs >= w.showAtEpochMs)) {
-        // Local card is up (including just-at/after showAt). Mark started so
-        // Cloud Functions never push-to-start a duplicate.
+      } else if (onLocalCard && (w.visibleNow || nowMs >= w.showAtEpochMs)) {
         status = nowMs >= w.startEpochMs ? "arrived" : "started";
-      } else if (prev?.status === "started" && (w.visibleNow || nowMs >= w.showAtEpochMs)) {
-        // App killed: leave remote started so Cloud Functions keep the card.
+      } else if (
+        prev?.status === "started" &&
+        prev.lastRemoteUpdateOk === true &&
+        (w.visibleNow || nowMs >= w.showAtEpochMs)
+      ) {
+        // App killed after a real remote start — keep started for update loop.
         status = "started";
       } else if (w.activeNow) {
         status = "due";
       } else if (w.visibleNow && nowMs >= w.startEpochMs) {
-        status = prev?.status === "started" ? "started" : "due";
+        status = "due";
       }
 
       // Never shorten endAt the server already extended (arrived linger).

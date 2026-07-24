@@ -105,24 +105,8 @@ export function CoachOverlay({
 
   const stageTop = targetRect?.top ?? 0;
   const bubbleTop = coverTop ? Math.max(8, stageTop + 6) : 0;
-  // Highlight starts under the compact bubble; bottom of stage stays unchanged.
-  const highlightGap = 10;
-  const rect: HighlightRect | null =
-    targetRect && coverTop && bubbleH > 0
-      ? (() => {
-          const top = Math.min(
-            bubbleTop + bubbleH + highlightGap,
-            targetRect.top + targetRect.height - 48
-          );
-          const bottom = targetRect.top + targetRect.height;
-          return {
-            top,
-            left: targetRect.left,
-            width: targetRect.width,
-            height: Math.max(48, bottom - top),
-          };
-        })()
-      : targetRect;
+  // Full stage stays highlighted so month header / goals remain visible under the bubble.
+  const rect = targetRect;
 
   const pad = 12;
   let bubbleStyle: CSSProperties = {
@@ -185,17 +169,6 @@ export function CoachOverlay({
         ]
       : null;
 
-  // Dim the band between stage top and highlight (under the bubble / over header).
-  const coverDim =
-    coverTop && targetRect && rect && rect.top > targetRect.top
-      ? {
-          top: targetRect.top,
-          left: targetRect.left,
-          width: targetRect.width,
-          height: rect.top - targetRect.top,
-        }
-      : null;
-
   const content = (
     <div className="fixed inset-0 z-[110] pointer-events-none" data-tutorial-overlay="">
       {(centerMode || !rect) && (
@@ -214,19 +187,6 @@ export function CoachOverlay({
             width: rect.width,
             height: rect.height,
             boxShadow: "0 0 0 9999px rgba(0,0,0,0.62)",
-          }}
-        />
-      )}
-
-      {coverDim && (
-        <div
-          className="absolute pointer-events-none"
-          style={{
-            top: coverDim.top,
-            left: coverDim.left,
-            width: coverDim.width,
-            height: coverDim.height,
-            backgroundColor: "rgba(0,0,0,0.62)",
           }}
         />
       )}
@@ -259,6 +219,7 @@ export function CoachOverlay({
         ref={bubbleRef}
         className={cn(
           "absolute z-[111] pointer-events-auto rounded-2xl bg-card text-card-foreground shadow-float border border-border/60 px-4 py-3",
+          centerMode && "animate-tutorial-pop",
         )}
         style={bubbleStyle}
         onClick={(e) => e.stopPropagation()}

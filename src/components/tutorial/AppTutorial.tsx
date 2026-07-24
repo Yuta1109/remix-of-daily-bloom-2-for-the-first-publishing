@@ -4,10 +4,7 @@ import { CoachOverlay } from "@/components/tutorial/CoachOverlay";
 import { LiveActivityDemoPanel } from "@/components/LiveActivityDemoPanel";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { ensurePermission, isNative } from "@/lib/notifications";
-import {
-  setLiveActivityOnboardingDone,
-  setLiveActivityPermissionOutcome,
-} from "@/lib/live-activity-prefs";
+import { setLiveActivityOnboardingDone } from "@/lib/live-activity-prefs";
 import {
   clearTutorialScratchData,
   getSavedTutorialStepIndex,
@@ -34,8 +31,7 @@ export function AppTutorial() {
   const location = useLocation();
   const [running, setRunning] = useState(false);
   const [index, setIndex] = useState(0);
-  const [laCanContinue, setLaCanContinue] = useState(false);
-  const [laDenied, setLaDenied] = useState(false);
+  const [laAllowed, setLaAllowed] = useState(false);
   const advancingRef = useRef(false);
 
   const step: TutorialStep | null = running ? TUTORIAL_STEPS[index] ?? null : null;
@@ -149,10 +145,7 @@ export function AppTutorial() {
   }, [running, step?.id, step?.advance, step?.target, goNext]);
 
   useEffect(() => {
-    if (step?.id !== "laDemo") {
-      setLaCanContinue(false);
-      setLaDenied(false);
-    }
+    if (step?.id !== "laDemo") setLaAllowed(false);
   }, [step?.id]);
 
   const overlay = useMemo(() => {
@@ -160,6 +153,7 @@ export function AppTutorial() {
     const isTap = step.advance === "tap";
     const isEvent = step.advance === "event";
     const isAction = step.advance === "action";
+    const isBookend = step.id === "welcome" || step.id === "done";
 
     if (step.id === "laDemo") {
       return (
@@ -175,14 +169,21 @@ export function AppTutorial() {
             <>
               <LiveActivityDemoPanel
                 autoStart
+                showChecklist
                 onOutcome={(outcome) => {
-                  setLaDenied(outcome === "denied");
+                  setLaAllowed(outcome === "allowed");
                 }}
-                onCanContinueChange={setLaCanContinue}
+                onCanContinueChange={(can) => {
+                  if (can) setLaAllowed(true);
+                }}
+                onDeferAfterDeny={() => {
+                  setLiveActivityOnboardingDone(true);
+                  goNext();
+                }}
               />
               <button
                 type="button"
-                disabled={!laCanContinue}
+                disabled={!laAllowed}
                 onClick={() => {
                   setLiveActivityOnboardingDone(true);
                   goNext();
@@ -191,11 +192,6 @@ export function AppTutorial() {
               >
                 {t("tutorialLaDemoNext")}
               </button>
-              {laDenied && (
-                <p className="text-xs text-muted-foreground text-center">
-                  {t("tutorialLaDemoSettingsHint")}
-                </p>
-              )}
             </>
           }
         />
@@ -210,7 +206,7 @@ export function AppTutorial() {
 
     return (
       <CoachOverlay
-        key={step.id}
+        key={`${step.id}-${isBookend ? "bookend" : "step"}`}
         targetSelector={step.target ? `[data-tutorial="${step.target}"]` : null}
         captureOutsideClick={isTap}
         allowThrough={isEvent}
@@ -222,7 +218,7 @@ export function AppTutorial() {
       />
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, t, laCanContinue, laDenied, goNext]);
+  }, [step, t, laAllowed, goNext]);
 
   if (!running || !step) return null;
   return overlay;

@@ -144,7 +144,7 @@ export function TaskItem({
           </button>
         )}
 
-        {selected && (
+        {selected && !isTutorialActive() && (
           <button
             type="button"
             onClick={(e) => {
