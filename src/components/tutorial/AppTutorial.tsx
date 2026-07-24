@@ -1,19 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { CoachOverlay } from "@/components/tutorial/CoachOverlay";
+import { LiveActivityDemoPanel } from "@/components/LiveActivityDemoPanel";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
+import { ensurePermission, isNative } from "@/lib/notifications";
 import {
-  ensurePermission,
-  isNative,
-  openAppSettings,
-} from "@/lib/notifications";
-import {
-  getLiveActivityGate,
-  isNativeIos,
   setLiveActivityOnboardingDone,
-  setLiveActivityUserEnabled,
+  setLiveActivityPermissionOutcome,
 } from "@/lib/live-activity-prefs";
-import { startDemoLiveActivity } from "@/lib/live-activity";
 import {
   clearTutorialScratchData,
   getSavedTutorialStepIndex,
@@ -40,11 +34,9 @@ export function AppTutorial() {
   const location = useLocation();
   const [running, setRunning] = useState(false);
   const [index, setIndex] = useState(0);
-  const [laBusy, setLaBusy] = useState(false);
-  const [laDemoReady, setLaDemoReady] = useState(false);
-  const [laDemoFailed, setLaDemoFailed] = useState(false);
+  const [laCanContinue, setLaCanContinue] = useState(false);
+  const [laDenied, setLaDenied] = useState(false);
   const advancingRef = useRef(false);
-  const laAutoStartedRef = useRef(false);
 
   const step: TutorialStep | null = running ? TUTORIAL_STEPS[index] ?? null : null;
 
@@ -139,7 +131,6 @@ export function AppTutorial() {
     advancingRef.current = false;
     return subscribeTutorial((name) => {
       if (name !== want) return;
-      // Let the checkbox animation / selection paint before advancing.
       if (want === "task-toggled") {
         window.setTimeout(() => goNext(), 450);
       } else {
@@ -157,98 +148,65 @@ export function AppTutorial() {
     return () => window.clearTimeout(timer);
   }, [running, step?.id, step?.advance, step?.target, goNext]);
 
-  const runLaDemo = useCallback(async () => {
-    if (laBusy) return;
-    setLaBusy(true);
-    setLaDemoFailed(false);
-    try {
-      if (!isNativeIos()) {
-        setLaDemoReady(true);
-        return;
-      }
-      setLiveActivityUserEnabled(true);
-      const gate = await getLiveActivityGate();
-      if (!gate.systemEnabled) {
-        await openAppSettings();
-        setLaDemoFailed(true);
-        return;
-      }
-      const result = await startDemoLiveActivity({ durationMs: 60_000 });
-      if (!result.ok) {
-        setLaDemoFailed(true);
-        return;
-      }
-      setLaDemoReady(true);
-    } catch {
-      setLaDemoFailed(true);
-    } finally {
-      setLaBusy(false);
-    }
-  }, [laBusy]);
-
-  // Auto-start the Lock Screen demo when entering the laDemo step.
   useEffect(() => {
-    if (!running || step?.id !== "laDemo") {
-      laAutoStartedRef.current = false;
-      setLaDemoReady(false);
-      setLaDemoFailed(false);
-      return;
+    if (step?.id !== "laDemo") {
+      setLaCanContinue(false);
+      setLaDenied(false);
     }
-    if (laAutoStartedRef.current) return;
-    laAutoStartedRef.current = true;
-    void runLaDemo();
-  }, [running, step?.id, runLaDemo]);
+  }, [step?.id]);
 
   const overlay = useMemo(() => {
     if (!step) return null;
-    const title = step.titleKey ? t(step.titleKey as TranslationKeys) : undefined;
     const isTap = step.advance === "tap";
     const isEvent = step.advance === "event";
     const isAction = step.advance === "action";
 
-    let body = t(step.bodyKey as TranslationKeys);
-    if (step.id === "laDemo" && laDemoReady) {
-      body = t("tutorialLaDemoStarted");
+    if (step.id === "laDemo") {
+      return (
+        <CoachOverlay
+          key={step.id}
+          targetSelector={null}
+          captureOutsideClick={false}
+          allowThrough={false}
+          bubblePlacement="center"
+          title={undefined}
+          body=""
+          actions={
+            <>
+              <LiveActivityDemoPanel
+                autoStart
+                onOutcome={(outcome) => {
+                  setLaDenied(outcome === "denied");
+                }}
+                onCanContinueChange={setLaCanContinue}
+              />
+              <button
+                type="button"
+                disabled={!laCanContinue}
+                onClick={() => {
+                  setLiveActivityOnboardingDone(true);
+                  goNext();
+                }}
+                className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-40"
+              >
+                {t("tutorialLaDemoNext")}
+              </button>
+              {laDenied && (
+                <p className="text-xs text-muted-foreground text-center">
+                  {t("tutorialLaDemoSettingsHint")}
+                </p>
+              )}
+            </>
+          }
+        />
+      );
     }
 
+    const title = step.titleKey ? t(step.titleKey as TranslationKeys) : undefined;
+    const body = t(step.bodyKey as TranslationKeys);
     let hint: string | undefined;
     if (isTap) hint = t("tutorialTapHint");
     if (isEvent) hint = t("tutorialActionHint");
-
-    const actions =
-      isAction && step.id === "laDemo" ? (
-        <>
-          {laDemoReady ? (
-            <button
-              type="button"
-              onClick={() => goNext()}
-              className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold"
-            >
-              {t("tutorialLaDemoNext")}
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={laBusy}
-              onClick={() => void runLaDemo()}
-              className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-60"
-            >
-              {laDemoFailed ? t("tutorialLaDemoRetry") : t("liveActivityTryDemo")}
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={laBusy}
-            onClick={() => {
-              setLiveActivityOnboardingDone(true);
-              goNext();
-            }}
-            className="w-full rounded-xl bg-secondary/80 px-4 py-2.5 text-sm font-medium"
-          >
-            {t("liveActivityOnboardingLater")}
-          </button>
-        </>
-      ) : null;
 
     return (
       <CoachOverlay
@@ -260,12 +218,11 @@ export function AppTutorial() {
         title={title}
         body={body}
         hint={isAction ? undefined : hint}
-        actions={actions}
         onOutsideTap={isTap ? goNext : undefined}
       />
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, t, laBusy, laDemoReady, laDemoFailed, goNext, runLaDemo]);
+  }, [step, t, laCanContinue, laDenied, goNext]);
 
   if (!running || !step) return null;
   return overlay;

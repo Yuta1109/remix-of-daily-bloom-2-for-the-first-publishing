@@ -40,6 +40,11 @@ export interface LiveActivityPayload {
 
 export interface LiveActivitiesPlugin {
   areEnabled(): Promise<{ enabled: boolean }>;
+  getAuthState(): Promise<{
+    enabled: boolean;
+    frequentPushesEnabled: boolean;
+    activityCount: number;
+  }>;
   startOrUpdate(payload: LiveActivityPayload): Promise<{ activityId: string | null }>;
   endAll(): Promise<void>;
   startPushToStartTokenUpdates(): Promise<void>;

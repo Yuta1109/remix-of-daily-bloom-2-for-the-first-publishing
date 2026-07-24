@@ -212,10 +212,31 @@ const translations = {
       "Reusable tasks are shortcuts you can add to Today in one tap. Tap to continue.",
     tutorialLaDemoBody:
       "Finally, there is a short Live Activity demo on the Lock Screen. If iOS asks to continue allowing Live Activities, choose Always Allow.",
+    tutorialLaDemoPreparingTitle: "Preparing Lock Screen demo…",
+    tutorialLaDemoPreparingBody:
+      "Starting a short countdown on the Lock Screen. This also prepares remote start after you force-quit the app.",
+    tutorialLaDemoPreparingHint: "Please wait a moment",
+    tutorialLaDemoReadyBody:
+      "Check the Lock Screen. If iOS asks to continue allowing Live Activities, choose Always Allow, then return here.",
+    tutorialLaDemoAllowedBody:
+      "Live Activities are allowed. You can continue.",
+    tutorialLaDemoDeniedTitle: "Live Activities are off",
+    tutorialLaDemoDeniedBody:
+      "You can enable them anytime from Settings. A guided demo is available there.",
+    tutorialLaDemoFailedBody:
+      "Could not start the demo. Try again, or continue and enable later in Settings.",
+    tutorialLaDemoShowAgain: "Show Live Activity demo again",
+    tutorialLaDemoSettingsHint:
+      "You can also enable Live Activities later in Settings with the same guided demo.",
     tutorialLaDemoStarted:
       "Demo started. Check the Lock Screen, then tap Next.",
     tutorialLaDemoNext: "Next",
     tutorialLaDemoRetry: "Try demo again",
+    liveActivitySettingsDemoTitle: "Try Lock Screen countdown",
+    liveActivitySettingsDemoBody:
+      "If you skipped or denied Live Activities during the tour, run this short demo and choose Always Allow when iOS asks.",
+    liveActivitySettingsDemoSteps:
+      "1) Start the demo  2) Open the Lock Screen  3) Choose Always Allow  4) Return here",
     tutorialDoneTitle: "You’re ready",
     tutorialDoneBody: "That’s the tour. Add events, check tasks, and enjoy Essences. Tap to finish.",
     tutorialTapHint: "Tap anywhere to continue",
@@ -417,10 +438,31 @@ const translations = {
       "定型タスクは、今日のリストへワンタップで追加できるショートカットです。タップで次へ。",
     tutorialLaDemoBody:
       "最後に、ロック画面でのライブアクティビティの短いデモがあります。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選んでください。",
+    tutorialLaDemoPreparingTitle: "デモを準備中…",
+    tutorialLaDemoPreparingBody:
+      "ロック画面に短いカウントダウンを表示します。アプリを完全終了したあとのリモート開始の準備にもなります。",
+    tutorialLaDemoPreparingHint: "しばらくお待ちください",
+    tutorialLaDemoReadyBody:
+      "ロック画面を確認してください。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選び、この画面に戻ってください。",
+    tutorialLaDemoAllowedBody:
+      "ライブアクティビティが許可されました。次へ進めます。",
+    tutorialLaDemoDeniedTitle: "ライブアクティビティがオフです",
+    tutorialLaDemoDeniedBody:
+      "設定からいつでも追加可能です。設定ページでも同じ手順のデモを利用できます。",
+    tutorialLaDemoFailedBody:
+      "デモを開始できませんでした。再試行するか、あとで設定から有効にしてください。",
+    tutorialLaDemoShowAgain: "もう一度ライブアクティビティのデモを表示する",
+    tutorialLaDemoSettingsHint:
+      "設定のライブアクティビティ欄でも、同じ手順で後から許可できます。",
     tutorialLaDemoStarted:
       "デモを開始しました。ロック画面を確認してから「次へ」を押してください。",
     tutorialLaDemoNext: "次へ",
     tutorialLaDemoRetry: "デモを再試行",
+    liveActivitySettingsDemoTitle: "ロック画面のカウントダウンを試す",
+    liveActivitySettingsDemoBody:
+      "チュートリアルで許可しなかった場合は、ここで短いデモを実行し、iOSの「常に許可」を選んでください。",
+    liveActivitySettingsDemoSteps:
+      "①デモを開始 ②ロック画面を開く ③常に許可 ④この画面に戻る",
     tutorialDoneTitle: "準備完了",
     tutorialDoneBody: "案内は以上です。予定やタスクを追加して Essences を使ってみましょう。タップで終了。",
     tutorialTapHint: "画面をタップして次へ",

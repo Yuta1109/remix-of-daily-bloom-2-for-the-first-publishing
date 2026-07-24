@@ -391,7 +391,9 @@ export default function CalendarPage() {
       </div>
 
       <FabButton
+        disabled={blockDayTaps}
         onClick={() => {
+          if (blockDayTaps || isTutorialBlockingCalendarDays()) return;
           setModalDate(todayKey());
           setModalOpen(true);
         }}

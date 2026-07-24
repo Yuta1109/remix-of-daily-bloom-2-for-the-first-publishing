@@ -88,7 +88,7 @@ export default function Index() {
       tasks: dayData.tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
     };
     persist(updated);
-    if (task && !task.completed && getCompletionRate(updated) === 100) {
+    if (task && !task.completed && getCompletionRate(updated) === 100 && !isTutorialActive()) {
       toast(t("allTasksComplete"));
     }
   };

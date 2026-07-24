@@ -295,47 +295,23 @@ function usableLiveActivityUpdateToken(device) {
 }
 
 /**
- * True when this device likely already has a Lock Screen card we should UPDATE.
- * Recent successful push-to-start counts even before updateToken is uploaded
- * (force-quit path cannot upload a new token until the app opens).
- * Local ActivityKit starts also mark schedules as "started" without
- * lastRemoteUpdateOk — treat those as live cards so we never stack a PTS.
+ * True when this device has a Lock Screen card we should UPDATE (not PTS again).
+ * Require recent successful remote updates on a still-open schedule — NOT merely
+ * "PTS succeeded sometime in the last 20m" (that blocked kill-path for the next
+ * event after the previous Activity ended).
  */
 async function deviceHasLiveCard(deviceId) {
   const now = Date.now();
-  try {
-    const deviceSnap = await db.collection("devices").doc(deviceId).get();
-    const device = deviceSnap.data() || {};
-    if (
-      device.lastRemoteLaStartOk === true &&
-      now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000
-    ) {
-      return true;
-    }
-  } catch (err) {
-    logger.warn("deviceHasLiveCard device read failed", deviceId, err);
-  }
-
   const snap = await db.collection("laSchedules").where("deviceId", "==", deviceId).get();
   return snap.docs.some((d) => {
     const data = d.data() || {};
     const s = data.status;
     if (s !== "started" && s !== "arrived") return false;
     if (Number(data.endAtEpochMs) > 0 && Number(data.endAtEpochMs) <= now) return false;
-    // Remote update recently succeeded.
-    if (
+    return (
       data.lastRemoteUpdateOk === true &&
       now - Number(data.lastRemoteUpdateAt || 0) < 15 * 60_000
-    ) {
-      return true;
-    }
-    // Local ActivityKit already started this schedule (or a sibling is live).
-    const touchedAt = Math.max(
-      Number(data.startedAt || 0),
-      Number(data.updatedAt || 0),
-      Number(data.showAtEpochMs || 0),
     );
-    return touchedAt > 0 && now - touchedAt < 20 * 60_000;
   });
 }
 
@@ -407,13 +383,29 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     return false;
   }
 
-  const recentPts =
+  // If a usable update token exists, UPDATE first. Covers the common race where
+  // the app already started a local Activity (token uploaded) while a Cloud Task
+  // still thinks the schedule is pending — avoids a second Lock Screen card.
+  if (updateToken) {
+    const updatedFirst = await sendUpdateForSchedule(scheduleId, data, "countdown", {
+      withAlert: false,
+      contentState: aggregated.contentState,
+      staleSec: aggregated.staleSec,
+    });
+    if (updatedFirst) {
+      await markStartedAndEnqueueRefresh(scheduleId, data);
+      logger.info("LA start via existing updateToken (no PTS)", scheduleId);
+      return true;
+    }
+  }
+
+  // Sibling race window only (~claim TTL). Do NOT treat 20m-old PTS as a live card.
+  const recentPtsSibling =
     device.lastRemoteLaStartOk === true &&
-    Date.now() - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
+    Date.now() - Number(device.lastRemoteLaStartAt || 0) < 90_000;
+  const provenLive = await deviceHasLiveCard(data.deviceId);
   const hasLiveCard =
-    opts.preferUpdateOnly === true ||
-    recentPts ||
-    (await deviceHasLiveCard(data.deviceId));
+    opts.preferUpdateOnly === true || recentPtsSibling || provenLive;
 
   const finishAsUpdate = async (reason) => {
     logger.info("LA ensure via update", scheduleId, reason);
@@ -428,11 +420,8 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         return true;
       }
       logger.warn("LA update failed for existing/sibling card", scheduleId);
-      // Dead update token / no real card — fall through to push-to-start when allowed.
       if (reason === "hasLiveCard") return null;
     }
-    // Sibling just push-to-started; updateToken may lag. Mark started only for
-    // explicit preferUpdateOnly / sibling claim — never for a stale hasLiveCard.
     if (reason === "siblingClaimedStart" || opts.preferUpdateOnly === true) {
       await markStartedAndEnqueueRefresh(scheduleId, data);
       return true;
@@ -440,16 +429,19 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     return null;
   };
 
-  // Existing card (or sibling schedule just started): prefer update.
+  // Prefer update when a card is proven live or a sibling just claimed PTS.
   if (hasLiveCard) {
     const updated = await finishAsUpdate("hasLiveCard");
     if (updated !== null) return updated;
-    // Critical: never fall through to a second push-to-start. Local ActivityKit
-    // and a prior PTS both leave a Lock Screen card; stacking duplicates with
-    // the system "continue allowing?" prompt.
-    logger.info("LA hasLiveCard, skip second PTS", scheduleId);
-    await markStartedAndEnqueueRefresh(scheduleId, data);
-    return true;
+    // Sibling race: never stack a second PTS within the claim window.
+    if (opts.preferUpdateOnly === true || recentPtsSibling) {
+      logger.info("LA sibling/preferUpdate — skip PTS after failed update", scheduleId);
+      await markStartedAndEnqueueRefresh(scheduleId, data);
+      return true;
+    }
+    // Proven card but update token dead → allow one push-to-start recovery
+    // (otherwise kill-path stays dark until the user opens the app).
+    logger.info("LA proven card update failed — PTS recovery", scheduleId);
   }
 
   const claimed = await claimDevicePushStart(data.deviceId, scheduleId);

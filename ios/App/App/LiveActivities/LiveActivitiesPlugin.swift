@@ -15,6 +15,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "LiveActivities"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "areEnabled", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getAuthState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startOrUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "endAll", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startPushToStartTokenUpdates", returnType: CAPPluginReturnPromise),
@@ -23,6 +24,11 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getTokenDebugInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "rebroadcastApnsToken", returnType: CAPPluginReturnPromise),
     ]
+
+    /// activityId → first-seen time. Unknown ids (push-to-start) are treated as oldest
+    /// so we keep the permission-bearing remote card and end newer local duplicates.
+    private static var activityBirth: [String: Date] = [:]
+    private let birthLock = NSLock()
 
     private var endWorkItem: DispatchWorkItem?
     private var arrivedWorkItem: DispatchWorkItem?
@@ -67,6 +73,28 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve(["enabled": ActivityAuthorizationInfo().areActivitiesEnabled])
         } else {
             call.resolve(["enabled": false])
+        }
+    }
+
+    @objc func getAuthState(_ call: CAPPluginCall) {
+        if #available(iOS 16.1, *) {
+            let info = ActivityAuthorizationInfo()
+            var frequent = false
+            if #available(iOS 16.2, *) {
+                frequent = info.frequentPushesEnabled
+            }
+            let count = Activity<EssencesWidgetAttributes>.activities.count
+            call.resolve([
+                "enabled": info.areActivitiesEnabled,
+                "frequentPushesEnabled": frequent,
+                "activityCount": count,
+            ])
+        } else {
+            call.resolve([
+                "enabled": false,
+                "frequentPushesEnabled": false,
+                "activityCount": 0,
+            ])
         }
     }
 
@@ -264,32 +292,47 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @available(iOS 16.1, *)
+    private func noteBirth(activityId: String) {
+        birthLock.lock()
+        if Self.activityBirth[activityId] == nil {
+            Self.activityBirth[activityId] = Date()
+        }
+        birthLock.unlock()
+    }
+
+    @available(iOS 16.1, *)
+    private func birthDate(activityId: String) -> Date {
+        birthLock.lock()
+        let d = Self.activityBirth[activityId] ?? .distantPast
+        birthLock.unlock()
+        return d
+    }
+
+    @available(iOS 16.1, *)
     private func apply(
         state: EssencesWidgetAttributes.ContentState,
         staleDate: Date?,
         relevanceScore: Double
     ) async throws -> String {
-        let apnsReady = APNsDeviceTokenCache.current() != nil
-        var needsPushRelaunch = false
-        if #available(iOS 16.2, *) {
-            needsPushRelaunch = await LiveActivityRefreshCenter.shouldRelaunchForPush(apnsReady: apnsReady)
-        }
-
-        if needsPushRelaunch {
-            NSLog("[Essences LA] Recreating Live Activity with pushType:.token (missing updateToken)")
-            await endAllActivities()
-        } else if !Activity<EssencesWidgetAttributes>.activities.isEmpty {
-            // Collapse duplicates from repeated remote push-to-start, then update one.
+        // Never endAll + recreate just to attach pushType — that kills the older
+        // Activity that may still show the system “Always Allow” sheet.
+        if !Activity<EssencesWidgetAttributes>.activities.isEmpty {
             let activities = Activity<EssencesWidgetAttributes>.activities
-            let keeper = activities[0]
+            // Keep the oldest card (push-to-start / first request = permission sheet).
+            let keeper = activities.min(by: {
+                birthDate(activityId: $0.id) < birthDate(activityId: $1.id)
+            }) ?? activities[0]
             if activities.count > 1 {
-                NSLog("[Essences LA] Ending %d duplicate Live Activities", activities.count - 1)
-                for activity in activities.dropFirst() {
+                NSLog("[Essences LA] Ending %d newer duplicate Live Activities (keep oldest)", activities.count - 1)
+                for activity in activities where activity.id != keeper.id {
                     if #available(iOS 16.2, *) {
                         await activity.end(nil, dismissalPolicy: .immediate)
                     } else {
                         await activity.end(dismissalPolicy: .immediate)
                     }
+                    birthLock.lock()
+                    Self.activityBirth.removeValue(forKey: activity.id)
+                    birthLock.unlock()
                 }
             }
             if #available(iOS 16.2, *) {
@@ -324,6 +367,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                     content: content,
                     pushType: .token
                 )
+                noteBirth(activityId: activity.id)
                 LiveActivityRefreshCenter.markStartedWithPush()
                 LiveActivityRefreshCenter.noteActivitiesChanged()
                 _ = await LiveActivityRefreshCenter.waitForUpdateToken(timeoutMs: 4000)
@@ -335,6 +379,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                     content: content,
                     pushType: nil
                 )
+                noteBirth(activityId: activity.id)
                 LiveActivityRefreshCenter.markStartedWithoutPush()
                 return activity.id
             }
@@ -346,6 +391,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                     contentState: state,
                     pushType: .token
                 )
+                noteBirth(activityId: activity.id)
                 return activity.id
             } catch {
                 let activity = try Activity.request(
@@ -353,6 +399,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                     contentState: state,
                     pushType: nil
                 )
+                noteBirth(activityId: activity.id)
                 return activity.id
             }
         }

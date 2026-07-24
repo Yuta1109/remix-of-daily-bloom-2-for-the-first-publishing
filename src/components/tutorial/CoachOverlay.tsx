@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -49,23 +55,28 @@ export function CoachOverlay({
   onOutsideTap,
   padding = 8,
 }: Props) {
-  const [rect, setRect] = useState<HighlightRect | null>(null);
+  const [targetRect, setTargetRect] = useState<HighlightRect | null>(null);
   const [vvBottom, setVvBottom] = useState(0);
+  const [bubbleH, setBubbleH] = useState(0);
+  const bubbleRef = useRef<HTMLDivElement>(null);
   const centerMode = bubblePlacement === "center" || !targetSelector;
+  const coverTop = bubblePlacement === "cover-top" && !centerMode;
 
   useLayoutEffect(() => {
     let lastKey = "";
     const update = () => {
       const next = centerMode ? null : readRect(targetSelector, padding);
-      setRect(next);
+      setTargetRect(next);
 
       const vv = window.visualViewport;
       const kb = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
       setVvBottom(kb);
 
-      if (next && targetSelector) {
+      const bh = bubbleRef.current?.getBoundingClientRect().height ?? 0;
+      if (bh > 0) setBubbleH(bh);
+
+      if (next && targetSelector && !coverTop) {
         const key = `${Math.round(next.top)}:${Math.round(next.height)}:${Math.round(kb)}`;
-        // Re-scroll when keyboard opens / target jumps (first open often lags).
         if (key !== lastKey) {
           lastKey = key;
           const el = document.querySelector(targetSelector);
@@ -76,7 +87,6 @@ export function CoachOverlay({
       }
     };
     update();
-    // Keep measuring for the whole step — keyboard open is often >4s after mount.
     const id = window.setInterval(update, 100);
     window.addEventListener("resize", update);
     window.addEventListener("focusin", update);
@@ -91,7 +101,28 @@ export function CoachOverlay({
       window.visualViewport?.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("scroll", update);
     };
-  }, [targetSelector, padding, centerMode]);
+  }, [targetSelector, padding, centerMode, coverTop, title, body, hint, actions]);
+
+  const stageTop = targetRect?.top ?? 0;
+  const bubbleTop = coverTop ? Math.max(8, stageTop + 6) : 0;
+  // Highlight starts under the compact bubble; bottom of stage stays unchanged.
+  const highlightGap = 10;
+  const rect: HighlightRect | null =
+    targetRect && coverTop && bubbleH > 0
+      ? (() => {
+          const top = Math.min(
+            bubbleTop + bubbleH + highlightGap,
+            targetRect.top + targetRect.height - 48
+          );
+          const bottom = targetRect.top + targetRect.height;
+          return {
+            top,
+            left: targetRect.left,
+            width: targetRect.width,
+            height: Math.max(48, bottom - top),
+          };
+        })()
+      : targetRect;
 
   const pad = 12;
   let bubbleStyle: CSSProperties = {
@@ -102,29 +133,26 @@ export function CoachOverlay({
     marginRight: "auto",
   };
 
-  if (centerMode || !rect) {
+  if (centerMode || !targetRect) {
     bubbleStyle = {
       ...bubbleStyle,
       top: "42%",
       transform: "translateY(-50%)",
     };
-  } else if (bubblePlacement === "cover-top") {
-    // Sit on the top of the highlight to cover month header / month goals.
-    const coverH = Math.min(168, Math.max(120, Math.round(rect.height * 0.28)));
+  } else if (coverTop) {
     bubbleStyle = {
       ...bubbleStyle,
-      top: Math.max(8, rect.top + 6),
-      maxWidth: Math.min(400, Math.max(260, rect.width - 20)),
-      minHeight: coverH,
+      top: bubbleTop,
+      maxWidth: Math.min(400, Math.max(260, targetRect.width - 20)),
     };
   } else if (bubblePlacement === "above") {
-    const bottomFromViewport = window.innerHeight - rect.top + 12 + vvBottom;
+    const bottomFromViewport = window.innerHeight - targetRect.top + 12 + vvBottom;
     bubbleStyle = {
       ...bubbleStyle,
       bottom: Math.max(bottomFromViewport, 12 + vvBottom),
     };
   } else {
-    const top = rect.top + rect.height + 12;
+    const top = targetRect.top + targetRect.height + 12;
     const maxTop = window.innerHeight - 160 - vvBottom;
     bubbleStyle = {
       ...bubbleStyle,
@@ -157,9 +185,19 @@ export function CoachOverlay({
         ]
       : null;
 
+  // Dim the band between stage top and highlight (under the bubble / over header).
+  const coverDim =
+    coverTop && targetRect && rect && rect.top > targetRect.top
+      ? {
+          top: targetRect.top,
+          left: targetRect.left,
+          width: targetRect.width,
+          height: rect.top - targetRect.top,
+        }
+      : null;
+
   const content = (
     <div className="fixed inset-0 z-[110] pointer-events-none" data-tutorial-overlay="">
-      {/* Full-screen dim for center / no-target steps (inline rgba — reliable in WKWebView). */}
       {(centerMode || !rect) && (
         <div
           className="absolute inset-0 pointer-events-none"
@@ -167,7 +205,6 @@ export function CoachOverlay({
         />
       )}
 
-      {/* Cutout highlight for targeted steps */}
       {rect && !centerMode && (
         <div
           className="pointer-events-none absolute rounded-2xl ring-2 ring-white/90 transition-[top,left,width,height] duration-150"
@@ -177,6 +214,19 @@ export function CoachOverlay({
             width: rect.width,
             height: rect.height,
             boxShadow: "0 0 0 9999px rgba(0,0,0,0.62)",
+          }}
+        />
+      )}
+
+      {coverDim && (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            top: coverDim.top,
+            left: coverDim.left,
+            width: coverDim.width,
+            height: coverDim.height,
+            backgroundColor: "rgba(0,0,0,0.62)",
           }}
         />
       )}
@@ -206,6 +256,7 @@ export function CoachOverlay({
       ) : null}
 
       <div
+        ref={bubbleRef}
         className={cn(
           "absolute z-[111] pointer-events-auto rounded-2xl bg-card text-card-foreground shadow-float border border-border/60 px-4 py-3",
         )}
@@ -213,9 +264,9 @@ export function CoachOverlay({
         onClick={(e) => e.stopPropagation()}
       >
         {title && <p className="text-sm font-semibold mb-1">{title}</p>}
-        <p className="text-sm leading-relaxed text-foreground/90">{body}</p>
+        {body ? <p className="text-sm leading-relaxed text-foreground/90">{body}</p> : null}
         {hint && <p className="text-xs text-muted-foreground mt-2">{hint}</p>}
-        {actions && <div className="mt-3 flex flex-col gap-2">{actions}</div>}
+        {actions && <div className={cn("flex flex-col gap-2", body || title ? "mt-3" : undefined)}>{actions}</div>}
       </div>
     </div>
   );

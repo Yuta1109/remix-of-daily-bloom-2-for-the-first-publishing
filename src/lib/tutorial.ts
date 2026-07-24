@@ -321,3 +321,8 @@ export function isTutorialBlockingCalendarDays(): boolean {
     return false;
   }
 }
+
+/** True while calendar-swipe step blocks the FAB / day taps. */
+export function isTutorialBlockingCalendarChrome(): boolean {
+  return isTutorialBlockingCalendarDays();
+}
