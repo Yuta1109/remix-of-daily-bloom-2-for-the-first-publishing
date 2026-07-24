@@ -51,49 +51,47 @@ export function CoachOverlay({
 }: Props) {
   const [rect, setRect] = useState<HighlightRect | null>(null);
   const [vvBottom, setVvBottom] = useState(0);
+  const centerMode = bubblePlacement === "center" || !targetSelector;
 
   useLayoutEffect(() => {
-    let didScroll = false;
+    let lastKey = "";
     const update = () => {
-      const next = readRect(targetSelector, padding);
+      const next = centerMode ? null : readRect(targetSelector, padding);
       setRect(next);
-      if (next && !didScroll && targetSelector) {
-        didScroll = true;
-        const el = document.querySelector(targetSelector);
-        if (el instanceof HTMLElement) {
-          el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        }
-      }
+
       const vv = window.visualViewport;
-      if (vv) {
-        setVvBottom(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
-      } else {
-        setVvBottom(0);
+      const kb = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+      setVvBottom(kb);
+
+      if (next && targetSelector) {
+        const key = `${Math.round(next.top)}:${Math.round(next.height)}:${Math.round(kb)}`;
+        // Re-scroll when keyboard opens / target jumps (first open often lags).
+        if (key !== lastKey) {
+          lastKey = key;
+          const el = document.querySelector(targetSelector);
+          if (el instanceof HTMLElement) {
+            el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          }
+        }
       }
     };
     update();
-    // Retry briefly — route transitions mount targets a frame or two late.
-    const id = window.setInterval(update, 250);
-    const stop = window.setTimeout(() => window.clearInterval(id), 4000);
+    // Keep measuring for the whole step — keyboard open is often >4s after mount.
+    const id = window.setInterval(update, 100);
     window.addEventListener("resize", update);
+    window.addEventListener("focusin", update);
+    window.addEventListener("focusout", update);
     window.visualViewport?.addEventListener("resize", update);
     window.visualViewport?.addEventListener("scroll", update);
     return () => {
       window.clearInterval(id);
-      window.clearTimeout(stop);
       window.removeEventListener("resize", update);
+      window.removeEventListener("focusin", update);
+      window.removeEventListener("focusout", update);
       window.visualViewport?.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("scroll", update);
     };
-  }, [targetSelector, padding]);
-
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    // Don't lock body hard — interactive steps need scroll/keyboard.
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  }, [targetSelector, padding, centerMode]);
 
   const pad = 12;
   let bubbleStyle: CSSProperties = {
@@ -104,22 +102,24 @@ export function CoachOverlay({
     marginRight: "auto",
   };
 
-  if (bubblePlacement === "center" || !rect) {
+  if (centerMode || !rect) {
     bubbleStyle = {
       ...bubbleStyle,
-      top: "40%",
+      top: "42%",
       transform: "translateY(-50%)",
     };
   } else if (bubblePlacement === "above") {
-    const bottomFromViewport = window.innerHeight - rect.top + 10 + vvBottom;
+    const bottomFromViewport = window.innerHeight - rect.top + 12 + vvBottom;
     bubbleStyle = {
       ...bubbleStyle,
-      bottom: Math.max(bottomFromViewport, 16 + vvBottom),
+      bottom: Math.max(bottomFromViewport, 12 + vvBottom),
     };
   } else {
+    const top = rect.top + rect.height + 12;
+    const maxTop = window.innerHeight - 160 - vvBottom;
     bubbleStyle = {
       ...bubbleStyle,
-      top: Math.min(rect.top + rect.height + 10, window.innerHeight - 140 - vvBottom),
+      top: Math.min(Math.max(top, 12), maxTop),
     };
   }
 
@@ -150,25 +150,28 @@ export function CoachOverlay({
 
   const content = (
     <div className="fixed inset-0 z-[110] pointer-events-none" data-tutorial-overlay="">
-      {/* Highlight ring */}
-      {rect && (
+      {/* Full-screen dim for center / no-target steps (inline rgba — reliable in WKWebView). */}
+      {(centerMode || !rect) && (
         <div
-          className="pointer-events-none absolute rounded-2xl ring-2 ring-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.58)] transition-all duration-200"
+          className="absolute inset-0 pointer-events-none"
+          style={{ backgroundColor: "rgba(0,0,0,0.62)" }}
+        />
+      )}
+
+      {/* Cutout highlight for targeted steps */}
+      {rect && !centerMode && (
+        <div
+          className="pointer-events-none absolute rounded-2xl ring-2 ring-white/90 transition-[top,left,width,height] duration-150"
           style={{
             top: rect.top,
             left: rect.left,
             width: rect.width,
             height: rect.height,
+            boxShadow: "0 0 0 9999px rgba(0,0,0,0.62)",
           }}
         />
       )}
-      {!rect && (
-        <div className="absolute inset-0 bg-black/58 pointer-events-none" />
-      )}
 
-      {/* Click catchers — root is pointer-events-none so the hole passes through.
-          When allowThrough but target not found yet, do NOT block the whole screen
-          (that would soft-lock interactive steps during route mounts). */}
       {panes ? (
         panes.map((p, i) => (
           <div
@@ -193,7 +196,6 @@ export function CoachOverlay({
         />
       ) : null}
 
-      {/* Bubble */}
       <div
         className={cn(
           "absolute z-[111] pointer-events-auto rounded-2xl bg-card text-card-foreground shadow-float border border-border/60 px-4 py-3",
@@ -203,9 +205,7 @@ export function CoachOverlay({
       >
         {title && <p className="text-sm font-semibold mb-1">{title}</p>}
         <p className="text-sm leading-relaxed text-foreground/90">{body}</p>
-        {hint && (
-          <p className="text-xs text-muted-foreground mt-2">{hint}</p>
-        )}
+        {hint && <p className="text-xs text-muted-foreground mt-2">{hint}</p>}
         {actions && <div className="mt-3 flex flex-col gap-2">{actions}</div>}
       </div>
     </div>

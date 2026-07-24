@@ -31,7 +31,6 @@ export function TaskItem({
     e.stopPropagation();
     if (!selected) {
       onSelect(task.id);
-      if (isTutorialActive()) emitTutorial("task-selected", { id: task.id });
       return;
     }
     if (!task.completed) {
@@ -58,16 +57,12 @@ export function TaskItem({
       tabIndex={0}
       data-tutorial="task-item"
       onClick={() => {
-        if (!selected) {
-          onSelect(task.id);
-          if (isTutorialActive()) emitTutorial("task-selected", { id: task.id });
-        }
+        if (!selected) onSelect(task.id);
       }}
       onKeyDown={(e) => {
         if ((e.key === "Enter" || e.key === " ") && !selected) {
           e.preventDefault();
           onSelect(task.id);
-          if (isTutorialActive()) emitTutorial("task-selected", { id: task.id });
         }
       }}
       className={cn(

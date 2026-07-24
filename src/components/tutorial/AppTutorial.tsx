@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { CoachOverlay } from "@/components/tutorial/CoachOverlay";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import {
@@ -15,9 +15,15 @@ import {
 } from "@/lib/live-activity-prefs";
 import { startDemoLiveActivity } from "@/lib/live-activity";
 import {
+  clearTutorialScratchData,
+  getSavedTutorialStepIndex,
+  hasTutorialBootstrapStarted,
   isTutorialDone,
+  markTutorialBootstrapStarted,
+  saveTutorialStepIndex,
   setTutorialActiveFlag,
   setTutorialDone,
+  setTutorialInProgress,
   subscribeTutorial,
   TUTORIAL_STEPS,
   type TutorialStep,
@@ -25,11 +31,12 @@ import {
 
 /**
  * First-run coach-mark tour. Starts after notification permission.
- * Live Activity demo is the last interactive beat before the closing message.
+ * Progress is persisted so route changes / remounts do not reset to welcome.
  */
 export function AppTutorial() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const location = useLocation();
   const [running, setRunning] = useState(false);
   const [index, setIndex] = useState(0);
   const [laBusy, setLaBusy] = useState(false);
@@ -41,6 +48,7 @@ export function AppTutorial() {
     setTutorialDone(true);
     setLiveActivityOnboardingDone(true);
     setTutorialActiveFlag(false);
+    setTutorialInProgress(false);
     setRunning(false);
     advancingRef.current = false;
     navigate("/", { replace: true });
@@ -54,10 +62,12 @@ export function AppTutorial() {
         queueMicrotask(finish);
         return i;
       }
+      const next = i + 1;
+      saveTutorialStepIndex(next);
       queueMicrotask(() => {
         advancingRef.current = false;
       });
-      return i + 1;
+      return next;
     });
   }, [finish]);
 
@@ -67,12 +77,31 @@ export function AppTutorial() {
 
     let cancelled = false;
     const timer = window.setTimeout(async () => {
+      if (cancelled || isTutorialDone()) return;
+
+      // Already bootstrapped in this JS context (remount) — resume, do not reset.
+      if (hasTutorialBootstrapStarted()) {
+        const saved = getSavedTutorialStepIndex();
+        setIndex(saved);
+        setTutorialActiveFlag(true);
+        setTutorialInProgress(true);
+        advancingRef.current = false;
+        setRunning(true);
+        return;
+      }
+
+      markTutorialBootstrapStarted();
       try {
         await ensurePermission();
       } catch {
-        /* continue tour even if permission UI fails */
+        /* continue */
       }
       if (cancelled || isTutorialDone()) return;
+
+      // Force-quit / fresh start: wipe Today scratch data and begin at welcome.
+      clearTutorialScratchData();
+      saveTutorialStepIndex(0);
+      setTutorialInProgress(true);
       setTutorialActiveFlag(true);
       advancingRef.current = false;
       setIndex(0);
@@ -84,12 +113,14 @@ export function AppTutorial() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap must not depend on navigate
+  }, []);
 
   useEffect(() => {
-    if (!running || !step) return;
-    if (step.route) navigate(step.route);
-  }, [running, step?.id, step?.route, navigate]);
+    if (!running || !step?.route) return;
+    if (location.pathname === step.route) return;
+    navigate(step.route);
+  }, [running, step?.id, step?.route, location.pathname, navigate]);
 
   useEffect(() => {
     if (!running || !step || step.advance !== "event" || !step.event) return;
@@ -100,13 +131,12 @@ export function AppTutorial() {
     });
   }, [running, step?.id, step?.advance, step?.event, goNext]);
 
-  // Soft escape: if an interactive target never appears, skip after 8s.
   useEffect(() => {
     if (!running || !step || step.advance !== "event" || !step.target) return;
     const timer = window.setTimeout(() => {
       const el = document.querySelector(`[data-tutorial="${step.target}"]`);
       if (!el) goNext();
-    }, 8000);
+    }, 12000);
     return () => window.clearTimeout(timer);
   }, [running, step?.id, step?.advance, step?.target, goNext]);
 

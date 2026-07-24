@@ -27,7 +27,6 @@ function AppRoutes() {
         <Route path="*" element={<NotFound />} />
       </Routes>
       {!hideNav && <BottomNav />}
-      <AppTutorial />
     </>
   );
 }
@@ -39,6 +38,8 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AppRoutes />
+          {/* Outside route-switching tree so tab changes cannot remount the tour. */}
+          <AppTutorial />
         </BrowserRouter>
       </I18nProvider>
     </TooltipProvider>

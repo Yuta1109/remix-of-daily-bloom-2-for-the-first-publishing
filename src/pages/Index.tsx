@@ -33,6 +33,15 @@ export default function Index() {
     setReusable(loadReusable());
   }, [today]);
 
+  useEffect(() => {
+    const reload = () => {
+      setDayData(getDayData(today));
+      setSelectedId(null);
+    };
+    window.addEventListener("essences-tutorial-data-cleared", reload);
+    return () => window.removeEventListener("essences-tutorial-data-cleared", reload);
+  }, [today]);
+
   const persist = useCallback(
     (updated: DayData) => {
       setDayData(updated);
@@ -40,6 +49,11 @@ export default function Index() {
     },
     [today]
   );
+
+  const selectTask = (id: string) => {
+    setSelectedId(id);
+    if (isTutorialActive()) emitTutorial("task-selected", { id });
+  };
 
   const addTaskWithText = (text: string) => {
     const trimmed = text.trim();
@@ -94,7 +108,13 @@ export default function Index() {
   const now = new Date();
 
   return (
-    <div className="page-shell px-3" onClick={() => setSelectedId(null)}>
+    <div
+      className="page-shell px-3"
+      onClick={() => {
+        // During the tour, keep selection so orange highlight stays visible.
+        if (!isTutorialActive()) setSelectedId(null);
+      }}
+    >
       <div className="shrink-0 pb-2" onClick={(e) => e.stopPropagation()}>
         <div
           className="bg-card rounded-3xl p-4 shadow-card animate-fade-in-up"
@@ -159,7 +179,10 @@ export default function Index() {
       </div>
 
       <div className="flex-1 min-h-0" onClick={(e) => e.stopPropagation()}>
-        <div className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden">
+        <div
+          className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden"
+          data-tutorial="task-list"
+        >
           <InsetScrollArea contentClassName="px-3 py-3" inset={16}>
             {dayData.tasks.length > 0 ? (
               <div className="space-y-2">
@@ -168,7 +191,7 @@ export default function Index() {
                     key={task.id}
                     task={task}
                     selected={selectedId === task.id}
-                    onSelect={setSelectedId}
+                    onSelect={selectTask}
                     onToggle={toggleTask}
                     onDelete={deleteTask}
                     onEdit={editTask}
