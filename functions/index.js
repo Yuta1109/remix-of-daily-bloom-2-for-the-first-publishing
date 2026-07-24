@@ -276,6 +276,25 @@ async function enqueueAtShowAt(scheduleId, data) {
 }
 
 /**
+ * Update/end pushes must target the *current* Activity's push token.
+ * After push-to-start, Firestore often still holds the previous Activity's
+ * token; using it can end/update the wrong card and make a fresh PTS flash
+ * then vanish. Prefer tokens uploaded at/after lastRemoteLaStartAt.
+ */
+function usableLiveActivityUpdateToken(device) {
+  const token = device?.liveActivityUpdateToken;
+  if (!token) return null;
+  const ptsAt = Number(device.lastRemoteLaStartAt || 0);
+  if (device.lastRemoteLaStartOk === true && ptsAt > 0) {
+    const tokenAt = Number(device.liveActivityUpdateTokenAt || 0);
+    // No timestamp → assume pre-PTS (legacy docs). Treat as unusable until
+    // the app re-uploads after this start.
+    if (!tokenAt || tokenAt < ptsAt) return null;
+  }
+  return token;
+}
+
+/**
  * True when this device likely already has a Lock Screen card we should UPDATE.
  * Recent successful push-to-start counts even before updateToken is uploaded
  * (force-quit path cannot upload a new token until the app opens).
@@ -358,7 +377,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   const device = deviceSnap.data() || {};
   const fcmToken = device.fcmToken;
   const liveToken = device.pushToStartToken;
-  const updateToken = device.liveActivityUpdateToken;
+  const updateToken = usableLiveActivityUpdateToken(device);
   if (!fcmToken) {
     logger.warn("Missing FCM token for device", data.deviceId);
     return false;
@@ -375,8 +394,13 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     return false;
   }
 
+  const recentPts =
+    device.lastRemoteLaStartOk === true &&
+    Date.now() - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
   const hasLiveCard =
-    opts.preferUpdateOnly === true || (await deviceHasLiveCard(data.deviceId));
+    opts.preferUpdateOnly === true ||
+    recentPts ||
+    (await deviceHasLiveCard(data.deviceId));
 
   const finishAsUpdate = async (reason) => {
     logger.info("LA ensure via update", scheduleId, reason);
@@ -407,6 +431,13 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   if (hasLiveCard) {
     const updated = await finishAsUpdate("hasLiveCard");
     if (updated !== null) return updated;
+    // Critical: after a successful PTS we clear the update token. A later
+    // sweep/task must NOT fall through to a second push-to-start (duplicates).
+    if (recentPts || opts.preferUpdateOnly === true) {
+      logger.info("LA hasLiveCard, no usable update yet — skip second PTS", scheduleId);
+      await markStartedAndEnqueueRefresh(scheduleId, data);
+      return true;
+    }
     logger.info("LA hasLiveCard update failed; retrying push-to-start", scheduleId);
   }
 
@@ -421,8 +452,30 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   // even when a stale updateToken from a previous activity is still on the device.
   if (liveToken) {
     const nowSec = Math.floor(Date.now() / 1000);
+    const alertTitle = String(data.title || (data.locale === "en" ? "Upcoming" : "予定"));
+    const alertBody =
+      data.locale === "en"
+        ? "Countdown on Lock Screen"
+        : "ロック画面でカウントダウン中";
     try {
-      await messaging.send({
+      // Apple requires `alert` on push-to-start payloads. Silent starts are
+      // accepted by FCM/APNs but often never present a Lock Screen Activity
+      // (iOS 17.2+ / 18+). See ActivityKit "Construct the payload that starts…".
+      const aps = {
+        timestamp: nowSec,
+        event: "start",
+        "content-state": aggregated.contentState,
+        "attributes-type": ATTRIBUTES_TYPE,
+        attributes: { name: "Essences" },
+        "stale-date": aggregated.staleSec,
+        // iOS 18+: ask the system to mint an update push token for this Activity.
+        "input-push-token": 1,
+        alert: {
+          title: alertTitle,
+          body: alertBody,
+        },
+      };
+      const messageId = await messaging.send({
         token: fcmToken,
         apns: {
           liveActivityToken: liveToken,
@@ -431,27 +484,22 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
             "apns-topic": `${BUNDLE_ID}.push-type.liveactivity`,
             "apns-priority": "10",
           },
-          payload: {
-            aps: {
-              timestamp: nowSec,
-              event: "start",
-              "content-state": aggregated.contentState,
-              "attributes-type": ATTRIBUTES_TYPE,
-              attributes: { name: "Essences" },
-              "stale-date": aggregated.staleSec,
-              // Silent start: no banner. (iOS ties LA vibration to alert.)
-            },
-          },
+          payload: { aps },
         },
       });
-      // Do NOT delete liveActivityUpdateToken here — kill-path heartbeats need it
-      // when an activity is already live; a new token overwrites when the app runs.
       try {
         await db.collection("devices").doc(data.deviceId).set(
           {
             lastRemoteLaStartAt: Date.now(),
             lastRemoteLaStartOk: true,
             lastRemoteLaStartScheduleId: scheduleId,
+            lastRemoteLaStartMessageId: String(messageId || ""),
+            lastRemoteLaStartHadAlert: true,
+            lastRemoteLaStartItemCount: aggregated.contentState.items.length,
+            // Drop pre-PTS update token so +5s/+15s refresh/end cannot dismiss
+            // the new Activity by targeting the previous Activity's token.
+            liveActivityUpdateToken: FieldValue.delete(),
+            liveActivityUpdateTokenAt: FieldValue.delete(),
           },
           { merge: true },
         );
@@ -465,6 +513,11 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         code: null,
         error: null,
       });
+      logger.info("LA push-to-start sent", scheduleId, {
+        messageId,
+        itemCount: aggregated.contentState.items.length,
+        staleSec: aggregated.staleSec,
+      });
       return true;
     } catch (err) {
       logger.warn("FCM live activity start failed; trying update fallback", err);
@@ -474,6 +527,19 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         code: String(err?.code || err?.errorInfo?.code || "start-fail"),
         error: String(err?.message || err),
       });
+      try {
+        await db.collection("devices").doc(data.deviceId).set(
+          {
+            lastRemoteLaStartAt: Date.now(),
+            lastRemoteLaStartOk: false,
+            lastRemoteLaStartScheduleId: scheduleId,
+            lastRemoteLaStartError: String(err?.message || err).slice(0, 300),
+          },
+          { merge: true },
+        );
+      } catch {
+        /* ignore */
+      }
     }
   } else {
     logger.warn("Missing pushToStart token for device", data.deviceId);
@@ -592,18 +658,21 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
   if (!deviceSnap.exists) return false;
   const device = deviceSnap.data() || {};
   const fcmToken = device.fcmToken;
-  const updateToken = device.liveActivityUpdateToken;
+  const updateToken = usableLiveActivityUpdateToken(device);
   const now = Date.now();
   if (!fcmToken || !updateToken) {
     // After force-quit push-to-start, updateToken often is not uploaded until
     // the app opens — that is expected. Do not treat it as a hard failure that
     // demotes the schedule; TimelineView still advances from start content-state.
+    // Also skip stale pre-PTS tokens (they can dismiss the new Activity).
     const deviceRecentPts =
       device.lastRemoteLaStartOk === true &&
       now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
-    logger.info("Skip LA refresh — missing update token", scheduleId, {
+    const hadRawToken = !!device.liveActivityUpdateToken;
+    logger.info("Skip LA refresh — missing/stale update token", scheduleId, {
       hasFcm: !!fcmToken,
-      hasUpdate: !!updateToken,
+      hasUsableUpdate: !!updateToken,
+      hadRawToken,
       deviceRecentPts,
     });
     if (!deviceRecentPts) {
@@ -717,7 +786,7 @@ async function sendEndForSchedule(scheduleId, data) {
   }
   const device = deviceSnap.data() || {};
   const fcmToken = device.fcmToken;
-  const updateToken = device.liveActivityUpdateToken;
+  const updateToken = usableLiveActivityUpdateToken(device);
 
   // Always re-query remaining visible rows. Never end the whole Activity while
   // another countdown/arrived row should still be on the card.
@@ -730,7 +799,7 @@ async function sendEndForSchedule(scheduleId, data) {
       remaining: aggregated.contentState.items.length,
     });
     if (!fcmToken || !updateToken) {
-      logger.warn("LA remaining rows but missing tokens; skip end", scheduleId);
+      logger.warn("LA remaining rows but missing/stale tokens; skip end", scheduleId);
       return false;
     }
     return sendUpdateForSchedule(scheduleId, { ...data, status: "expired" }, "countdown", {
@@ -741,7 +810,7 @@ async function sendEndForSchedule(scheduleId, data) {
   }
 
   if (!fcmToken || !updateToken) {
-    logger.warn("LA end skipped — no tokens (staleDate should dismiss)", scheduleId);
+    logger.warn("LA end skipped — no usable update token (staleDate should dismiss)", scheduleId);
     return false;
   }
 
@@ -1062,16 +1131,23 @@ export const sweepLiveActivityRefresh = onSchedule(
         now - Number(data.lastRemoteUpdateAt || 0) < 15 * 60_000;
       const recentlyStarted = startedAt && now - startedAt < 180_000;
       let recentPts = false;
+      let ptsOwnsThis = false;
       try {
         const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
         const device = deviceSnap.data() || {};
         recentPts =
           device.lastRemoteLaStartOk === true &&
           now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
+        // Force-quit path uploads no updateToken for hours — do not demote a
+        // schedule we already successfully push-to-started (causes duplicates).
+        ptsOwnsThis =
+          device.lastRemoteLaStartOk === true &&
+          device.lastRemoteLaStartScheduleId === docSnap.id &&
+          now - Number(device.lastRemoteLaStartAt || 0) < 8 * 60 * 60_000;
       } catch {
         /* ignore */
       }
-      if (recentOk || recentlyStarted || recentPts) continue;
+      if (recentOk || recentlyStarted || recentPts || ptsOwnsThis) continue;
       logger.info("LA sweep demote stuck started → due", docSnap.id);
       await docSnap.ref.update({
         status: "due",

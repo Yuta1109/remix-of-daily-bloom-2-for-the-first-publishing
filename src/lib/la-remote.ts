@@ -101,6 +101,10 @@ export type RemoteLaDiagnostics = {
     lastRemoteLaStartAt?: number;
     lastRemoteLaStartOk?: boolean;
     lastRemoteLaStartScheduleId?: string;
+    lastRemoteLaStartMessageId?: string;
+    lastRemoteLaStartHadAlert?: boolean;
+    lastRemoteLaStartItemCount?: number;
+    lastRemoteLaStartError?: string;
   };
 };
 
@@ -255,6 +259,10 @@ export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | 
         lastRemoteLaStartAt: deviceData?.lastRemoteLaStartAt,
         lastRemoteLaStartOk: deviceData?.lastRemoteLaStartOk,
         lastRemoteLaStartScheduleId: deviceData?.lastRemoteLaStartScheduleId,
+        lastRemoteLaStartMessageId: deviceData?.lastRemoteLaStartMessageId,
+        lastRemoteLaStartHadAlert: deviceData?.lastRemoteLaStartHadAlert,
+        lastRemoteLaStartItemCount: deviceData?.lastRemoteLaStartItemCount,
+        lastRemoteLaStartError: deviceData?.lastRemoteLaStartError,
       },
     };
 
@@ -318,7 +326,7 @@ export function formatLaDiagnosticsReport(
   if (diag?.device) {
     const d = diag.device;
     lines.push(
-      `deviceDoc: FCM=${d.hasFcmToken ? "✓" : "✗"} PTS=${d.hasPushToStartToken ? "✓" : "✗"} update=${d.hasUpdateToken ? "✓" : "✗"} claimAt=${d.laLastPushStartAt || "-"} claimBy=${d.laLastPushStartBy || "-"} lastStartOk=${d.lastRemoteLaStartOk ?? "-"} lastStartAt=${d.lastRemoteLaStartAt || "-"}`,
+      `deviceDoc: FCM=${d.hasFcmToken ? "✓" : "✗"} PTS=${d.hasPushToStartToken ? "✓" : "✗"} update=${d.hasUpdateToken ? "✓" : "✗"} claimAt=${d.laLastPushStartAt || "-"} claimBy=${d.laLastPushStartBy || "-"} lastStartOk=${d.lastRemoteLaStartOk ?? "-"} lastStartAt=${d.lastRemoteLaStartAt || "-"} alert=${d.lastRemoteLaStartHadAlert ?? "-"} items=${d.lastRemoteLaStartItemCount ?? "-"} msgId=${(d.lastRemoteLaStartMessageId || "-").toString().slice(0, 24)} startErr=${(d.lastRemoteLaStartError || "-").slice(0, 80)}`,
     );
   }
   if (diag?.lastAttempt) {
@@ -411,7 +419,11 @@ async function upsertDeviceDoc(): Promise<void> {
     };
     if (pushToStartToken) payload.pushToStartToken = pushToStartToken;
     if (fcmToken) payload.fcmToken = fcmToken;
-    if (liveActivityUpdateToken) payload.liveActivityUpdateToken = liveActivityUpdateToken;
+    if (liveActivityUpdateToken) {
+      payload.liveActivityUpdateToken = liveActivityUpdateToken;
+      // Server skips update/end with tokens older than last push-to-start.
+      payload.liveActivityUpdateTokenAt = Date.now();
+    }
 
     await setDoc(doc(db, "devices", deviceUid), payload, { merge: true });
     lastSyncAt = Date.now();
@@ -567,17 +579,32 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
   if (!ok || !db || !deviceUid) return;
 
   try {
+    const { getLiveActivityUserEnabled } = await import("./live-activity-prefs");
+    const userOn = getLiveActivityUserEnabled();
     const now = new Date();
     const nowMs = now.getTime();
     const locale = currentLocale();
     // Keep lead + linger windows so remote aggregates can show up to 3 rows.
-    const windows = collectLiveActivityWindows(now).filter(
-      (w) => w.visibleNow || w.showAtEpochMs > nowMs,
-    );
+    const windows = userOn
+      ? collectLiveActivityWindows(now).filter(
+          (w) => w.visibleNow || w.showAtEpochMs > nowMs,
+        )
+      : [];
 
     const existing = await getDocs(
       query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid)),
     );
+
+    // User turned LA off in-app — drop remote schedules so kill-path PTS stops.
+    if (!userOn) {
+      if (existing.empty) return;
+      const batch = writeBatch(db);
+      existing.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      lastSyncAt = Date.now();
+      return;
+    }
+
     const existingById = new Map(existing.docs.map((d) => [d.id, d]));
     const desiredIds = new Set<string>();
     const batch = writeBatch(db);

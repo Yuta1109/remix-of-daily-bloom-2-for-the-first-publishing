@@ -167,6 +167,53 @@ const translations = {
     timeRequired: "Please set both start and end times.",
     liveActivityStartInPast:
       "Start time is in the past. Turn off Live Activity, or set a start time in the future.",
+    liveActivitySettingsTitle: "Live Activities",
+    liveActivitySettingsOn: "Live Activities are on for Essences",
+    liveActivitySettingsOffUser:
+      "Live Activities are off in the app. Turn on to show countdowns on the Lock Screen.",
+    liveActivitySettingsOffSystem:
+      "Live Activities are off in iPhone Settings. Open Settings to enable them for Essences.",
+    liveActivityEnable: "Enable Live Activities",
+    liveActivityOpenSettings: "Open iPhone Settings",
+    liveActivityDisabledInApp:
+      "Live Activities are off, so Lock Screen countdowns will not appear for this event.",
+    liveActivityAllowPrompt:
+      "Live Activities are off. Allow them to show a Lock Screen countdown for this event?",
+    liveActivityAllowYes: "Allow",
+    liveActivityAllowNo: "Save without Live Activity",
+    liveActivityOnboardingTitle: "Lock Screen countdown",
+    liveActivityOnboardingBody:
+      "Essences can show a countdown on the Lock Screen before an event. Try a short demo now — this also prepares remote start after you force-quit the app. If iOS asks to continue allowing Live Activities, choose Always Allow.",
+    liveActivityTryDemo: "Try a short demo",
+    liveActivityOnboardingLater: "Not now",
+    tutorialWelcomeTitle: "Welcome to Essences",
+    tutorialWelcomeBody:
+      "A short tour of Today, Calendar, and Settings. Tap anywhere to continue.",
+    tutorialQuickAdd:
+      "Add today’s first task here. Type something and tap Add (or Done on the keyboard).",
+    tutorialTaskSelect: "Nice! Tap the task you just added in the list.",
+    tutorialTaskControls:
+      "The circle checks it off. The × deletes it when the row is selected. Tap to continue.",
+    tutorialTaskCheck: "Try the checkbox now — mark the task complete.",
+    tutorialStats:
+      "Streak = consecutive active days. Today = completion %. Days = total days with tasks. Tap to continue.",
+    tutorialNavCalendar: "Open Calendar from the tab bar.",
+    tutorialMonthGoals:
+      "Month goals sit on top of the calendar. You can expand or collapse them anytime. Tap to continue.",
+    tutorialCalendarSwipe:
+      "Swipe the calendar up or down to change months. Tap a day to see its events. Swipe once to continue.",
+    tutorialCalendarToday: "Tap Today to jump back to the current month.",
+    tutorialCalendarFab:
+      "The + button creates a new calendar event. (No need to tap it now.) Tap elsewhere to continue.",
+    tutorialNavSettings: "Open Settings from the tab bar.",
+    tutorialReusableTasks:
+      "Reusable tasks are shortcuts you can add to Today in one tap. Tap to continue.",
+    tutorialLaDemoBody:
+      "Last step: try a short Lock Screen Live Activity demo. If iOS asks to continue allowing Live Activities, choose Always Allow.",
+    tutorialDoneTitle: "You’re ready",
+    tutorialDoneBody: "That’s the tour. Add events, check tasks, and enjoy Essences. Tap to finish.",
+    tutorialTapHint: "Tap anywhere to continue",
+    tutorialActionHint: "Follow the highlight to continue",
   },
   ja: {
     today: "今日",
@@ -319,10 +366,59 @@ const translations = {
     timeRequired: "開始時刻と終了時刻を入力してください。",
     liveActivityStartInPast:
       "開始時刻が現在より前です。ライブアクティビティをオフにするか、開始時刻をこれから先に修正してください。",
+    liveActivitySettingsTitle: "ライブアクティビティ",
+    liveActivitySettingsOn: "Essences のライブアクティビティはオンです",
+    liveActivitySettingsOffUser:
+      "アプリ内でオフです。オンにするとロック画面にカウントダウンを表示します。",
+    liveActivitySettingsOffSystem:
+      "iPhoneの設定でオフです。「設定」から Essences のライブアクティビティをオンにしてください。",
+    liveActivityEnable: "ライブアクティビティを有効にする",
+    liveActivityOpenSettings: "iPhoneの設定を開く",
+    liveActivityDisabledInApp:
+      "ライブアクティビティがオフのため、この予定のロック画面カウントダウンは表示されません。",
+    liveActivityAllowPrompt:
+      "ライブアクティビティがオフです。この予定のロック画面カウントダウンを表示するために許可しますか？",
+    liveActivityAllowYes: "許可する",
+    liveActivityAllowNo: "オフのまま保存",
+    liveActivityOnboardingTitle: "ロック画面のカウントダウン",
+    liveActivityOnboardingBody:
+      "予定の前にロック画面へカウントダウンを表示できます。短いデモを試すと、アプリを完全終了したあとのリモート開始の準備にもなります。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選んでください。",
+    liveActivityTryDemo: "短いデモを試す",
+    liveActivityOnboardingLater: "あとで",
+    tutorialWelcomeTitle: "Essences へようこそ",
+    tutorialWelcomeBody:
+      "今日・カレンダー・設定を短く案内します。画面をタップすると次へ進みます。",
+    tutorialQuickAdd:
+      "下の「何をしますか？」に今日のタスクを入力し、「追加」またはキーボードの完了で登録してください。",
+    tutorialTaskSelect: "追加できました。リストのそのタスクをタップしてください。",
+    tutorialTaskControls:
+      "左側の丸が完了チェック、選択中に出る × が削除です。内容を確認したら画面をタップして次へ。",
+    tutorialTaskCheck: "チェックボックスを押して、タスクを完了にしてみましょう。",
+    tutorialStats:
+      "連続＝続けた日数、今日＝今日の達成率、日＝タスクのある合計日数です。タップで次へ。",
+    tutorialNavCalendar: "下のタブから「カレンダー」を開いてください。",
+    tutorialMonthGoals:
+      "カレンダー上部は今月の目標です。いつでも開閉できます。タップで次へ。",
+    tutorialCalendarSwipe:
+      "カレンダーは上下にスワイプで月を切り替えられます。日付をタップすると予定一覧が開きます。一度スワイプしてください。",
+    tutorialCalendarToday: "「今日」を押すと、いまの月へ戻れます。",
+    tutorialCalendarFab:
+      "右下の ＋ からも新規予定を追加できます（ここでは押さなくて大丈夫です）。タップで次へ。",
+    tutorialNavSettings: "下のタブから「設定」を開いてください。",
+    tutorialReusableTasks:
+      "定型タスクは、今日のリストへワンタップで追加できるショートカットです。タップで次へ。",
+    tutorialLaDemoBody:
+      "最後に、ロック画面のライブアクティビティの短いデモです。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選んでください。",
+    tutorialDoneTitle: "準備完了",
+    tutorialDoneBody: "案内は以上です。予定やタスクを追加して Essences を使ってみましょう。タップで終了。",
+    tutorialTapHint: "画面をタップして次へ",
+    tutorialActionHint: "ハイライト部分を操作して次へ",
   },
 } as const;
 
 type TranslationKeys = keyof typeof translations.en;
+
+export type { TranslationKeys };
 
 interface I18nContextType {
   locale: Locale;

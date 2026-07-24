@@ -14,6 +14,7 @@ import { loadReusable, type ReusableTask } from "@/lib/reusable-tasks";
 import { useI18n } from "@/lib/i18n";
 import { InsetScrollArea } from "@/components/InsetScrollArea";
 import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
+import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 import type { DayData, Task } from "@/lib/store";
 
 export default function Index() {
@@ -49,6 +50,7 @@ export default function Index() {
     }
     const task: Task = { id: crypto.randomUUID(), text: trimmed, completed: false, date: today };
     persist({ ...dayData, tasks: [...dayData.tasks, task] });
+    if (isTutorialActive()) emitTutorial("task-added", { id: task.id });
     return true;
   };
 
@@ -94,7 +96,10 @@ export default function Index() {
   return (
     <div className="page-shell px-3" onClick={() => setSelectedId(null)}>
       <div className="shrink-0 pb-2" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-card rounded-3xl p-4 shadow-card animate-fade-in-up">
+        <div
+          className="bg-card rounded-3xl p-4 shadow-card animate-fade-in-up"
+          data-tutorial="today-stats"
+        >
           <div className="mb-3">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
               {formatDate(now, { weekday: "long" })}
@@ -185,7 +190,10 @@ export default function Index() {
         className="shrink-0 pt-2.5 pb-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2">
+        <div
+          className="flex items-center gap-2"
+          data-tutorial="quick-add"
+        >
           <input
             value={newTask}
             onChange={(e) => setNewTask(e.target.value)}

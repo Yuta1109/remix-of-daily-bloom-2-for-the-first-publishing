@@ -8,6 +8,7 @@ import {
 } from "react";
 import { tickHaptic } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
+import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 
 const GAP_PX = 8;
 const PEEK_PX = 88;
@@ -136,6 +137,7 @@ export function MonthWheel({
         onMonthStepRef.current(delta);
         setOffsetBoth(0);
         tickIndexRef.current = 0;
+        if (isTutorialActive()) emitTutorial("calendar-swiped", { delta });
       });
     },
     [animateTo, setOffsetBoth]
@@ -243,6 +245,7 @@ export function MonthWheel({
   return (
     <div
       ref={viewportRef}
+      data-tutorial="calendar-swipe"
       className={cn(
         "h-full overflow-hidden touch-none select-none relative",
         disabled && "pointer-events-none"

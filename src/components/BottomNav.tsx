@@ -3,6 +3,7 @@ import { Home, Calendar, Settings } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 
 export function BottomNav() {
   const location = useLocation();
@@ -30,9 +31,9 @@ export function BottomNav() {
   }, []);
 
   const tabs = [
-    { path: "/", icon: Home, label: t("today") },
-    { path: "/calendar", icon: Calendar, label: t("calendar") },
-    { path: "/settings", icon: Settings, label: t("settings") },
+    { path: "/", icon: Home, label: t("today"), tutorial: "nav-today" },
+    { path: "/calendar", icon: Calendar, label: t("calendar"), tutorial: "nav-calendar" },
+    { path: "/settings", icon: Settings, label: t("settings"), tutorial: "nav-settings" },
   ];
 
   return (
@@ -44,12 +45,19 @@ export function BottomNav() {
         className="flex justify-around items-center pt-[2px]"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        {tabs.map(({ path, icon: Icon, label }) => {
+        {tabs.map(({ path, icon: Icon, label, tutorial }) => {
           const active = location.pathname === path;
           return (
             <button
               key={path}
-              onClick={() => navigate(path)}
+              data-tutorial={tutorial}
+              onClick={() => {
+                navigate(path);
+                if (isTutorialActive()) {
+                  if (path === "/calendar") emitTutorial("nav-calendar");
+                  if (path === "/settings") emitTutorial("nav-settings");
+                }
+              }}
               className={cn(
                 "flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-colors justify-center",
                 active ? "text-accent" : "text-muted-foreground"

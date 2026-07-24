@@ -2,6 +2,7 @@ import { useState, type MouseEvent } from "react";
 import { Check, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
+import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 import type { Task } from "@/lib/store";
 
 interface TaskItemProps {
@@ -30,6 +31,7 @@ export function TaskItem({
     e.stopPropagation();
     if (!selected) {
       onSelect(task.id);
+      if (isTutorialActive()) emitTutorial("task-selected", { id: task.id });
       return;
     }
     if (!task.completed) {
@@ -38,6 +40,7 @@ export function TaskItem({
       setTimeout(() => setShowFeedback(false), 1200);
     }
     onToggle(task.id);
+    if (isTutorialActive()) emitTutorial("task-toggled", { id: task.id });
     setTimeout(() => setPopping(false), 300);
   };
 
@@ -53,13 +56,18 @@ export function TaskItem({
     <div
       role="button"
       tabIndex={0}
+      data-tutorial="task-item"
       onClick={() => {
-        if (!selected) onSelect(task.id);
+        if (!selected) {
+          onSelect(task.id);
+          if (isTutorialActive()) emitTutorial("task-selected", { id: task.id });
+        }
       }}
       onKeyDown={(e) => {
         if ((e.key === "Enter" || e.key === " ") && !selected) {
           e.preventDefault();
           onSelect(task.id);
+          if (isTutorialActive()) emitTutorial("task-selected", { id: task.id });
         }
       }}
       className={cn(
@@ -73,6 +81,7 @@ export function TaskItem({
       <div className="flex items-center gap-1.5 min-h-[40px]">
         <button
           type="button"
+          data-tutorial="task-checkbox"
           onClick={handleToggle}
           aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
           className="flex-shrink-0 w-10 h-10 flex items-center justify-center touch-manipulation"

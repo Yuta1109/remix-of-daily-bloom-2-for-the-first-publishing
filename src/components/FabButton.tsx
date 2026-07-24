@@ -10,6 +10,7 @@ interface Props {
 export function FabButton({ onClick, "aria-label": ariaLabel, className }: Props) {
   return (
     <button
+      data-tutorial="calendar-fab"
       onClick={onClick}
       aria-label={ariaLabel}
       className={cn(

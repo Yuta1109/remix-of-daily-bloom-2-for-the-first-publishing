@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BottomNav } from "@/components/BottomNav";
+import { AppTutorial } from "@/components/tutorial/AppTutorial";
 import { I18nProvider } from "@/lib/i18n";
 import Index from "./pages/Index";
 import Calendar from "./pages/Calendar";
@@ -26,6 +27,7 @@ function AppRoutes() {
         <Route path="*" element={<NotFound />} />
       </Routes>
       {!hideNav && <BottomNav />}
+      <AppTutorial />
     </>
   );
 }

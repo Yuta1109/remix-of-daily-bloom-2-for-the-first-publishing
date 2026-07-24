@@ -46,8 +46,19 @@ import {
   ensurePermission,
   getNotificationsUserEnabled,
   setNotificationsUserEnabled,
+  openAppSettings,
 } from "@/lib/notifications";
-import { refreshLiveActivities, isLiveActivitySupported, rescheduleLiveActivityWakes } from "@/lib/live-activity";
+import {
+  refreshLiveActivities,
+  isLiveActivitySupported,
+  rescheduleLiveActivityWakes,
+  startDemoLiveActivity,
+} from "@/lib/live-activity";
+import {
+  getLiveActivityGate,
+  isLiveActivityBlocked,
+  setLiveActivityUserEnabled,
+} from "@/lib/live-activity-prefs";
 import { syncLiveActivitySchedulesRemote } from "@/lib/la-remote";
 import { useI18n } from "@/lib/i18n";
 import { hideKeyboard, onDoneKey } from "@/lib/keyboard-avoidance";
@@ -203,11 +214,13 @@ interface FormBodyProps {
   form: CalendarEvent;
   isNew: boolean;
   notifBlocked: boolean;
+  laBlocked: boolean;
   patch: (p: Partial<CalendarEvent>) => void;
   onSave: () => void;
   onRemove: () => void;
   onClose: () => void;
   onEnableNotif: () => void;
+  onEnableLa: () => void;
 }
 
 const selectMenuClass = "z-[100]";
@@ -216,11 +229,13 @@ function FormBody({
   form,
   isNew,
   notifBlocked,
+  laBlocked,
   patch,
   onSave,
   onRemove,
   onClose,
   onEnableNotif,
+  onEnableLa,
 }: FormBodyProps) {
   const { t, locale } = useI18n();
   /** Keep Radix Select menus inside the sheet — Vaul sets pointer-events:none on body. */
@@ -497,6 +512,23 @@ function FormBody({
         {/* Live Activity (iOS only) */}
         {isLiveActivitySupported() && (
         <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
+          {laBlocked && form.liveActivity && !form.allDay && (
+            <div className="px-4 py-3 flex items-start gap-2 bg-amber-50/60 dark:bg-amber-900/20 rounded-t-2xl">
+              <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-amber-700 dark:text-amber-300 leading-snug">
+                  {t("liveActivityDisabledInApp")}
+                </p>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-accent mt-1"
+                  onClick={onEnableLa}
+                >
+                  {t("liveActivityEnable")}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="px-4 py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-muted-foreground" />
@@ -577,6 +609,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
 
   const [form, setForm] = useState<CalendarEvent | null>(null);
   const [notifBlocked, setNotifBlocked] = useState(false);
+  const [laBlocked, setLaBlocked] = useState(false);
   /** When editing a virtualized series occurrence (not yet detached). */
   const [seriesOccurrence, setSeriesOccurrence] = useState<{
     masterId: string;
@@ -589,15 +622,22 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   /** In-sheet confirm — native window.confirm is untappable under Vaul's pointer lock. */
   const [confirmPrompt, setConfirmPrompt] = useState<{
     message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
     resolve: (ok: boolean) => void;
   } | null>(null);
   const isNew = target?.mode === "new";
   const lastInitKey = useRef<string | null>(null);
 
-  const askConfirm = (message: string) =>
+  const askConfirm = (
+    message: string,
+    labels?: { confirmLabel?: string; cancelLabel?: string },
+  ) =>
     new Promise<boolean>((resolve) => {
       setConfirmPrompt({
         message,
+        confirmLabel: labels?.confirmLabel,
+        cancelLabel: labels?.cancelLabel,
         resolve: (ok) => {
           setConfirmPrompt(null);
           resolve(ok);
@@ -656,6 +696,13 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     void checkPermission().then((perm) => {
       setNotifBlocked(perm !== "granted" || !getNotificationsUserEnabled());
     });
+    if (isLiveActivitySupported()) {
+      void getLiveActivityGate().then((gate) => {
+        setLaBlocked(isLiveActivityBlocked(gate));
+      });
+    } else {
+      setLaBlocked(false);
+    }
   }, [open]);
 
   if (!form) {
@@ -741,8 +788,39 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       }
     }
 
-    const nextRepeat = (form.repeat ?? "none") as RepeatFreq;
-    if (!repeatAllowedForEvent({ ...form, endDate: endDateRaw }, nextRepeat)) {
+    let liveActivity = !!form.liveActivity && !form.allDay;
+    if (liveActivity && isLiveActivitySupported()) {
+      const gate = await getLiveActivityGate();
+      if (isLiveActivityBlocked(gate)) {
+        const allow = await askConfirm(t("liveActivityAllowPrompt"), {
+          confirmLabel: t("liveActivityAllowYes"),
+          cancelLabel: t("liveActivityAllowNo"),
+        });
+        if (allow) {
+          setLiveActivityUserEnabled(true);
+          if (!gate.systemEnabled) {
+            await openAppSettings();
+            setLaBlocked(true);
+            return;
+          }
+          await startDemoLiveActivity({ durationMs: 20_000 });
+          const again = await getLiveActivityGate();
+          setLaBlocked(isLiveActivityBlocked(again));
+          if (isLiveActivityBlocked(again)) {
+            liveActivity = false;
+          }
+        } else {
+          liveActivity = false;
+        }
+      }
+    }
+
+    const payloadBase = { ...form, liveActivity };
+    // Continue with existing save using payload that may have LA turned off.
+    const formForSave = payloadBase;
+
+    const nextRepeat = (formForSave.repeat ?? "none") as RepeatFreq;
+    if (!repeatAllowedForEvent({ ...formForSave, endDate: endDateRaw }, nextRepeat)) {
       window.alert(
         t(nextRepeat === "daily" ? "repeatInvalidDaily" : "repeatInvalidWeekly"),
       );
@@ -750,13 +828,14 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     }
 
     const payload: CalendarEvent = {
-      ...form,
-      title: form.title.trim(),
+      ...formForSave,
+      title: formForSave.title.trim(),
       endDate: endDateRaw,
-      location: form.location?.trim() || undefined,
-      notes: form.notes?.trim() || undefined,
-      startTime: form.allDay ? undefined : form.startTime,
-      endTime: form.allDay ? undefined : form.endTime,
+      location: formForSave.location?.trim() || undefined,
+      notes: formForSave.notes?.trim() || undefined,
+      startTime: formForSave.allDay ? undefined : formForSave.startTime,
+      endTime: formForSave.allDay ? undefined : formForSave.endTime,
+      liveActivity,
       repeat: nextRepeat,
     };
 
@@ -911,15 +990,32 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     }
   };
 
+  const handleEnableLa = async () => {
+    setLiveActivityUserEnabled(true);
+    const gate = await getLiveActivityGate();
+    if (!gate.systemEnabled) {
+      await openAppSettings();
+      setLaBlocked(true);
+      return;
+    }
+    await startDemoLiveActivity({ durationMs: 25_000 });
+    const again = await getLiveActivityGate();
+    setLaBlocked(isLiveActivityBlocked(again));
+    void refreshLiveActivities();
+    void syncLiveActivitySchedulesRemote();
+  };
+
   const formBodyProps: FormBodyProps = {
     form,
     isNew,
     notifBlocked,
+    laBlocked,
     patch,
     onSave: save,
     onRemove: remove,
     onClose: () => onOpenChange(false),
     onEnableNotif: handleEnableNotif,
+    onEnableLa: handleEnableLa,
   };
 
   const deleteTitleTk =
@@ -1008,14 +1104,14 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
             onClick={() => confirmPrompt.resolve(true)}
             className="w-full rounded-xl bg-secondary/80 px-4 py-3.5 text-sm font-semibold text-foreground hover:bg-secondary"
           >
-            {t("yes")}
+            {confirmPrompt.confirmLabel || t("yes")}
           </button>
           <button
             type="button"
             onClick={() => confirmPrompt.resolve(false)}
             className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
           >
-            {t("cancel")}
+            {confirmPrompt.cancelLabel || t("cancel")}
           </button>
         </div>
       </div>

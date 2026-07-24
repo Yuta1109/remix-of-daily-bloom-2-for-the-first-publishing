@@ -16,6 +16,7 @@ import {
 import { monthKeyFromDate } from "@/lib/month-goals";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 
 function daysInMonth(year: number, month: number): string[] {
   const total = new Date(year, month + 1, 0).getDate();
@@ -230,7 +231,10 @@ export default function CalendarPage() {
     setSheetOpen(true);
   };
 
-  const goToday = () => setViewDate(new Date());
+  const goToday = () => {
+    setViewDate(new Date());
+    if (isTutorialActive()) emitTutorial("calendar-today");
+  };
 
   const onMonthStep = useCallback((delta: -1 | 1) => {
     setViewDate((d) => addMonths(d, delta));
@@ -300,6 +304,7 @@ export default function CalendarPage() {
         </div>
 
         <button
+          data-tutorial="calendar-today"
           onClick={goToday}
           className="text-sm font-semibold text-accent hover:opacity-80 px-4 py-2 rounded-xl bg-accent/10 transition-opacity shrink-0 mr-1"
         >

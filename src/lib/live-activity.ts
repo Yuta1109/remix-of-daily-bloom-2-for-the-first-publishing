@@ -5,6 +5,7 @@ import {
   LIVE_ACTIVITY_ARRIVED_MS,
   selectLiveActivityRows,
 } from "./live-activity-window";
+import { getLiveActivityUserEnabled } from "./live-activity-prefs";
 
 /**
  * Live Activity design (ActivityKit / Apple HIG):
@@ -14,6 +15,7 @@ import {
  * - showAt = start − lead (stable). If already past showAt on save → appear now.
  * - Kill / lock screen: Cloud Functions push-to-start (FCM).
  * - Arrived ("It's time"): keep up to 1 hour (or until app open / displaced when >3).
+ * - No OS "request permission" API — first-run demo + Settings toggle prime / gate LA.
  */
 
 const MAX_ITEMS = 3;
@@ -84,16 +86,24 @@ function currentLocale(): "en" | "ja" {
  */
 function collectVisibleItems(
   now: Date,
-  opts: { dismissArrived?: boolean } = {},
+  opts: { dismissArrived?: boolean; allowEarlyShowMs?: number } = {},
 ): {
   items: LiveActivityItem[];
   overflow: number;
   phase: "countdown" | "arrived";
 } {
   const nowMs = now.getTime();
+  const earlyMs = opts.allowEarlyShowMs ?? 0;
   const windows = collectLiveActivityWindows(now)
     .filter((w) => {
-      if (!w.visibleNow) return false;
+      // Kill-path belt: when backgrounding, arm LA a bit before showAt so a
+      // subsequent force-quit still leaves a Lock Screen card (PTS remains primary).
+      const early =
+        earlyMs > 0 &&
+        w.showAtEpochMs > nowMs &&
+        w.showAtEpochMs - nowMs <= earlyMs &&
+        nowMs < w.endEpochMs;
+      if (!w.visibleNow && !early) return false;
       if (opts.dismissArrived && nowMs >= w.startEpochMs) return false;
       return true;
     })
@@ -166,6 +176,13 @@ export type LiveActivityLocalStatus = {
 let lastLocalError: string | null = null;
 let lastSystemEnabled: boolean | null = null;
 let lastActiveCount = 0;
+/** Soft lock so refreshLiveActivities does not endAll during the first-run demo. */
+let demoUntilMs = 0;
+let demoEndTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function isDemoLiveActivityActive(): boolean {
+  return Date.now() < demoUntilMs;
+}
 
 export function getLiveActivityLocalStatus(): LiveActivityLocalStatus {
   return {
@@ -176,10 +193,82 @@ export function getLiveActivityLocalStatus(): LiveActivityLocalStatus {
   };
 }
 
+/**
+ * Short Lock Screen demo. Primes ActivityKit / push-to-start after reinstall.
+ * Apple has no requestPermissions() for Live Activities — starting one is the way.
+ */
+export async function startDemoLiveActivity(opts?: {
+  title?: string;
+  durationMs?: number;
+}): Promise<{ ok: boolean; systemEnabled: boolean }> {
+  if (!isLiveActivitySupported()) return { ok: false, systemEnabled: false };
+
+  try {
+    const { enabled } = await LiveActivities.areEnabled();
+    lastSystemEnabled = enabled;
+    if (!enabled) {
+      lastLocalError =
+        "Live Activities are off for Essences in iOS Settings → Essences → Live Activities";
+      return { ok: false, systemEnabled: false };
+    }
+  } catch (err) {
+    lastLocalError = err instanceof Error ? err.message : String(err);
+    return { ok: false, systemEnabled: false };
+  }
+
+  const now = Date.now();
+  const durationMs = opts?.durationMs ?? 45_000;
+  const locale = currentLocale();
+  const title =
+    opts?.title || (locale === "ja" ? "デモ：Essences" : "Demo: Essences");
+
+  try {
+    await LiveActivities.startOrUpdate({
+      locale,
+      items: [
+        {
+          title,
+          startEpochMs: now + 10 * 60_000,
+          color: "orange",
+        },
+      ],
+      overflow: 0,
+      endEpochMs: now + durationMs + 5_000,
+      phase: "countdown",
+    });
+    lastLocalError = null;
+    lastActiveCount = 1;
+    demoUntilMs = now + durationMs;
+    clearTimeout(demoEndTimer);
+    demoEndTimer = setTimeout(() => {
+      demoUntilMs = 0;
+      void refreshLiveActivities({ dismissArrived: true }).catch(() => {});
+    }, durationMs);
+    return { ok: true, systemEnabled: true };
+  } catch (err) {
+    lastLocalError = err instanceof Error ? err.message : String(err);
+    return { ok: false, systemEnabled: true };
+  }
+}
+
 export async function refreshLiveActivities(
-  opts: { dismissArrived?: boolean } = {},
+  opts: { dismissArrived?: boolean; allowEarlyShowMs?: number } = {},
 ): Promise<void> {
   if (!isLiveActivitySupported()) return;
+
+  if (!getLiveActivityUserEnabled()) {
+    if (!isDemoLiveActivityActive()) {
+      try {
+        await LiveActivities.endAll();
+        lastActiveCount = 0;
+        lastLocalError = null;
+      } catch {
+        /* ignore */
+      }
+    }
+    scheduleNextBoundary();
+    return;
+  }
 
   const dismissArrived = opts.dismissArrived ?? preferDismissArrived;
   if (opts.dismissArrived) preferDismissArrived = true;
@@ -200,10 +289,17 @@ export async function refreshLiveActivities(
   }
 
   const now = new Date();
-  const { items: visible, overflow, phase } = collectVisibleItems(now, { dismissArrived });
+  const { items: visible, overflow, phase } = collectVisibleItems(now, {
+    dismissArrived,
+    allowEarlyShowMs: opts.allowEarlyShowMs,
+  });
   lastActiveCount = visible.length;
 
   if (visible.length === 0) {
+    if (isDemoLiveActivityActive()) {
+      scheduleNextBoundary();
+      return;
+    }
     try {
       await LiveActivities.endAll();
       lastLocalError = null;
