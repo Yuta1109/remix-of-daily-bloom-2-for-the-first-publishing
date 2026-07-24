@@ -17,6 +17,7 @@ import {
   type MonthGoalsBundle,
 } from "@/lib/month-goals";
 import { hideKeyboard } from "@/lib/keyboard-avoidance";
+import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 
 interface Props {
   monthKey: string;
@@ -115,6 +116,9 @@ export function MonthGoalsCard({
       setBundle(next);
       saveMonthGoals(monthKey, next);
       onMinimizedChange?.(next.minimized);
+      if (next.minimized && isTutorialActive()) {
+        emitTutorial("goals-minimized");
+      }
     },
     [monthKey, onMinimizedChange]
   );
@@ -127,6 +131,7 @@ export function MonthGoalsCard({
       const next = { ...prev, minimized: true };
       saveMonthGoals(monthKey, next);
       onMinimizedChange?.(true);
+      if (isTutorialActive()) emitTutorial("goals-minimized");
       return next;
     });
   }, [collapseSignal, monthKey, onMinimizedChange]);

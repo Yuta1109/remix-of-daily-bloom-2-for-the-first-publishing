@@ -14,7 +14,7 @@ type Props = {
   /** When true, clicks on the dimmer advance; hole still passes through if allowThrough */
   captureOutsideClick: boolean;
   allowThrough: boolean;
-  bubblePlacement: "above" | "below" | "center";
+  bubblePlacement: "above" | "below" | "center" | "cover-top";
   title?: string;
   body: string;
   hint?: string;
@@ -107,6 +107,15 @@ export function CoachOverlay({
       ...bubbleStyle,
       top: "42%",
       transform: "translateY(-50%)",
+    };
+  } else if (bubblePlacement === "cover-top") {
+    // Sit on the top of the highlight to cover month header / month goals.
+    const coverH = Math.min(168, Math.max(120, Math.round(rect.height * 0.28)));
+    bubbleStyle = {
+      ...bubbleStyle,
+      top: Math.max(8, rect.top + 6),
+      maxWidth: Math.min(400, Math.max(260, rect.width - 20)),
+      minHeight: coverH,
     };
   } else if (bubblePlacement === "above") {
     const bottomFromViewport = window.innerHeight - rect.top + 12 + vvBottom;

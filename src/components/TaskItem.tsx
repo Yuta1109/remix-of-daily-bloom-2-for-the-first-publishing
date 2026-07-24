@@ -69,8 +69,7 @@ export function TaskItem({
         "relative rounded-xl px-3 py-2.5 transition-colors touch-manipulation select-none",
         selected
           ? "bg-accent/10 ring-1 ring-accent/30"
-          : "bg-secondary/50",
-        task.completed && !selected && "opacity-80"
+          : "bg-secondary/50"
       )}
     >
       <div className="flex items-center gap-1.5 min-h-[40px]">
@@ -137,7 +136,7 @@ export function TaskItem({
             <span
               className={cn(
                 "text-base transition-all duration-300 block truncate",
-                task.completed && "line-through text-muted-foreground/50"
+                task.completed && "line-through text-muted-foreground"
               )}
             >
               {task.text}

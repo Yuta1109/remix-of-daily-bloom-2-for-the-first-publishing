@@ -72,10 +72,10 @@ export async function initNative(): Promise<void> {
       void initLiveActivityRemote();
     } else {
       // JS timers freeze while locked — push remote schedules before suspend.
-      // If showAt is within 15m, start the Lock Screen card now so force-quit
-      // still leaves an Activity (FCM push-to-start remains the exact-time path).
+      // Do NOT early-start ActivityKit here: that races FCM push-to-start at
+      // showAt and stacks duplicate Lock Screen cards (+ "continue allowing?").
       setLiveActivityDismissArrivedOnRefresh(false);
-      void refreshLiveActivities({ allowEarlyShowMs: 15 * 60_000 })
+      void refreshLiveActivities()
         .then(() => syncLiveActivitySchedulesRemote())
         .catch(() => {
           void syncLiveActivitySchedulesRemote();

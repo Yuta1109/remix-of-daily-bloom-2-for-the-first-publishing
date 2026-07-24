@@ -628,9 +628,11 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
       let status: "pending" | "due" | "started" | "arrived" = "pending";
       if (prev?.status === "arrived" && w.visibleNow && nowMs >= w.startEpochMs) {
         status = "arrived";
-      } else if (localLive && w.visibleNow) {
+      } else if (localLive && (w.visibleNow || nowMs >= w.showAtEpochMs)) {
+        // Local card is up (including just-at/after showAt). Mark started so
+        // Cloud Functions never push-to-start a duplicate.
         status = nowMs >= w.startEpochMs ? "arrived" : "started";
-      } else if (prev?.status === "started" && w.visibleNow) {
+      } else if (prev?.status === "started" && (w.visibleNow || nowMs >= w.showAtEpochMs)) {
         // App killed: leave remote started so Cloud Functions keep the card.
         status = "started";
       } else if (w.activeNow) {

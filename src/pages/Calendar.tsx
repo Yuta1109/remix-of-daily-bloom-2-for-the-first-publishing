@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { ChevronDown } from "lucide-react";
 import { getDay, startOfMonth } from "date-fns";
 import { EventSheet, type EventSheetTarget } from "@/components/EventSheet";
@@ -16,7 +16,11 @@ import {
 import { monthKeyFromDate } from "@/lib/month-goals";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
+import {
+  emitTutorial,
+  isTutorialActive,
+  isTutorialBlockingCalendarDays,
+} from "@/lib/tutorial";
 
 function daysInMonth(year: number, month: number): string[] {
   const total = new Date(year, month + 1, 0).getDate();
@@ -175,6 +179,8 @@ export default function CalendarPage() {
   const [modalDate, setModalDate] = useState<string>(todayKey());
   const [goalsMinimized, setGoalsMinimized] = useState(false);
   const [goalsCollapseSignal, setGoalsCollapseSignal] = useState(0);
+  const [blockDayTaps, setBlockDayTaps] = useState(false);
+  const goalsCloseEmitted = useRef(false);
 
   const refreshEvents = () => setEvents(loadEvents());
   useEffect(() => {
@@ -196,6 +202,28 @@ export default function CalendarPage() {
     }
   }, [sheetOpen, modalOpen, daySheetOpen, requestGoalsMinimize]);
 
+  // Calendar swipe coach step: collapse goals + block day taps (swipe only).
+  // monthGoalsClose: if already folded, advance once.
+  useEffect(() => {
+    const sync = () => {
+      const step = document.documentElement.dataset.tutorialStep;
+      const block = isTutorialBlockingCalendarDays();
+      setBlockDayTaps(block);
+      if (block) requestGoalsMinimize();
+      if (step === "monthGoalsClose") {
+        if (goalsMinimized && !goalsCloseEmitted.current) {
+          goalsCloseEmitted.current = true;
+          emitTutorial("goals-minimized");
+        }
+      } else {
+        goalsCloseEmitted.current = false;
+      }
+    };
+    sync();
+    const id = window.setInterval(sync, 200);
+    return () => window.clearInterval(id);
+  }, [requestGoalsMinimize, goalsMinimized]);
+
   const overlayOpen = daySheetOpen || sheetOpen || modalOpen;
 
   const weekdayHeaders = useMemo(
@@ -216,6 +244,7 @@ export default function CalendarPage() {
   const daySheetEvents = eventsForDate(daySheetDate, events);
 
   const handleDayTap = (date: string) => {
+    if (blockDayTaps || isTutorialBlockingCalendarDays()) return;
     setDaySheetDate(date);
     setDaySheetOpen(true);
   };
@@ -248,109 +277,115 @@ export default function CalendarPage() {
 
   return (
     <div className="page-shell flex flex-col">
-      <div className="shrink-0 flex items-center justify-between pl-4 pr-3 pb-2">
-        <div className="relative flex items-center gap-1 min-w-0">
-          <button
-            type="button"
-            onClick={() => setPickerOpen((v) => !v)}
-            className="flex items-center gap-1.5 text-left"
-          >
-            <h1 className="text-2xl font-bold tracking-tight">
-              {formatDate(viewDate, { month: "long", year: "numeric" })}
-            </h1>
-            <ChevronDown
-              className={cn(
-                "w-5 h-5 text-muted-foreground shrink-0 transition-transform",
-                pickerOpen && "rotate-180"
-              )}
-            />
-          </button>
+      {/* Highlight span for calendar-swipe coach: month header → above FAB. */}
+      <div
+        data-tutorial="calendar-stage"
+        className="flex-1 min-h-0 flex flex-col"
+      >
+        <div className="shrink-0 flex items-center justify-between pl-4 pr-3 pb-2">
+          <div className="relative flex items-center gap-1 min-w-0">
+            <button
+              type="button"
+              onClick={() => setPickerOpen((v) => !v)}
+              className="flex items-center gap-1.5 text-left"
+            >
+              <h1 className="text-2xl font-bold tracking-tight">
+                {formatDate(viewDate, { month: "long", year: "numeric" })}
+              </h1>
+              <ChevronDown
+                className={cn(
+                  "w-5 h-5 text-muted-foreground shrink-0 transition-transform",
+                  pickerOpen && "rotate-180"
+                )}
+              />
+            </button>
 
-          {pickerOpen && (
-            <>
-              <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
-              <div className="absolute top-full left-0 mt-2 z-40 bg-card rounded-2xl shadow-card border border-border p-4 flex gap-3">
-                <select
-                  value={month}
-                  onChange={(e) => {
-                    setViewDate(new Date(year, Number(e.target.value), 1));
-                    setPickerOpen(false);
-                  }}
-                  className="bg-secondary/60 rounded-lg px-3 py-2 text-sm outline-none"
-                >
-                  {monthOptions.map((m) => (
-                    <option key={m} value={m}>
-                      {formatDate(new Date(2024, m, 1), { month: "long" })}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={year}
-                  onChange={(e) => {
-                    setViewDate(new Date(Number(e.target.value), month, 1));
-                    setPickerOpen(false);
-                  }}
-                  className="bg-secondary/60 rounded-lg px-3 py-2 text-sm outline-none"
-                >
-                  {yearOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </>
-          )}
+            {pickerOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setPickerOpen(false)} />
+                <div className="absolute top-full left-0 mt-2 z-40 bg-card rounded-2xl shadow-card border border-border p-4 flex gap-3">
+                  <select
+                    value={month}
+                    onChange={(e) => {
+                      setViewDate(new Date(year, Number(e.target.value), 1));
+                      setPickerOpen(false);
+                    }}
+                    className="bg-secondary/60 rounded-lg px-3 py-2 text-sm outline-none"
+                  >
+                    {monthOptions.map((m) => (
+                      <option key={m} value={m}>
+                        {formatDate(new Date(2024, m, 1), { month: "long" })}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={year}
+                    onChange={(e) => {
+                      setViewDate(new Date(Number(e.target.value), month, 1));
+                      setPickerOpen(false);
+                    }}
+                    className="bg-secondary/60 rounded-lg px-3 py-2 text-sm outline-none"
+                  >
+                    {yearOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+          </div>
+
+          <button
+            data-tutorial="calendar-today"
+            onClick={goToday}
+            className="text-sm font-semibold text-accent hover:opacity-80 px-4 py-2 rounded-xl bg-accent/10 transition-opacity shrink-0 mr-1"
+          >
+            {t("today")}
+          </button>
         </div>
 
-        <button
-          data-tutorial="calendar-today"
-          onClick={goToday}
-          className="text-sm font-semibold text-accent hover:opacity-80 px-4 py-2 rounded-xl bg-accent/10 transition-opacity shrink-0 mr-1"
-        >
-          {t("today")}
-        </button>
-      </div>
-
-      <div className="relative flex-1 min-h-0 px-3 pb-1">
-        <MonthWheel
-          monthKey={monthKeyOf(viewDate)}
-          disabled={overlayOpen}
-          onMonthStep={onMonthStep}
-          onInteractionStart={requestGoalsMinimize}
-        >
-          {(rel, { faded }) => {
-            const m = months[rel + 1];
-            return (
-              <MonthGrid
-                year={m.getFullYear()}
-                month={m.getMonth()}
-                events={events}
-                onDayTap={handleDayTap}
-                faded={faded}
-                interactive={rel === 0 && !faded}
-                weekdayHeaders={weekdayHeaders}
-              />
-            );
-          }}
-        </MonthWheel>
-
-        {/* Overlays the calendar top (~15%); does not push the grid down. */}
-        <div
-          className="absolute top-0 left-3 right-3 z-20 pointer-events-none"
-          style={goalsMinimized ? undefined : { height: "15%" }}
-        >
-          <div
-            className={cn(
-              "pointer-events-auto",
-              !goalsMinimized && "h-full"
-            )}
+        <div className="relative flex-1 min-h-0 px-3 pb-1">
+          <MonthWheel
+            monthKey={monthKeyOf(viewDate)}
+            disabled={overlayOpen}
+            onMonthStep={onMonthStep}
+            onInteractionStart={requestGoalsMinimize}
           >
-            <MonthGoalsCard
-              monthKey={monthKeyFromDate(viewDate)}
-              onMinimizedChange={onGoalsMinimizedChange}
-              collapseSignal={goalsCollapseSignal}
-            />
+            {(rel, { faded }) => {
+              const m = months[rel + 1];
+              return (
+                <MonthGrid
+                  year={m.getFullYear()}
+                  month={m.getMonth()}
+                  events={events}
+                  onDayTap={handleDayTap}
+                  faded={faded}
+                  interactive={rel === 0 && !faded && !blockDayTaps}
+                  weekdayHeaders={weekdayHeaders}
+                />
+              );
+            }}
+          </MonthWheel>
+
+          {/* Overlays the calendar top (~15%); does not push the grid down. */}
+          <div
+            className="absolute top-0 left-3 right-3 z-20 pointer-events-none"
+            style={goalsMinimized ? undefined : { height: "15%" }}
+          >
+            <div
+              className={cn(
+                "pointer-events-auto",
+                !goalsMinimized && "h-full"
+              )}
+            >
+              <MonthGoalsCard
+                monthKey={monthKeyFromDate(viewDate)}
+                onMinimizedChange={onGoalsMinimizedChange}
+                collapseSignal={goalsCollapseSignal}
+              />
+            </div>
           </div>
         </div>
       </div>

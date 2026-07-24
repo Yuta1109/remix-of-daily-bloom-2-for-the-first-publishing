@@ -298,6 +298,8 @@ function usableLiveActivityUpdateToken(device) {
  * True when this device likely already has a Lock Screen card we should UPDATE.
  * Recent successful push-to-start counts even before updateToken is uploaded
  * (force-quit path cannot upload a new token until the app opens).
+ * Local ActivityKit starts also mark schedules as "started" without
+ * lastRemoteUpdateOk — treat those as live cards so we never stack a PTS.
  */
 async function deviceHasLiveCard(deviceId) {
   const now = Date.now();
@@ -319,10 +321,21 @@ async function deviceHasLiveCard(deviceId) {
     const data = d.data() || {};
     const s = data.status;
     if (s !== "started" && s !== "arrived") return false;
-    return (
+    if (Number(data.endAtEpochMs) > 0 && Number(data.endAtEpochMs) <= now) return false;
+    // Remote update recently succeeded.
+    if (
       data.lastRemoteUpdateOk === true &&
       now - Number(data.lastRemoteUpdateAt || 0) < 15 * 60_000
+    ) {
+      return true;
+    }
+    // Local ActivityKit already started this schedule (or a sibling is live).
+    const touchedAt = Math.max(
+      Number(data.startedAt || 0),
+      Number(data.updatedAt || 0),
+      Number(data.showAtEpochMs || 0),
     );
+    return touchedAt > 0 && now - touchedAt < 20 * 60_000;
   });
 }
 
@@ -431,14 +444,12 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   if (hasLiveCard) {
     const updated = await finishAsUpdate("hasLiveCard");
     if (updated !== null) return updated;
-    // Critical: after a successful PTS we clear the update token. A later
-    // sweep/task must NOT fall through to a second push-to-start (duplicates).
-    if (recentPts || opts.preferUpdateOnly === true) {
-      logger.info("LA hasLiveCard, no usable update yet — skip second PTS", scheduleId);
-      await markStartedAndEnqueueRefresh(scheduleId, data);
-      return true;
-    }
-    logger.info("LA hasLiveCard update failed; retrying push-to-start", scheduleId);
+    // Critical: never fall through to a second push-to-start. Local ActivityKit
+    // and a prior PTS both leave a Lock Screen card; stacking duplicates with
+    // the system "continue allowing?" prompt.
+    logger.info("LA hasLiveCard, skip second PTS", scheduleId);
+    await markStartedAndEnqueueRefresh(scheduleId, data);
+    return true;
   }
 
   const claimed = await claimDevicePushStart(data.deviceId, scheduleId);

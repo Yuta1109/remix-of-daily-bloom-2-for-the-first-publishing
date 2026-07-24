@@ -24,6 +24,7 @@ import {
   setTutorialActiveFlag,
   setTutorialDone,
   setTutorialInProgress,
+  setTutorialStepFlag,
   subscribeTutorial,
   TUTORIAL_STEPS,
   type TutorialStep,
@@ -40,7 +41,10 @@ export function AppTutorial() {
   const [running, setRunning] = useState(false);
   const [index, setIndex] = useState(0);
   const [laBusy, setLaBusy] = useState(false);
+  const [laDemoReady, setLaDemoReady] = useState(false);
+  const [laDemoFailed, setLaDemoFailed] = useState(false);
   const advancingRef = useRef(false);
+  const laAutoStartedRef = useRef(false);
 
   const step: TutorialStep | null = running ? TUTORIAL_STEPS[index] ?? null : null;
 
@@ -49,6 +53,7 @@ export function AppTutorial() {
     setLiveActivityOnboardingDone(true);
     setTutorialActiveFlag(false);
     setTutorialInProgress(false);
+    setTutorialStepFlag(null);
     setRunning(false);
     advancingRef.current = false;
     navigate("/", { replace: true });
@@ -79,7 +84,6 @@ export function AppTutorial() {
     const timer = window.setTimeout(async () => {
       if (cancelled || isTutorialDone()) return;
 
-      // Already bootstrapped in this JS context (remount) — resume, do not reset.
       if (hasTutorialBootstrapStarted()) {
         const saved = getSavedTutorialStepIndex();
         setIndex(saved);
@@ -98,7 +102,6 @@ export function AppTutorial() {
       }
       if (cancelled || isTutorialDone()) return;
 
-      // Force-quit / fresh start: wipe Today scratch data and begin at welcome.
       clearTutorialScratchData();
       saveTutorialStepIndex(0);
       setTutorialInProgress(true);
@@ -113,8 +116,16 @@ export function AppTutorial() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap must not depend on navigate
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!running || !step) {
+      setTutorialStepFlag(null);
+      return;
+    }
+    setTutorialStepFlag(step.id);
+  }, [running, step?.id]);
 
   useEffect(() => {
     if (!running || !step?.route) return;
@@ -127,7 +138,13 @@ export function AppTutorial() {
     const want = step.event;
     advancingRef.current = false;
     return subscribeTutorial((name) => {
-      if (name === want) goNext();
+      if (name !== want) return;
+      // Let the checkbox animation / selection paint before advancing.
+      if (want === "task-toggled") {
+        window.setTimeout(() => goNext(), 450);
+      } else {
+        goNext();
+      }
     });
   }, [running, step?.id, step?.advance, step?.event, goNext]);
 
@@ -140,42 +157,59 @@ export function AppTutorial() {
     return () => window.clearTimeout(timer);
   }, [running, step?.id, step?.advance, step?.target, goNext]);
 
-  const onLaTry = async () => {
+  const runLaDemo = useCallback(async () => {
     if (laBusy) return;
     setLaBusy(true);
+    setLaDemoFailed(false);
     try {
       if (!isNativeIos()) {
-        goNext();
+        setLaDemoReady(true);
         return;
       }
       setLiveActivityUserEnabled(true);
       const gate = await getLiveActivityGate();
       if (!gate.systemEnabled) {
         await openAppSettings();
-        goNext();
+        setLaDemoFailed(true);
         return;
       }
-      await startDemoLiveActivity({ durationMs: 40_000 });
-      goNext();
+      const result = await startDemoLiveActivity({ durationMs: 60_000 });
+      if (!result.ok) {
+        setLaDemoFailed(true);
+        return;
+      }
+      setLaDemoReady(true);
     } catch {
-      goNext();
+      setLaDemoFailed(true);
     } finally {
       setLaBusy(false);
     }
-  };
+  }, [laBusy]);
 
-  const onLaSkip = () => {
-    setLiveActivityOnboardingDone(true);
-    goNext();
-  };
+  // Auto-start the Lock Screen demo when entering the laDemo step.
+  useEffect(() => {
+    if (!running || step?.id !== "laDemo") {
+      laAutoStartedRef.current = false;
+      setLaDemoReady(false);
+      setLaDemoFailed(false);
+      return;
+    }
+    if (laAutoStartedRef.current) return;
+    laAutoStartedRef.current = true;
+    void runLaDemo();
+  }, [running, step?.id, runLaDemo]);
 
   const overlay = useMemo(() => {
     if (!step) return null;
     const title = step.titleKey ? t(step.titleKey as TranslationKeys) : undefined;
-    const body = t(step.bodyKey as TranslationKeys);
     const isTap = step.advance === "tap";
     const isEvent = step.advance === "event";
     const isAction = step.advance === "action";
+
+    let body = t(step.bodyKey as TranslationKeys);
+    if (step.id === "laDemo" && laDemoReady) {
+      body = t("tutorialLaDemoStarted");
+    }
 
     let hint: string | undefined;
     if (isTap) hint = t("tutorialTapHint");
@@ -184,20 +218,31 @@ export function AppTutorial() {
     const actions =
       isAction && step.id === "laDemo" ? (
         <>
-          {isNativeIos() && (
+          {laDemoReady ? (
+            <button
+              type="button"
+              onClick={() => goNext()}
+              className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold"
+            >
+              {t("tutorialLaDemoNext")}
+            </button>
+          ) : (
             <button
               type="button"
               disabled={laBusy}
-              onClick={() => void onLaTry()}
+              onClick={() => void runLaDemo()}
               className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-60"
             >
-              {t("liveActivityTryDemo")}
+              {laDemoFailed ? t("tutorialLaDemoRetry") : t("liveActivityTryDemo")}
             </button>
           )}
           <button
             type="button"
             disabled={laBusy}
-            onClick={onLaSkip}
+            onClick={() => {
+              setLiveActivityOnboardingDone(true);
+              goNext();
+            }}
             className="w-full rounded-xl bg-secondary/80 px-4 py-2.5 text-sm font-medium"
           >
             {t("liveActivityOnboardingLater")}
@@ -219,8 +264,8 @@ export function AppTutorial() {
         onOutsideTap={isTap ? goNext : undefined}
       />
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional step-bound UI
-  }, [step, t, laBusy, goNext]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, t, laBusy, laDemoReady, laDemoFailed, goNext, runLaDemo]);
 
   if (!running || !step) return null;
   return overlay;

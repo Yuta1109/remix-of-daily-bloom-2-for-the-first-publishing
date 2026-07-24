@@ -17,6 +17,7 @@ export type TutorialStepId =
   | "stats"
   | "navCalendar"
   | "monthGoals"
+  | "monthGoalsClose"
   | "calendarSwipe"
   | "calendarToday"
   | "calendarFab"
@@ -37,7 +38,9 @@ export type TutorialStep = {
   event?: string;
   /** Ensure this route is active when the step starts */
   route?: string;
-  preferBubble: "above" | "below" | "center";
+  preferBubble: "above" | "below" | "center" | "cover-top";
+  /** Block calendar day taps while this step is active */
+  blockCalendarDays?: boolean;
 };
 
 export const TUTORIAL_STEPS: TutorialStep[] = [
@@ -61,7 +64,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "taskSelect",
     bodyKey: "tutorialTaskSelect",
-    target: "task-list",
+    target: "task-item",
     advance: "event",
     event: "task-selected",
     route: "/",
@@ -78,7 +81,9 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "taskCheck",
     bodyKey: "tutorialTaskCheck",
-    target: "task-checkbox",
+    // Full row — highlighting only the checkbox dims the rest of the task
+    // so it looks like it vanished after checking.
+    target: "task-item",
     advance: "event",
     event: "task-toggled",
     route: "/",
@@ -109,13 +114,23 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     preferBubble: "below",
   },
   {
+    id: "monthGoalsClose",
+    bodyKey: "tutorialMonthGoalsClose",
+    target: "month-goals",
+    advance: "event",
+    event: "goals-minimized",
+    route: "/calendar",
+    preferBubble: "below",
+  },
+  {
     id: "calendarSwipe",
     bodyKey: "tutorialCalendarSwipe",
-    target: "calendar-swipe",
+    target: "calendar-stage",
     advance: "event",
     event: "calendar-swiped",
     route: "/calendar",
-    preferBubble: "above",
+    preferBubble: "cover-top",
+    blockCalendarDays: true,
   },
   {
     id: "calendarToday",
@@ -283,5 +298,26 @@ export function setTutorialActiveFlag(active: boolean): void {
     else delete document.documentElement.dataset.tutorialActive;
   } catch {
     /* ignore */
+  }
+}
+
+export function setTutorialStepFlag(stepId: string | null): void {
+  try {
+    if (stepId) document.documentElement.dataset.tutorialStep = stepId;
+    else delete document.documentElement.dataset.tutorialStep;
+  } catch {
+    /* ignore */
+  }
+}
+
+/** True while the calendar-swipe coach step is active (block day taps). */
+export function isTutorialBlockingCalendarDays(): boolean {
+  try {
+    return (
+      document.documentElement.dataset.tutorialActive === "1" &&
+      document.documentElement.dataset.tutorialStep === "calendarSwipe"
+    );
+  } catch {
+    return false;
   }
 }

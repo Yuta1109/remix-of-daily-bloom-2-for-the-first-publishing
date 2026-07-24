@@ -200,8 +200,10 @@ const translations = {
     tutorialNavCalendar: "Open Calendar from the tab bar.",
     tutorialMonthGoals:
       "Month goals sit on top of the calendar. You can expand or collapse them anytime. Tap to continue.",
+    tutorialMonthGoalsClose:
+      "Collapse the month goals now — tap the chevron (or the minimized bar’s opposite control) to fold it away.",
     tutorialCalendarSwipe:
-      "Swipe the calendar up or down to change months. Tap a day to see its events. Swipe once to continue.",
+      "Swipe the calendar up or down to change months. Day taps are paused for this step — swipe once to continue.",
     tutorialCalendarToday: "Tap Today to jump back to the current month.",
     tutorialCalendarFab:
       "The + button creates a new calendar event. (No need to tap it now.) Tap elsewhere to continue.",
@@ -209,7 +211,11 @@ const translations = {
     tutorialReusableTasks:
       "Reusable tasks are shortcuts you can add to Today in one tap. Tap to continue.",
     tutorialLaDemoBody:
-      "Last step: try a short Lock Screen Live Activity demo. If iOS asks to continue allowing Live Activities, choose Always Allow.",
+      "Finally, there is a short Live Activity demo on the Lock Screen. If iOS asks to continue allowing Live Activities, choose Always Allow.",
+    tutorialLaDemoStarted:
+      "Demo started. Check the Lock Screen, then tap Next.",
+    tutorialLaDemoNext: "Next",
+    tutorialLaDemoRetry: "Try demo again",
     tutorialDoneTitle: "You’re ready",
     tutorialDoneBody: "That’s the tour. Add events, check tasks, and enjoy Essences. Tap to finish.",
     tutorialTapHint: "Tap anywhere to continue",
@@ -399,8 +405,10 @@ const translations = {
     tutorialNavCalendar: "下のタブから「カレンダー」を開いてください。",
     tutorialMonthGoals:
       "カレンダー上部は今月の目標です。いつでも開閉できます。タップで次へ。",
+    tutorialMonthGoalsClose:
+      "今月の目標を閉じてください（右上の折りたたみボタンをタップ）。",
     tutorialCalendarSwipe:
-      "カレンダーは上下にスワイプで月を切り替えられます。日付をタップすると予定一覧が開きます。一度スワイプしてください。",
+      "カレンダーは上下スワイプで月を切り替えられます。このステップでは日付タップはできません。一度スワイプしてください。",
     tutorialCalendarToday: "「今日」を押すと、いまの月へ戻れます。",
     tutorialCalendarFab:
       "右下の ＋ からも新規予定を追加できます（ここでは押さなくて大丈夫です）。タップで次へ。",
@@ -408,7 +416,11 @@ const translations = {
     tutorialReusableTasks:
       "定型タスクは、今日のリストへワンタップで追加できるショートカットです。タップで次へ。",
     tutorialLaDemoBody:
-      "最後に、ロック画面のライブアクティビティの短いデモです。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選んでください。",
+      "最後に、ロック画面でのライブアクティビティの短いデモがあります。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選んでください。",
+    tutorialLaDemoStarted:
+      "デモを開始しました。ロック画面を確認してから「次へ」を押してください。",
+    tutorialLaDemoNext: "次へ",
+    tutorialLaDemoRetry: "デモを再試行",
     tutorialDoneTitle: "準備完了",
     tutorialDoneBody: "案内は以上です。予定やタスクを追加して Essences を使ってみましょう。タップで終了。",
     tutorialTapHint: "画面をタップして次へ",
