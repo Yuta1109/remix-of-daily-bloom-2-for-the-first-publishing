@@ -30,6 +30,10 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
     /// so we keep the permission-bearing remote card and end newer local duplicates.
     private static var activityBirth: [String: Date] = [:]
     private let birthLock = NSLock()
+    /// Serialize request/update so two concurrent calls cannot both see count==0 and
+    /// create two Activities (demo + calendar / double request race).
+    private static let applyGate = NSLock()
+    private static var applyBusy = false
 
     private var endWorkItem: DispatchWorkItem?
     private var arrivedWorkItem: DispatchWorkItem?
@@ -333,6 +337,24 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         staleDate: Date?,
         relevanceScore: Double
     ) async throws -> String {
+        // Wait for any in-flight apply (Activity.request is not atomic vs count).
+        while true {
+            Self.applyGate.lock()
+            if !Self.applyBusy {
+                Self.applyBusy = true
+                Self.applyGate.unlock()
+                break
+            }
+            Self.applyGate.unlock()
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+        defer {
+            Self.applyGate.lock()
+            Self.applyBusy = false
+            Self.applyGate.unlock()
+        }
+
+        // Re-check after acquiring the gate — a peer may have just created one.
         // Never endAll + recreate just to attach pushType — that kills the older
         // Activity that may still show the system “Always Allow” sheet.
         if !Activity<EssencesWidgetAttributes>.activities.isEmpty {
@@ -426,12 +448,31 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @available(iOS 16.1, *)
     private func endAllActivities() async {
+        // Same gate as apply() so endAll cannot race Activity.request/update.
+        while true {
+            Self.applyGate.lock()
+            if !Self.applyBusy {
+                Self.applyBusy = true
+                Self.applyGate.unlock()
+                break
+            }
+            Self.applyGate.unlock()
+            try? await Task.sleep(nanoseconds: 30_000_000)
+        }
+        defer {
+            Self.applyGate.lock()
+            Self.applyBusy = false
+            Self.applyGate.unlock()
+        }
         for activity in Activity<EssencesWidgetAttributes>.activities {
             if #available(iOS 16.2, *) {
                 await activity.end(nil, dismissalPolicy: .immediate)
             } else {
                 await activity.end(dismissalPolicy: .immediate)
             }
+            birthLock.lock()
+            Self.activityBirth.removeValue(forKey: activity.id)
+            birthLock.unlock()
         }
     }
 

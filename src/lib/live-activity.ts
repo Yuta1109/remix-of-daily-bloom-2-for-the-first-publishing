@@ -13,9 +13,10 @@ import { canScheduleLiveActivities } from "./live-activity-prefs";
  * - Minimum iOS 17.2 (ActivityKit push-to-start; no wake-notification fallback).
  * - One shared Lock Screen activity (max 3 event rows).
  * - showAt = start − lead (stable). If already past showAt on save → appear now.
- * - Kill / lock screen: Cloud Functions push-to-start (FCM).
+ * - App process alive: local ActivityKit only (server never PTS while appAliveAt fresh).
+ * - App force-quit: update existing card via FCM if update token exists; else one PTS.
  * - Arrived ("It's time"): keep up to 1 hour (or until app open / displaced when >3).
- * - No OS "request permission" API — first-run demo + Settings toggle prime / gate LA.
+ * - No OS "request permission" API — first-run demo + Settings gate LA.
  */
 
 const MAX_ITEMS = 3;
@@ -186,6 +187,12 @@ let lastActiveCount = 0;
 /** Soft lock so refreshLiveActivities does not endAll during the first-run demo. */
 let demoUntilMs = 0;
 let demoEndTimer: ReturnType<typeof setTimeout> | undefined;
+/** Single-flight so EventSheet / bootstrap / boundaries do not interleave end/start. */
+let refreshInFlight: Promise<void> | null = null;
+let refreshQueuedOpts: {
+  dismissArrived?: boolean;
+  allowEarlyShowMs?: number;
+} | null = null;
 /** Keys of rows currently on the Lock Screen: `${title}|${startEpochMs}`. */
 let lastVisibleItemKeys = new Set<string>();
 
@@ -273,7 +280,28 @@ export async function refreshLiveActivities(
   opts: { dismissArrived?: boolean; allowEarlyShowMs?: number } = {},
 ): Promise<void> {
   if (!isLiveActivitySupported()) return;
+  if (refreshInFlight) {
+    refreshQueuedOpts = { ...(refreshQueuedOpts || {}), ...opts };
+    await refreshInFlight;
+    return;
+  }
+  refreshInFlight = (async () => {
+    let next = opts;
+    for (;;) {
+      await refreshLiveActivitiesInner(next);
+      if (!refreshQueuedOpts) break;
+      next = refreshQueuedOpts;
+      refreshQueuedOpts = null;
+    }
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
 
+async function refreshLiveActivitiesInner(
+  opts: { dismissArrived?: boolean; allowEarlyShowMs?: number },
+): Promise<void> {
   if (!canScheduleLiveActivities()) {
     if (!isDemoLiveActivityActive()) {
       try {
@@ -281,6 +309,9 @@ export async function refreshLiveActivities(
         lastActiveCount = 0;
         lastVisibleItemKeys = new Set();
         lastLocalError = null;
+        void import("./la-remote")
+          .then((m) => m.pulseAppAlive({ localLaActive: false }))
+          .catch(() => {});
       } catch {
         /* ignore */
       }
@@ -298,11 +329,34 @@ export async function refreshLiveActivities(
     if (!enabled) {
       lastLocalError =
         "Live Activities are off for Essences in iOS Settings → Essences → Live Activities";
+      // Tear down Lock Screen cards + stop remote starts while system is off.
+      if (!isDemoLiveActivityActive()) {
+        try {
+          await LiveActivities.endAll();
+          lastActiveCount = 0;
+          lastVisibleItemKeys = new Set();
+        } catch {
+          /* ignore */
+        }
+        void import("./la-remote")
+          .then((m) =>
+            m.pulseAppAlive({ localLaActive: false }).then(() =>
+              m.syncLiveActivitySchedulesRemote(),
+            ),
+          )
+          .catch(() => {});
+      }
       scheduleNextBoundary();
       return;
     }
   } catch (err) {
     lastLocalError = err instanceof Error ? err.message : String(err);
+    scheduleNextBoundary();
+    return;
+  }
+
+  // Demo owns the single ActivityKit slot — do not overwrite with calendar rows.
+  if (isDemoLiveActivityActive()) {
     scheduleNextBoundary();
     return;
   }
@@ -316,22 +370,23 @@ export async function refreshLiveActivities(
   setVisibleItemKeys(visible);
 
   if (visible.length === 0) {
-    if (isDemoLiveActivityActive()) {
-      scheduleNextBoundary();
-      return;
-    }
     lastVisibleItemKeys = new Set();
     try {
       await LiveActivities.endAll();
       lastLocalError = null;
+      lastActiveCount = 0;
+      void import("./la-remote")
+        .then((m) =>
+          m.pulseAppAlive({ localLaActive: false }).then(() =>
+            m.syncLiveActivitySchedulesRemote(),
+          ),
+        )
+        .catch(() => {});
     } catch {
       /* ignore */
     }
     scheduleNextBoundary();
     void rescheduleLiveActivityWakes();
-    void import("./la-remote")
-      .then((m) => m.syncLiveActivitySchedulesRemote())
-      .catch(() => {});
     return;
   }
 

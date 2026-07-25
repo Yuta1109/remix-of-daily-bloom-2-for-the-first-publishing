@@ -178,10 +178,12 @@ export function getLiveActivityEnableProgress(
     : "full";
 
   if (mode === "reenable") {
+    // Demo+allow already done once — keep ✓ on steps 2–3 even when system is off.
+    // Turning iPhone LA off only clears steps 1 and 4.
     return {
       systemOn,
-      demoPresented: systemOn,
-      allowed: systemOn,
+      demoPresented: true,
+      allowed: true,
       complete: systemOn,
       mode,
       currentStep: systemOn ? 4 : 1,
@@ -191,6 +193,7 @@ export function getLiveActivityEnableProgress(
   // full: only stored flags — never invent from system toggle / frequentPushes
   const flags = readStoredEnableFlags();
   if (!systemOn) {
+    // System off clears mid-flow ✓ (via resetLiveActivityEnableProgress in getGate).
     return {
       systemOn: false,
       demoPresented: false,

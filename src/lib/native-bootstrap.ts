@@ -10,7 +10,13 @@ import {
   scheduleLiveActivityBoundaries,
   setLiveActivityDismissArrivedOnRefresh,
 } from "./live-activity";
-import { initLiveActivityRemote, syncLiveActivitySchedulesRemote } from "./la-remote";
+import {
+  initLiveActivityRemote,
+  pulseAppAlive,
+  startAppAliveHeartbeat,
+  stopAppAliveHeartbeat,
+  syncLiveActivitySchedulesRemote,
+} from "./la-remote";
 import { initFcmRegistration } from "./fcm";
 import { initKeyboardAvoidance } from "./keyboard-avoidance";
 
@@ -62,30 +68,61 @@ export async function initNative(): Promise<void> {
   await initLiveActivityRemote();
   void rescheduleLiveActivityWakes();
 
+  /** Collapse rapid open/close into one sync wave (avoids endAll/start races). */
+  let resumeSyncTimer: number | null = null;
+  let backgroundSyncTimer: number | null = null;
+  const clearSyncTimers = () => {
+    if (resumeSyncTimer != null) {
+      window.clearTimeout(resumeSyncTimer);
+      resumeSyncTimer = null;
+    }
+    if (backgroundSyncTimer != null) {
+      window.clearTimeout(backgroundSyncTimer);
+      backgroundSyncTimer = null;
+    }
+  };
+
   App.addListener("appStateChange", ({ isActive }) => {
+    clearSyncTimers();
     if (isActive) {
       // Opening the app drops arrived ("It's time") rows immediately.
       setLiveActivityDismissArrivedOnRefresh(true);
-      void syncSchedules({ dismissArrived: true });
-      scheduleLiveActivityBoundaries();
-      void initFcmRegistration();
-      void initLiveActivityRemote();
+      startAppAliveHeartbeat();
+      void pulseAppAlive();
+      resumeSyncTimer = window.setTimeout(() => {
+        resumeSyncTimer = null;
+        void syncSchedules({ dismissArrived: true });
+        scheduleLiveActivityBoundaries();
+        void initFcmRegistration();
+        void initLiveActivityRemote();
+      }, 350);
     } else {
-      // JS timers freeze while locked — push remote schedules before suspend.
-      // Do NOT early-start ActivityKit here: that races FCM push-to-start at
-      // showAt and stacks duplicate Lock Screen cards (+ "continue allowing?").
+      // Final heartbeat + schedule sync before suspend. Heartbeat tells the
+      // server "local owns LA" so it will not PTS; after force-quit the
+      // heartbeat ages out and kill-path uses update-token or one PTS.
       setLiveActivityDismissArrivedOnRefresh(false);
-      void refreshLiveActivities()
-        .then(() => syncLiveActivitySchedulesRemote())
-        .catch(() => {
-          void syncLiveActivitySchedulesRemote();
-        });
-      void rescheduleLiveActivityWakes();
-      scheduleLiveActivityBoundaries();
+      stopAppAliveHeartbeat();
+      backgroundSyncTimer = window.setTimeout(() => {
+        backgroundSyncTimer = null;
+        // Near showAt, arm local a bit early so force-quit still has a card
+        // that can receive update pushes (avoid blank until PTS).
+        void pulseAppAlive()
+          .then(() => refreshLiveActivities({ allowEarlyShowMs: 3 * 60_000 }))
+          .then(() => syncLiveActivitySchedulesRemote())
+          .catch(() => {
+            void syncLiveActivitySchedulesRemote();
+          });
+        void rescheduleLiveActivityWakes();
+        scheduleLiveActivityBoundaries();
+      }, 200);
     }
   });
   App.addListener("resume", () => {
-    void syncSchedules({ dismissArrived: true });
+    clearSyncTimers();
+    resumeSyncTimer = window.setTimeout(() => {
+      resumeSyncTimer = null;
+      void syncSchedules({ dismissArrived: true });
+    }, 350);
   });
   App.addListener("appUrlOpen", () => {
     void syncSchedules({ dismissArrived: true });

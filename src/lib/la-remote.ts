@@ -110,6 +110,9 @@ export type RemoteLaDiagnostics = {
     lastLaEnsureReason?: string;
     lastLaEnsureScheduleId?: string;
     lastLocalCalendarLaAt?: number;
+    appAliveAt?: number;
+    localLaActive?: boolean;
+    laCardActiveUntil?: number;
   };
 };
 
@@ -273,6 +276,9 @@ export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | 
         lastLaEnsureReason: deviceData?.lastLaEnsureReason,
         lastLaEnsureScheduleId: deviceData?.lastLaEnsureScheduleId,
         lastLocalCalendarLaAt: deviceData?.lastLocalCalendarLaAt,
+        appAliveAt: deviceData?.appAliveAt,
+        localLaActive: deviceData?.localLaActive,
+        laCardActiveUntil: deviceData?.laCardActiveUntil,
       },
     };
 
@@ -340,6 +346,11 @@ export function formatLaDiagnosticsReport(
     );
     lines.push(
       `ensure: path=${d.lastLaEnsurePath || "-"} reason=${d.lastLaEnsureReason || "-"} sched=${(d.lastLaEnsureScheduleId || "-").toString().slice(-12)} at=${d.lastLaEnsureAt || "-"} localCalAt=${d.lastLocalCalendarLaAt || "-"}`,
+    );
+    const aliveAge =
+      d.appAliveAt != null ? Math.round((Date.now() - Number(d.appAliveAt)) / 1000) : null;
+    lines.push(
+      `ownership: appAliveAgeSec=${aliveAge ?? "-"} localLa=${d.localLaActive ?? "-"} cardUntil=${d.laCardActiveUntil || "-"}`,
     );
   }
   if (diag?.lastAttempt) {
@@ -422,6 +433,39 @@ async function ensureFirebase(): Promise<boolean> {
   return initPromise;
 }
 
+let alivePulseTimer: number | null = null;
+
+/** Tell Cloud Functions the app process owns Lock Screen creation (no PTS). */
+export async function pulseAppAlive(opts?: {
+  localLaActive?: boolean;
+}): Promise<void> {
+  const ok = await ensureFirebase();
+  if (!ok || !db || !deviceUid) return;
+  const local =
+    typeof opts?.localLaActive === "boolean"
+      ? opts.localLaActive
+      : getLiveActivityLocalStatus().activeCount > 0;
+  await upsertDeviceDoc({
+    appAliveAt: Date.now(),
+    localLaActive: local,
+  });
+}
+
+export function startAppAliveHeartbeat(): void {
+  if (alivePulseTimer != null) return;
+  void pulseAppAlive();
+  alivePulseTimer = window.setInterval(() => {
+    void pulseAppAlive();
+  }, 20_000);
+}
+
+export function stopAppAliveHeartbeat(): void {
+  if (alivePulseTimer != null) {
+    window.clearInterval(alivePulseTimer);
+    alivePulseTimer = null;
+  }
+}
+
 async function upsertDeviceDoc(extra?: Record<string, unknown>): Promise<void> {
   if (!db || !deviceUid) return;
   try {
@@ -429,6 +473,7 @@ async function upsertDeviceDoc(extra?: Record<string, unknown>): Promise<void> {
     const payload: Record<string, unknown> = {
       platform: Capacitor.getPlatform(),
       updatedAt: Date.now(),
+      appAliveAt: Date.now(),
       ...extra,
     };
     if (pushToStartToken) payload.pushToStartToken = pushToStartToken;
@@ -465,13 +510,17 @@ async function upsertDeviceDoc(extra?: Record<string, unknown>): Promise<void> {
 }
 
 /**
- * Call after a *calendar* Live Activity was started locally so Cloud Functions
- * update that card instead of push-to-start (which would stack a duplicate).
+ * Call after a *calendar* Live Activity was started locally.
+ * Heartbeat + update token make kill-path UPDATE the surviving card (no PTS).
  */
 export async function markLocalCalendarLiveActivity(): Promise<void> {
   const ok = await ensureFirebase();
   if (!ok || !db || !deviceUid) return;
-  await upsertDeviceDoc({ lastLocalCalendarLaAt: Date.now() });
+  await upsertDeviceDoc({
+    lastLocalCalendarLaAt: Date.now(),
+    appAliveAt: Date.now(),
+    localLaActive: true,
+  });
   await syncLiveActivitySchedulesRemote();
 }
 
@@ -603,6 +652,7 @@ export async function initLiveActivityRemote(): Promise<void> {
   laDebugLog("la", `firebase ensure → ${ok} uid=${deviceUid?.slice(0, 8) ?? "none"}`);
   if (!ok) return;
   await upsertDeviceDoc();
+  startAppAliveHeartbeat();
   await syncLiveActivitySchedulesRemote();
 }
 
@@ -612,8 +662,12 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
   if (!ok || !db || !deviceUid) return;
 
   try {
-    const { canScheduleLiveActivities } = await import("./live-activity-prefs");
-    const userOn = canScheduleLiveActivities();
+    const { canScheduleLiveActivities, getLiveActivityGate } = await import(
+      "./live-activity-prefs"
+    );
+    const gate = await getLiveActivityGate();
+    // Demo+allow done AND iPhone LA on — otherwise clear remote schedules.
+    const userOn = canScheduleLiveActivities() && gate.systemEnabled;
     const now = new Date();
     const nowMs = now.getTime();
     const locale = currentLocale();
@@ -628,7 +682,7 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
       query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid)),
     );
 
-    // User has not finished demo+allow — drop remote schedules so kill-path PTS stops.
+    // Enable incomplete or system LA off — drop remote schedules so kill-path PTS stops.
     if (!userOn) {
       if (!existing.empty) {
         const batch = writeBatch(db);

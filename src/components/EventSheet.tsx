@@ -1,5 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Drawer as DrawerPrimitive } from "vaul";
 import {
   Trash2,
@@ -52,13 +53,11 @@ import {
   refreshLiveActivities,
   isLiveActivitySupported,
   rescheduleLiveActivityWakes,
-  startDemoLiveActivity,
 } from "@/lib/live-activity";
 import {
   getLiveActivityGate,
   isLiveActivityBlocked,
   isLiveActivitySystemOff,
-  setLiveActivityUserEnabled,
 } from "@/lib/live-activity-prefs";
 import { syncLiveActivitySchedulesRemote } from "@/lib/la-remote";
 import { useI18n } from "@/lib/i18n";
@@ -602,6 +601,7 @@ function FormBody({
 
 export function EventSheet({ open, onOpenChange, target, variant = "drawer", onSaved, onDeleted }: Props) {
   const { t, locale } = useI18n();
+  const navigate = useNavigate();
   const targetKey =
     target == null
       ? null
@@ -702,8 +702,6 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       void getLiveActivityGate().then((gate) => {
         setLaSystemOff(isLiveActivitySystemOff(gate));
       });
-    } else {
-      setLaBlocked(false);
     }
   }, [open]);
 
@@ -721,8 +719,12 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
 
   const syncSchedules = () => {
     void rescheduleAll();
-    void refreshLiveActivities();
-    void syncLiveActivitySchedulesRemote();
+    // Local ActivityKit first, then Firestore — parallel sync can race PTS vs local.
+    void refreshLiveActivities()
+      .then(() => syncLiveActivitySchedulesRemote())
+      .catch(() => {
+        void syncLiveActivitySchedulesRemote();
+      });
     void rescheduleLiveActivityWakes();
   };
 
@@ -806,21 +808,18 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
           }
           liveActivity = false;
         } else {
+          // Enable needs Lock Screen demo + Always Allow — EventSheet cannot
+          // finish that. Send the user to Settings instead of a fake short demo.
           const allow = await askConfirm(t("liveActivityAllowPrompt"), {
             confirmLabel: t("liveActivityAllowYes"),
             cancelLabel: t("liveActivityAllowNo"),
           });
           if (allow) {
-            setLiveActivityUserEnabled(true);
-            await startDemoLiveActivity({ durationMs: 20_000 });
-            const again = await getLiveActivityGate();
-            setLaSystemOff(isLiveActivitySystemOff(again));
-            if (isLiveActivityBlocked(again)) {
-              liveActivity = false;
-            }
-          } else {
-            liveActivity = false;
+            onOpenChange(false);
+            navigate("/settings");
+            return;
           }
+          liveActivity = false;
         }
       }
     }

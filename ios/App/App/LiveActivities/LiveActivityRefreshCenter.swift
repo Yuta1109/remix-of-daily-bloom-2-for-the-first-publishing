@@ -59,10 +59,12 @@ enum LiveActivityRefreshCenter {
         guard activities.count > 1 else { return }
         let birthKey = "essences.laActivityBirth"
         var birth = UserDefaults.standard.dictionary(forKey: birthKey) as? [String: Double] ?? [:]
-        let now = Date().timeIntervalSince1970
         for activity in activities {
             if birth[activity.id] == nil {
-                birth[activity.id] = now
+                // Match LiveActivitiesPlugin: unknown id (e.g. push-to-start) is
+                // treated as oldest so we keep the Always Allow / PTS card.
+                // Local request paths stamp a real birth via markActivityBorn.
+                birth[activity.id] = 0
             }
         }
         // Drop ids that no longer exist.
@@ -82,6 +84,7 @@ enum LiveActivityRefreshCenter {
 
     static func markStartedWithPush() {
         startedWithoutPush = false
+        stampBirthForCurrentActivities()
     }
 
     static func markStartedWithoutPush() {
@@ -90,6 +93,24 @@ enum LiveActivityRefreshCenter {
         lastUpdateToken = nil
         lock.unlock()
         UserDefaults.standard.removeObject(forKey: updateTokenKey)
+        stampBirthForCurrentActivities()
+    }
+
+    /// Stamp wall-clock birth for activities that do not yet have one (local request).
+    private static func stampBirthForCurrentActivities() {
+        let birthKey = "essences.laActivityBirth"
+        var birth = UserDefaults.standard.dictionary(forKey: birthKey) as? [String: Double] ?? [:]
+        let now = Date().timeIntervalSince1970
+        var changed = false
+        for activity in Activity<EssencesWidgetAttributes>.activities {
+            if birth[activity.id] == nil {
+                birth[activity.id] = now
+                changed = true
+            }
+        }
+        if changed {
+            UserDefaults.standard.set(birth, forKey: birthKey)
+        }
     }
 
     /// True when we should end a running activity and request again with pushType:.token.

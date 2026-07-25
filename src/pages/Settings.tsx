@@ -33,7 +33,6 @@ import {
 import {
   getLiveActivityEnableProgress,
   getLiveActivityGate,
-  isLiveActivityFullyEnabled,
   type LiveActivityGate,
 } from "@/lib/live-activity-prefs";
 import { LiveActivityDemoPanel } from "@/components/LiveActivityDemoPanel";
@@ -272,33 +271,30 @@ export default function Settings({ staticPreview = false }: Props) {
               <Activity className="w-4 h-4 text-accent" />
               <p className="text-sm font-semibold">{t("liveActivitySettingsTitle")}</p>
             </div>
-            {laGate && isLiveActivityFullyEnabled(laGate) ? (
-              <p className="text-xs text-muted-foreground pt-1">
-                {t("liveActivitySettingsOn")}
+            <div className="mt-2 space-y-2">
+              <p className="text-xs text-muted-foreground">
+                {laGate && getLiveActivityEnableProgress(laGate).mode === "reenable"
+                  ? t("settingsLaReenableIntro")
+                  : t("liveActivitySettingsDemoBody")}
               </p>
-            ) : (
-              <div className="mt-2 space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  {laGate && getLiveActivityEnableProgress(laGate).mode === "reenable"
-                    ? t("settingsLaReenableIntro")
-                    : t("liveActivitySettingsDemoBody")}
-                </p>
-                <LiveActivityDemoPanel
-                  variant="settings"
-                  showChecklist
-                  onOutcome={(outcome) => {
-                    if (outcome === "allowed") {
-                      void refreshLaDiagnostics();
-                      void refreshLiveActivities();
-                      void syncLiveActivitySchedulesRemote();
-                    }
-                  }}
-                  onProgressChange={() => {
-                    void getLiveActivityGate().then(setLaGate);
-                  }}
-                />
-              </div>
-            )}
+              <LiveActivityDemoPanel
+                variant="settings"
+                showChecklist
+                onOutcome={(outcome) => {
+                  if (outcome === "allowed") {
+                    void refreshLaDiagnostics();
+                    void refreshLiveActivities()
+                      .then(() => syncLiveActivitySchedulesRemote())
+                      .catch(() => {
+                        void syncLiveActivitySchedulesRemote();
+                      });
+                  }
+                }}
+                onProgressChange={() => {
+                  void getLiveActivityGate().then(setLaGate);
+                }}
+              />
+            </div>
             <p className="text-xs text-muted-foreground mt-3">{t("remoteLaPermissionHint")}</p>
           </div>
         )}

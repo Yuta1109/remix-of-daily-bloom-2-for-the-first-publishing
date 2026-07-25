@@ -14,7 +14,7 @@ import {
   type LiveActivityEnableProgress,
   type LiveActivityPermissionOutcome,
 } from "@/lib/live-activity-prefs";
-import { getLiveActivityLocalStatus, startDemoLiveActivity } from "@/lib/live-activity";
+import { startDemoLiveActivity } from "@/lib/live-activity";
 import { openLiveActivitySettings } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
@@ -76,17 +76,29 @@ export function LiveActivityDemoPanel({
   const startedRef = useRef(false);
   /** Demo Activity.request succeeded while system LA was on. */
   const demoLiveRef = useRef(false);
+  /** When the demo Activity was created (ms). */
+  const demoStartedAtRef = useRef(0);
   /** Timestamp when app went inactive after a successful demo (0 = not waiting). */
   const backgroundAfterDemoAtRef = useRef(0);
+  /**
+   * frequentPushes when demo started. Allow only if it is true after a real
+   * Lock Screen stay — and if it was already true, still require that stay
+   * (never mark allow from a quick glance / stillLive alone).
+   */
+  const frequentAtDemoStartRef = useRef(false);
   /** Was system off last evaluate — used to detect Settings toggle without treating it as allow. */
   const wasSystemOffRef = useRef(false);
   const flashTimerRef = useRef<number | null>(null);
-  /** Ignore system sheets that briefly background the app right after Activity.request. */
-  const MIN_LOCK_SCREEN_BG_MS = 2500;
+  /** Ignore system sheets / quick glance; require a real Lock Screen stay. */
+  const MIN_LOCK_SCREEN_BG_MS = 3000;
+  /** Activity.request may briefly background for a system sheet — ignore that. */
+  const IGNORE_BG_AFTER_DEMO_MS = 1500;
 
   const clearAllowWatch = useCallback(() => {
     demoLiveRef.current = false;
+    demoStartedAtRef.current = 0;
     backgroundAfterDemoAtRef.current = 0;
+    frequentAtDemoStartRef.current = false;
   }, []);
 
   const refreshProgress = useCallback(async () => {
@@ -163,8 +175,8 @@ export function LiveActivityDemoPanel({
       return;
     }
 
-    // Allow only after leaving the app for Lock Screen / Always Allow.
-    // Brief blips from the LA system sheet (<2.5s without Always Allow) are ignored.
+    // Allow ONLY via iOS “Always Allow” (frequentPushes), after a real Lock Screen
+    // stay. Merely seeing the demo card / stillLive must NOT count as allowed.
     if (!demoLiveRef.current || !backgroundAfterDemoAtRef.current) {
       if (phase !== "preparing" && phase !== "denied") {
         setPhase(demoLiveRef.current ? "ready" : phase === "idle" ? "idle" : "ready");
@@ -173,30 +185,31 @@ export function LiveActivityDemoPanel({
       return;
     }
     const bgMs = Date.now() - backgroundAfterDemoAtRef.current;
-    const alwaysAllow = gate.frequentPushesEnabled;
-    if (bgMs < MIN_LOCK_SCREEN_BG_MS && !alwaysAllow) {
+    if (bgMs < MIN_LOCK_SCREEN_BG_MS) {
+      // System sheet or quick app switch — ignore.
       backgroundAfterDemoAtRef.current = 0;
       setPhase("ready");
       onCanContinueChange?.(false);
       return;
     }
 
-    const local = getLiveActivityLocalStatus();
-    const stillLive = gate.activityCount > 0 || local.activeCount > 0;
-    if (alwaysAllow || stillLive) {
-      markLiveActivityEnableAllowed();
-      setPhase("complete");
-      emitOutcome("allowed", "complete");
-      await refreshProgress();
+    // frequentPushesEnabled = iOS “Always Allow” / frequent updates.
+    // Never treat “card still on Lock Screen” as allow (that was the false positive).
+    const alwaysAllow = gate.frequentPushesEnabled;
+    const newlyAllowed = alwaysAllow && !frequentAtDemoStartRef.current;
+    const alreadyAllowedStay =
+      alwaysAllow && frequentAtDemoStartRef.current && bgMs >= MIN_LOCK_SCREEN_BG_MS;
+    if (!newlyAllowed && !alreadyAllowedStay) {
+      setPhase("ready");
+      setDisplayOutcome("unknown");
+      backgroundAfterDemoAtRef.current = 0;
+      onCanContinueChange?.(false);
       return;
     }
-
-    // Left Lock Screen long enough but no allow signal — retry demo.
-    setPhase("ready");
-    setDisplayOutcome("unknown");
-    backgroundAfterDemoAtRef.current = 0;
-    onCanContinueChange?.(false);
-    void next;
+    markLiveActivityEnableAllowed();
+    setPhase("complete");
+    emitOutcome("allowed", "complete");
+    await refreshProgress();
   }, [clearAllowWatch, emitOutcome, isSettings, onCanContinueChange, phase, refreshProgress]);
 
   const runDemo = useCallback(async (opts?: { fromRetryButton?: boolean }) => {
@@ -233,6 +246,7 @@ export function LiveActivityDemoPanel({
         }
         return;
       }
+      frequentAtDemoStartRef.current = !!gate.frequentPushesEnabled;
       const result = await startDemoLiveActivity({ durationMs: 90_000 });
       if (!result.ok) {
         if (!result.systemEnabled) {
@@ -254,6 +268,7 @@ export function LiveActivityDemoPanel({
       }
       // Only a successful demo while system is on can later become "allowed".
       demoLiveRef.current = true;
+      demoStartedAtRef.current = Date.now();
       backgroundAfterDemoAtRef.current = 0;
       markLiveActivityDemoPresented();
       setPhase("ready");
@@ -302,7 +317,13 @@ export function LiveActivityDemoPanel({
     void App.addListener("appStateChange", ({ isActive }) => {
       if (!isActive) {
         // Only count background after a successful demo (not Settings while denied).
-        if (demoLiveRef.current && !backgroundAfterDemoAtRef.current) {
+        // Skip the Activity.request system-sheet blip right after demo start.
+        if (
+          demoLiveRef.current &&
+          !backgroundAfterDemoAtRef.current &&
+          demoStartedAtRef.current > 0 &&
+          Date.now() - demoStartedAtRef.current >= IGNORE_BG_AFTER_DEMO_MS
+        ) {
           backgroundAfterDemoAtRef.current = Date.now();
         }
         return;
@@ -355,35 +376,9 @@ export function LiveActivityDemoPanel({
     </div>
   );
 
-  // ── Settings: re-enable only (demo already done once) ──────────────
-  if (isSettings && progress.mode === "reenable") {
-    if (progress.complete) return null;
-    return (
-      <div className={cn("space-y-3", className)}>
-        {showChecklist && (
-          <div className="space-y-1.5 rounded-xl bg-secondary/50 px-3 py-2.5">
-            <Step n={1} done={false} active label={t("liveActivityStepSystem")} />
-          </div>
-        )}
-        <div>
-          <p className="text-sm font-semibold mb-1">{t("settingsLaReenableTitle")}</p>
-          <p className="text-sm leading-relaxed text-foreground/90">
-            {t("settingsLaReenableBody")}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void openLiveActivitySettings()}
-          className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold"
-        >
-          {t("liveActivityOpenLaSettings")}
-        </button>
-      </div>
-    );
-  }
-
-  // ── Settings: progressive 4-step (tutorial was deferred) ───────────
+  // ── Settings: always show 4-step checklist (full + reenable + complete) ─
   if (isSettings) {
+    const isReenable = progress.mode === "reenable";
     const step = progress.currentStep;
     const stepDone = {
       1: progress.systemOn,
@@ -394,7 +389,13 @@ export function LiveActivityDemoPanel({
 
     let title = t("settingsLaStep1Title");
     let body = t("settingsLaStep1Body");
-    if (phase === "preparing") {
+    if (progress.complete || phase === "complete") {
+      title = t("settingsLaStep4Title");
+      body = t("settingsLaStep4Body");
+    } else if (isReenable && !progress.systemOn) {
+      title = t("settingsLaReenableTitle");
+      body = t("settingsLaReenableBody");
+    } else if (phase === "preparing") {
       title = t("tutorialLaDemoPreparingTitle");
       body = t("tutorialLaDemoPreparingBody");
     } else if (phase === "failed") {
@@ -406,7 +407,7 @@ export function LiveActivityDemoPanel({
     } else if (step === 3) {
       title = t("settingsLaStep3Title");
       body = t("settingsLaStep3Body");
-    } else if (step === 4 || phase === "complete") {
+    } else if (step === 4) {
       title = t("settingsLaStep4Title");
       body = t("settingsLaStep4Body");
     }
@@ -418,25 +419,25 @@ export function LiveActivityDemoPanel({
             <Step
               n={1}
               done={stepDone[1]}
-              active={step === 1}
+              active={!progress.complete && step === 1}
               label={t("liveActivityStepSystem")}
             />
             <Step
               n={2}
               done={stepDone[2]}
-              active={step === 2}
+              active={!progress.complete && !isReenable && step === 2}
               label={t("liveActivityStepDemo")}
             />
             <Step
               n={3}
               done={stepDone[3]}
-              active={step === 3}
+              active={!progress.complete && !isReenable && step === 3}
               label={t("liveActivityStepAllow")}
             />
             <Step
               n={4}
               done={stepDone[4]}
-              active={step === 4}
+              active={!progress.complete && step === 4}
               label={t("liveActivityStepDone")}
             />
           </div>
@@ -454,7 +455,7 @@ export function LiveActivityDemoPanel({
           </div>
         )}
 
-        {step === 1 && (
+        {!progress.complete && step === 1 && (
           <button
             type="button"
             onClick={() => void openLiveActivitySettings()}
@@ -464,7 +465,10 @@ export function LiveActivityDemoPanel({
           </button>
         )}
 
-        {(step === 2 || step === 3) && phase !== "preparing" && (
+        {!progress.complete &&
+          !isReenable &&
+          (step === 2 || step === 3) &&
+          phase !== "preparing" && (
           <button
             type="button"
             disabled={busy || !progress.systemOn || flashOnLockScreen}
