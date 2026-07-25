@@ -154,6 +154,8 @@ let deviceUid: string | null = null;
 let pushToStartToken: string | null = null;
 let fcmToken: string | null = null;
 let liveActivityUpdateToken: string | null = null;
+/** Last update-token string written to Firestore (avoid bumping tokenAt on every pulse). */
+let lastUploadedUpdateToken: string | null = null;
 let lastError: string | null = null;
 let lastSyncAt: number | null = null;
 let cachedConfig: FirebaseWebConfig | null | undefined;
@@ -480,8 +482,12 @@ async function upsertDeviceDoc(extra?: Record<string, unknown>): Promise<void> {
     if (fcmToken) payload.fcmToken = fcmToken;
     if (liveActivityUpdateToken) {
       payload.liveActivityUpdateToken = liveActivityUpdateToken;
-      // Server skips update/end with tokens older than last push-to-start.
-      payload.liveActivityUpdateTokenAt = Date.now();
+      // Only refresh tokenAt when the token string changes. Bumping on every
+      // heartbeat made dead tokens look "fresh" and blocked push-to-start.
+      if (liveActivityUpdateToken !== lastUploadedUpdateToken) {
+        payload.liveActivityUpdateTokenAt = Date.now();
+        lastUploadedUpdateToken = liveActivityUpdateToken;
+      }
     }
     try {
       const { readStoredEnableFlags } = await import("./live-activity-prefs");
@@ -511,17 +517,46 @@ async function upsertDeviceDoc(extra?: Record<string, unknown>): Promise<void> {
 
 /**
  * Call after a *calendar* Live Activity was started locally.
- * Heartbeat + update token make kill-path UPDATE the surviving card (no PTS).
+ * Sets laCardActiveUntil so kill-path can UPDATE the surviving card (no PTS).
+ * Without this window, server must PTS — a bare update token is not enough.
  */
-export async function markLocalCalendarLiveActivity(): Promise<void> {
+export async function markLocalCalendarLiveActivity(opts?: {
+  endEpochMs?: number;
+}): Promise<void> {
   const ok = await ensureFirebase();
   if (!ok || !db || !deviceUid) return;
+  const endEpochMs = Number(opts?.endEpochMs || 0);
   await upsertDeviceDoc({
     lastLocalCalendarLaAt: Date.now(),
     appAliveAt: Date.now(),
     localLaActive: true,
+    ...(endEpochMs > Date.now() ? { laCardActiveUntil: endEpochMs } : {}),
   });
   await syncLiveActivitySchedulesRemote();
+}
+
+/** Clear update-token / card window after endAll so kill-path uses PTS next. */
+export async function clearLocalLiveActivityRemoteState(): Promise<void> {
+  liveActivityUpdateToken = null;
+  lastUploadedUpdateToken = null;
+  const ok = await ensureFirebase();
+  if (!ok || !db || !deviceUid) return;
+  try {
+    const { deleteField } = await import("firebase/firestore");
+    await upsertDeviceDoc({
+      localLaActive: false,
+      laCardActiveUntil: 0,
+      lastLocalCalendarLaAt: deleteField(),
+      liveActivityUpdateToken: deleteField(),
+      liveActivityUpdateTokenAt: deleteField(),
+      lastRemoteLaStartOk: false,
+    });
+  } catch {
+    await upsertDeviceDoc({
+      localLaActive: false,
+      laCardActiveUntil: 0,
+    });
+  }
 }
 
 /**

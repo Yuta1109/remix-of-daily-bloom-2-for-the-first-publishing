@@ -285,8 +285,10 @@ const PTS_CLAIM_MS = 120_000;
 /**
  * Update token for the *current* Lock Screen card.
  * - After remote PTS: only tokens uploaded at/after that PTS.
- * - After local ActivityKit start: token is valid without PTS (survives force-quit;
- *   kill-path must UPDATE that card instead of stacking a second PTS).
+ * - After local ActivityKit start: token must belong to an open card window
+ *   (laCardActiveUntil). Bare recent tokens are NOT enough — FCM accepts
+ *   updates to dead Activities, which used to mark schedules "started" and
+ *   block push-to-start (blank Lock Screen after force-quit).
  */
 function usableLiveActivityUpdateToken(device, now = Date.now()) {
   const token = device?.liveActivityUpdateToken;
@@ -300,10 +302,23 @@ function usableLiveActivityUpdateToken(device, now = Date.now()) {
     return token;
   }
 
-  // Local-only card (no remote PTS yet). Accept recent tokens so force-quit
-  // updates the surviving Activity instead of push-to-starting a duplicate.
-  if (now - tokenAt < 8 * 60 * 60_000) return token;
+  // Local-only generation: require an open card window set by the client
+  // after Activity.request, plus a token from that generation.
+  const cardUntil = Number(device.laCardActiveUntil || 0);
+  const localAt = Number(device.lastLocalCalendarLaAt || 0);
+  if (cardUntil > now && localAt > 0 && tokenAt >= localAt - 15_000) {
+    return token;
+  }
   return null;
+}
+
+/** True when Lock Screen likely has a card that can receive FCM update. */
+function deviceHasLiveCard(device, now = Date.now()) {
+  if (Number(device.laCardActiveUntil || 0) <= now) return false;
+  if (!usableLiveActivityUpdateToken(device, now)) return false;
+  if (device.lastRemoteLaStartOk === true) return true;
+  // Local ActivityKit card still in its linger window.
+  return Number(device.lastLocalCalendarLaAt || 0) > 0;
 }
 
 /**
@@ -363,14 +378,15 @@ async function markDueSchedulesStartedForItems(deviceId, primaryScheduleId, prim
 /**
  * Ensure a schedule is on the Lock Screen.
  *
- * Ownership model (redesign):
- *  A) App process alive (heartbeat) → local ActivityKit owns the card. Never PTS.
- *  B) App dead + usable update token → FCM update only (covers force-quit after
- *     local start, and multi-event refresh of one card). Never PTS.
- *  C) App dead + no token → exactly one push-to-start per claim window.
+ * Ownership model:
+ *  A) App process alive → local ActivityKit creates the card. Never PTS.
+ *     Do NOT mark started here (FCM update success ≠ card on Lock Screen).
+ *  B) App dead + live card evidence (laCardActiveUntil + usable token) →
+ *     FCM update only (force-quit after local/PTS start). Never second PTS.
+ *  C) App dead + no live card → exactly one push-to-start per claim window.
  *
- * Never mark `started` without a successful PTS or a successful update
- * (except re-acking the same schedule that already PTSd while token is pending).
+ * Never mark `started` from a bare update token with no card window — that
+ * blocked PTS and left the Lock Screen blank after force-quit.
  */
 async function sendStartForSchedule(scheduleId, data, opts = {}) {
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
@@ -399,10 +415,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   }
 
   const cardUntilMs = Number(aggregated.staleSec || 0) * 1000;
-  let updateToken = usableLiveActivityUpdateToken(device, now);
   const appAlive =
     Number(device.appAliveAt || 0) > 0 &&
     now - Number(device.appAliveAt || 0) < APP_ALIVE_MS;
+  let liveCard = deviceHasLiveCard(device, now);
   let generationLive =
     device.lastRemoteLaStartOk === true &&
     Number(device.laCardActiveUntil || 0) > now;
@@ -428,52 +444,24 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   };
 
   // ── A. App process alive → local ActivityKit owns creation ─────────
-  // Stale heartbeat after force-quit can look "alive" briefly. If we already
-  // have an update token, refresh that card instead of no-op (blank Lock Screen).
+  // Never mark started from here: a stale update token + FCM "ok" used to
+  // skip PTS while the Lock Screen stayed blank.
   if (appAlive) {
-    if (updateToken) {
-      logger.info("LA app-alive update (no PTS)", scheduleId);
-      const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
+    if (liveCard) {
+      logger.info("LA app-alive content refresh (no mark)", scheduleId);
+      await sendUpdateForSchedule(scheduleId, data, "countdown", {
         withAlert: false,
         contentState: aggregated.contentState,
         staleSec: aggregated.staleSec,
       });
-      if (ok) {
-        await markDueSchedulesStartedForItems(
-          data.deviceId,
-          scheduleId,
-          data,
-          aggregated.contentState.items,
-        );
-        try {
-          await db.collection("devices").doc(data.deviceId).set(
-            {
-              laCardActiveUntil: Math.max(
-                Number(device.laCardActiveUntil || 0),
-                cardUntilMs,
-              ),
-              lastLaEnsureAt: Date.now(),
-              lastLaEnsurePath: "update",
-              lastLaEnsureReason: "app-alive-update",
-              lastLaEnsureScheduleId: scheduleId,
-            },
-            { merge: true },
-          );
-        } catch {
-          /* ignore */
-        }
-        return true;
-      }
-      // Token rejected — fall through to kill-path recovery below only after
-      // clearing; while truly alive, local ActivityKit will recreate.
     }
     await recordEnsure("local-owned", "app-alive");
     return true;
   }
 
-  // ── B. Kill-path with update token → never create a second Activity ─
-  if (updateToken) {
-    logger.info("LA kill-path update (no PTS)", scheduleId);
+  // ── B. Kill-path with a *live* card → update only (no second PTS) ──
+  if (liveCard) {
+    logger.info("LA kill-path update (live card)", scheduleId);
     const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
       withAlert: false,
       contentState: aggregated.contentState,
@@ -513,14 +501,15 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
           liveActivityUpdateTokenAt: FieldValue.delete(),
           laCardActiveUntil: 0,
           lastRemoteLaStartOk: false,
+          lastLocalCalendarLaAt: FieldValue.delete(),
+          localLaActive: false,
         },
         { merge: true },
       );
     } catch {
       /* ignore */
     }
-    // Continue in this invocation with a fresh PTS.
-    updateToken = null;
+    liveCard = false;
     generationLive = false;
     alreadyPtsThis = false;
   }
@@ -532,7 +521,18 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     return true;
   }
 
-  // Generation live for another schedule, no token → wait (no second PTS).
+  // Local ActivityKit card window still open but update token not uploaded yet.
+  // Wait — PTS would stack a second card on top of the surviving local one.
+  const localCardWindow =
+    Number(device.laCardActiveUntil || 0) > now &&
+    Number(device.lastLocalCalendarLaAt || 0) > 0 &&
+    device.lastRemoteLaStartOk !== true;
+  if (localCardWindow) {
+    await recordEnsure("wait-token", "local-card-awaiting-update-token");
+    return false;
+  }
+
+  // Generation live for another schedule, no usable token → wait (no second PTS).
   if (generationLive || opts.preferUpdateOnly === true) {
     await recordEnsure("wait-token", "generation-or-sibling-no-token");
     return false;
@@ -1221,43 +1221,48 @@ export const sweepLiveActivityRefresh = onSchedule(
     let startedNow = 0;
     const devicesStartedThisSweep = new Set();
 
-    // Demote zombie "started" (no recent successful update / PTS) so push-to-start can run.
+    // Demote zombie "started" so push-to-start can run.
+    // FCM update "ok" alone is NOT enough — updates to a dead Activity still
+    // succeed and used to block PTS (blank Lock Screen after force-quit).
     for (const docSnap of startedSnap.docs) {
       const data = docSnap.data();
       if (Number(data.endAtEpochMs) <= now) continue;
       if (Number(data.showAtEpochMs) > now) continue;
-      const startedAt = Number(data.startedAt || 0);
-      const recentOk =
-        data.lastRemoteUpdateOk === true &&
-        now - Number(data.lastRemoteUpdateAt || 0) < 15 * 60_000;
-      const recentlyStarted = startedAt && now - startedAt < 180_000;
-      let recentPts = false;
+      let hasCard = false;
       let ptsOwnsThis = false;
+      let localCardWindow = false;
       try {
         const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
         const device = deviceSnap.data() || {};
-        recentPts =
-          device.lastRemoteLaStartOk === true &&
-          now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
-        // Force-quit path uploads no updateToken for hours — do not demote a
-        // schedule we already successfully push-to-started (causes duplicates).
-        // Cap at 20m so a dismissed/deleted card cannot block the next event's PTS.
+        hasCard = deviceHasLiveCard(device, now);
         ptsOwnsThis =
           device.lastRemoteLaStartOk === true &&
           device.lastRemoteLaStartScheduleId === docSnap.id &&
           now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
+        localCardWindow =
+          Number(device.laCardActiveUntil || 0) > now &&
+          Number(device.lastLocalCalendarLaAt || 0) > 0 &&
+          device.lastRemoteLaStartOk !== true;
       } catch {
         /* ignore */
       }
-      if (recentOk || recentlyStarted || recentPts || ptsOwnsThis) continue;
-      logger.info("LA sweep demote stuck started → due", docSnap.id);
+      // Keep: live card can receive updates, or we just PTSd / local card
+      // is waiting for its update token (do not stack a second Activity).
+      if (hasCard || ptsOwnsThis || localCardWindow) continue;
+      logger.info("LA sweep demote started without live card → due", docSnap.id);
       await docSnap.ref.update({
         status: "due",
-        lastError: "demoted-stuck-started",
+        lastError: "demoted-no-live-card",
       });
       try {
         await db.collection("devices").doc(data.deviceId).set(
-          { laLastPushStartAt: 0 },
+          {
+            laLastPushStartAt: 0,
+            liveActivityUpdateToken: FieldValue.delete(),
+            liveActivityUpdateTokenAt: FieldValue.delete(),
+            laCardActiveUntil: 0,
+            lastRemoteLaStartOk: false,
+          },
           { merge: true },
         );
         const preferUpdateOnly = devicesStartedThisSweep.has(data.deviceId);

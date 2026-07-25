@@ -310,7 +310,7 @@ async function refreshLiveActivitiesInner(
         lastVisibleItemKeys = new Set();
         lastLocalError = null;
         void import("./la-remote")
-          .then((m) => m.pulseAppAlive({ localLaActive: false }))
+          .then((m) => m.clearLocalLiveActivityRemoteState())
           .catch(() => {});
       } catch {
         /* ignore */
@@ -340,7 +340,7 @@ async function refreshLiveActivitiesInner(
         }
         void import("./la-remote")
           .then((m) =>
-            m.pulseAppAlive({ localLaActive: false }).then(() =>
+            m.clearLocalLiveActivityRemoteState().then(() =>
               m.syncLiveActivitySchedulesRemote(),
             ),
           )
@@ -377,7 +377,7 @@ async function refreshLiveActivitiesInner(
       lastActiveCount = 0;
       void import("./la-remote")
         .then((m) =>
-          m.pulseAppAlive({ localLaActive: false }).then(() =>
+          m.clearLocalLiveActivityRemoteState().then(() =>
             m.syncLiveActivitySchedulesRemote(),
           ),
         )
@@ -411,11 +411,11 @@ async function refreshLiveActivitiesInner(
       phase,
     });
     lastLocalError = null;
-    // Await sync + lastLocalCalendarLaAt so a pending Cloud Task does not
-    // push-to-start a second Activity on top of this local card.
+    // Publish card window so kill-path UPDATEs this Activity instead of
+    // treating a stale token as success (or skipping PTS when there is no card).
     try {
       const remote = await import("./la-remote");
-      await remote.markLocalCalendarLiveActivity();
+      await remote.markLocalCalendarLiveActivity({ endEpochMs: safeEndEpochMs });
     } catch {
       /* ignore */
     }
