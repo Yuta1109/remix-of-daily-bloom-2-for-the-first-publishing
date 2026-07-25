@@ -104,10 +104,9 @@ export async function initNative(): Promise<void> {
       stopAppAliveHeartbeat();
       backgroundSyncTimer = window.setTimeout(() => {
         backgroundSyncTimer = null;
-        // Near showAt, arm local a bit early so force-quit still has a card
-        // that can receive update pushes (avoid blank until PTS).
+        // Do not arm minutes early (showed ~11m on a 10m lead). Tiny skew only.
         void pulseAppAlive()
-          .then(() => refreshLiveActivities({ allowEarlyShowMs: 3 * 60_000 }))
+          .then(() => refreshLiveActivities({ allowEarlyShowMs: 15_000 }))
           .then(() => syncLiveActivitySchedulesRemote())
           .catch(() => {
             void syncLiveActivitySchedulesRemote();

@@ -546,16 +546,66 @@ export async function clearLocalLiveActivityRemoteState(): Promise<void> {
     await upsertDeviceDoc({
       localLaActive: false,
       laCardActiveUntil: 0,
+      laLastPushStartAt: 0,
       lastLocalCalendarLaAt: deleteField(),
       liveActivityUpdateToken: deleteField(),
       liveActivityUpdateTokenAt: deleteField(),
       lastRemoteLaStartOk: false,
+      lastRemoteLaStartScheduleId: deleteField(),
     });
   } catch {
     await upsertDeviceDoc({
       localLaActive: false,
       laCardActiveUntil: 0,
+      laLastPushStartAt: 0,
+      lastRemoteLaStartOk: false,
     });
+  }
+}
+
+/**
+ * After a local ActivityKit start while the app is backgrounded, request a
+ * one-shot Live Activity push `alert` (banner + system haptic). Not a normal
+ * notification — ActivityKit presentation only.
+ */
+export async function requestLiveActivityPresentationAlert(): Promise<void> {
+  const ok = await ensureFirebase();
+  if (!ok || !db || !deviceUid || !liveActivityUpdateToken) return;
+
+  try {
+    const { App } = await import("@capacitor/app");
+    const state = await App.getState();
+    if (state.isActive) return; // In-app: haptic only (already fired).
+  } catch {
+    /* treat as background */
+  }
+
+  try {
+    const q = query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid));
+    const snap = await getDocs(q);
+    const now = Date.now();
+    for (const d of snap.docs) {
+      const data = d.data() as {
+        status?: string;
+        showAtEpochMs?: number;
+        endAtEpochMs?: number;
+        laPresentedAlertAt?: number;
+        requestPresentationAlert?: boolean;
+      };
+      if (data.laPresentedAlertAt || data.requestPresentationAlert) continue;
+      if (data.status !== "due" && data.status !== "started") continue;
+      if (Number(data.showAtEpochMs) > now) continue;
+      if (Number(data.endAtEpochMs) > 0 && Number(data.endAtEpochMs) <= now) continue;
+      await setDoc(
+        doc(db, "laSchedules", d.id),
+        { requestPresentationAlert: true, updatedAt: now },
+        { merge: true },
+      );
+      laDebugLog("la", "requested presentation alert", "ok");
+      return;
+    }
+  } catch (err) {
+    setError(err);
   }
 }
 

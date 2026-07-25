@@ -366,6 +366,7 @@ async function refreshLiveActivitiesInner(
     dismissArrived,
     allowEarlyShowMs: opts.allowEarlyShowMs,
   });
+  const isNewLocalCard = lastActiveCount <= 0 && visible.length > 0;
   lastActiveCount = visible.length;
   setVisibleItemKeys(visible);
 
@@ -416,6 +417,12 @@ async function refreshLiveActivitiesInner(
     try {
       const remote = await import("./la-remote");
       await remote.markLocalCalendarLiveActivity({ endEpochMs: safeEndEpochMs });
+      if (isNewLocalCard) {
+        // Local start haptic; home-screen LA banner via ActivityKit push `alert`.
+        const { liveActivityStartHaptic } = await import("./haptics");
+        void liveActivityStartHaptic();
+        void remote.requestLiveActivityPresentationAlert().catch(() => {});
+      }
     } catch {
       /* ignore */
     }

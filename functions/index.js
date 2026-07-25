@@ -312,13 +312,68 @@ function usableLiveActivityUpdateToken(device, now = Date.now()) {
   return null;
 }
 
-/** True when Lock Screen likely has a card that can receive FCM update. */
-function deviceHasLiveCard(device, now = Date.now()) {
+/**
+ * True when Lock Screen likely has a card that can receive FCM update.
+ * Requires the PTS/local schedule that owns the card to still exist — after the
+ * user deletes an event, lastRemoteLaStartOk alone must NOT keep "generation-update"
+ * alive (that blanked tests 2/4).
+ */
+async function deviceHasLiveCard(device, deviceId, now = Date.now()) {
   if (Number(device.laCardActiveUntil || 0) <= now) return false;
   if (!usableLiveActivityUpdateToken(device, now)) return false;
-  if (device.lastRemoteLaStartOk === true) return true;
-  // Local ActivityKit card still in its linger window.
-  return Number(device.lastLocalCalendarLaAt || 0) > 0;
+
+  if (device.lastRemoteLaStartOk === true) {
+    const ptsId = device.lastRemoteLaStartScheduleId;
+    if (!ptsId) return false;
+    try {
+      const snap = await db.collection("laSchedules").doc(String(ptsId)).get();
+      if (!snap.exists) return false;
+      const d = snap.data() || {};
+      const st = d.status;
+      if (st !== "started" && st !== "arrived") return false;
+      if (Number(d.endAtEpochMs) > 0 && Number(d.endAtEpochMs) <= now) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Local ActivityKit generation: only if some schedule is still on-card.
+  const localAt = Number(device.lastLocalCalendarLaAt || 0);
+  if (localAt <= 0) return false;
+  try {
+    const snap = await db.collection("laSchedules").where("deviceId", "==", deviceId).get();
+    return snap.docs.some((docSnap) => {
+      const d = docSnap.data() || {};
+      const st = d.status;
+      if (st !== "started" && st !== "arrived") return false;
+      if (Number(d.endAtEpochMs) > 0 && Number(d.endAtEpochMs) <= now) return false;
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** Clear PTS/local generation when the Lock Screen card is gone. */
+async function clearDeviceLiveActivityGeneration(deviceId) {
+  try {
+    await db.collection("devices").doc(deviceId).set(
+      {
+        lastRemoteLaStartOk: false,
+        lastRemoteLaStartScheduleId: FieldValue.delete(),
+        laCardActiveUntil: 0,
+        localLaActive: false,
+        lastLocalCalendarLaAt: FieldValue.delete(),
+        liveActivityUpdateToken: FieldValue.delete(),
+        liveActivityUpdateTokenAt: FieldValue.delete(),
+        laLastPushStartAt: 0,
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    logger.warn("clearDeviceLiveActivityGeneration failed", deviceId, err);
+  }
 }
 
 /**
@@ -418,10 +473,8 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   const appAlive =
     Number(device.appAliveAt || 0) > 0 &&
     now - Number(device.appAliveAt || 0) < APP_ALIVE_MS;
-  let liveCard = deviceHasLiveCard(device, now);
-  let generationLive =
-    device.lastRemoteLaStartOk === true &&
-    Number(device.laCardActiveUntil || 0) > now;
+  let liveCard = await deviceHasLiveCard(device, data.deviceId, now);
+  let generationLive = liveCard && device.lastRemoteLaStartOk === true;
   let alreadyPtsThis =
     device.lastRemoteLaStartOk === true &&
     device.lastRemoteLaStartScheduleId === scheduleId &&
@@ -461,9 +514,17 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
 
   // ── B. Kill-path with a *live* card → update only (no second PTS) ──
   if (liveCard) {
-    logger.info("LA kill-path update (live card)", scheduleId);
+    // First time this schedule appears on an existing card → LA alert banner + haptic.
+    const presentAlert = !data.laPresentedAlertAt;
+    logger.info("LA kill-path update (live card)", scheduleId, { presentAlert });
     const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
-      withAlert: false,
+      withAlert: presentAlert,
+      urgent: presentAlert,
+      alertTitle: String(data.title || (data.locale === "en" ? "Upcoming" : "予定")),
+      alertBody:
+        data.locale === "en"
+          ? "Countdown on Lock Screen"
+          : "ロック画面でカウントダウン中",
       contentState: aggregated.contentState,
       staleSec: aggregated.staleSec,
     });
@@ -474,6 +535,15 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         data,
         aggregated.contentState.items,
       );
+      if (presentAlert) {
+        try {
+          await db.collection("laSchedules").doc(scheduleId).update({
+            laPresentedAlertAt: Date.now(),
+          });
+        } catch {
+          /* ignore */
+        }
+      }
       try {
         await db.collection("devices").doc(data.deviceId).set(
           {
@@ -626,6 +696,13 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       data,
       aggregated.contentState.items,
     );
+    try {
+      await db.collection("laSchedules").doc(scheduleId).update({
+        laPresentedAlertAt: Date.now(),
+      });
+    } catch {
+      /* ignore */
+    }
     await recordRemoteResult(scheduleId, data.deviceId, {
       ok: true,
       phase: "start",
@@ -912,6 +989,7 @@ async function sendEndForSchedule(scheduleId, data) {
 
   if (!fcmToken || !updateToken) {
     logger.warn("LA end skipped — no usable update token (staleDate should dismiss)", scheduleId);
+    await clearDeviceLiveActivityGeneration(data.deviceId);
     return false;
   }
 
@@ -937,9 +1015,11 @@ async function sendEndForSchedule(scheduleId, data) {
       },
     });
     logger.info("LA end sent", scheduleId);
+    await clearDeviceLiveActivityGeneration(data.deviceId);
     return true;
   } catch (err) {
     logger.warn("FCM live activity end failed", scheduleId, err);
+    await clearDeviceLiveActivityGeneration(data.deviceId);
     return false;
   }
 }
@@ -1067,8 +1147,8 @@ export const dispatchLiveActivityTask = onTaskDispatched(
       await snap.ref.update({ status: "expired", cloudTaskId: FieldValue.delete() });
       return;
     }
-    // Early dispatch (clock skew) — still OK if showAt is within a minute; otherwise re-enqueue.
-    if (Number(data.showAtEpochMs) > now + 60_000) {
+    // Early dispatch (clock skew) — allow only a few seconds; 60s made LA appear ~1m early.
+    if (Number(data.showAtEpochMs) > now + 15_000) {
       logger.info("Task early; re-enqueue", scheduleId);
       await enqueueAtShowAt(scheduleId, data);
       return;
@@ -1234,12 +1314,14 @@ export const sweepLiveActivityRefresh = onSchedule(
       try {
         const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
         const device = deviceSnap.data() || {};
-        hasCard = deviceHasLiveCard(device, now);
+        hasCard = await deviceHasLiveCard(device, data.deviceId, now);
         ptsOwnsThis =
           device.lastRemoteLaStartOk === true &&
           device.lastRemoteLaStartScheduleId === docSnap.id &&
           now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
+        // Only wait for local token if the owning schedule still exists.
         localCardWindow =
+          !hasCard &&
           Number(device.laCardActiveUntil || 0) > now &&
           Number(device.lastLocalCalendarLaAt || 0) > 0 &&
           device.lastRemoteLaStartOk !== true;
@@ -1397,6 +1479,55 @@ export const onLaScheduleWrite = onDocumentWritten(
 
     if (!after) {
       await deleteTaskBestEffort(before?.cloudTaskId);
+      // Event deleted — if no other on-card schedules remain, drop generation so
+      // the next force-quit start uses push-to-start (not a dead update token).
+      if (before?.deviceId) {
+        try {
+          const remaining = await db
+            .collection("laSchedules")
+            .where("deviceId", "==", before.deviceId)
+            .get();
+          const now = Date.now();
+          const stillLive = remaining.docs.some((docSnap) => {
+            if (docSnap.id === scheduleId) return false;
+            const d = docSnap.data() || {};
+            const st = d.status;
+            if (st !== "started" && st !== "arrived" && st !== "due") return false;
+            if (Number(d.endAtEpochMs) > 0 && Number(d.endAtEpochMs) <= now) return false;
+            if (st === "due" && Number(d.showAtEpochMs) > now) return false;
+            return st === "started" || st === "arrived";
+          });
+          if (!stillLive) {
+            await clearDeviceLiveActivityGeneration(before.deviceId);
+          }
+        } catch (err) {
+          logger.warn("Failed to clear generation after schedule delete", err);
+        }
+      }
+      return;
+    }
+
+    // Client local-start → one-shot ActivityKit presentation (banner + haptic).
+    if (after.requestPresentationAlert && !after.laPresentedAlertAt) {
+      const ok = await sendUpdateForSchedule(scheduleId, after, "countdown", {
+        withAlert: true,
+        urgent: true,
+        alertTitle: String(
+          after.title || (after.locale === "en" ? "Upcoming" : "予定"),
+        ),
+        alertBody:
+          after.locale === "en"
+            ? "Countdown on Lock Screen"
+            : "ロック画面でカウントダウン中",
+      });
+      try {
+        await afterSnap.ref.update({
+          requestPresentationAlert: FieldValue.delete(),
+          ...(ok ? { laPresentedAlertAt: Date.now() } : {}),
+        });
+      } catch (err) {
+        logger.warn("Failed to clear requestPresentationAlert", err);
+      }
       return;
     }
 
@@ -1496,10 +1627,12 @@ export const onDeviceTokenWrite = onDocumentWritten(
       if (Number(data.endAtEpochMs) <= Date.now()) continue;
 
       if (status === "due" || status === "error") {
-        // Token just arrived — update the existing card (local or PTS), never PTS.
-        const preferUpdateOnly =
-          after.lastRemoteLaStartOk === true &&
-          Number(after.laCardActiveUntil || 0) > Date.now();
+        // Token just arrived — update only when a real card still exists.
+        const preferUpdateOnly = await deviceHasLiveCard(
+          after,
+          deviceId,
+          Date.now(),
+        );
         await sendStartForSchedule(docSnap.id, data, { preferUpdateOnly });
         continue;
       }
