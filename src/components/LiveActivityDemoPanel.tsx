@@ -7,6 +7,7 @@ import {
   isNativeIos,
   markLiveActivityDemoPresented,
   markLiveActivityEnableAllowed,
+  markLiveActivityEnableDeferred,
   resetLiveActivityEnableProgress,
   setLiveActivityPermissionOutcome,
   setLiveActivityUserEnabled,
@@ -73,9 +74,18 @@ export function LiveActivityDemoPanel({
   const [progress, setProgress] = useState<LiveActivityEnableProgress>(emptyProgress);
   const [flashOnLockScreen, setFlashOnLockScreen] = useState(false);
   const startedRef = useRef(false);
-  const demoSessionRef = useRef(false);
-  const sawBackgroundRef = useRef(false);
+  /** Demo Activity.request succeeded while system LA was on. */
+  const demoLiveRef = useRef(false);
+  /** User backgrounded after a successful demo (Lock Screen / Always Allow). */
+  const sawBackgroundAfterDemoRef = useRef(false);
+  /** Was system off last evaluate — used to detect Settings toggle without treating it as allow. */
+  const wasSystemOffRef = useRef(false);
   const flashTimerRef = useRef<number | null>(null);
+
+  const clearAllowWatch = useCallback(() => {
+    demoLiveRef.current = false;
+    sawBackgroundAfterDemoRef.current = false;
+  }, []);
 
   const refreshProgress = useCallback(async () => {
     const gate = await getLiveActivityGate();
@@ -88,7 +98,10 @@ export function LiveActivityDemoPanel({
   const emitOutcome = useCallback(
     (outcome: LiveActivityPermissionOutcome, next: LaDemoPhase) => {
       setDisplayOutcome(outcome);
-      setLiveActivityPermissionOutcome(outcome);
+      if (outcome !== "skipped") {
+        // skipped is persisted by markLiveActivityEnableDeferred
+        setLiveActivityPermissionOutcome(outcome);
+      }
       onOutcome?.(outcome, next);
       onCanContinueChange?.(outcome === "allowed" || outcome === "skipped");
     },
@@ -108,6 +121,8 @@ export function LiveActivityDemoPanel({
     const { gate, next } = await refreshProgress();
 
     if (!gate.systemEnabled) {
+      wasSystemOffRef.current = true;
+      clearAllowWatch();
       resetLiveActivityEnableProgress();
       if (isSettings) {
         setPhase("idle");
@@ -122,16 +137,34 @@ export function LiveActivityDemoPanel({
       return;
     }
 
-    if (next.mode === "reenable" && next.complete) {
+    // System just came back on (e.g. iPhone Settings). That alone is NEVER allow.
+    if (wasSystemOffRef.current) {
+      wasSystemOffRef.current = false;
+      clearAllowWatch();
+      if (isSettings && next.mode === "reenable" && next.complete) {
+        // Durable demo-done + system on → Settings re-enable complete.
+        setPhase("complete");
+        emitOutcome("allowed", "complete");
+        return;
+      }
+      // Tutorial / full Settings: require a fresh demo + Always Allow.
+      setPhase("idle");
+      setDisplayOutcome("unknown");
+      onCanContinueChange?.(false);
+      return;
+    }
+
+    // Settings re-enable path only (already finished demo+allow once).
+    if (isSettings && next.mode === "reenable" && next.complete) {
       setPhase("complete");
       emitOutcome("allowed", "complete");
       return;
     }
 
-    // Never treat as allowed until the user left for Lock Screen after a demo.
-    if (!demoSessionRef.current || !sawBackgroundRef.current) {
+    // Allow only after: successful demo (system on) → background → live / Always Allow.
+    if (!demoLiveRef.current || !sawBackgroundAfterDemoRef.current) {
       if (phase !== "preparing" && phase !== "denied") {
-        setPhase(demoSessionRef.current ? "ready" : phase === "idle" ? "idle" : "ready");
+        setPhase(demoLiveRef.current ? "ready" : phase === "idle" ? "idle" : "ready");
       }
       onCanContinueChange?.(false);
       return;
@@ -154,7 +187,7 @@ export function LiveActivityDemoPanel({
     setDisplayOutcome("unknown");
     onCanContinueChange?.(false);
     void next;
-  }, [emitOutcome, isSettings, onCanContinueChange, phase, refreshProgress]);
+  }, [clearAllowWatch, emitOutcome, isSettings, onCanContinueChange, phase, refreshProgress]);
 
   const runDemo = useCallback(async (opts?: { fromRetryButton?: boolean }) => {
     if (busy) return;
@@ -166,8 +199,7 @@ export function LiveActivityDemoPanel({
       window.clearTimeout(flashTimerRef.current);
       flashTimerRef.current = null;
     }
-    sawBackgroundRef.current = false;
-    demoSessionRef.current = true;
+    clearAllowWatch();
     onCanContinueChange?.(false);
     try {
       if (!isNativeIos()) {
@@ -180,6 +212,7 @@ export function LiveActivityDemoPanel({
       setLiveActivityUserEnabled(true);
       const gate = await getLiveActivityGate();
       if (!gate.systemEnabled) {
+        wasSystemOffRef.current = true;
         resetLiveActivityEnableProgress();
         if (isSettings) {
           setPhase("idle");
@@ -193,6 +226,8 @@ export function LiveActivityDemoPanel({
       const result = await startDemoLiveActivity({ durationMs: 90_000 });
       if (!result.ok) {
         if (!result.systemEnabled) {
+          wasSystemOffRef.current = true;
+          clearAllowWatch();
           resetLiveActivityEnableProgress();
           if (isSettings) {
             setPhase("idle");
@@ -207,6 +242,9 @@ export function LiveActivityDemoPanel({
         }
         return;
       }
+      // Only a successful demo while system is on can later become "allowed".
+      demoLiveRef.current = true;
+      sawBackgroundAfterDemoRef.current = false;
       markLiveActivityDemoPresented();
       setPhase("ready");
       setDisplayOutcome("unknown");
@@ -226,7 +264,7 @@ export function LiveActivityDemoPanel({
     } finally {
       setBusy(false);
     }
-  }, [busy, emitOutcome, isSettings, onCanContinueChange, refreshProgress]);
+  }, [busy, clearAllowWatch, emitOutcome, isSettings, onCanContinueChange, refreshProgress]);
 
   useEffect(() => {
     return () => {
@@ -253,7 +291,8 @@ export function LiveActivityDemoPanel({
     let handle: { remove: () => Promise<void> } | undefined;
     void App.addListener("appStateChange", ({ isActive }) => {
       if (!isActive) {
-        if (demoSessionRef.current) sawBackgroundRef.current = true;
+        // Only count background after a successful demo (not Settings while denied).
+        if (demoLiveRef.current) sawBackgroundAfterDemoRef.current = true;
         return;
       }
       void evaluateGate();
@@ -487,7 +526,9 @@ export function LiveActivityDemoPanel({
           <button
             type="button"
             onClick={() => {
-              setLiveActivityPermissionOutcome("skipped");
+              clearAllowWatch();
+              markLiveActivityEnableDeferred();
+              emitOutcome("skipped", "denied");
               onDeferAfterDeny?.();
             }}
             className="w-full rounded-xl bg-secondary/80 px-4 py-2.5 text-sm font-medium"

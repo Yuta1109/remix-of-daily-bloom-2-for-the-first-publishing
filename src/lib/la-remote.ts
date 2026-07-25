@@ -615,12 +615,19 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
       query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid)),
     );
 
-    // User turned LA off in-app — drop remote schedules so kill-path PTS stops.
+    // User has not finished demo+allow — drop remote schedules so kill-path PTS stops.
     if (!userOn) {
-      if (existing.empty) return;
-      const batch = writeBatch(db);
-      existing.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
+      if (!existing.empty) {
+        const batch = writeBatch(db);
+        existing.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+      try {
+        const { deleteField } = await import("firebase/firestore");
+        await upsertDeviceDoc({ lastLocalCalendarLaAt: deleteField() });
+      } catch {
+        /* ignore */
+      }
       lastSyncAt = Date.now();
       return;
     }

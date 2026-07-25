@@ -5,7 +5,10 @@ const ONBOARDING_KEY = "essences-la-onboarding-done";
 const PERMISSION_OUTCOME_KEY = "essences-la-permission-outcome";
 const ENABLE_DEMO_KEY = "essences-la-enable-demo-done";
 const ENABLE_ALLOWED_KEY = "essences-la-enable-allowed";
-/** Set once the user finished demo + allow (tutorial or Settings). Never cleared on system off. */
+/**
+ * Set ONLY after Lock Screen demo + allow (tutorial or Settings).
+ * Never set from iPhone Settings toggles alone. Never cleared on system off.
+ */
 const DEMO_PROCESS_DONE_KEY = "essences-la-demo-process-done";
 
 export type LiveActivityPermissionOutcome =
@@ -72,8 +75,10 @@ export function markLiveActivityDemoPresented(): void {
   }
 }
 
+/** Call only after demo on Lock Screen + Always Allow / live card confirmed. */
 export function markLiveActivityEnableAllowed(): void {
   try {
+    localStorage.setItem(ENABLE_DEMO_KEY, "true");
     localStorage.setItem(ENABLE_ALLOWED_KEY, "true");
     localStorage.setItem(PERMISSION_OUTCOME_KEY, "allowed");
     localStorage.setItem(DEMO_PROCESS_DONE_KEY, "true");
@@ -82,16 +87,32 @@ export function markLiveActivityEnableAllowed(): void {
   }
 }
 
-/** True after the user once completed Lock Screen demo + allow. */
+/**
+ * Tutorial “後で行う”: not demo-done. Clears any in-progress step flags so
+ * Settings shows the full 4-step flow. Does not touch DEMO_PROCESS_DONE if it
+ * was already earned earlier (shouldn't happen on first defer).
+ */
+export function markLiveActivityEnableDeferred(): void {
+  try {
+    localStorage.setItem(PERMISSION_OUTCOME_KEY, "skipped");
+    localStorage.removeItem(ENABLE_DEMO_KEY);
+    localStorage.removeItem(ENABLE_ALLOWED_KEY);
+    // Explicitly ensure defer never counts as demo-done.
+    if (localStorage.getItem(DEMO_PROCESS_DONE_KEY) !== "true") {
+      localStorage.removeItem(DEMO_PROCESS_DONE_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * True only after the user once completed Lock Screen demo + allow.
+ * iPhone Settings on/off alone must never set this.
+ */
 export function hasCompletedLiveActivityDemoProcess(): boolean {
   try {
-    if (localStorage.getItem(DEMO_PROCESS_DONE_KEY) === "true") return true;
-    // Migrate users who finished allow before this flag existed.
-    if (localStorage.getItem(ENABLE_ALLOWED_KEY) === "true") {
-      localStorage.setItem(DEMO_PROCESS_DONE_KEY, "true");
-      return true;
-    }
-    return false;
+    return localStorage.getItem(DEMO_PROCESS_DONE_KEY) === "true";
   } catch {
     return false;
   }
@@ -106,7 +127,10 @@ export function resetLiveActivityEnableProgress(): void {
     localStorage.removeItem(ENABLE_DEMO_KEY);
     localStorage.removeItem(ENABLE_ALLOWED_KEY);
     if (!hasCompletedLiveActivityDemoProcess()) {
-      localStorage.setItem(PERMISSION_OUTCOME_KEY, "denied");
+      const outcome = localStorage.getItem(PERMISSION_OUTCOME_KEY);
+      if (outcome !== "skipped") {
+        localStorage.setItem(PERMISSION_OUTCOME_KEY, "denied");
+      }
     }
   } catch {
     /* ignore */
@@ -121,7 +145,7 @@ export type LiveActivityEnableProgress = {
   allowed: boolean;
   complete: boolean;
   /**
-   * full = user skipped tutorial (“後で”) → guided 4 steps
+   * full = never finished demo+allow → guided 4 steps
    * reenable = already finished demo once → only turn iPhone Settings back on
    */
   mode: LiveActivityEnableMode;
@@ -142,6 +166,7 @@ export function readStoredEnableFlags(): { demoPresented: boolean; allowed: bool
 
 /** Whether calendar LA sync / local refresh may run (ignores iOS system switch). */
 export function canScheduleLiveActivities(): boolean {
+  // Mid-flow after allow this session, or durable demo-process-done.
   return (
     hasCompletedLiveActivityDemoProcess() || readStoredEnableFlags().allowed
   );
@@ -166,7 +191,7 @@ export function getLiveActivityEnableProgress(
     };
   }
 
-  // full (skipped tutorial): only stored flags — never invent from frequentPushes
+  // full: only stored flags — never invent from system toggle / frequentPushes
   const flags = readStoredEnableFlags();
   if (!systemOn) {
     return {
@@ -243,6 +268,7 @@ export async function getLiveActivityGate(): Promise<LiveActivityGate> {
 
   // System off → clear step 2–3 so turning back on only checks step 1.
   // Keep demo-process-done so Settings can use the simple re-enable path.
+  // Never set demo-process-done here.
   if (!systemEnabled) {
     const flags = readStoredEnableFlags();
     if (flags.demoPresented || flags.allowed) {

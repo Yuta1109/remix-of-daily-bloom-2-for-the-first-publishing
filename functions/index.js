@@ -280,39 +280,63 @@ async function enqueueAtShowAt(scheduleId, data) {
  * After push-to-start, Firestore often still holds the previous Activity's
  * token; using it can end/update the wrong card and make a fresh PTS flash
  * then vanish. Prefer tokens uploaded at/after lastRemoteLaStartAt.
+ *
+ * Never use an update token unless a remote PTS succeeded — demo-only tokens
+ * otherwise fake a "started" schedule with no Lock Screen card (kill-path miss).
  */
 function usableLiveActivityUpdateToken(device) {
   const token = device?.liveActivityUpdateToken;
   if (!token) return null;
+  if (device.lastRemoteLaStartOk !== true) return null;
   const ptsAt = Number(device.lastRemoteLaStartAt || 0);
-  if (device.lastRemoteLaStartOk === true && ptsAt > 0) {
-    const tokenAt = Number(device.liveActivityUpdateTokenAt || 0);
-    // No timestamp → assume pre-PTS (legacy docs). Treat as unusable until
-    // the app re-uploads after this start.
-    if (!tokenAt || tokenAt < ptsAt) return null;
-  }
+  if (!(ptsAt > 0)) return null;
+  const tokenAt = Number(device.liveActivityUpdateTokenAt || 0);
+  // No timestamp → assume pre-PTS (legacy docs). Treat as unusable until
+  // the app re-uploads after this start.
+  if (!tokenAt || tokenAt < ptsAt) return null;
   return token;
 }
 
 /**
  * True when this device has a Lock Screen card we should UPDATE (not PTS again).
- * Require recent successful remote updates on a still-open schedule — NOT merely
- * "PTS succeeded sometime in the last 20m" (that blocked kill-path for the next
- * event after the previous Activity ended).
+ * Tight window + exclude the schedule being started. A 15m-old "started" row
+ * after dismiss/delete was causing the next event to UPDATE a dead card.
  */
-async function deviceHasLiveCard(deviceId) {
+async function deviceHasLiveCard(deviceId, exceptScheduleId = null) {
   const now = Date.now();
   const snap = await db.collection("laSchedules").where("deviceId", "==", deviceId).get();
-  return snap.docs.some((d) => {
+  const activeStarted = snap.docs.filter((d) => {
+    if (exceptScheduleId && d.id === exceptScheduleId) return false;
     const data = d.data() || {};
     const s = data.status;
     if (s !== "started" && s !== "arrived") return false;
     if (Number(data.endAtEpochMs) > 0 && Number(data.endAtEpochMs) <= now) return false;
+    if (Number(data.showAtEpochMs) > now) return false;
+    return true;
+  });
+
+  const recentlyUpdated = activeStarted.some((d) => {
+    const data = d.data() || {};
     return (
       data.lastRemoteUpdateOk === true &&
-      now - Number(data.lastRemoteUpdateAt || 0) < 15 * 60_000
+      now - Number(data.lastRemoteUpdateAt || 0) < 120_000
     );
   });
+  if (recentlyUpdated) return true;
+
+  // PTS just landed; updateToken may not be uploaded yet while app is killed.
+  try {
+    const deviceSnap = await db.collection("devices").doc(deviceId).get();
+    const device = deviceSnap.data() || {};
+    if (device.lastRemoteLaStartOk !== true) return false;
+    const ptsAt = Number(device.lastRemoteLaStartAt || 0);
+    if (!(ptsAt > 0) || now - ptsAt >= 90_000) return false;
+    const startId = device.lastRemoteLaStartScheduleId;
+    if (!startId) return true;
+    return activeStarted.some((d) => d.id === startId);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -388,11 +412,20 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   // force-quit) or a sibling / proven live card exists.
   const localCalendarRecent =
     Date.now() - Number(device.lastLocalCalendarLaAt || 0) < 3 * 60_000;
-  // Sibling race window only (~claim TTL).
-  const recentPtsSibling =
+  const provenLive = await deviceHasLiveCard(data.deviceId, scheduleId);
+  // Sibling race: recent PTS whose owning schedule is still active.
+  let recentPtsSibling = false;
+  if (
     device.lastRemoteLaStartOk === true &&
-    Date.now() - Number(device.lastRemoteLaStartAt || 0) < 90_000;
-  const provenLive = await deviceHasLiveCard(data.deviceId);
+    Date.now() - Number(device.lastRemoteLaStartAt || 0) < 90_000
+  ) {
+    const startId = device.lastRemoteLaStartScheduleId;
+    if (!startId || startId === scheduleId) {
+      recentPtsSibling = startId === scheduleId;
+    } else {
+      recentPtsSibling = await deviceHasLiveCard(data.deviceId, scheduleId);
+    }
+  }
   const hasLiveCard =
     opts.preferUpdateOnly === true ||
     recentPtsSibling ||
@@ -550,8 +583,9 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     logger.warn("Missing pushToStart token for device", data.deviceId);
   }
 
-  // Fallback: local Activity may already be live with an update token.
-  if (updateToken) {
+  // Fallback only when a local calendar card was just started (duplicate guard).
+  // Never mark started from a demo/stale update token — that hides kill-path misses.
+  if (updateToken && localCalendarRecent) {
     const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
       withAlert: false,
       contentState: aggregated.contentState,
@@ -561,15 +595,12 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       await markStartedAndEnqueueRefresh(scheduleId, data);
       return true;
     }
-    await db.collection("laSchedules").doc(scheduleId).update({
-      lastError: "start+update failed",
-      status: "error",
-    });
-    return false;
   }
 
   await db.collection("laSchedules").doc(scheduleId).update({
-    lastError: "missing pushToStart and updateToken",
+    lastError: liveToken
+      ? "push-to-start failed"
+      : "missing pushToStart token",
     status: "error",
   });
   return false;
@@ -1145,10 +1176,11 @@ export const sweepLiveActivityRefresh = onSchedule(
           now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
         // Force-quit path uploads no updateToken for hours — do not demote a
         // schedule we already successfully push-to-started (causes duplicates).
+        // Cap at 20m so a dismissed/deleted card cannot block the next event's PTS.
         ptsOwnsThis =
           device.lastRemoteLaStartOk === true &&
           device.lastRemoteLaStartScheduleId === docSnap.id &&
-          now - Number(device.lastRemoteLaStartAt || 0) < 8 * 60 * 60_000;
+          now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
       } catch {
         /* ignore */
       }
