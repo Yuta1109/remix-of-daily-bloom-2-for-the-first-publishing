@@ -88,19 +88,16 @@ export function markLiveActivityEnableAllowed(): void {
 }
 
 /**
- * Tutorial “後で行う”: not demo-done. Clears any in-progress step flags so
- * Settings shows the full 4-step flow. Does not touch DEMO_PROCESS_DONE if it
- * was already earned earlier (shouldn't happen on first defer).
+ * Tutorial “後で行う”: not demo-done. Always clears demo-process-done so
+ * Settings shows the full 4-step flow (even if a buggy early “allowed”
+ * briefly flipped the durable flag).
  */
 export function markLiveActivityEnableDeferred(): void {
   try {
     localStorage.setItem(PERMISSION_OUTCOME_KEY, "skipped");
     localStorage.removeItem(ENABLE_DEMO_KEY);
     localStorage.removeItem(ENABLE_ALLOWED_KEY);
-    // Explicitly ensure defer never counts as demo-done.
-    if (localStorage.getItem(DEMO_PROCESS_DONE_KEY) !== "true") {
-      localStorage.removeItem(DEMO_PROCESS_DONE_KEY);
-    }
+    localStorage.removeItem(DEMO_PROCESS_DONE_KEY);
   } catch {
     /* ignore */
   }

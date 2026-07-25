@@ -50,6 +50,34 @@ enum LiveActivityRefreshCenter {
     /// Call after request/update so new activities get token watchers.
     static func noteActivitiesChanged() {
         watchExistingActivities()
+        Task { await endNewerDuplicateActivities() }
+    }
+
+    /// If PTS + local both created a card, dismiss extras immediately (keep oldest).
+    private static func endNewerDuplicateActivities() async {
+        let activities = Activity<EssencesWidgetAttributes>.activities
+        guard activities.count > 1 else { return }
+        let birthKey = "essences.laActivityBirth"
+        var birth = UserDefaults.standard.dictionary(forKey: birthKey) as? [String: Double] ?? [:]
+        let now = Date().timeIntervalSince1970
+        for activity in activities {
+            if birth[activity.id] == nil {
+                birth[activity.id] = now
+            }
+        }
+        // Drop ids that no longer exist.
+        let liveIds = Set(activities.map(\.id))
+        birth = birth.filter { liveIds.contains($0.key) }
+        UserDefaults.standard.set(birth, forKey: birthKey)
+
+        guard let keeperId = birth.min(by: { $0.value < $1.value })?.key else { return }
+        for activity in activities where activity.id != keeperId {
+            NSLog("[Essences LA] Ending duplicate Live Activity %@ (keep oldest %@)", activity.id, keeperId)
+            await activity.end(nil, dismissalPolicy: .immediate)
+            birth.removeValue(forKey: activity.id)
+        }
+        UserDefaults.standard.set(birth, forKey: birthKey)
+        watchExistingActivities()
     }
 
     static func markStartedWithPush() {

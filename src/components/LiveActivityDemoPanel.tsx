@@ -76,15 +76,17 @@ export function LiveActivityDemoPanel({
   const startedRef = useRef(false);
   /** Demo Activity.request succeeded while system LA was on. */
   const demoLiveRef = useRef(false);
-  /** User backgrounded after a successful demo (Lock Screen / Always Allow). */
-  const sawBackgroundAfterDemoRef = useRef(false);
+  /** Timestamp when app went inactive after a successful demo (0 = not waiting). */
+  const backgroundAfterDemoAtRef = useRef(0);
   /** Was system off last evaluate — used to detect Settings toggle without treating it as allow. */
   const wasSystemOffRef = useRef(false);
   const flashTimerRef = useRef<number | null>(null);
+  /** Ignore system sheets that briefly background the app right after Activity.request. */
+  const MIN_LOCK_SCREEN_BG_MS = 2500;
 
   const clearAllowWatch = useCallback(() => {
     demoLiveRef.current = false;
-    sawBackgroundAfterDemoRef.current = false;
+    backgroundAfterDemoAtRef.current = 0;
   }, []);
 
   const refreshProgress = useCallback(async () => {
@@ -161,19 +163,26 @@ export function LiveActivityDemoPanel({
       return;
     }
 
-    // Allow only after: successful demo (system on) → background → live / Always Allow.
-    if (!demoLiveRef.current || !sawBackgroundAfterDemoRef.current) {
+    // Allow only after leaving the app for Lock Screen / Always Allow.
+    // Brief blips from the LA system sheet (<2.5s without Always Allow) are ignored.
+    if (!demoLiveRef.current || !backgroundAfterDemoAtRef.current) {
       if (phase !== "preparing" && phase !== "denied") {
         setPhase(demoLiveRef.current ? "ready" : phase === "idle" ? "idle" : "ready");
       }
       onCanContinueChange?.(false);
       return;
     }
+    const bgMs = Date.now() - backgroundAfterDemoAtRef.current;
+    const alwaysAllow = gate.frequentPushesEnabled;
+    if (bgMs < MIN_LOCK_SCREEN_BG_MS && !alwaysAllow) {
+      backgroundAfterDemoAtRef.current = 0;
+      setPhase("ready");
+      onCanContinueChange?.(false);
+      return;
+    }
 
     const local = getLiveActivityLocalStatus();
     const stillLive = gate.activityCount > 0 || local.activeCount > 0;
-    const alwaysAllow = gate.frequentPushesEnabled;
-
     if (alwaysAllow || stillLive) {
       markLiveActivityEnableAllowed();
       setPhase("complete");
@@ -182,9 +191,10 @@ export function LiveActivityDemoPanel({
       return;
     }
 
-    // Left Lock Screen with no card and system still on — need another demo.
+    // Left Lock Screen long enough but no allow signal — retry demo.
     setPhase("ready");
     setDisplayOutcome("unknown");
+    backgroundAfterDemoAtRef.current = 0;
     onCanContinueChange?.(false);
     void next;
   }, [clearAllowWatch, emitOutcome, isSettings, onCanContinueChange, phase, refreshProgress]);
@@ -244,7 +254,7 @@ export function LiveActivityDemoPanel({
       }
       // Only a successful demo while system is on can later become "allowed".
       demoLiveRef.current = true;
-      sawBackgroundAfterDemoRef.current = false;
+      backgroundAfterDemoAtRef.current = 0;
       markLiveActivityDemoPresented();
       setPhase("ready");
       setDisplayOutcome("unknown");
@@ -292,16 +302,18 @@ export function LiveActivityDemoPanel({
     void App.addListener("appStateChange", ({ isActive }) => {
       if (!isActive) {
         // Only count background after a successful demo (not Settings while denied).
-        if (demoLiveRef.current) sawBackgroundAfterDemoRef.current = true;
+        if (demoLiveRef.current && !backgroundAfterDemoAtRef.current) {
+          backgroundAfterDemoAtRef.current = Date.now();
+        }
         return;
       }
       void evaluateGate();
     }).then((h) => {
       handle = h;
     });
+    // Do not poll-allow while foreground — Always Allow is decided after Lock Screen return.
     const poll = window.setInterval(() => {
-      if (phase === "ready" || phase === "preparing") void evaluateGate();
-      else if (isSettings) void refreshProgress();
+      if (isSettings && phase !== "preparing") void refreshProgress();
     }, 2000);
     return () => {
       window.clearInterval(poll);

@@ -319,7 +319,7 @@ async function deviceHasLiveCard(deviceId, exceptScheduleId = null) {
     const data = d.data() || {};
     return (
       data.lastRemoteUpdateOk === true &&
-      now - Number(data.lastRemoteUpdateAt || 0) < 120_000
+      now - Number(data.lastRemoteUpdateAt || 0) < 90_000
     );
   });
   if (recentlyUpdated) return true;
@@ -407,30 +407,31 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     return false;
   }
 
-  // Do NOT "update first" with a stale token — that blocks kill-path PTS.
-  // Only skip PTS when the app *just* started a calendar LA locally (survives
-  // force-quit) or a sibling / proven live card exists.
-  const localCalendarRecent =
-    Date.now() - Number(device.lastLocalCalendarLaAt || 0) < 3 * 60_000;
-  const provenLive = await deviceHasLiveCard(data.deviceId, scheduleId);
-  // Sibling race: recent PTS whose owning schedule is still active.
-  let recentPtsSibling = false;
-  if (
+  // Kill-path rule: each new scheduleId must push-to-start unless a sibling
+  // card is proven live (or this schedule was already PTS'd). Do NOT skip PTS
+  // via lastLocalCalendarLaAt / stale update tokens — APNs can accept updates
+  // to a dead Activity and produce "updOk + nothing on Lock Screen" (Tests 2/6).
+  const alreadyPtsThisSchedule =
     device.lastRemoteLaStartOk === true &&
-    Date.now() - Number(device.lastRemoteLaStartAt || 0) < 90_000
-  ) {
-    const startId = device.lastRemoteLaStartScheduleId;
-    if (!startId || startId === scheduleId) {
-      recentPtsSibling = startId === scheduleId;
-    } else {
-      recentPtsSibling = await deviceHasLiveCard(data.deviceId, scheduleId);
+    device.lastRemoteLaStartScheduleId === scheduleId &&
+    Date.now() - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
+  const siblingLive = await deviceHasLiveCard(data.deviceId, scheduleId);
+
+  const recordEnsure = async (path, reason) => {
+    try {
+      await db.collection("devices").doc(data.deviceId).set(
+        {
+          lastLaEnsureAt: Date.now(),
+          lastLaEnsurePath: path,
+          lastLaEnsureReason: reason,
+          lastLaEnsureScheduleId: scheduleId,
+        },
+        { merge: true },
+      );
+    } catch {
+      /* ignore */
     }
-  }
-  const hasLiveCard =
-    opts.preferUpdateOnly === true ||
-    recentPtsSibling ||
-    provenLive ||
-    localCalendarRecent;
+  };
 
   const finishAsUpdate = async (reason) => {
     logger.info("LA ensure via update", scheduleId, reason);
@@ -442,48 +443,44 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       });
       if (ok) {
         await markStartedAndEnqueueRefresh(scheduleId, data);
+        await recordEnsure("update", reason);
         return true;
       }
       logger.warn("LA update failed for existing/sibling card", scheduleId);
-      if (reason === "hasLiveCard") return null;
     }
-    if (
-      reason === "siblingClaimedStart" ||
-      opts.preferUpdateOnly === true ||
-      reason === "localCalendarRecent"
-    ) {
-      // Local ActivityKit card is already on Lock Screen — never PTS a second one.
+    // PreferUpdateOnly / same-schedule retry: avoid stacking a second PTS.
+    if (reason === "preferUpdateOnly" || reason === "alreadyPtsThis") {
       await markStartedAndEnqueueRefresh(scheduleId, data);
+      await recordEnsure("mark-only", reason);
       return true;
     }
+    // Sibling with dead token → fall through to PTS.
     return null;
   };
 
-  // Prefer update when a card is proven live, local just started, or sibling claimed.
-  if (hasLiveCard) {
-    const reason = localCalendarRecent && !provenLive && !recentPtsSibling
-      ? "localCalendarRecent"
-      : "hasLiveCard";
+  if (alreadyPtsThisSchedule) {
+    const updated = await finishAsUpdate("alreadyPtsThis");
+    if (updated !== null) return updated;
+  }
+
+  if (opts.preferUpdateOnly === true || siblingLive) {
+    const reason = opts.preferUpdateOnly === true ? "preferUpdateOnly" : "siblingLive";
     const updated = await finishAsUpdate(reason);
     if (updated !== null) return updated;
-    // Sibling / local card: never stack a second PTS.
-    if (
-      opts.preferUpdateOnly === true ||
-      recentPtsSibling ||
-      localCalendarRecent
-    ) {
-      logger.info("LA skip second PTS (sibling/local)", scheduleId);
+    if (opts.preferUpdateOnly === true) {
+      logger.info("LA preferUpdateOnly with dead token — skip PTS", scheduleId);
       await markStartedAndEnqueueRefresh(scheduleId, data);
+      await recordEnsure("mark-only", "preferUpdateOnly-dead");
       return true;
     }
-    // Proven card but update token dead → allow one push-to-start recovery.
-    logger.info("LA proven card update failed — PTS recovery", scheduleId);
+    logger.info("LA sibling update failed — PTS recovery", scheduleId);
   }
 
   const claimed = await claimDevicePushStart(data.deviceId, scheduleId);
   if (!claimed) {
     const updated = await finishAsUpdate("siblingClaimedStart");
     if (updated !== null) return updated;
+    await recordEnsure("claim-fail", "siblingClaimedStart");
     return false;
   }
 
@@ -533,6 +530,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
             lastRemoteLaStartMessageId: String(messageId || ""),
             lastRemoteLaStartHadAlert: true,
             lastRemoteLaStartItemCount: aggregated.contentState.items.length,
+            lastLaEnsureAt: Date.now(),
+            lastLaEnsurePath: "pts",
+            lastLaEnsureReason: "push-to-start",
+            lastLaEnsureScheduleId: scheduleId,
             // Drop pre-PTS update token so refresh/end cannot hit the wrong card.
             liveActivityUpdateToken: FieldValue.delete(),
             liveActivityUpdateTokenAt: FieldValue.delete(),
@@ -583,20 +584,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     logger.warn("Missing pushToStart token for device", data.deviceId);
   }
 
-  // Fallback only when a local calendar card was just started (duplicate guard).
-  // Never mark started from a demo/stale update token — that hides kill-path misses.
-  if (updateToken && localCalendarRecent) {
-    const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
-      withAlert: false,
-      contentState: aggregated.contentState,
-      staleSec: aggregated.staleSec,
-    });
-    if (ok) {
-      await markStartedAndEnqueueRefresh(scheduleId, data);
-      return true;
-    }
-  }
-
+  await recordEnsure(
+    "error",
+    liveToken ? "push-to-start failed" : "missing pushToStart token",
+  );
   await db.collection("laSchedules").doc(scheduleId).update({
     lastError: liveToken
       ? "push-to-start failed"

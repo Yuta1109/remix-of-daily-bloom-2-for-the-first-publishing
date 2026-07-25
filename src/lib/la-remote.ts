@@ -19,7 +19,7 @@ import {
   where,
   type Firestore,
 } from "firebase/firestore";
-import { LiveActivities, isLiveActivitySupported, currentLocale, getLiveActivityLocalStatus, isEventOnLocalLiveActivity } from "./live-activity";
+import { LiveActivities, isLiveActivitySupported, currentLocale, getLiveActivityLocalStatus } from "./live-activity";
 import { collectLiveActivityWindows } from "./live-activity-window";
 import { laDebugLog } from "./la-debug-log";
 
@@ -105,6 +105,11 @@ export type RemoteLaDiagnostics = {
     lastRemoteLaStartHadAlert?: boolean;
     lastRemoteLaStartItemCount?: number;
     lastRemoteLaStartError?: string;
+    lastLaEnsureAt?: number;
+    lastLaEnsurePath?: string;
+    lastLaEnsureReason?: string;
+    lastLaEnsureScheduleId?: string;
+    lastLocalCalendarLaAt?: number;
   };
 };
 
@@ -263,6 +268,11 @@ export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | 
         lastRemoteLaStartHadAlert: deviceData?.lastRemoteLaStartHadAlert,
         lastRemoteLaStartItemCount: deviceData?.lastRemoteLaStartItemCount,
         lastRemoteLaStartError: deviceData?.lastRemoteLaStartError,
+        lastLaEnsureAt: deviceData?.lastLaEnsureAt,
+        lastLaEnsurePath: deviceData?.lastLaEnsurePath,
+        lastLaEnsureReason: deviceData?.lastLaEnsureReason,
+        lastLaEnsureScheduleId: deviceData?.lastLaEnsureScheduleId,
+        lastLocalCalendarLaAt: deviceData?.lastLocalCalendarLaAt,
       },
     };
 
@@ -327,6 +337,9 @@ export function formatLaDiagnosticsReport(
     const d = diag.device;
     lines.push(
       `deviceDoc: FCM=${d.hasFcmToken ? "✓" : "✗"} PTS=${d.hasPushToStartToken ? "✓" : "✗"} update=${d.hasUpdateToken ? "✓" : "✗"} claimAt=${d.laLastPushStartAt || "-"} claimBy=${d.laLastPushStartBy || "-"} lastStartOk=${d.lastRemoteLaStartOk ?? "-"} lastStartAt=${d.lastRemoteLaStartAt || "-"} alert=${d.lastRemoteLaStartHadAlert ?? "-"} items=${d.lastRemoteLaStartItemCount ?? "-"} msgId=${(d.lastRemoteLaStartMessageId || "-").toString().slice(0, 24)} startErr=${(d.lastRemoteLaStartError || "-").slice(0, 80)}`,
+    );
+    lines.push(
+      `ensure: path=${d.lastLaEnsurePath || "-"} reason=${d.lastLaEnsureReason || "-"} sched=${(d.lastLaEnsureScheduleId || "-").toString().slice(-12)} at=${d.lastLaEnsureAt || "-"} localCalAt=${d.lastLocalCalendarLaAt || "-"}`,
     );
   }
   if (diag?.lastAttempt) {
@@ -650,23 +663,20 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
           }
         | undefined;
 
-      // Keep local "started" only when THIS event is on the Lock Screen card.
-      // A demo / unrelated Activity must not mark real schedules started (that
-      // skips push-to-start while the app is killed).
-      const onLocalCard = isEventOnLocalLiveActivity(w.title, w.startEpochMs);
+      // Never promote to "started" from a local ActivityKit card alone — that
+      // made Cloud Functions skip push-to-start after force-quit (Tests 2/6).
+      // Server sets started after a real PTS/update. Client may keep started
+      // only when the server already confirmed a remote update.
       let status: "pending" | "due" | "started" | "arrived" = "pending";
       if (prev?.status === "arrived" && w.visibleNow && nowMs >= w.startEpochMs) {
         status = "arrived";
-      } else if (onLocalCard && (w.visibleNow || nowMs >= w.showAtEpochMs)) {
-        status = nowMs >= w.startEpochMs ? "arrived" : "started";
       } else if (
         prev?.status === "started" &&
         prev.lastRemoteUpdateOk === true &&
         (w.visibleNow || nowMs >= w.showAtEpochMs)
       ) {
-        // App killed after a real remote start — keep started for update loop.
         status = "started";
-      } else if (w.activeNow) {
+      } else if (w.activeNow || (w.visibleNow && nowMs >= w.showAtEpochMs)) {
         status = "due";
       } else if (w.visibleNow && nowMs >= w.startEpochMs) {
         status = "due";
