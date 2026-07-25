@@ -5,7 +5,7 @@ import {
   LIVE_ACTIVITY_ARRIVED_MS,
   selectLiveActivityRows,
 } from "./live-activity-window";
-import { getLiveActivityUserEnabled, readStoredEnableFlags } from "./live-activity-prefs";
+import { canScheduleLiveActivities } from "./live-activity-prefs";
 
 /**
  * Live Activity design (ActivityKit / Apple HIG):
@@ -67,6 +67,8 @@ export interface LiveActivitiesPlugin {
     apnsCacheBytes: number;
     apnsRegisterError?: string;
   }>;
+  /** Opens Essences in iOS Settings (Live Activities toggle is on that page). */
+  openLiveActivitySettings(): Promise<void>;
 }
 
 export const LiveActivities = registerPlugin<LiveActivitiesPlugin>("LiveActivities");
@@ -272,7 +274,7 @@ export async function refreshLiveActivities(
 ): Promise<void> {
   if (!isLiveActivitySupported()) return;
 
-  if (!getLiveActivityUserEnabled() || !readStoredEnableFlags().allowed) {
+  if (!canScheduleLiveActivities()) {
     if (!isDemoLiveActivityActive()) {
       try {
         await LiveActivities.endAll();

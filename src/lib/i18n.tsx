@@ -168,17 +168,22 @@ const translations = {
     liveActivityStartInPast:
       "Start time is in the past. Turn off Live Activity, or set a start time in the future.",
     liveActivitySettingsTitle: "Live Activities",
-    liveActivitySettingsOn: "Live Activities are on for Essences",
+    liveActivitySettingsOn: "Live Activities are on for Essences (controlled in iPhone Settings).",
     liveActivitySettingsOffUser:
       "Live Activities are off in the app. Turn on to show countdowns on the Lock Screen.",
     liveActivitySettingsOffSystem:
-      "Live Activities are off in iPhone Settings. Open Settings to enable them for Essences.",
+      "Live Activities are off in iPhone Settings. Open Settings and turn on Live Activities for Essences.",
     liveActivityEnable: "Enable Live Activities",
     liveActivityOpenSettings: "Open iPhone Settings",
+    liveActivityOpenLaSettings: "Open Essences Live Activities settings",
     liveActivityDisabledInApp:
       "Live Activities are off, so Lock Screen countdowns will not appear for this event.",
+    liveActivityDisabledSystem:
+      "Live Activities are off in iPhone Settings, so Lock Screen countdowns will not appear for this event.",
     liveActivityAllowPrompt:
-      "Live Activities are off. Allow them to show a Lock Screen countdown for this event?",
+      "Live Activities are not fully enabled yet. Allow them to show a Lock Screen countdown for this event?",
+    liveActivityAllowPromptSystem:
+      "Live Activities are off in iPhone Settings. Open Settings and turn on Live Activities for Essences?",
     liveActivityAllowYes: "Allow",
     liveActivityAllowNo: "Save without Live Activity",
     liveActivityOnboardingTitle: "Lock Screen countdown",
@@ -237,13 +242,29 @@ const translations = {
     tutorialLaDemoRetry: "Try demo again",
     liveActivitySettingsDemoTitle: "Enable Lock Screen countdown",
     liveActivitySettingsDemoBody:
-      "Follow these steps anytime Live Activities were denied or turned off.",
+      "Finish these steps to enable Lock Screen countdowns. Each step unlocks the next.",
     liveActivitySettingsDemoSteps:
       "1) On in iPhone Settings  2) Run demo  3) Always Allow  4) Done",
     liveActivityStepSystem: "Turn on Live Activities in iPhone Settings",
     liveActivityStepDemo: "Show the Lock Screen demo",
     liveActivityStepAllow: "Choose Always Allow on the Lock Screen",
     liveActivityStepDone: "Enabled — ready for calendar events",
+    settingsLaReenableIntro:
+      "Live Activities were already set up once. Turn them back on in iPhone Settings.",
+    settingsLaReenableTitle: "Turn Live Activities back on",
+    settingsLaReenableBody:
+      "Open Essences in iPhone Settings and turn on Live Activities. You do not need to run the demo again.",
+    settingsLaStep1Title: "Step 1 — iPhone Settings",
+    settingsLaStep1Body:
+      "Open Essences in iPhone Settings and turn on Live Activities. Come back here when it is on.",
+    settingsLaStep2Title: "Step 2 — Lock Screen demo",
+    settingsLaStep2Body:
+      "Show a short demo on the Lock Screen. This prepares Live Activities for when the app is force-quit.",
+    settingsLaStep3Title: "Step 3 — Always Allow",
+    settingsLaStep3Body:
+      "Check the Lock Screen. If iOS asks to continue allowing Live Activities, choose Always Allow, then return here.",
+    settingsLaStep4Title: "Ready",
+    settingsLaStep4Body: "Live Activities are enabled for calendar events.",
     tutorialDoneTitle: "You’re ready",
     tutorialDoneBody: "That’s the tour. Add events, check tasks, and enjoy Essences. Tap to finish.",
     tutorialTapHint: "Tap anywhere to continue",
@@ -401,17 +422,23 @@ const translations = {
     liveActivityStartInPast:
       "開始時刻が現在より前です。ライブアクティビティをオフにするか、開始時刻をこれから先に修正してください。",
     liveActivitySettingsTitle: "ライブアクティビティ",
-    liveActivitySettingsOn: "Essences のライブアクティビティはオンです",
+    liveActivitySettingsOn:
+      "Essences のライブアクティビティはオンです（オン／オフは iPhone の設定で行います）。",
     liveActivitySettingsOffUser:
       "アプリ内でオフです。オンにするとロック画面にカウントダウンを表示します。",
     liveActivitySettingsOffSystem:
-      "iPhoneの設定でオフです。「設定」から Essences のライブアクティビティをオンにしてください。",
+      "iPhoneの設定でオフです。「設定」→ Essences → ライブアクティビティ をオンにしてください。",
     liveActivityEnable: "ライブアクティビティを有効にする",
     liveActivityOpenSettings: "iPhoneの設定を開く",
+    liveActivityOpenLaSettings: "Essencesのライブアクティビティ設定を開く",
     liveActivityDisabledInApp:
       "ライブアクティビティがオフのため、この予定のロック画面カウントダウンは表示されません。",
+    liveActivityDisabledSystem:
+      "iPhoneの設定でライブアクティビティがオフのため、この予定のロック画面カウントダウンは表示されません。",
     liveActivityAllowPrompt:
-      "ライブアクティビティがオフです。この予定のロック画面カウントダウンを表示するために許可しますか？",
+      "ライブアクティビティの有効化がまだ完了していません。この予定のロック画面カウントダウンを表示するために続行しますか？",
+    liveActivityAllowPromptSystem:
+      "iPhoneの設定でライブアクティビティがオフです。設定を開いて Essences のライブアクティビティをオンにしますか？",
     liveActivityAllowYes: "許可する",
     liveActivityAllowNo: "オフのまま保存",
     liveActivityOnboardingTitle: "ロック画面のカウントダウン",
@@ -470,13 +497,29 @@ const translations = {
     tutorialLaDemoRetry: "デモを再試行",
     liveActivitySettingsDemoTitle: "ロック画面のカウントダウンを有効化",
     liveActivitySettingsDemoBody:
-      "拒否やオフにしたあとも、次のステップでいつでも有効にできます。",
+      "下のステップを順に完了すると、ロック画面のカウントダウンが使えるようになります。",
     liveActivitySettingsDemoSteps:
       "①iPhone設定でオン ②デモ表示 ③常に許可 ④完了",
     liveActivityStepSystem: "iPhoneの設定からライブアクティビティをオンにする",
     liveActivityStepDemo: "ライブアクティビティのデモを表示する",
     liveActivityStepAllow: "デモでライブアクティビティを許可する",
     liveActivityStepDone: "有効完了 — カレンダー予定で利用できます",
+    settingsLaReenableIntro:
+      "一度有効化済みです。iPhoneの設定でライブアクティビティをオンに戻してください。",
+    settingsLaReenableTitle: "ライブアクティビティをオンに戻す",
+    settingsLaReenableBody:
+      "iPhoneの「設定」→ Essences → ライブアクティビティ をオンにしてください。デモは不要です。",
+    settingsLaStep1Title: "ステップ1 — iPhoneの設定",
+    settingsLaStep1Body:
+      "「設定」→ Essences → ライブアクティビティ をオンにし、この画面に戻ってください。",
+    settingsLaStep2Title: "ステップ2 — ロック画面のデモ",
+    settingsLaStep2Body:
+      "短いデモをロック画面に表示します。アプリを完全終了したあとのリモート開始の準備にもなります。",
+    settingsLaStep3Title: "ステップ3 — 常に許可",
+    settingsLaStep3Body:
+      "ロック画面を確認してください。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選び、この画面に戻ってください。",
+    settingsLaStep4Title: "完了",
+    settingsLaStep4Body: "ライブアクティビティが有効になりました。カレンダー予定で利用できます。",
     tutorialDoneTitle: "準備完了",
     tutorialDoneBody: "案内は以上です。予定やタスクを追加して Essences を使ってみましょう。タップで終了。",
     tutorialTapHint: "画面をタップして次へ",

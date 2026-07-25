@@ -46,7 +46,7 @@ import {
   ensurePermission,
   getNotificationsUserEnabled,
   setNotificationsUserEnabled,
-  openAppSettings,
+  openLiveActivitySettings,
 } from "@/lib/notifications";
 import {
   refreshLiveActivities,
@@ -57,6 +57,7 @@ import {
 import {
   getLiveActivityGate,
   isLiveActivityBlocked,
+  isLiveActivitySystemOff,
   setLiveActivityUserEnabled,
 } from "@/lib/live-activity-prefs";
 import { syncLiveActivitySchedulesRemote } from "@/lib/la-remote";
@@ -214,7 +215,8 @@ interface FormBodyProps {
   form: CalendarEvent;
   isNew: boolean;
   notifBlocked: boolean;
-  laBlocked: boolean;
+  /** Banner only: iPhone Settings Live Activities are off. */
+  laSystemOff: boolean;
   patch: (p: Partial<CalendarEvent>) => void;
   onSave: () => void;
   onRemove: () => void;
@@ -229,7 +231,7 @@ function FormBody({
   form,
   isNew,
   notifBlocked,
-  laBlocked,
+  laSystemOff,
   patch,
   onSave,
   onRemove,
@@ -512,12 +514,12 @@ function FormBody({
         {/* Live Activity (iOS only) */}
         {isLiveActivitySupported() && (
         <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/50">
-          {laBlocked && form.liveActivity && !form.allDay && (
+          {laSystemOff && form.liveActivity && !form.allDay && (
             <div className="px-4 py-3 flex items-start gap-2 bg-amber-50/60 dark:bg-amber-900/20 rounded-t-2xl">
               <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-amber-700 dark:text-amber-300 leading-snug">
-                  {t("liveActivityDisabledInApp")}
+                  {t("liveActivityDisabledSystem")}
                 </p>
                 <button
                   type="button"
@@ -609,7 +611,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
 
   const [form, setForm] = useState<CalendarEvent | null>(null);
   const [notifBlocked, setNotifBlocked] = useState(false);
-  const [laBlocked, setLaBlocked] = useState(false);
+  const [laSystemOff, setLaSystemOff] = useState(false);
   /** When editing a virtualized series occurrence (not yet detached). */
   const [seriesOccurrence, setSeriesOccurrence] = useState<{
     masterId: string;
@@ -698,7 +700,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     });
     if (isLiveActivitySupported()) {
       void getLiveActivityGate().then((gate) => {
-        setLaBlocked(isLiveActivityBlocked(gate));
+        setLaSystemOff(isLiveActivitySystemOff(gate));
       });
     } else {
       setLaBlocked(false);
@@ -792,25 +794,33 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     if (liveActivity && isLiveActivitySupported()) {
       const gate = await getLiveActivityGate();
       if (isLiveActivityBlocked(gate)) {
-        const allow = await askConfirm(t("liveActivityAllowPrompt"), {
-          confirmLabel: t("liveActivityAllowYes"),
-          cancelLabel: t("liveActivityAllowNo"),
-        });
-        if (allow) {
-          setLiveActivityUserEnabled(true);
-          if (!gate.systemEnabled) {
-            await openAppSettings();
-            setLaBlocked(true);
+        if (!gate.systemEnabled) {
+          const allow = await askConfirm(t("liveActivityAllowPromptSystem"), {
+            confirmLabel: t("liveActivityEnable"),
+            cancelLabel: t("liveActivityAllowNo"),
+          });
+          if (allow) {
+            await openLiveActivitySettings();
+            setLaSystemOff(true);
             return;
           }
-          await startDemoLiveActivity({ durationMs: 20_000 });
-          const again = await getLiveActivityGate();
-          setLaBlocked(isLiveActivityBlocked(again));
-          if (isLiveActivityBlocked(again)) {
+          liveActivity = false;
+        } else {
+          const allow = await askConfirm(t("liveActivityAllowPrompt"), {
+            confirmLabel: t("liveActivityAllowYes"),
+            cancelLabel: t("liveActivityAllowNo"),
+          });
+          if (allow) {
+            setLiveActivityUserEnabled(true);
+            await startDemoLiveActivity({ durationMs: 20_000 });
+            const again = await getLiveActivityGate();
+            setLaSystemOff(isLiveActivitySystemOff(again));
+            if (isLiveActivityBlocked(again)) {
+              liveActivity = false;
+            }
+          } else {
             liveActivity = false;
           }
-        } else {
-          liveActivity = false;
         }
       }
     }
@@ -991,25 +1001,16 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   };
 
   const handleEnableLa = async () => {
-    setLiveActivityUserEnabled(true);
+    await openLiveActivitySettings();
     const gate = await getLiveActivityGate();
-    if (!gate.systemEnabled) {
-      await openAppSettings();
-      setLaBlocked(true);
-      return;
-    }
-    await startDemoLiveActivity({ durationMs: 25_000 });
-    const again = await getLiveActivityGate();
-    setLaBlocked(isLiveActivityBlocked(again));
-    void refreshLiveActivities();
-    void syncLiveActivitySchedulesRemote();
+    setLaSystemOff(isLiveActivitySystemOff(gate));
   };
 
   const formBodyProps: FormBodyProps = {
     form,
     isNew,
     notifBlocked,
-    laBlocked,
+    laSystemOff,
     patch,
     onSave: save,
     onRemove: remove,

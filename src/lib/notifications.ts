@@ -75,6 +75,25 @@ export async function openAppSettings(): Promise<void> {
   }
 }
 
+/**
+ * Open Essences → system Settings (where the Live Activities toggle lives).
+ * iOS has no public deep-link past the app’s Settings page; this is the deepest
+ * supported destination for turning Live Activities on/off.
+ */
+export async function openLiveActivitySettings(): Promise<void> {
+  if (!isNative()) return;
+  try {
+    const { LiveActivities } = await import("./live-activity");
+    if (typeof LiveActivities.openLiveActivitySettings === "function") {
+      await LiveActivities.openLiveActivitySettings();
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  await openAppSettings();
+}
+
 function buildTitle(e: CalendarEvent): string {
   return `予定：${e.title}`;
 }

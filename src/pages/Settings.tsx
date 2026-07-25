@@ -29,16 +29,12 @@ import {
 import {
   getLiveActivityLocalStatus,
   refreshLiveActivities,
-  startDemoLiveActivity,
 } from "@/lib/live-activity";
 import {
   getLiveActivityEnableProgress,
   getLiveActivityGate,
-  getLiveActivityPermissionOutcome,
-  getLiveActivityUserEnabled,
-  setLiveActivityUserEnabled,
+  isLiveActivityFullyEnabled,
   type LiveActivityGate,
-  type LiveActivityPermissionOutcome,
 } from "@/lib/live-activity-prefs";
 import { LiveActivityDemoPanel } from "@/components/LiveActivityDemoPanel";
 import {
@@ -62,11 +58,7 @@ export default function Settings({ staticPreview = false }: Props) {
   const [modalText, setModalText] = useState("");
   const [perm, setPerm] = useState<NotificationPermissionState>("prompt");
   const [userEnabled, setUserEnabled] = useState(getNotificationsUserEnabled());
-  const [laUserEnabled, setLaUserEnabled] = useState(getLiveActivityUserEnabled());
   const [laGate, setLaGate] = useState<LiveActivityGate | null>(null);
-  const [laOutcome, setLaOutcome] = useState<LiveActivityPermissionOutcome>(
-    getLiveActivityPermissionOutcome,
-  );
   const [listOpen, setListOpen] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [laBusy, setLaBusy] = useState(false);
@@ -96,7 +88,6 @@ export default function Settings({ staticPreview = false }: Props) {
       ]);
       setLaDiag(diag);
       setLaGate(gate);
-      setLaUserEnabled(gate.userEnabled);
       setLaRemoteTick((n) => n + 1);
     } finally {
       setLaBusy(false);
@@ -171,38 +162,6 @@ export default function Settings({ staticPreview = false }: Props) {
     setNotificationsUserEnabled(on);
     setUserEnabled(on);
     void rescheduleAll();
-  };
-
-  const handleToggleLaUserEnabled = async (on: boolean) => {
-    setLiveActivityUserEnabled(on);
-    setLaUserEnabled(on);
-    if (on) {
-      const gate = await getLiveActivityGate();
-      setLaGate(gate);
-      if (!gate.systemEnabled) {
-        await openAppSettings();
-        return;
-      }
-      void refreshLiveActivities();
-      void syncLiveActivitySchedulesRemote();
-    } else {
-      void refreshLiveActivities();
-      void syncLiveActivitySchedulesRemote();
-    }
-  };
-
-  const handleEnableLiveActivities = async () => {
-    setLiveActivityUserEnabled(true);
-    setLaUserEnabled(true);
-    const gate = await getLiveActivityGate();
-    setLaGate(gate);
-    if (!gate.systemEnabled) {
-      await openAppSettings();
-      return;
-    }
-    await startDemoLiveActivity({ durationMs: 30_000 });
-    void syncLiveActivitySchedulesRemote();
-    void refreshLaDiagnostics();
   };
 
   const languages: { key: Locale; label: string; flag: string }[] = [
@@ -313,47 +272,25 @@ export default function Settings({ staticPreview = false }: Props) {
               <Activity className="w-4 h-4 text-accent" />
               <p className="text-sm font-semibold">{t("liveActivitySettingsTitle")}</p>
             </div>
-            {laGate?.systemEnabled ? (
-              <div className="flex items-center justify-between pt-1">
-                <p className="text-xs text-muted-foreground flex-1 pr-3">
-                  {laUserEnabled
-                    ? t("liveActivitySettingsOn")
-                    : t("liveActivitySettingsOffUser")}
-                </p>
-                <Switch
-                  checked={laUserEnabled}
-                  onCheckedChange={(v) => void handleToggleLaUserEnabled(v)}
-                />
-              </div>
+            {laGate && isLiveActivityFullyEnabled(laGate) ? (
+              <p className="text-xs text-muted-foreground pt-1">
+                {t("liveActivitySettingsOn")}
+              </p>
             ) : (
-              <>
-                <p className="text-xs text-muted-foreground mb-4">
-                  {t("liveActivitySettingsOffSystem")}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void handleEnableLiveActivities()}
-                  className="w-full bg-accent text-accent-foreground rounded-xl px-4 py-3 text-sm font-medium hover:opacity-90 transition-opacity"
-                >
-                  {t("liveActivityOpenSettings")}
-                </button>
-              </>
-            )}
-            <p className="text-xs text-muted-foreground mt-3">{t("remoteLaPermissionHint")}</p>
-
-            {(!laGate || !getLiveActivityEnableProgress(laGate).complete) && (
-              <div className="mt-4 pt-4 border-t border-border/50 space-y-2">
-                <p className="text-sm font-semibold">{t("liveActivitySettingsDemoTitle")}</p>
+              <div className="mt-2 space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  {t("liveActivitySettingsDemoBody")}
+                  {laGate && getLiveActivityEnableProgress(laGate).mode === "reenable"
+                    ? t("settingsLaReenableIntro")
+                    : t("liveActivitySettingsDemoBody")}
                 </p>
                 <LiveActivityDemoPanel
+                  variant="settings"
                   showChecklist
                   onOutcome={(outcome) => {
-                    setLaOutcome(outcome);
                     if (outcome === "allowed") {
                       void refreshLaDiagnostics();
                       void refreshLiveActivities();
+                      void syncLiveActivitySchedulesRemote();
                     }
                   }}
                   onProgressChange={() => {
@@ -362,6 +299,7 @@ export default function Settings({ staticPreview = false }: Props) {
                 />
               </div>
             )}
+            <p className="text-xs text-muted-foreground mt-3">{t("remoteLaPermissionHint")}</p>
           </div>
         )}
 

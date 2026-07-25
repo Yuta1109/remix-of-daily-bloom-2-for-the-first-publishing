@@ -23,6 +23,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getUpdateToken", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getTokenDebugInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "rebroadcastApnsToken", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openLiveActivitySettings", returnType: CAPPluginReturnPromise),
     ]
 
     /// activityId → first-seen time. Unknown ids (push-to-start) are treated as oldest
@@ -95,6 +96,24 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                 "frequentPushesEnabled": false,
                 "activityCount": 0,
             ])
+        }
+    }
+
+    /// Opens Essences in the Settings app. The Live Activities toggle lives on
+    /// that page; iOS provides no public URL to scroll/focus that row further.
+    @objc func openLiveActivitySettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                call.reject("Missing settings URL")
+                return
+            }
+            UIApplication.shared.open(url, options: [:]) { ok in
+                if ok {
+                    call.resolve()
+                } else {
+                    call.reject("Failed to open Settings")
+                }
+            }
         }
     }
 

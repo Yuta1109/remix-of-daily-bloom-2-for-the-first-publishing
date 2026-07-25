@@ -463,9 +463,8 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       data.locale === "en"
         ? "Countdown on Lock Screen"
         : "ロック画面でカウントダウン中";
-    // After the user has already allowed Live Activities (tutorial / Settings),
-    // skip the start alert so iOS does not re-prompt “Always Allow” on every event.
-    const includeAlert = device.laStartAlertDone !== true;
+    // Always include alert on push-to-start. Silent starts are accepted by
+    // FCM/APNs but often never present a Lock Screen Activity (iOS 17.2+/18+).
     try {
       const aps = {
         timestamp: nowSec,
@@ -475,14 +474,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         attributes: { name: "Essences" },
         "stale-date": aggregated.staleSec,
         "input-push-token": 1,
-        ...(includeAlert
-          ? {
-              alert: {
-                title: alertTitle,
-                body: alertBody,
-              },
-            }
-          : {}),
+        alert: {
+          title: alertTitle,
+          body: alertBody,
+        },
       };
       const messageId = await messaging.send({
         token: fcmToken,
@@ -503,12 +498,13 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
             lastRemoteLaStartOk: true,
             lastRemoteLaStartScheduleId: scheduleId,
             lastRemoteLaStartMessageId: String(messageId || ""),
-            lastRemoteLaStartHadAlert: includeAlert,
+            lastRemoteLaStartHadAlert: true,
             lastRemoteLaStartItemCount: aggregated.contentState.items.length,
-            // After first alerted start, later events should not re-prompt.
-            ...(includeAlert ? { laStartAlertDone: true } : {}),
+            // Drop pre-PTS update token so refresh/end cannot hit the wrong card.
             liveActivityUpdateToken: FieldValue.delete(),
             liveActivityUpdateTokenAt: FieldValue.delete(),
+            // Clear local-start marker so the next cold start can PTS again.
+            lastLocalCalendarLaAt: FieldValue.delete(),
           },
           { merge: true },
         );

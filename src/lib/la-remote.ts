@@ -599,8 +599,8 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
   if (!ok || !db || !deviceUid) return;
 
   try {
-    const { getLiveActivityUserEnabled, readStoredEnableFlags } = await import("./live-activity-prefs");
-    const userOn = getLiveActivityUserEnabled() && readStoredEnableFlags().allowed;
+    const { canScheduleLiveActivities } = await import("./live-activity-prefs");
+    const userOn = canScheduleLiveActivities();
     const now = new Date();
     const nowMs = now.getTime();
     const locale = currentLocale();

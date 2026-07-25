@@ -14,7 +14,7 @@ import {
   type LiveActivityPermissionOutcome,
 } from "@/lib/live-activity-prefs";
 import { getLiveActivityLocalStatus, startDemoLiveActivity } from "@/lib/live-activity";
-import { openAppSettings } from "@/lib/notifications";
+import { openLiveActivitySettings } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
 export type LaDemoPhase =
@@ -30,6 +30,8 @@ type Props = {
   autoStart?: boolean;
   /** Show the 4-step checklist (Settings). */
   showChecklist?: boolean;
+  /** tutorial keeps “後で” + deny copy; settings uses progressive step copy. */
+  variant?: "tutorial" | "settings";
   className?: string;
   onOutcome?: (outcome: LiveActivityPermissionOutcome, phase: LaDemoPhase) => void;
   /** True only after Allow confirmed this session (or denied → later). */
@@ -39,6 +41,15 @@ type Props = {
   onDeferAfterDeny?: () => void;
 };
 
+const emptyProgress = (): LiveActivityEnableProgress => ({
+  systemOn: false,
+  demoPresented: false,
+  allowed: false,
+  complete: false,
+  mode: "full",
+  currentStep: 1,
+});
+
 /**
  * Lock Screen Live Activity enable flow (tutorial + Settings).
  * Allowed only after: demo started → left app → returned with allow signal.
@@ -46,6 +57,7 @@ type Props = {
 export function LiveActivityDemoPanel({
   autoStart = false,
   showChecklist = false,
+  variant = "tutorial",
   className,
   onOutcome,
   onCanContinueChange,
@@ -53,16 +65,12 @@ export function LiveActivityDemoPanel({
   onDeferAfterDeny,
 }: Props) {
   const { t } = useI18n();
+  const isSettings = variant === "settings";
   const [phase, setPhase] = useState<LaDemoPhase>("idle");
   const [busy, setBusy] = useState(false);
   const [displayOutcome, setDisplayOutcome] =
     useState<LiveActivityPermissionOutcome>("unknown");
-  const [progress, setProgress] = useState<LiveActivityEnableProgress>({
-    systemOn: false,
-    demoPresented: false,
-    allowed: false,
-    complete: false,
-  });
+  const [progress, setProgress] = useState<LiveActivityEnableProgress>(emptyProgress);
   const [flashOnLockScreen, setFlashOnLockScreen] = useState(false);
   const startedRef = useRef(false);
   const demoSessionRef = useRef(false);
@@ -101,10 +109,22 @@ export function LiveActivityDemoPanel({
 
     if (!gate.systemEnabled) {
       resetLiveActivityEnableProgress();
-      setPhase("denied");
-      emitOutcome("denied", "denied");
-      onCanContinueChange?.(false);
+      if (isSettings) {
+        setPhase("idle");
+        setDisplayOutcome("denied");
+        onCanContinueChange?.(false);
+      } else {
+        setPhase("denied");
+        emitOutcome("denied", "denied");
+        onCanContinueChange?.(false);
+      }
       await refreshProgress();
+      return;
+    }
+
+    if (next.mode === "reenable" && next.complete) {
+      setPhase("complete");
+      emitOutcome("allowed", "complete");
       return;
     }
 
@@ -134,7 +154,7 @@ export function LiveActivityDemoPanel({
     setDisplayOutcome("unknown");
     onCanContinueChange?.(false);
     void next;
-  }, [emitOutcome, onCanContinueChange, phase, refreshProgress]);
+  }, [emitOutcome, isSettings, onCanContinueChange, phase, refreshProgress]);
 
   const runDemo = useCallback(async (opts?: { fromRetryButton?: boolean }) => {
     if (busy) return;
@@ -161,16 +181,26 @@ export function LiveActivityDemoPanel({
       const gate = await getLiveActivityGate();
       if (!gate.systemEnabled) {
         resetLiveActivityEnableProgress();
-        setPhase("denied");
-        emitOutcome("denied", "denied");
+        if (isSettings) {
+          setPhase("idle");
+          setDisplayOutcome("denied");
+        } else {
+          setPhase("denied");
+          emitOutcome("denied", "denied");
+        }
         return;
       }
       const result = await startDemoLiveActivity({ durationMs: 90_000 });
       if (!result.ok) {
         if (!result.systemEnabled) {
           resetLiveActivityEnableProgress();
-          setPhase("denied");
-          emitOutcome("denied", "denied");
+          if (isSettings) {
+            setPhase("idle");
+            setDisplayOutcome("denied");
+          } else {
+            setPhase("denied");
+            emitOutcome("denied", "denied");
+          }
         } else {
           setPhase("failed");
           onCanContinueChange?.(false);
@@ -196,7 +226,7 @@ export function LiveActivityDemoPanel({
     } finally {
       setBusy(false);
     }
-  }, [busy, emitOutcome, onCanContinueChange, refreshProgress]);
+  }, [busy, emitOutcome, isSettings, onCanContinueChange, refreshProgress]);
 
   useEffect(() => {
     return () => {
@@ -205,8 +235,12 @@ export function LiveActivityDemoPanel({
   }, []);
 
   useEffect(() => {
-    void refreshProgress();
-  }, [refreshProgress]);
+    void refreshProgress().then(({ next }) => {
+      if (isSettings && next.complete) {
+        setPhase("complete");
+      }
+    });
+  }, [isSettings, refreshProgress]);
 
   useEffect(() => {
     if (!autoStart || startedRef.current) return;
@@ -228,13 +262,176 @@ export function LiveActivityDemoPanel({
     });
     const poll = window.setInterval(() => {
       if (phase === "ready" || phase === "preparing") void evaluateGate();
+      else if (isSettings) void refreshProgress();
     }, 2000);
     return () => {
       window.clearInterval(poll);
       void handle?.remove();
     };
-  }, [evaluateGate, phase]);
+  }, [evaluateGate, isSettings, phase, refreshProgress]);
 
+  const Step = ({
+    done,
+    label,
+    n,
+    active,
+  }: {
+    done: boolean;
+    label: string;
+    n: number;
+    active?: boolean;
+  }) => (
+    <div className="flex items-start gap-2 text-xs">
+      <span
+        className={cn(
+          "mt-0.5 inline-flex w-4 h-4 items-center justify-center rounded-full text-[10px] font-bold shrink-0",
+          done
+            ? "bg-accent text-accent-foreground"
+            : active
+              ? "bg-accent/20 text-accent ring-1 ring-accent/40"
+              : "bg-secondary text-muted-foreground",
+        )}
+      >
+        {done ? "✓" : n}
+      </span>
+      <span
+        className={cn(
+          done ? "text-foreground" : active ? "text-foreground font-medium" : "text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
+    </div>
+  );
+
+  // ── Settings: re-enable only (demo already done once) ──────────────
+  if (isSettings && progress.mode === "reenable") {
+    if (progress.complete) return null;
+    return (
+      <div className={cn("space-y-3", className)}>
+        {showChecklist && (
+          <div className="space-y-1.5 rounded-xl bg-secondary/50 px-3 py-2.5">
+            <Step n={1} done={false} active label={t("liveActivityStepSystem")} />
+          </div>
+        )}
+        <div>
+          <p className="text-sm font-semibold mb-1">{t("settingsLaReenableTitle")}</p>
+          <p className="text-sm leading-relaxed text-foreground/90">
+            {t("settingsLaReenableBody")}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void openLiveActivitySettings()}
+          className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold"
+        >
+          {t("liveActivityOpenLaSettings")}
+        </button>
+      </div>
+    );
+  }
+
+  // ── Settings: progressive 4-step (tutorial was deferred) ───────────
+  if (isSettings) {
+    const step = progress.currentStep;
+    const stepDone = {
+      1: progress.systemOn,
+      2: progress.demoPresented,
+      3: progress.allowed,
+      4: progress.complete,
+    };
+
+    let title = t("settingsLaStep1Title");
+    let body = t("settingsLaStep1Body");
+    if (phase === "preparing") {
+      title = t("tutorialLaDemoPreparingTitle");
+      body = t("tutorialLaDemoPreparingBody");
+    } else if (phase === "failed") {
+      title = t("liveActivityOnboardingTitle");
+      body = t("tutorialLaDemoFailedBody");
+    } else if (step === 2) {
+      title = t("settingsLaStep2Title");
+      body = t("settingsLaStep2Body");
+    } else if (step === 3) {
+      title = t("settingsLaStep3Title");
+      body = t("settingsLaStep3Body");
+    } else if (step === 4 || phase === "complete") {
+      title = t("settingsLaStep4Title");
+      body = t("settingsLaStep4Body");
+    }
+
+    return (
+      <div className={cn("space-y-3", className)}>
+        {showChecklist && (
+          <div className="space-y-1.5 rounded-xl bg-secondary/50 px-3 py-2.5">
+            <Step
+              n={1}
+              done={stepDone[1]}
+              active={step === 1}
+              label={t("liveActivityStepSystem")}
+            />
+            <Step
+              n={2}
+              done={stepDone[2]}
+              active={step === 2}
+              label={t("liveActivityStepDemo")}
+            />
+            <Step
+              n={3}
+              done={stepDone[3]}
+              active={step === 3}
+              label={t("liveActivityStepAllow")}
+            />
+            <Step
+              n={4}
+              done={stepDone[4]}
+              active={step === 4}
+              label={t("liveActivityStepDone")}
+            />
+          </div>
+        )}
+
+        <div>
+          <p className="text-sm font-semibold mb-1">{title}</p>
+          <p className="text-sm leading-relaxed text-foreground/90">{body}</p>
+        </div>
+
+        {phase === "preparing" && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+            {t("tutorialLaDemoPreparingHint")}
+          </div>
+        )}
+
+        {step === 1 && (
+          <button
+            type="button"
+            onClick={() => void openLiveActivitySettings()}
+            className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold"
+          >
+            {t("liveActivityOpenLaSettings")}
+          </button>
+        )}
+
+        {(step === 2 || step === 3) && phase !== "preparing" && (
+          <button
+            type="button"
+            disabled={busy || !progress.systemOn || flashOnLockScreen}
+            onClick={() => void runDemo({ fromRetryButton: step === 3 || phase === "ready" })}
+            className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-60"
+          >
+            {flashOnLockScreen
+              ? t("tutorialLaDemoOnLockScreen")
+              : step === 2 && phase === "idle"
+                ? t("liveActivityTryDemo")
+                : t("tutorialLaDemoShowAgain")}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ── Tutorial (unchanged copy / Later button) ───────────────────────
   const title =
     phase === "preparing"
       ? t("tutorialLaDemoPreparingTitle")
@@ -254,30 +451,6 @@ export function LiveActivityDemoPanel({
           : phase === "complete" || displayOutcome === "allowed"
             ? t("tutorialLaDemoAllowedBody")
             : t("tutorialLaDemoReadyBody");
-
-  const Step = ({
-    done,
-    label,
-    n,
-  }: {
-    done: boolean;
-    label: string;
-    n: number;
-  }) => (
-    <div className="flex items-start gap-2 text-xs">
-      <span
-        className={cn(
-          "mt-0.5 inline-flex w-4 h-4 items-center justify-center rounded-full text-[10px] font-bold shrink-0",
-          done
-            ? "bg-accent text-accent-foreground"
-            : "bg-secondary text-muted-foreground",
-        )}
-      >
-        {done ? "✓" : n}
-      </span>
-      <span className={cn(done ? "text-foreground" : "text-muted-foreground")}>{label}</span>
-    </div>
-  );
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -306,10 +479,10 @@ export function LiveActivityDemoPanel({
         <>
           <button
             type="button"
-            onClick={() => void openAppSettings()}
+            onClick={() => void openLiveActivitySettings()}
             className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold"
           >
-            {t("liveActivityOpenSettings")}
+            {t("liveActivityOpenLaSettings")}
           </button>
           <button
             type="button"
@@ -344,10 +517,10 @@ export function LiveActivityDemoPanel({
           {!progress.systemOn && phase !== "denied" && (
             <button
               type="button"
-              onClick={() => void openAppSettings()}
+              onClick={() => void openLiveActivitySettings()}
               className="w-full rounded-xl bg-secondary/80 px-4 py-2.5 text-sm font-medium"
             >
-              {t("liveActivityOpenSettings")}
+              {t("liveActivityOpenLaSettings")}
             </button>
           )}
         </>

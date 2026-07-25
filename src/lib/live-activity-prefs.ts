@@ -1,11 +1,12 @@
 import { Capacitor } from "@capacitor/core";
 import { LiveActivities, isLiveActivitySupported } from "./live-activity";
 
-const USER_PREF_KEY = "essences-la-user-enabled";
 const ONBOARDING_KEY = "essences-la-onboarding-done";
 const PERMISSION_OUTCOME_KEY = "essences-la-permission-outcome";
 const ENABLE_DEMO_KEY = "essences-la-enable-demo-done";
 const ENABLE_ALLOWED_KEY = "essences-la-enable-allowed";
+/** Set once the user finished demo + allow (tutorial or Settings). Never cleared on system off. */
+const DEMO_PROCESS_DONE_KEY = "essences-la-demo-process-done";
 
 export type LiveActivityPermissionOutcome =
   | "unknown"
@@ -13,21 +14,16 @@ export type LiveActivityPermissionOutcome =
   | "denied"
   | "skipped";
 
-/** In-app preference (separate from iOS Live Activities switch). Defaults on. */
+/**
+ * In-app preference — always on. (iOS Settings is the real master switch;
+ * the old Settings toggle was misleading and has been removed.)
+ */
 export function getLiveActivityUserEnabled(): boolean {
-  try {
-    return localStorage.getItem(USER_PREF_KEY) !== "false";
-  } catch {
-    return true;
-  }
+  return true;
 }
 
-export function setLiveActivityUserEnabled(enabled: boolean): void {
-  try {
-    localStorage.setItem(USER_PREF_KEY, enabled ? "true" : "false");
-  } catch {
-    /* ignore */
-  }
+export function setLiveActivityUserEnabled(_enabled: boolean): void {
+  /* no-op — kept for call-site compatibility */
 }
 
 export function isLiveActivityOnboardingDone(): boolean {
@@ -80,31 +76,57 @@ export function markLiveActivityEnableAllowed(): void {
   try {
     localStorage.setItem(ENABLE_ALLOWED_KEY, "true");
     localStorage.setItem(PERMISSION_OUTCOME_KEY, "allowed");
+    localStorage.setItem(DEMO_PROCESS_DONE_KEY, "true");
   } catch {
     /* ignore */
   }
 }
 
-/** Reset enable progress when iOS LA is turned off (or user denied). */
+/** True after the user once completed Lock Screen demo + allow. */
+export function hasCompletedLiveActivityDemoProcess(): boolean {
+  try {
+    if (localStorage.getItem(DEMO_PROCESS_DONE_KEY) === "true") return true;
+    // Migrate users who finished allow before this flag existed.
+    if (localStorage.getItem(ENABLE_ALLOWED_KEY) === "true") {
+      localStorage.setItem(DEMO_PROCESS_DONE_KEY, "true");
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clear step 2–3 progress when iOS LA is turned off (so turning back on
+ * only checks step 1). Does NOT clear demo-process-done.
+ */
 export function resetLiveActivityEnableProgress(): void {
   try {
     localStorage.removeItem(ENABLE_DEMO_KEY);
     localStorage.removeItem(ENABLE_ALLOWED_KEY);
-    localStorage.setItem(PERMISSION_OUTCOME_KEY, "denied");
+    if (!hasCompletedLiveActivityDemoProcess()) {
+      localStorage.setItem(PERMISSION_OUTCOME_KEY, "denied");
+    }
   } catch {
     /* ignore */
   }
 }
 
+export type LiveActivityEnableMode = "full" | "reenable";
+
 export type LiveActivityEnableProgress = {
-  /** 1. iPhone Settings → Live Activities on */
   systemOn: boolean;
-  /** 2. User presented the Lock Screen demo at least once while system on */
   demoPresented: boolean;
-  /** 3. User allowed (Always Allow / frequent pushes) after a demo */
   allowed: boolean;
-  /** All steps done — calendar LA may run remotely */
   complete: boolean;
+  /**
+   * full = user skipped tutorial (“後で”) → guided 4 steps
+   * reenable = already finished demo once → only turn iPhone Settings back on
+   */
+  mode: LiveActivityEnableMode;
+  /** 1–4 for full mode (next action); 1 when system off in reenable mode */
+  currentStep: 1 | 2 | 3 | 4;
 };
 
 export function readStoredEnableFlags(): { demoPresented: boolean; allowed: boolean } {
@@ -118,62 +140,85 @@ export function readStoredEnableFlags(): { demoPresented: boolean; allowed: bool
   }
 }
 
+/** Whether calendar LA sync / local refresh may run (ignores iOS system switch). */
+export function canScheduleLiveActivities(): boolean {
+  return (
+    hasCompletedLiveActivityDemoProcess() || readStoredEnableFlags().allowed
+  );
+}
+
 export function getLiveActivityEnableProgress(
-  gate: Pick<LiveActivityGate, "systemEnabled" | "frequentPushesEnabled">,
+  gate: Pick<LiveActivityGate, "systemEnabled">,
 ): LiveActivityEnableProgress {
-  const flags = readStoredEnableFlags();
   const systemOn = !!gate.systemEnabled;
+  const mode: LiveActivityEnableMode = hasCompletedLiveActivityDemoProcess()
+    ? "reenable"
+    : "full";
+
+  if (mode === "reenable") {
+    return {
+      systemOn,
+      demoPresented: systemOn,
+      allowed: systemOn,
+      complete: systemOn,
+      mode,
+      currentStep: systemOn ? 4 : 1,
+    };
+  }
+
+  // full (skipped tutorial): only stored flags — never invent from frequentPushes
+  const flags = readStoredEnableFlags();
   if (!systemOn) {
-    // Off in iPhone Settings → restart from step 1.
     return {
       systemOn: false,
       demoPresented: false,
       allowed: false,
       complete: false,
+      mode,
+      currentStep: 1,
     };
   }
-  const allowed = flags.allowed || !!gate.frequentPushesEnabled;
-  const demoPresented = flags.demoPresented || allowed;
+  const demoPresented = flags.demoPresented;
+  const allowed = flags.allowed;
+  const complete = demoPresented && allowed;
+  let currentStep: 1 | 2 | 3 | 4 = 2;
+  if (!demoPresented) currentStep = 2;
+  else if (!allowed) currentStep = 3;
+  else currentStep = 4;
   return {
     systemOn: true,
     demoPresented,
     allowed,
-    complete: demoPresented && allowed,
+    complete,
+    mode,
+    currentStep,
   };
 }
 
-/** Show Settings step-demo when enable flow is incomplete. */
 export function shouldOfferLiveActivityPermissionDemo(
-  gate?: Pick<LiveActivityGate, "systemEnabled" | "frequentPushesEnabled"> | null,
+  gate?: Pick<LiveActivityGate, "systemEnabled"> | null,
 ): boolean {
-  if (!gate) {
-    const outcome = getLiveActivityPermissionOutcome();
-    return outcome !== "allowed";
-  }
+  if (!gate) return !hasCompletedLiveActivityDemoProcess();
   return !getLiveActivityEnableProgress(gate).complete;
 }
 
 export type LiveActivityGate = {
   supported: boolean;
-  /** ActivityAuthorizationInfo().areActivitiesEnabled */
   systemEnabled: boolean;
-  /** iOS 16.2+ frequent push / “Always Allow” style grant when available */
   frequentPushesEnabled: boolean;
   activityCount: number;
   userEnabled: boolean;
-  /** Both system + user must be on for LA to run. */
   effective: boolean;
 };
 
 export async function getLiveActivityGate(): Promise<LiveActivityGate> {
-  const userEnabled = getLiveActivityUserEnabled();
   if (!isLiveActivitySupported()) {
     return {
       supported: false,
       systemEnabled: false,
       frequentPushesEnabled: false,
       activityCount: 0,
-      userEnabled,
+      userEnabled: true,
       effective: false,
     };
   }
@@ -196,16 +241,13 @@ export async function getLiveActivityGate(): Promise<LiveActivityGate> {
     systemEnabled = false;
   }
 
-  // If iOS master switch is off, wipe enable progress so the checklist restarts.
+  // System off → clear step 2–3 so turning back on only checks step 1.
+  // Keep demo-process-done so Settings can use the simple re-enable path.
   if (!systemEnabled) {
     const flags = readStoredEnableFlags();
     if (flags.demoPresented || flags.allowed) {
       resetLiveActivityEnableProgress();
     }
-  } else if (frequentPushesEnabled) {
-    // Already Always-Allow'd (e.g. prior install) — count as fully enabled.
-    markLiveActivityEnableAllowed();
-    markLiveActivityDemoPresented();
   }
 
   return {
@@ -213,24 +255,25 @@ export async function getLiveActivityGate(): Promise<LiveActivityGate> {
     systemEnabled,
     frequentPushesEnabled,
     activityCount,
-    userEnabled,
-    effective: systemEnabled && userEnabled,
+    userEnabled: true,
+    effective: systemEnabled && canScheduleLiveActivities(),
   };
 }
 
-/** True when an event with LA on cannot actually start (user, system, or enable steps). */
+/** EventSheet banner: only when iPhone Live Activities are off. */
+export function isLiveActivitySystemOff(gate: LiveActivityGate): boolean {
+  return gate.supported && !gate.systemEnabled;
+}
+
+/** True when LA cannot run (system off or enable steps incomplete). */
 export function isLiveActivityBlocked(gate: LiveActivityGate): boolean {
   if (!gate.supported) return false;
-  if (!gate.effective) return true;
+  if (!gate.systemEnabled) return true;
   return !getLiveActivityEnableProgress(gate).complete;
 }
 
-/**
- * Calendar / kill-path Live Activities require the full enable checklist
- * (system on → demo → allow), not just the in-app toggle.
- */
 export function isLiveActivityFullyEnabled(gate: LiveActivityGate): boolean {
-  return gate.effective && getLiveActivityEnableProgress(gate).complete;
+  return gate.systemEnabled && getLiveActivityEnableProgress(gate).complete;
 }
 
 export function isNativeIos(): boolean {
