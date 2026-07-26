@@ -24,6 +24,7 @@
     --muted: 40 10% 95%;
     --muted-foreground: 220 10% 50%;
 
+    /* Overridden at runtime by theme-accent.ts (defaults = orange). */
     --accent: 25 80% 58%;
     --accent-foreground: 0 0% 100%;
 
@@ -32,14 +33,14 @@
 
     --border: 40 10% 90%;
     --input: 40 10% 90%;
-    --ring: 220 14% 20%;
+    --ring: 25 80% 58%;
 
     --radius: 1rem;
 
     --success: 145 60% 45%;
     --success-foreground: 0 0% 100%;
 
-    --streak: 25 95% 55%;
+    --streak: 25 92% 52%;
 
     --shadow-soft: 0 2px 12px -2px hsl(220 20% 10% / 0.06);
     --shadow-card: 0 4px 24px -4px hsl(220 20% 10% / 0.08);
@@ -85,11 +86,11 @@
 
     --border: 220 15% 18%;
     --input: 220 15% 18%;
-    --ring: 40 15% 92%;
+    --ring: 25 80% 55%;
 
     --success: 145 60% 40%;
     --success-foreground: 0 0% 100%;
-    --streak: 25 95% 55%;
+    --streak: 25 92% 52%;
 
     --shadow-soft: 0 2px 12px -2px hsl(0 0% 0% / 0.3);
     --shadow-card: 0 4px 24px -4px hsl(0 0% 0% / 0.4);

@@ -111,7 +111,7 @@ export default function Index() {
     <div
       className="page-shell px-3"
       onClick={() => {
-        // During the tour, keep selection so orange highlight stays visible.
+        // During the tour, keep selection so the accent highlight stays visible.
         if (!isTutorialActive()) setSelectedId(null);
       }}
     >

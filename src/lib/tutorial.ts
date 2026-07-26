@@ -163,6 +163,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: "reusable-tasks",
     advance: "tap",
     route: "/settings",
+    // Section is now first on Settings — keep the bubble under the card.
     preferBubble: "below",
   },
   {
