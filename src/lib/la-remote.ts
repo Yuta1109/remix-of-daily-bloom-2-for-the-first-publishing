@@ -803,18 +803,18 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
         | undefined;
 
       // Never promote to "started" from a local ActivityKit card alone — that
-      // made Cloud Functions skip push-to-start after force-quit (Tests 2/6).
-      // Server sets started after a real PTS/update. Client may keep started
-      // only when the server already confirmed a remote update.
+      // made Cloud Functions skip push-to-start after force-quit.
+      // Server owns started/arrived after PTS/update. Never demote those back
+      // to "due" (TestFlight logs showed due after successful PTS when sync
+      // raced / required lastRemoteUpdateOk too strictly).
       let status: "pending" | "due" | "started" | "arrived" = "pending";
       if (prev?.status === "arrived" && w.visibleNow && nowMs >= w.startEpochMs) {
         status = "arrived";
       } else if (
-        prev?.status === "started" &&
-        prev.lastRemoteUpdateOk === true &&
+        (prev?.status === "started" || prev?.status === "arrived") &&
         (w.visibleNow || nowMs >= w.showAtEpochMs)
       ) {
-        status = "started";
+        status = prev.status === "arrived" ? "arrived" : "started";
       } else if (w.activeNow || (w.visibleNow && nowMs >= w.showAtEpochMs)) {
         status = "due";
       } else if (w.visibleNow && nowMs >= w.startEpochMs) {
