@@ -312,6 +312,12 @@ async function enqueueAtShowAt(scheduleId, data) {
 const APP_ALIVE_MS = 45_000;
 /** Exclusive PTS claim window (any schedule). */
 const PTS_CLAIM_MS = 120_000;
+/**
+ * How long after a local ActivityKit start we refuse kill-path PTS (token upload
+ * race). After this, stale `localLaActive` / card flags must not block PTS —
+ * that left Test 1 blank until the app was opened.
+ */
+const LOCAL_PENDING_GRACE_MS = 90_000;
 
 /**
  * Update token for the *current* Lock Screen card.
@@ -464,14 +470,86 @@ async function markDueSchedulesStartedForItems(deviceId, primaryScheduleId, prim
   }
 }
 
-/** Local ActivityKit owns / is creating the Lock Screen card — never PTS on top. */
+/**
+ * Local ActivityKit owns / is creating the Lock Screen card — never PTS on top.
+ * Must be time-bounded: `localLaActive` survives force-quit in Firestore and
+ * used to block kill-path PTS forever (blank Lock Screen until app open).
+ */
 function hasLocalCardPending(device, now = Date.now()) {
-  if (device.localLaActive === true) return true;
-  return (
-    Number(device.laCardActiveUntil || 0) > now &&
-    Number(device.lastLocalCalendarLaAt || 0) > 0 &&
-    device.lastRemoteLaStartOk !== true
-  );
+  if (device.lastRemoteLaStartOk === true) return false;
+  const localAt = Number(device.lastLocalCalendarLaAt || 0);
+  const cardUntil = Number(device.laCardActiveUntil || 0);
+  const aliveAt = Number(device.appAliveAt || 0);
+  const appAlive = aliveAt > 0 && now - aliveAt < APP_ALIVE_MS;
+
+  // Fresh local start — update token may still be uploading.
+  if (localAt > 0 && now - localAt < LOCAL_PENDING_GRACE_MS && cardUntil > now) {
+    return true;
+  }
+  // App process still alive and claims local ownership.
+  if (appAlive && device.localLaActive === true) return true;
+  return false;
+}
+
+/** Drop stale local ownership so kill-path can PTS after force-quit. */
+async function clearStaleLocalOwnershipIfNeeded(deviceId, device, now = Date.now()) {
+  if (device.lastRemoteLaStartOk === true) return device;
+  if (hasLocalCardPending(device, now)) return device;
+  const aliveAt = Number(device.appAliveAt || 0);
+  const appAlive = aliveAt > 0 && now - aliveAt < APP_ALIVE_MS;
+  if (appAlive) return device;
+
+  const hasStaleFlags =
+    device.localLaActive === true ||
+    Number(device.lastLocalCalendarLaAt || 0) > 0 ||
+    Number(device.laCardActiveUntil || 0) > now;
+  if (!hasStaleFlags) return device;
+
+  try {
+    if (await deviceHasLiveCard(device, deviceId, now)) return device;
+  } catch {
+    /* ignore */
+  }
+
+  logger.info("Clearing stale local LA ownership for kill-path PTS", deviceId, {
+    localLaActive: device.localLaActive === true,
+    localAt: Number(device.lastLocalCalendarLaAt || 0),
+    cardUntil: Number(device.laCardActiveUntil || 0),
+  });
+  try {
+    await db.collection("devices").doc(deviceId).set(
+      {
+        localLaActive: false,
+        lastLocalCalendarLaAt: FieldValue.delete(),
+        laCardActiveUntil: 0,
+      },
+      { merge: true },
+    );
+    const snap = await db.collection("devices").doc(deviceId).get();
+    return snap.exists ? snap.data() || device : device;
+  } catch (err) {
+    logger.warn("clearStaleLocalOwnershipIfNeeded failed", deviceId, err);
+    return device;
+  }
+}
+
+/** Atomically claim the one-minute alert so task+sweep cannot double-buzz. */
+async function claimOneMinuteAlert(scheduleId, now = Date.now()) {
+  const ref = db.collection("laSchedules").doc(scheduleId);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return false;
+      const data = snap.data() || {};
+      if (data.oneMinuteAlertSentAt) return false;
+      if (!wantsOneMinuteAlert(data, now)) return false;
+      tx.update(ref, { oneMinuteAlertSentAt: now });
+      return true;
+    });
+  } catch (err) {
+    logger.warn("claimOneMinuteAlert failed", scheduleId, err);
+    return false;
+  }
 }
 
 /**
@@ -504,6 +582,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     return false;
   }
 
+  // Stale localLaActive after force-quit used to make hasLocalCardPending forever
+  // true → wait-token / no PTS (Test 1 never appeared until app open).
+  let deviceFresh = await clearStaleLocalOwnershipIfNeeded(data.deviceId, device, now);
+
   const aggregated = await buildAggregatedContentState(data.deviceId, {
     tick: now,
     phase: "countdown",
@@ -517,14 +599,14 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
 
   const cardUntilMs = Number(aggregated.staleSec || 0) * 1000;
   const appAlive =
-    Number(device.appAliveAt || 0) > 0 &&
-    now - Number(device.appAliveAt || 0) < APP_ALIVE_MS;
-  let liveCard = await deviceHasLiveCard(device, data.deviceId, now);
-  let generationLive = liveCard && device.lastRemoteLaStartOk === true;
+    Number(deviceFresh.appAliveAt || 0) > 0 &&
+    now - Number(deviceFresh.appAliveAt || 0) < APP_ALIVE_MS;
+  let liveCard = await deviceHasLiveCard(deviceFresh, data.deviceId, now);
+  let generationLive = liveCard && deviceFresh.lastRemoteLaStartOk === true;
   let alreadyPtsThis =
-    device.lastRemoteLaStartOk === true &&
-    device.lastRemoteLaStartScheduleId === scheduleId &&
-    now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
+    deviceFresh.lastRemoteLaStartOk === true &&
+    deviceFresh.lastRemoteLaStartScheduleId === scheduleId &&
+    now - Number(deviceFresh.lastRemoteLaStartAt || 0) < 20 * 60_000;
 
   const recordEnsure = async (path, reason) => {
     try {
@@ -579,7 +661,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       await recordEnsure("local-owned", "app-alive");
       return true;
     }
-    if (hasLocalCardPending(device, now)) {
+    if (hasLocalCardPending(deviceFresh, now)) {
       if (
         data.status === "due" ||
         data.status === "pending" ||
@@ -601,7 +683,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   if (liveCard) {
     // Presentation alert only when the app is not alive (local path uses
     // Capacitor haptic / a single requestPresentationAlert instead).
-    const presentAlert = !appAlive && !data.laPresentedAlertAt;
+    // Skip when the 1-minute alert window is open — that push already buzzes
+    // (Test 2 saw ~2 haptics then the banner).
+    const presentAlert =
+      !appAlive && !data.laPresentedAlertAt && !wantsOneMinuteAlert(data, now);
     logger.info("LA kill-path update (live card)", scheduleId, { presentAlert });
     const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
       withAlert: presentAlert,
@@ -634,7 +719,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         await db.collection("devices").doc(data.deviceId).set(
           {
             laCardActiveUntil: Math.max(
-              Number(device.laCardActiveUntil || 0),
+              Number(deviceFresh.laCardActiveUntil || 0),
               cardUntilMs,
             ),
             lastLaEnsureAt: Date.now(),
@@ -681,7 +766,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   // Wait — PTS would stack a second card on top of the surviving local one.
   // Still promote to started so the minute / 1m-alert task chain is armed;
   // onDeviceTokenWrite kicks the first FCM update once the token lands.
-  const localCardWindow = hasLocalCardPending(device, now);
+  const localCardWindow = hasLocalCardPending(deviceFresh, now);
   if (localCardWindow) {
     if (
       data.status === "due" ||
@@ -984,6 +1069,17 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
     "content-state": aggregated.contentState,
     "stale-date": aggregated.staleSec,
   };
+  // ActivityKit does not reliably auto-dismiss on stale-date alone. Set
+  // dismissal-date on arrived so "予定時間になりました" leaves after 1h even
+  // when a later FCM `end` cannot be delivered (missing update token).
+  if (phase === "arrived" || aggregated.contentState.phase === "arrived") {
+    const dismissMs = Math.max(
+      Number(data.endAtEpochMs) || 0,
+      Number(aggregated.staleSec || 0) * 1000,
+      now,
+    );
+    aps["dismissal-date"] = Math.floor(dismissMs / 1000);
+  }
   if (withAlert) {
     aps.alert = {
       title:
@@ -1024,6 +1120,7 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
       error: null,
     });
     if (withAlert && phase === "notify1m") {
+      // Claim may already have set oneMinuteAlertSentAt; keep it on success.
       try {
         await db.collection("laSchedules").doc(scheduleId).update({
           oneMinuteAlertSentAt: now,
@@ -1057,7 +1154,10 @@ async function sendEndForSchedule(scheduleId, data) {
   }
   const device = deviceSnap.data() || {};
   const fcmToken = device.fcmToken;
-  const updateToken = usableLiveActivityUpdateToken(device);
+  // Prefer usable token; fall back to raw — ending a dead generation is better
+  // than leaving "予定時間になりました" on Lock Screen forever.
+  const updateToken =
+    usableLiveActivityUpdateToken(device) || device.liveActivityUpdateToken || null;
 
   // Always re-query remaining visible rows. Never end the whole Activity while
   // another countdown/arrived row should still be on the card.
@@ -1081,7 +1181,7 @@ async function sendEndForSchedule(scheduleId, data) {
   }
 
   if (!fcmToken || !updateToken) {
-    logger.warn("LA end skipped — no usable update token (staleDate should dismiss)", scheduleId);
+    logger.warn("LA end skipped — no update token (dismissal-date should cover)", scheduleId);
     await clearDeviceLiveActivityGeneration(data.deviceId);
     return false;
   }
@@ -1335,13 +1435,20 @@ export const refreshLiveActivityTask = onTaskDispatched(
       return;
     }
 
-    const alertNow = wantsOneMinuteAlert(data, now);
-    await sendUpdateForSchedule(
+    const alertClaimed = await claimOneMinuteAlert(scheduleId, now);
+    const ok = await sendUpdateForSchedule(
       scheduleId,
       data,
-      alertNow ? "notify1m" : "countdown",
-      { withAlert: alertNow },
+      alertClaimed ? "notify1m" : "countdown",
+      { withAlert: alertClaimed },
     );
+    if (alertClaimed && !ok) {
+      try {
+        await snap.ref.update({ oneMinuteAlertSentAt: FieldValue.delete() });
+      } catch (err) {
+        logger.warn("Failed to release oneMinuteAlert claim", err);
+      }
+    }
 
     const next = now + REFRESH_INTERVAL_MS;
     if (next < Number(data.startEpochMs)) {
@@ -1411,19 +1518,16 @@ export const sweepLiveActivityRefresh = onSchedule(
       let localCardWindow = false;
       try {
         const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
-        const device = deviceSnap.data() || {};
+        let device = deviceSnap.data() || {};
+        device = await clearStaleLocalOwnershipIfNeeded(data.deviceId, device, now);
         hasCard = await deviceHasLiveCard(device, data.deviceId, now);
         ptsOwnsThis =
           device.lastRemoteLaStartOk === true &&
           device.lastRemoteLaStartScheduleId === docSnap.id &&
           now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
-        // Only wait for local token if the owning schedule still exists.
-        localCardWindow =
-          !hasCard &&
-          (device.localLaActive === true ||
-            (Number(device.laCardActiveUntil || 0) > now &&
-              Number(device.lastLocalCalendarLaAt || 0) > 0)) &&
-          device.lastRemoteLaStartOk !== true;
+        // Only wait for a *fresh* local card (grace window). Stale localLaActive
+        // after force-quit must not block demote→PTS (Test 1 blank Lock Screen).
+        localCardWindow = !hasCard && hasLocalCardPending(device, now);
       } catch {
         /* ignore */
       }
@@ -1507,10 +1611,10 @@ export const sweepLiveActivityRefresh = onSchedule(
 
       // Avoid double-firing within the same ~45s window (task + sweep),
       // except when we still owe the one-minute alert.
-      const alertNow = wantsOneMinuteAlert(data, now);
+      const alertClaimed = await claimOneMinuteAlert(docSnap.id, now);
       const lastOk = data.lastRemoteUpdateOk === true;
       const lastAt = Number(data.lastRemoteUpdateAt || 0);
-      if (lastOk && now - lastAt < 20_000 && !alertNow) {
+      if (lastOk && now - lastAt < 20_000 && !alertClaimed) {
         skipped += 1;
         continue;
       }
@@ -1558,9 +1662,16 @@ export const sweepLiveActivityRefresh = onSchedule(
       const ok = await sendUpdateForSchedule(
         docSnap.id,
         data,
-        alertNow ? "notify1m" : "countdown",
-        { withAlert: alertNow },
+        alertClaimed ? "notify1m" : "countdown",
+        { withAlert: alertClaimed },
       );
+      if (alertClaimed && !ok) {
+        try {
+          await docSnap.ref.update({ oneMinuteAlertSentAt: FieldValue.delete() });
+        } catch (err) {
+          logger.warn("Failed to release oneMinuteAlert claim", err);
+        }
+      }
       if (ok) sent += 1;
       else skipped += 1;
     }
@@ -1614,6 +1725,17 @@ export const onLaScheduleWrite = onDocumentWritten(
 
     // Client local-start → one-shot ActivityKit presentation (banner + haptic).
     if (after.requestPresentationAlert && !after.laPresentedAlertAt) {
+      // Let the dedicated 1-minute alert own the haptic in that window.
+      if (wantsOneMinuteAlert(after, Date.now())) {
+        try {
+          await afterSnap.ref.update({
+            requestPresentationAlert: FieldValue.delete(),
+          });
+        } catch (err) {
+          logger.warn("Failed to clear requestPresentationAlert near 1m", err);
+        }
+        return;
+      }
       const ok = await sendUpdateForSchedule(scheduleId, after, "countdown", {
         withAlert: true,
         urgent: true,

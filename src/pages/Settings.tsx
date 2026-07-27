@@ -112,9 +112,19 @@ export default function Settings({ staticPreview = false }: Props) {
   };
 
   const copyLaLog = async () => {
+    let diag = laDiag;
+    try {
+      // Always refresh so copy includes deviceDoc / schedules (stale null digests
+      // looked like "no server state" in TestFlight pastes).
+      diag = await fetchRemoteLaDiagnostics();
+      setLaDiag(diag);
+      setLaRemoteTick((n) => n + 1);
+    } catch {
+      /* use last known */
+    }
     const report = formatLaDiagnosticsReport(
       getLiveActivityRemoteStatus(),
-      laDiag,
+      diag,
       getLiveActivityLocalStatus(),
       formatLaDebugLogForCopy(),
     );

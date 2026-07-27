@@ -91,6 +91,9 @@ export type RemoteLaScheduleDiag = {
   lastRemoteUpdateError?: string;
   lastRemoteUpdateHint?: string;
   lastRemoteUpdatePhase?: string;
+  oneMinuteAlertSentAt?: number;
+  laPresentedAlertAt?: number;
+  requestPresentationAlert?: boolean;
 };
 
 export type RemoteLaDiagnostics = {
@@ -258,6 +261,9 @@ export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | 
         lastRemoteUpdateError: data.lastRemoteUpdateError,
         lastRemoteUpdateHint: data.lastRemoteUpdateHint,
         lastRemoteUpdatePhase: data.lastRemoteUpdatePhase,
+        oneMinuteAlertSentAt: data.oneMinuteAlertSentAt,
+        laPresentedAlertAt: data.laPresentedAlertAt,
+        requestPresentationAlert: data.requestPresentationAlert === true,
       };
     });
 
@@ -357,19 +363,37 @@ export function formatLaDiagnosticsReport(
     );
     const aliveAge =
       d.appAliveAt != null ? Math.round((Date.now() - Number(d.appAliveAt)) / 1000) : null;
+    const localAge =
+      d.lastLocalCalendarLaAt != null
+        ? Math.round((Date.now() - Number(d.lastLocalCalendarLaAt)) / 1000)
+        : null;
+    const cardLeft =
+      d.laCardActiveUntil != null
+        ? Math.round((Number(d.laCardActiveUntil) - Date.now()) / 1000)
+        : null;
     lines.push(
-      `ownership: appAliveAgeSec=${aliveAge ?? "-"} localLa=${d.localLaActive ?? "-"} cardUntil=${d.laCardActiveUntil || "-"}`,
+      `ownership: appAliveAgeSec=${aliveAge ?? "-"} localLa=${d.localLaActive ?? "-"} localAgeSec=${localAge ?? "-"} cardUntil=${d.laCardActiveUntil || "-"} cardLeftSec=${cardLeft ?? "-"}`,
     );
+  } else if (diag === null) {
+    lines.push("deviceDoc: (fetch failed or timed out — tap Refresh then copy again)");
   }
   if (diag?.lastAttempt) {
     const a = diag.lastAttempt;
     lines.push(
-      `lastAttempt: ok=${a.ok} phase=${a.phase || "-"} code=${a.code || "-"} err=${(a.error || "").slice(0, 120)}`,
+      `lastAttempt: ok=${a.ok} phase=${a.phase || "-"} code=${a.code || "-"} err=${(a.error || "").slice(0, 120)} at=${a.at || "-"} sched=${(a.scheduleId || "-").toString().slice(-12)}`,
     );
   }
-  for (const s of diag?.schedules || []) {
+  const schedules = diag?.schedules || [];
+  lines.push(`schedules: count=${schedules.length}`);
+  for (const s of schedules) {
+    const showIn =
+      s.showAtEpochMs != null ? Math.round((Number(s.showAtEpochMs) - Date.now()) / 1000) : null;
+    const startIn =
+      s.startEpochMs != null ? Math.round((Number(s.startEpochMs) - Date.now()) / 1000) : null;
+    const endIn =
+      s.endAtEpochMs != null ? Math.round((Number(s.endAtEpochMs) - Date.now()) / 1000) : null;
     lines.push(
-      `schedule ${s.id.slice(-12)}: status=${s.status} title=${s.title || "-"} showAt=${s.showAtEpochMs || "-"} start=${s.startEpochMs || "-"} endAt=${s.endAtEpochMs || "-"} updOk=${s.lastRemoteUpdateOk ?? "-"} phase=${s.lastRemoteUpdatePhase || "-"} err=${s.lastError || s.lastRemoteUpdateError || "-"}`,
+      `schedule ${s.id.slice(-12)}: status=${s.status} title=${s.title || "-"} showInSec=${showIn ?? "-"} startInSec=${startIn ?? "-"} endInSec=${endIn ?? "-"} updOk=${s.lastRemoteUpdateOk ?? "-"} phase=${s.lastRemoteUpdatePhase || "-"} alert1m=${s.oneMinuteAlertSentAt ? "sent" : "-"} presented=${s.laPresentedAlertAt ? "yes" : "-"} reqAlert=${s.requestPresentationAlert ? "yes" : "-"} err=${s.lastError || s.lastRemoteUpdateError || "-"}`,
     );
   }
   lines.push("--- client log ---");
