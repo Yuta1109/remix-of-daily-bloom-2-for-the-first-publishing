@@ -180,15 +180,29 @@ export function AppTutorial() {
     const isBookend = step.id === "welcome" || step.id === "done";
 
     if (step.id === "laDemo") {
+      const showNext =
+        laShowNext &&
+        laPhase !== "offer" &&
+        (laPhase === "preparing" ||
+          laPhase === "ready" ||
+          laPhase === "denied" ||
+          laPhase === "forceEnded" ||
+          laPhase === "failed" ||
+          laPhase === "complete" ||
+          laDemoSucceededRef.current);
+      const tapToAdvance = laPhase === "forceEnded";
+
       return (
         <CoachOverlay
           key={step.id}
           targetSelector={null}
-          captureOutsideClick={false}
+          captureOutsideClick={tapToAdvance}
           allowThrough={false}
           bubblePlacement="center"
           title={undefined}
           body=""
+          hint={tapToAdvance ? t("tutorialTapHint") : undefined}
+          onOutsideTap={tapToAdvance ? finishLaStep : undefined}
           actions={
             <>
               <LiveActivityDemoPanel
@@ -197,12 +211,17 @@ export function AppTutorial() {
                   setLaPhase(phase);
                   if (phase === "ready" || phase === "complete") {
                     laDemoSucceededRef.current = true;
+                    setLaShowNext(true);
                   }
                   if (phase === "denied" || phase === "forceEnded") {
-                    laDemoSucceededRef.current = false;
+                    if (phase === "forceEnded") {
+                      laDemoSucceededRef.current = false;
+                    }
+                    setLaShowNext(true);
                   }
-                  if (outcome === "allowed") {
+                  if (outcome === "allowed" && phase === "ready") {
                     laDemoSucceededRef.current = true;
+                    setLaShowNext(true);
                   }
                 }}
                 onCanContinueChange={(can) => {
@@ -217,7 +236,7 @@ export function AppTutorial() {
                   goNext();
                 }}
               />
-              {laShowNext && laPhase !== "offer" && (
+              {showNext && (
                 <button
                   type="button"
                   onClick={finishLaStep}

@@ -11,7 +11,7 @@ import {
   Activity,
   Palette,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useI18n, type Locale } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { loadReusable, addReusable, removeReusable, type ReusableTask } from "@/lib/reusable-tasks";
@@ -67,6 +67,7 @@ interface Props {
 
 export default function Settings({ staticPreview = false }: Props) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { locale, setLocale, t } = useI18n();
   const [reusable, setReusable] = useState<ReusableTask[]>([]);
   const [newText, setNewText] = useState("");
@@ -134,6 +135,18 @@ export default function Settings({ staticPreview = false }: Props) {
     if (!isNative() || staticPreview) return;
     void refreshLaDiagnostics();
   }, [staticPreview]);
+
+  useEffect(() => {
+    if (staticPreview) return;
+    if (location.hash !== "#live-activity") return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("settings-live-activity")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [staticPreview, location.hash, location.pathname]);
 
   useEffect(() => {
     if (!isNative()) return;
@@ -321,7 +334,10 @@ export default function Settings({ staticPreview = false }: Props) {
 
         {/* 3. Live Activities */}
         {isNative() && (
-          <div className="bg-card rounded-2xl p-5 shadow-soft">
+          <div
+            id="settings-live-activity"
+            className="bg-card rounded-2xl p-5 shadow-soft scroll-mt-4"
+          >
             <div className="flex items-center gap-2 mb-1">
               <Activity className="w-4 h-4 text-accent" />
               <p className="text-sm font-semibold">{t("liveActivitySettingsTitle")}</p>
@@ -516,6 +532,11 @@ export default function Settings({ staticPreview = false }: Props) {
                 {laCopied ? t("remoteLaCopied") : t("remoteLaCopyLog")}
               </button>
             </div>
+            <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+              {locale === "ja"
+                ? "ログは端末に保存され、予定の削除では消えません。テスト一式のあと「ログをコピー」でまとめて送れます。"
+                : "Logs are kept on device and survive deleting events. Copy once after a full test session."}
+            </p>
           </div>
         )}
       </div>

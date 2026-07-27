@@ -107,7 +107,13 @@ export async function initNative(): Promise<void> {
         // Do not arm minutes early (showed ~11m on a 10m lead). Tiny skew only.
         void pulseAppAlive()
           .then(() => refreshLiveActivities({ allowEarlyShowMs: 15_000 }))
-          .then(() => syncLiveActivitySchedulesRemote())
+          .then(async () => {
+            await syncLiveActivitySchedulesRemote();
+            const { requestLiveActivityPresentationAlert } = await import(
+              "./la-remote"
+            );
+            await requestLiveActivityPresentationAlert().catch(() => {});
+          })
           .catch(() => {
             void syncLiveActivitySchedulesRemote();
           });

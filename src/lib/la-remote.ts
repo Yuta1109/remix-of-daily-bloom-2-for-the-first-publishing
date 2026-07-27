@@ -570,15 +570,18 @@ export async function clearLocalLiveActivityRemoteState(): Promise<void> {
  */
 export async function requestLiveActivityPresentationAlert(): Promise<void> {
   const ok = await ensureFirebase();
-  if (!ok || !db || !deviceUid || !liveActivityUpdateToken) return;
-
-  try {
-    const { App } = await import("@capacitor/app");
-    const state = await App.getState();
-    if (state.isActive) return; // In-app: haptic only (already fired).
-  } catch {
-    /* treat as background */
+  if (!ok || !db || !deviceUid || !liveActivityUpdateToken) {
+    laDebugLog(
+      "la",
+      `presentation alert skipped (fb=${ok} uid=${!!deviceUid} upd=${!!liveActivityUpdateToken})`,
+      "warn",
+    );
+    return;
   }
+
+  // Always request — ActivityKit may have created the activity without a Lock
+  // Screen presentation. An FCM Live Activity `alert` is what made the card
+  // appear in TestFlight after an unrelated notification woke the device.
 
   try {
     const q = query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid));

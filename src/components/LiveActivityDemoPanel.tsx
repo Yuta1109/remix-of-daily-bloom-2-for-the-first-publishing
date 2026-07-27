@@ -188,6 +188,7 @@ export function LiveActivityDemoPanel({
         demoSucceededRef.current = true;
         markLiveActivityDemoPresented();
         setPhase("ready");
+        emitOutcome("allowed", "ready");
         onCanContinueChange?.(true);
         await refreshProgress();
 
@@ -239,9 +240,24 @@ export function LiveActivityDemoPanel({
         setPhase("complete");
       }
     });
-    // Tutorial: hide parent Next on the offer screen (Start / Later only).
-    if (!isSettings) onCanContinueChange?.(false);
-  }, [isSettings, onCanContinueChange, refreshProgress]);
+    // Only hide Next on the initial offer screen — do not re-arm this when
+    // parent re-creates callbacks (that was wiping Next after a successful demo).
+  }, [isSettings, refreshProgress]);
+
+  useEffect(() => {
+    if (isSettings) return;
+    if (phase === "offer") onCanContinueChange?.(false);
+    else if (
+      phase === "preparing" ||
+      phase === "ready" ||
+      phase === "denied" ||
+      phase === "forceEnded" ||
+      phase === "failed" ||
+      phase === "complete"
+    ) {
+      onCanContinueChange?.(true);
+    }
+  }, [isSettings, onCanContinueChange, phase]);
 
   useEffect(() => {
     if (!isNativeIos()) return;

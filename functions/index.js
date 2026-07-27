@@ -499,9 +499,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     }
   };
 
-  // ── A. App process alive → local ActivityKit owns creation ─────────
-  // Never mark started from here: a stale update token + FCM "ok" used to
-  // skip PTS while the Lock Screen stayed blank.
+  // ── A. App process alive → prefer local ActivityKit ────────────────
+  // Only defer to local when there is evidence of a Lock Screen card.
+  // Returning success with no card left schedules stuck at "due" until a
+  // later PTS (often after an unrelated notification wakes the device).
   if (appAlive) {
     if (liveCard) {
       logger.info("LA app-alive content refresh (no mark)", scheduleId);
@@ -510,9 +511,15 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         contentState: aggregated.contentState,
         staleSec: aggregated.staleSec,
       });
+      await recordEnsure("local-owned", "app-alive");
+      return true;
     }
-    await recordEnsure("local-owned", "app-alive");
-    return true;
+    logger.info(
+      "LA app-alive but no live card — falling through to PTS/update",
+      scheduleId,
+    );
+    await recordEnsure("local-owned-miss", "app-alive-no-card");
+    // Fall through: PTS or update path must actually present the card.
   }
 
   // ── B. Kill-path with a *live* card → update only (no second PTS) ──

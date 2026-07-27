@@ -47,7 +47,6 @@ import {
   ensurePermission,
   getNotificationsUserEnabled,
   setNotificationsUserEnabled,
-  openLiveActivitySettings,
 } from "@/lib/notifications";
 import {
   refreshLiveActivities,
@@ -796,31 +795,22 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     if (liveActivity && isLiveActivitySupported()) {
       const gate = await getLiveActivityGate();
       if (isLiveActivityBlocked(gate)) {
-        if (!gate.systemEnabled) {
-          const allow = await askConfirm(t("liveActivityAllowPromptSystem"), {
-            confirmLabel: t("liveActivityEnable"),
-            cancelLabel: t("liveActivityAllowNo"),
-          });
-          if (allow) {
-            await openLiveActivitySettings();
-            setLaSystemOff(true);
-            return;
-          }
-          liveActivity = false;
-        } else {
-          // Enable needs Lock Screen demo + Always Allow — EventSheet cannot
-          // finish that. Send the user to Settings instead of a fake short demo.
-          const allow = await askConfirm(t("liveActivityAllowPrompt"), {
+        const allow = await askConfirm(
+          !gate.systemEnabled
+            ? t("liveActivityAllowPromptSystem")
+            : t("liveActivityAllowPrompt"),
+          {
             confirmLabel: t("liveActivityAllowYes"),
             cancelLabel: t("liveActivityAllowNo"),
-          });
-          if (allow) {
-            onOpenChange(false);
-            navigate("/settings");
-            return;
-          }
-          liveActivity = false;
+          },
+        );
+        if (allow) {
+          onOpenChange(false);
+          navigate("/settings#live-activity");
+          return;
         }
+        liveActivity = false;
+        if (!gate.systemEnabled) setLaSystemOff(true);
       }
     }
 
@@ -1000,9 +990,8 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   };
 
   const handleEnableLa = async () => {
-    await openLiveActivitySettings();
-    const gate = await getLiveActivityGate();
-    setLaSystemOff(isLiveActivitySystemOff(gate));
+    onOpenChange(false);
+    navigate("/settings#live-activity");
   };
 
   const formBodyProps: FormBodyProps = {

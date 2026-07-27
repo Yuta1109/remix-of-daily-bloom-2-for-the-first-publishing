@@ -191,10 +191,10 @@ const translations = {
     liveActivityDisabledSystem:
       "Live Activities are off in iPhone Settings, so Lock Screen countdowns will not appear for this event.",
     liveActivityAllowPrompt:
-      "Live Activities are not fully enabled yet. Open Settings to finish setup (demo + Always Allow), then turn Live Activity on for this event?",
+      "Live Activities are not fully enabled yet. Open Essences Settings to finish the Lock Screen demo, then turn Live Activity on for this event?",
     liveActivityAllowPromptSystem:
-      "Live Activities are off in iPhone Settings. Open Settings and turn on Live Activities for Essences?",
-    liveActivityAllowYes: "Open Settings",
+      "Live Activities are off in iPhone Settings. Open Essences Settings for the guided enable steps?",
+    liveActivityAllowYes: "Open Essences Settings",
     liveActivityAllowNo: "Save without Live Activity",
     liveActivityOnboardingTitle: "Lock Screen countdown",
     liveActivityOnboardingBody:
@@ -465,10 +465,10 @@ const translations = {
     liveActivityDisabledSystem:
       "iPhoneの設定でライブアクティビティがオフのため、この予定のロック画面カウントダウンは表示されません。",
     liveActivityAllowPrompt:
-      "ライブアクティビティの有効化がまだ完了していません。設定でデモと「常に許可」を済ませてから、この予定でオンにしますか？",
+      "ライブアクティビティの有効化がまだ完了していません。アプリ内の設定でロック画面デモを済ませてから、この予定でオンにしますか？",
     liveActivityAllowPromptSystem:
-      "iPhoneの設定でライブアクティビティがオフです。設定を開いて Essences のライブアクティビティをオンにしますか？",
-    liveActivityAllowYes: "設定を開く",
+      "iPhoneの設定でライブアクティビティがオフです。アプリ内の設定ページから有効化手順を進めますか？",
+    liveActivityAllowYes: "アプリの設定を開く",
     liveActivityAllowNo: "オフのまま保存",
     liveActivityOnboardingTitle: "ロック画面のカウントダウン",
     liveActivityOnboardingBody:

@@ -355,10 +355,22 @@ async function refreshLiveActivitiesInner(
     return;
   }
 
-  // Demo owns the single ActivityKit slot — do not overwrite with calendar rows.
+  // Demo owns the single ActivityKit slot — do not overwrite with calendar rows
+  // while the short tutorial demo is still the intentional Lock Screen card.
+  // If the user already has calendar rows that should show, end the demo and
+  // continue so a real event is not stuck behind a silent "local-owned" ensure.
   if (isDemoLiveActivityActive()) {
-    scheduleNextBoundary();
-    return;
+    const nowCheck = new Date();
+    const preview = collectVisibleItems(nowCheck, {
+      dismissArrived,
+      allowEarlyShowMs: opts.allowEarlyShowMs,
+    });
+    if (preview.items.length === 0) {
+      scheduleNextBoundary();
+      return;
+    }
+    demoUntilMs = 0;
+    clearTimeout(demoEndTimer);
   }
 
   const now = new Date();
@@ -418,10 +430,10 @@ async function refreshLiveActivitiesInner(
       const remote = await import("./la-remote");
       await remote.markLocalCalendarLiveActivity({ endEpochMs: safeEndEpochMs });
       if (isNewLocalCard) {
-        // Local start haptic; home-screen LA banner via ActivityKit push `alert`.
+        // Local start haptic; home-screen / Lock Screen banner via ActivityKit push `alert`.
         const { liveActivityStartHaptic } = await import("./haptics");
         void liveActivityStartHaptic();
-        void remote.requestLiveActivityPresentationAlert().catch(() => {});
+        await remote.requestLiveActivityPresentationAlert().catch(() => {});
       }
     } catch {
       /* ignore */
