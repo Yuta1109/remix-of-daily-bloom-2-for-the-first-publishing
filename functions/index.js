@@ -1242,12 +1242,17 @@ export const refreshLiveActivityTask = onTaskDispatched(
     if (data.status !== "started") return;
 
     if (Number(data.startEpochMs) <= now) {
-      // Must land an arrived update so Lock Screen shows "予定時間になりました"
-      // before end. Extend linger from *now* so a late tick still shows ~1m.
+      // Keep "予定時間になりました" until start + 1h (not "now + 1h").
+      // Extending from now made late arrived pushes linger past the intended window.
+      const startMs = Number(data.startEpochMs) || now;
       const lingerEnd = Math.max(
         Number(data.endAtEpochMs) || 0,
-        now + ARRIVED_LINGER_MS,
+        startMs + ARRIVED_LINGER_MS,
       );
+      if (lingerEnd <= now) {
+        await sendEndForSchedule(scheduleId, data);
+        return;
+      }
       const ok = await sendUpdateForSchedule(
         scheduleId,
         { ...data, endAtEpochMs: lingerEnd },
@@ -1458,10 +1463,16 @@ export const sweepLiveActivityRefresh = onSchedule(
       }
 
       if (Number(data.startEpochMs) <= now) {
+        const startMs = Number(data.startEpochMs) || now;
         const lingerEnd = Math.max(
           Number(data.endAtEpochMs) || 0,
-          now + ARRIVED_LINGER_MS,
+          startMs + ARRIVED_LINGER_MS,
         );
+        if (lingerEnd <= now) {
+          await sendEndForSchedule(docSnap.id, data);
+          endedNow += 1;
+          continue;
+        }
         const ok = await sendUpdateForSchedule(
           docSnap.id,
           { ...data, endAtEpochMs: lingerEnd },

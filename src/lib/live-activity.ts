@@ -469,10 +469,17 @@ async function refreshLiveActivitiesInner(
   }
 
   const now = new Date();
-  const { items: visible, overflow, phase } = collectVisibleItems(now, {
+  const {
+    items: visible,
+    overflow,
+    phase,
+    droppedArrivedWindows,
+  } = collectVisibleItems(now, {
     dismissArrived,
     allowEarlyShowMs: opts.allowEarlyShowMs,
   });
+  const dismissedNow =
+    !!opts.dismissArrived || droppedArrivedWindows.length > 0;
   const isNewLocalCard = lastActiveCount <= 0 && visible.length > 0;
   lastActiveCount = visible.length;
   setVisibleItemKeys(visible);
@@ -524,6 +531,11 @@ async function refreshLiveActivitiesInner(
     try {
       const remote = await import("./la-remote");
       await remote.markLocalCalendarLiveActivity({ endEpochMs: safeEndEpochMs });
+      // Always sync after open-app dismiss / overflow-evict so remote kill-path
+      // cannot resurrect "予定時間になりました".
+      if (dismissedNow) {
+        await remote.syncLiveActivitySchedulesRemote();
+      }
       if (isNewLocalCard) {
         // Local start haptic; home-screen / Lock Screen banner via ActivityKit push `alert`.
         const { liveActivityStartHaptic } = await import("./haptics");
