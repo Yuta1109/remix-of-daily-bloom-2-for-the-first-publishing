@@ -340,7 +340,7 @@ function usableLiveActivityUpdateToken(device, now = Date.now()) {
   // usable tokens, so FCM minute refreshes never ran while backgrounded.
   const cardUntil = Number(device.laCardActiveUntil || 0);
   const localAt = Number(device.lastLocalCalendarLaAt || 0);
-  if (cardUntil > now && localAt > 0) {
+  if (cardUntil > now && (localAt > 0 || device.localLaActive === true)) {
     return token;
   }
   return null;
@@ -464,12 +464,24 @@ async function markDueSchedulesStartedForItems(deviceId, primaryScheduleId, prim
   }
 }
 
+/** Local ActivityKit owns / is creating the Lock Screen card — never PTS on top. */
+function hasLocalCardPending(device, now = Date.now()) {
+  if (device.localLaActive === true) return true;
+  return (
+    Number(device.laCardActiveUntil || 0) > now &&
+    Number(device.lastLocalCalendarLaAt || 0) > 0 &&
+    device.lastRemoteLaStartOk !== true
+  );
+}
+
 /**
  * Ensure a schedule is on the Lock Screen.
  *
  * Ownership model:
- *  A) App process alive → local ActivityKit creates the card. Never PTS.
- *     Do NOT mark started here (FCM update success ≠ card on Lock Screen).
+ *  A) App process alive + local card / pending local start → update or wait.
+ *     Never PTS (PTS on top of local ActivityKit = duplicate card + multi-haptic).
+ *     Promote due→started so FCM minute refresh + 1-minute alert chains run
+ *     (TimelineView.everyMinute alone is unreliable on Lock Screen).
  *  B) App dead + live card evidence (laCardActiveUntil + usable token) →
  *     FCM update only (force-quit after local/PTS start). Never second PTS.
  *  C) App dead + no live card → exactly one push-to-start per claim window.
@@ -531,32 +543,65 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   };
 
   // ── A. App process alive → prefer local ActivityKit ────────────────
-  // Only defer to local when there is evidence of a Lock Screen card.
-  // Returning success with no card left schedules stuck at "due" until a
-  // later PTS (often after an unrelated notification wakes the device).
+  // Only PTS while appAlive when there is *no* local-card evidence (blank
+  // Lock Screen stuck at due). Never PTS while local ActivityKit is pending —
+  // that stacked a second card and caused ~3 haptics (Test 3).
   if (appAlive) {
     if (liveCard) {
-      logger.info("LA app-alive content refresh (no mark)", scheduleId);
+      logger.info("LA app-alive content refresh", scheduleId);
       await sendUpdateForSchedule(scheduleId, data, "countdown", {
         withAlert: false,
         contentState: aggregated.contentState,
         staleSec: aggregated.staleSec,
       });
+      // Client sync leaves rows as "due"; without promoting to started the
+      // refresh / 1-minute-alert Cloud Tasks never run, so Lock Screen freezes
+      // after the app backgrounds (native heartbeat suspends).
+      if (
+        data.status === "due" ||
+        data.status === "pending" ||
+        data.status === "error"
+      ) {
+        await markDueSchedulesStartedForItems(
+          data.deviceId,
+          scheduleId,
+          data,
+          aggregated.contentState.items,
+        );
+      } else {
+        try {
+          await enqueueOneMinuteAndArrived(scheduleId, data);
+          await enqueueRefresh(scheduleId, now + REFRESH_INTERVAL_MS);
+        } catch (err) {
+          logger.warn("Failed to ensure LA refresh while app-alive", err);
+        }
+      }
       await recordEnsure("local-owned", "app-alive");
       return true;
     }
+    if (hasLocalCardPending(device, now)) {
+      if (
+        data.status === "due" ||
+        data.status === "pending" ||
+        data.status === "error"
+      ) {
+        await markStartedAndEnqueueRefresh(scheduleId, data);
+      }
+      await recordEnsure("wait-token", "app-alive-local-pending-token");
+      return true;
+    }
     logger.info(
-      "LA app-alive but no live card — falling through to PTS/update",
+      "LA app-alive but no local card evidence — falling through to PTS/update",
       scheduleId,
     );
     await recordEnsure("local-owned-miss", "app-alive-no-card");
-    // Fall through: PTS or update path must actually present the card.
   }
 
   // ── B. Kill-path with a *live* card → update only (no second PTS) ──
   if (liveCard) {
-    // First time this schedule appears on an existing card → LA alert banner + haptic.
-    const presentAlert = !data.laPresentedAlertAt;
+    // Presentation alert only when the app is not alive (local path uses
+    // Capacitor haptic / a single requestPresentationAlert instead).
+    const presentAlert = !appAlive && !data.laPresentedAlertAt;
     logger.info("LA kill-path update (live card)", scheduleId, { presentAlert });
     const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
       withAlert: presentAlert,
@@ -634,13 +679,19 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
 
   // Local ActivityKit card window still open but update token not uploaded yet.
   // Wait — PTS would stack a second card on top of the surviving local one.
-  const localCardWindow =
-    Number(device.laCardActiveUntil || 0) > now &&
-    Number(device.lastLocalCalendarLaAt || 0) > 0 &&
-    device.lastRemoteLaStartOk !== true;
+  // Still promote to started so the minute / 1m-alert task chain is armed;
+  // onDeviceTokenWrite kicks the first FCM update once the token lands.
+  const localCardWindow = hasLocalCardPending(device, now);
   if (localCardWindow) {
+    if (
+      data.status === "due" ||
+      data.status === "pending" ||
+      data.status === "error"
+    ) {
+      await markStartedAndEnqueueRefresh(scheduleId, data);
+    }
     await recordEnsure("wait-token", "local-card-awaiting-update-token");
-    return false;
+    return true;
   }
 
   // Generation live for another schedule, no usable token → wait (no second PTS).
@@ -881,8 +932,9 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
   const now = Date.now();
   if (!fcmToken || !updateToken) {
     // After force-quit push-to-start, updateToken often is not uploaded until
-    // the app opens — that is expected. Lock Screen "N分後" still advances via
-    // TimelineView(.everyMinute); FCM tick updates remain a backup.
+    // the app opens — expected briefly. Custom "N分後" copy does NOT reliably
+    // advance via TimelineView alone; Cloud Tasks + usable update token are
+    // required for background / kill-path minute updates.
     // Also skip stale pre-PTS tokens (they can dismiss the new Activity).
     const deviceRecentPts =
       device.lastRemoteLaStartOk === true &&
@@ -1368,8 +1420,9 @@ export const sweepLiveActivityRefresh = onSchedule(
         // Only wait for local token if the owning schedule still exists.
         localCardWindow =
           !hasCard &&
-          Number(device.laCardActiveUntil || 0) > now &&
-          Number(device.lastLocalCalendarLaAt || 0) > 0 &&
+          (device.localLaActive === true ||
+            (Number(device.laCardActiveUntil || 0) > now &&
+              Number(device.lastLocalCalendarLaAt || 0) > 0)) &&
           device.lastRemoteLaStartOk !== true;
       } catch {
         /* ignore */

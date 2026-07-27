@@ -570,24 +570,42 @@ export async function clearLocalLiveActivityRemoteState(): Promise<void> {
 }
 
 /**
- * After a local ActivityKit start while the app is backgrounded, request a
+ * After a local ActivityKit start while the app is *backgrounded*, request a
  * one-shot Live Activity push `alert` (banner + system haptic). Not a normal
  * notification — ActivityKit presentation only.
+ *
+ * While foreground: skip — `liveActivityStartHaptic` already fires once.
+ * Requesting an FCM alert on top of PTS/local start caused ~3 buzzes (Test 3).
  */
 export async function requestLiveActivityPresentationAlert(): Promise<void> {
+  try {
+    const { App } = await import("@capacitor/app");
+    const { isActive } = await App.getState();
+    if (isActive) {
+      laDebugLog("la", "presentation alert skipped (app active)", "info");
+      return;
+    }
+  } catch {
+    /* Capacitor App unavailable — still try below */
+  }
+
   const ok = await ensureFirebase();
-  if (!ok || !db || !deviceUid || !liveActivityUpdateToken) {
+  // Update token often lands a beat after Activity.request — wait briefly.
+  let token = liveActivityUpdateToken;
+  if (!token) {
+    for (let i = 0; i < 10 && !liveActivityUpdateToken; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    token = liveActivityUpdateToken;
+  }
+  if (!ok || !db || !deviceUid || !token) {
     laDebugLog(
       "la",
-      `presentation alert skipped (fb=${ok} uid=${!!deviceUid} upd=${!!liveActivityUpdateToken})`,
+      `presentation alert skipped (fb=${ok} uid=${!!deviceUid} upd=${!!token})`,
       "warn",
     );
     return;
   }
-
-  // Always request — ActivityKit may have created the activity without a Lock
-  // Screen presentation. An FCM Live Activity `alert` is what made the card
-  // appear in TestFlight after an unrelated notification woke the device.
 
   try {
     const q = query(collection(db, "laSchedules"), where("deviceId", "==", deviceUid));

@@ -537,9 +537,20 @@ async function refreshLiveActivitiesInner(
         await remote.syncLiveActivitySchedulesRemote();
       }
       if (isNewLocalCard) {
-        // Local start haptic; home-screen / Lock Screen banner via ActivityKit push `alert`.
-        const { liveActivityStartHaptic } = await import("./haptics");
-        void liveActivityStartHaptic();
+        // Foreground: one Capacitor haptic. Background: FCM ActivityKit alert
+        // (banner + system haptic) via requestLiveActivityPresentationAlert.
+        // Never both — stacking with PTS alert caused ~3 buzzes on Test 3.
+        let appActive = true;
+        try {
+          const { App } = await import("@capacitor/app");
+          appActive = (await App.getState()).isActive;
+        } catch {
+          /* assume active */
+        }
+        if (appActive) {
+          const { liveActivityStartHaptic } = await import("./haptics");
+          void liveActivityStartHaptic();
+        }
         await remote.requestLiveActivityPresentationAlert().catch(() => {});
       }
     } catch {
