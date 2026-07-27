@@ -6,7 +6,8 @@ const PERMISSION_OUTCOME_KEY = "essences-la-permission-outcome";
 const ENABLE_DEMO_KEY = "essences-la-enable-demo-done";
 const ENABLE_ALLOWED_KEY = "essences-la-enable-allowed";
 /**
- * Set ONLY after Lock Screen demo + allow (tutorial or Settings).
+ * Set ONLY after Lock Screen demo completed while system LA stayed on
+ * (tutorial or Settings). Always Allow is not required.
  * Never set from iPhone Settings toggles alone. Never cleared on system off.
  */
 const DEMO_PROCESS_DONE_KEY = "essences-la-demo-process-done";

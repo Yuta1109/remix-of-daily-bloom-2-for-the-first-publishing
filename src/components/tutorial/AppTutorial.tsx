@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { CoachOverlay } from "@/components/tutorial/CoachOverlay";
-import { LiveActivityDemoPanel } from "@/components/LiveActivityDemoPanel";
+import {
+  LiveActivityDemoPanel,
+  type LaDemoPhase,
+} from "@/components/LiveActivityDemoPanel";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { ensurePermission, isNative } from "@/lib/notifications";
-import { setLiveActivityOnboardingDone } from "@/lib/live-activity-prefs";
+import {
+  markLiveActivityEnableAllowed,
+  markLiveActivityEnableDeferred,
+  setLiveActivityOnboardingDone,
+} from "@/lib/live-activity-prefs";
 import {
   clearTutorialScratchData,
   getSavedTutorialStepIndex,
@@ -31,7 +38,10 @@ export function AppTutorial() {
   const location = useLocation();
   const [running, setRunning] = useState(false);
   const [index, setIndex] = useState(0);
-  const [laAllowed, setLaAllowed] = useState(false);
+  /** Offer screen hides parent Next; after start, Next is always available. */
+  const [laShowNext, setLaShowNext] = useState(false);
+  const [laPhase, setLaPhase] = useState<LaDemoPhase>("offer");
+  const laDemoSucceededRef = useRef(false);
   const advancingRef = useRef(false);
 
   const step: TutorialStep | null = running ? TUTORIAL_STEPS[index] ?? null : null;
@@ -145,8 +155,22 @@ export function AppTutorial() {
   }, [running, step?.id, step?.advance, step?.target, goNext]);
 
   useEffect(() => {
-    if (step?.id !== "laDemo") setLaAllowed(false);
+    if (step?.id !== "laDemo") {
+      setLaShowNext(false);
+      setLaPhase("offer");
+      laDemoSucceededRef.current = false;
+    }
   }, [step?.id]);
+
+  const finishLaStep = useCallback(() => {
+    setLiveActivityOnboardingDone(true);
+    if (laPhase === "forceEnded" || !laDemoSucceededRef.current) {
+      markLiveActivityEnableDeferred();
+    } else {
+      markLiveActivityEnableAllowed();
+    }
+    goNext();
+  }, [goNext, laPhase]);
 
   const overlay = useMemo(() => {
     if (!step) return null;
@@ -168,30 +192,40 @@ export function AppTutorial() {
           actions={
             <>
               <LiveActivityDemoPanel
-                autoStart
                 showChecklist={false}
-                onOutcome={(outcome) => {
-                  setLaAllowed(outcome === "allowed");
+                onOutcome={(outcome, phase) => {
+                  setLaPhase(phase);
+                  if (phase === "ready" || phase === "complete") {
+                    laDemoSucceededRef.current = true;
+                  }
+                  if (phase === "denied" || phase === "forceEnded") {
+                    laDemoSucceededRef.current = false;
+                  }
+                  if (outcome === "allowed") {
+                    laDemoSucceededRef.current = true;
+                  }
                 }}
                 onCanContinueChange={(can) => {
-                  if (can) setLaAllowed(true);
+                  setLaShowNext(can);
+                  if (can) {
+                    setLaPhase((p) => (p === "offer" ? "preparing" : p));
+                  }
                 }}
                 onDeferAfterDeny={() => {
                   setLiveActivityOnboardingDone(true);
+                  markLiveActivityEnableDeferred();
                   goNext();
                 }}
               />
-              <button
-                type="button"
-                disabled={!laAllowed}
-                onClick={() => {
-                  setLiveActivityOnboardingDone(true);
-                  goNext();
-                }}
-                className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-40"
-              >
-                {t("tutorialLaDemoNext")}
-              </button>
+              {laShowNext && laPhase !== "offer" && (
+                <button
+                  type="button"
+                  onClick={finishLaStep}
+                  className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold"
+                >
+                  {t("tutorialLaDemoNext")}
+                </button>
+              )}
             </>
           }
         />
@@ -218,7 +252,7 @@ export function AppTutorial() {
       />
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, t, laAllowed, goNext]);
+  }, [step, t, laShowNext, laPhase, goNext, finishLaStep]);
 
   if (!running || !step) return null;
   return overlay;

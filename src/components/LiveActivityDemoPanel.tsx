@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import { App } from "@capacitor/app";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -19,26 +20,26 @@ import { openLiveActivitySettings } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
 export type LaDemoPhase =
+  | "offer"
   | "idle"
   | "preparing"
   | "ready"
   | "denied"
   | "failed"
+  | "forceEnded"
   | "complete";
 
 type Props = {
-  /** Auto-start demo when mounted (tutorial). */
-  autoStart?: boolean;
   /** Show the 4-step checklist (Settings). */
   showChecklist?: boolean;
-  /** tutorial keeps “後で” + deny copy; settings uses progressive step copy. */
+  /** tutorial = opt-in + Next outside; settings = progressive steps. */
   variant?: "tutorial" | "settings";
   className?: string;
   onOutcome?: (outcome: LiveActivityPermissionOutcome, phase: LaDemoPhase) => void;
-  /** True only after Allow confirmed this session (or denied → later). */
+  /** Tutorial: whether parent “Next” should be enabled. */
   onCanContinueChange?: (can: boolean) => void;
   onProgressChange?: (progress: LiveActivityEnableProgress) => void;
-  /** Tutorial: user tapped “後で行う” after deny. */
+  /** Tutorial: user skipped the demo (“Later” on offer, or after force-end Next). */
   onDeferAfterDeny?: () => void;
 };
 
@@ -51,12 +52,14 @@ const emptyProgress = (): LiveActivityEnableProgress => ({
   currentStep: 1,
 });
 
+const MAX_DENIES = 2;
+
 /**
  * Lock Screen Live Activity enable flow (tutorial + Settings).
- * Allowed only after: demo started → left app → returned with allow signal.
+ * Always Allow is no longer required — success = demo started while system LA is on.
+ * Two consecutive denials (system LA turned off) end the re-show option.
  */
 export function LiveActivityDemoPanel({
-  autoStart = false,
   showChecklist = false,
   variant = "tutorial",
   className,
@@ -67,39 +70,15 @@ export function LiveActivityDemoPanel({
 }: Props) {
   const { t } = useI18n();
   const isSettings = variant === "settings";
-  const [phase, setPhase] = useState<LaDemoPhase>("idle");
+  const [phase, setPhase] = useState<LaDemoPhase>(isSettings ? "idle" : "offer");
   const [busy, setBusy] = useState(false);
-  const [displayOutcome, setDisplayOutcome] =
-    useState<LiveActivityPermissionOutcome>("unknown");
   const [progress, setProgress] = useState<LiveActivityEnableProgress>(emptyProgress);
   const [flashOnLockScreen, setFlashOnLockScreen] = useState(false);
-  const startedRef = useRef(false);
-  /** Demo Activity.request succeeded while system LA was on. */
-  const demoLiveRef = useRef(false);
-  /** When the demo Activity was created (ms). */
-  const demoStartedAtRef = useRef(0);
-  /** Timestamp when app went inactive after a successful demo (0 = not waiting). */
-  const backgroundAfterDemoAtRef = useRef(0);
-  /**
-   * frequentPushes when demo started. Allow only if it is true after a real
-   * Lock Screen stay — and if it was already true, still require that stay
-   * (never mark allow from a quick glance / stillLive alone).
-   */
-  const frequentAtDemoStartRef = useRef(false);
-  /** Was system off last evaluate — used to detect Settings toggle without treating it as allow. */
-  const wasSystemOffRef = useRef(false);
+  const [denyCount, setDenyCount] = useState(0);
+  const denyCountRef = useRef(0);
   const flashTimerRef = useRef<number | null>(null);
-  /** Ignore system sheets / quick glance; require a real Lock Screen stay. */
-  const MIN_LOCK_SCREEN_BG_MS = 3000;
-  /** Activity.request may briefly background for a system sheet — ignore that. */
-  const IGNORE_BG_AFTER_DEMO_MS = 1500;
-
-  const clearAllowWatch = useCallback(() => {
-    demoLiveRef.current = false;
-    demoStartedAtRef.current = 0;
-    backgroundAfterDemoAtRef.current = 0;
-    frequentAtDemoStartRef.current = false;
-  }, []);
+  /** True after a successful demo start while system LA was on. */
+  const demoSucceededRef = useRef(false);
 
   const refreshProgress = useCallback(async () => {
     const gate = await getLiveActivityGate();
@@ -111,185 +90,142 @@ export function LiveActivityDemoPanel({
 
   const emitOutcome = useCallback(
     (outcome: LiveActivityPermissionOutcome, next: LaDemoPhase) => {
-      setDisplayOutcome(outcome);
       if (outcome !== "skipped") {
-        // skipped is persisted by markLiveActivityEnableDeferred
         setLiveActivityPermissionOutcome(outcome);
       }
       onOutcome?.(outcome, next);
-      onCanContinueChange?.(outcome === "allowed" || outcome === "skipped");
     },
-    [onOutcome, onCanContinueChange],
+    [onOutcome],
   );
 
-  const evaluateGate = useCallback(async () => {
-    if (!isNativeIos()) {
-      markLiveActivityDemoPresented();
-      markLiveActivityEnableAllowed();
-      setPhase("complete");
-      emitOutcome("allowed", "complete");
-      await refreshProgress();
-      return;
-    }
+  const bumpDeny = useCallback(() => {
+    const n = denyCountRef.current + 1;
+    denyCountRef.current = n;
+    setDenyCount(n);
+    return n;
+  }, []);
 
-    const { gate, next } = await refreshProgress();
-
-    if (!gate.systemEnabled) {
-      wasSystemOffRef.current = true;
-      clearAllowWatch();
+  const handleDenied = useCallback(
+    async (opts?: { fromDemoStart?: boolean }) => {
+      demoSucceededRef.current = false;
       resetLiveActivityEnableProgress();
-      if (isSettings) {
-        setPhase("idle");
-        setDisplayOutcome("denied");
-        onCanContinueChange?.(false);
-      } else {
-        setPhase("denied");
-        emitOutcome("denied", "denied");
-        onCanContinueChange?.(false);
-      }
+      const n = bumpDeny();
       await refreshProgress();
-      return;
-    }
 
-    // System just came back on (e.g. iPhone Settings). That alone is NEVER allow.
-    if (wasSystemOffRef.current) {
-      wasSystemOffRef.current = false;
-      clearAllowWatch();
-      if (isSettings && next.mode === "reenable" && next.complete) {
-        // Durable demo-done + system on → Settings re-enable complete.
-        setPhase("complete");
-        emitOutcome("allowed", "complete");
+      if (n >= MAX_DENIES) {
+        setPhase("forceEnded");
+        onCanContinueChange?.(true);
+        emitOutcome("denied", "forceEnded");
         return;
       }
-      // Tutorial / full Settings: require a fresh demo + Always Allow.
-      setPhase("idle");
-      setDisplayOutcome("unknown");
-      onCanContinueChange?.(false);
-      return;
-    }
 
-    // Settings re-enable path only (already finished demo+allow once).
-    if (isSettings && next.mode === "reenable" && next.complete) {
-      setPhase("complete");
-      emitOutcome("allowed", "complete");
-      return;
-    }
-
-    // Allow ONLY via iOS “Always Allow” (frequentPushes), after a real Lock Screen
-    // stay. Merely seeing the demo card / stillLive must NOT count as allowed.
-    if (!demoLiveRef.current || !backgroundAfterDemoAtRef.current) {
-      if (phase !== "preparing" && phase !== "denied") {
-        setPhase(demoLiveRef.current ? "ready" : phase === "idle" ? "idle" : "ready");
+      setPhase("denied");
+      // Tutorial: Next stays available. Settings: continue only when system is on.
+      onCanContinueChange?.(true);
+      if (opts?.fromDemoStart) {
+        emitOutcome("denied", "denied");
       }
-      onCanContinueChange?.(false);
-      return;
-    }
-    const bgMs = Date.now() - backgroundAfterDemoAtRef.current;
-    if (bgMs < MIN_LOCK_SCREEN_BG_MS) {
-      // System sheet or quick app switch — ignore.
-      backgroundAfterDemoAtRef.current = 0;
-      setPhase("ready");
-      onCanContinueChange?.(false);
-      return;
-    }
+    },
+    [bumpDeny, emitOutcome, onCanContinueChange, refreshProgress],
+  );
 
-    // frequentPushesEnabled = iOS “Always Allow” / frequent updates.
-    // Never treat “card still on Lock Screen” as allow (that was the false positive).
-    const alwaysAllow = gate.frequentPushesEnabled;
-    const newlyAllowed = alwaysAllow && !frequentAtDemoStartRef.current;
-    const alreadyAllowedStay =
-      alwaysAllow && frequentAtDemoStartRef.current && bgMs >= MIN_LOCK_SCREEN_BG_MS;
-    if (!newlyAllowed && !alreadyAllowedStay) {
-      setPhase("ready");
-      setDisplayOutcome("unknown");
-      backgroundAfterDemoAtRef.current = 0;
-      onCanContinueChange?.(false);
+  const runDemo = useCallback(
+    async (opts?: { fromRetryButton?: boolean }) => {
+      if (busy) return;
+      if (denyCountRef.current >= MAX_DENIES) {
+        setPhase("forceEnded");
+        onCanContinueChange?.(true);
+        return;
+      }
+
+      setBusy(true);
+      setPhase("preparing");
+      setFlashOnLockScreen(false);
+      if (flashTimerRef.current) {
+        window.clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = null;
+      }
+      // While preparing, keep Next available in tutorial (no allow gate).
+      if (!isSettings) onCanContinueChange?.(true);
+
+      try {
+        if (!isNativeIos()) {
+          markLiveActivityDemoPresented();
+          markLiveActivityEnableAllowed();
+          demoSucceededRef.current = true;
+          setPhase("complete");
+          emitOutcome("allowed", "complete");
+          onCanContinueChange?.(true);
+          await refreshProgress();
+          return;
+        }
+
+        setLiveActivityUserEnabled(true);
+        const gate = await getLiveActivityGate();
+        if (!gate.systemEnabled) {
+          await handleDenied({ fromDemoStart: true });
+          return;
+        }
+
+        const result = await startDemoLiveActivity({ durationMs: 90_000 });
+        if (!result.ok) {
+          if (!result.systemEnabled) {
+            await handleDenied({ fromDemoStart: true });
+          } else {
+            setPhase("failed");
+            onCanContinueChange?.(true);
+          }
+          return;
+        }
+
+        // Re-check: user may have denied during Activity.request.
+        const after = await getLiveActivityGate();
+        if (!after.systemEnabled) {
+          await handleDenied({ fromDemoStart: true });
+          return;
+        }
+
+        demoSucceededRef.current = true;
+        markLiveActivityDemoPresented();
+        setPhase("ready");
+        onCanContinueChange?.(true);
+        await refreshProgress();
+
+        if (opts?.fromRetryButton) {
+          setFlashOnLockScreen(true);
+          flashTimerRef.current = window.setTimeout(() => {
+            setFlashOnLockScreen(false);
+            flashTimerRef.current = null;
+          }, 1000);
+        }
+      } catch {
+        setPhase("failed");
+        onCanContinueChange?.(true);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      busy,
+      emitOutcome,
+      handleDenied,
+      isSettings,
+      onCanContinueChange,
+      refreshProgress,
+    ],
+  );
+
+  const finishSettingsEnable = useCallback(async () => {
+    const gate = await getLiveActivityGate();
+    if (!gate.systemEnabled) {
+      await handleDenied();
       return;
     }
     markLiveActivityEnableAllowed();
     setPhase("complete");
     emitOutcome("allowed", "complete");
     await refreshProgress();
-  }, [clearAllowWatch, emitOutcome, isSettings, onCanContinueChange, phase, refreshProgress]);
-
-  const runDemo = useCallback(async (opts?: { fromRetryButton?: boolean }) => {
-    if (busy) return;
-    setBusy(true);
-    setPhase("preparing");
-    setDisplayOutcome("unknown");
-    setFlashOnLockScreen(false);
-    if (flashTimerRef.current) {
-      window.clearTimeout(flashTimerRef.current);
-      flashTimerRef.current = null;
-    }
-    clearAllowWatch();
-    onCanContinueChange?.(false);
-    try {
-      if (!isNativeIos()) {
-        markLiveActivityDemoPresented();
-        markLiveActivityEnableAllowed();
-        setPhase("complete");
-        emitOutcome("allowed", "complete");
-        return;
-      }
-      setLiveActivityUserEnabled(true);
-      const gate = await getLiveActivityGate();
-      if (!gate.systemEnabled) {
-        wasSystemOffRef.current = true;
-        resetLiveActivityEnableProgress();
-        if (isSettings) {
-          setPhase("idle");
-          setDisplayOutcome("denied");
-        } else {
-          setPhase("denied");
-          emitOutcome("denied", "denied");
-        }
-        return;
-      }
-      frequentAtDemoStartRef.current = !!gate.frequentPushesEnabled;
-      const result = await startDemoLiveActivity({ durationMs: 90_000 });
-      if (!result.ok) {
-        if (!result.systemEnabled) {
-          wasSystemOffRef.current = true;
-          clearAllowWatch();
-          resetLiveActivityEnableProgress();
-          if (isSettings) {
-            setPhase("idle");
-            setDisplayOutcome("denied");
-          } else {
-            setPhase("denied");
-            emitOutcome("denied", "denied");
-          }
-        } else {
-          setPhase("failed");
-          onCanContinueChange?.(false);
-        }
-        return;
-      }
-      // Only a successful demo while system is on can later become "allowed".
-      demoLiveRef.current = true;
-      demoStartedAtRef.current = Date.now();
-      backgroundAfterDemoAtRef.current = 0;
-      markLiveActivityDemoPresented();
-      setPhase("ready");
-      setDisplayOutcome("unknown");
-      onCanContinueChange?.(false);
-      await refreshProgress();
-      // After “Show again”, briefly confirm the Lock Screen card appeared.
-      if (opts?.fromRetryButton) {
-        setFlashOnLockScreen(true);
-        flashTimerRef.current = window.setTimeout(() => {
-          setFlashOnLockScreen(false);
-          flashTimerRef.current = null;
-        }, 2000);
-      }
-    } catch {
-      setPhase("failed");
-      onCanContinueChange?.(false);
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, clearAllowWatch, emitOutcome, isSettings, onCanContinueChange, refreshProgress]);
+  }, [emitOutcome, handleDenied, refreshProgress]);
 
   useEffect(() => {
     return () => {
@@ -303,36 +239,44 @@ export function LiveActivityDemoPanel({
         setPhase("complete");
       }
     });
-  }, [isSettings, refreshProgress]);
-
-  useEffect(() => {
-    if (!autoStart || startedRef.current) return;
-    startedRef.current = true;
-    void runDemo();
-  }, [autoStart, runDemo]);
+    // Tutorial: hide parent Next on the offer screen (Start / Later only).
+    if (!isSettings) onCanContinueChange?.(false);
+  }, [isSettings, onCanContinueChange, refreshProgress]);
 
   useEffect(() => {
     if (!isNativeIos()) return;
     let handle: { remove: () => Promise<void> } | undefined;
     void App.addListener("appStateChange", ({ isActive }) => {
-      if (!isActive) {
-        // Only count background after a successful demo (not Settings while denied).
-        // Skip the Activity.request system-sheet blip right after demo start.
-        if (
-          demoLiveRef.current &&
-          !backgroundAfterDemoAtRef.current &&
-          demoStartedAtRef.current > 0 &&
-          Date.now() - demoStartedAtRef.current >= IGNORE_BG_AFTER_DEMO_MS
-        ) {
-          backgroundAfterDemoAtRef.current = Date.now();
+      if (!isActive) return;
+      void (async () => {
+        const { gate, next } = await refreshProgress();
+        if (isSettings && next.mode === "reenable" && next.complete) {
+          setPhase("complete");
+          emitOutcome("allowed", "complete");
+          return;
         }
-        return;
-      }
-      void evaluateGate();
+        if (!gate.systemEnabled) {
+          // Turning LA off in Settings mid-flow — count as a deny only if we
+          // already had a live demo this session (user rejected / disabled).
+          if (demoSucceededRef.current || phase === "ready" || phase === "preparing") {
+            demoSucceededRef.current = false;
+            if (phase !== "forceEnded" && denyCountRef.current < MAX_DENIES) {
+              await handleDenied();
+            } else if (denyCountRef.current >= MAX_DENIES) {
+              setPhase("forceEnded");
+              onCanContinueChange?.(true);
+            }
+          }
+          return;
+        }
+        // System came back on after a deny — return to a state where demo can run.
+        if (phase === "denied") {
+          setPhase(isSettings ? "idle" : "ready");
+        }
+      })();
     }).then((h) => {
       handle = h;
     });
-    // Do not poll-allow while foreground — Always Allow is decided after Lock Screen return.
     const poll = window.setInterval(() => {
       if (isSettings && phase !== "preparing") void refreshProgress();
     }, 2000);
@@ -340,7 +284,14 @@ export function LiveActivityDemoPanel({
       window.clearInterval(poll);
       void handle?.remove();
     };
-  }, [evaluateGate, isSettings, phase, refreshProgress]);
+  }, [
+    emitOutcome,
+    handleDenied,
+    isSettings,
+    onCanContinueChange,
+    phase,
+    refreshProgress,
+  ]);
 
   const Step = ({
     done,
@@ -376,7 +327,21 @@ export function LiveActivityDemoPanel({
     </div>
   );
 
-  // ── Settings: always show 4-step checklist (full + reenable + complete) ─
+  const DemoFlashConfirm = () => (
+    <div
+      role="status"
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-accent-foreground animate-fade-in-up"
+    >
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent-foreground/15 animate-check-pop">
+        <Check className="h-3.5 w-3.5" strokeWidth={3} />
+      </span>
+      <span>{t("tutorialLaDemoOnLockScreen")}</span>
+    </div>
+  );
+
+  const canShowAgain = denyCount < MAX_DENIES && phase !== "forceEnded";
+
+  // ── Settings ───────────────────────────────────────────────────────
   if (isSettings) {
     const isReenable = progress.mode === "reenable";
     const step = progress.currentStep;
@@ -392,6 +357,9 @@ export function LiveActivityDemoPanel({
     if (progress.complete || phase === "complete") {
       title = t("settingsLaStep4Title");
       body = t("settingsLaStep4Body");
+    } else if (phase === "forceEnded") {
+      title = t("tutorialLaDemoForceEndedTitle");
+      body = t("tutorialLaDemoForceEndedBody");
     } else if (isReenable && !progress.systemOn) {
       title = t("settingsLaReenableTitle");
       body = t("settingsLaReenableBody");
@@ -401,6 +369,9 @@ export function LiveActivityDemoPanel({
     } else if (phase === "failed") {
       title = t("liveActivityOnboardingTitle");
       body = t("tutorialLaDemoFailedBody");
+    } else if (phase === "denied") {
+      title = t("tutorialLaDemoDeniedTitle");
+      body = t("tutorialLaDemoDeniedRetryBody");
     } else if (step === 2) {
       title = t("settingsLaStep2Title");
       body = t("settingsLaStep2Body");
@@ -411,6 +382,13 @@ export function LiveActivityDemoPanel({
       title = t("settingsLaStep4Title");
       body = t("settingsLaStep4Body");
     }
+
+    const showDemoButton =
+      !progress.complete &&
+      !isReenable &&
+      phase !== "preparing" &&
+      phase !== "forceEnded" &&
+      (step === 2 || step === 3 || phase === "denied" || phase === "failed" || phase === "ready");
 
     return (
       <div className={cn("space-y-3", className)}>
@@ -465,59 +443,113 @@ export function LiveActivityDemoPanel({
           </button>
         )}
 
-        {!progress.complete &&
-          !isReenable &&
-          (step === 2 || step === 3) &&
-          phase !== "preparing" && (
+        {phase === "denied" && denyCount < MAX_DENIES && (
           <button
             type="button"
-            disabled={busy || !progress.systemOn || flashOnLockScreen}
-            onClick={() => void runDemo({ fromRetryButton: step === 3 || phase === "ready" })}
-            className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-60"
+            onClick={() => void openLiveActivitySettings()}
+            className="w-full rounded-xl bg-secondary/80 px-4 py-2.5 text-sm font-medium"
           >
-            {flashOnLockScreen
-              ? t("tutorialLaDemoOnLockScreen")
-              : step === 2 && phase === "idle"
-                ? t("liveActivityTryDemo")
-                : t("tutorialLaDemoShowAgain")}
+            {t("liveActivityOpenLaSettings")}
           </button>
         )}
+
+        {showDemoButton &&
+          canShowAgain &&
+          (flashOnLockScreen ? (
+            <DemoFlashConfirm />
+          ) : (
+            <button
+              type="button"
+              disabled={busy || (!progress.systemOn && phase !== "denied")}
+              onClick={() =>
+                void runDemo({
+                  fromRetryButton: step === 3 || phase === "ready" || phase === "denied",
+                })
+              }
+              className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-60"
+            >
+              {step === 2 && phase === "idle"
+                ? t("liveActivityTryDemo")
+                : t("tutorialLaDemoShowAgain")}
+            </button>
+          ))}
+
+        {/* Step 3 continue: enabled when system LA is on after a demo. */}
+        {!progress.complete &&
+          !isReenable &&
+          progress.demoPresented &&
+          phase !== "preparing" &&
+          phase !== "forceEnded" && (
+            <button
+              type="button"
+              disabled={!progress.systemOn || busy}
+              onClick={() => void finishSettingsEnable()}
+              className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-40"
+            >
+              {t("tutorialLaDemoNext")}
+            </button>
+          )}
       </div>
     );
   }
 
-  // ── Tutorial (unchanged copy / Later button) ───────────────────────
+  // ── Tutorial ───────────────────────────────────────────────────────
+  if (phase === "offer") {
+    return (
+      <div className={cn("space-y-3", className)}>
+        <div>
+          <p className="text-sm font-semibold mb-1">{t("tutorialLaDemoOfferTitle")}</p>
+          <p className="text-sm leading-relaxed text-foreground/90">
+            {t("tutorialLaDemoOfferBody")}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void runDemo()}
+          className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-60"
+        >
+          {t("tutorialLaDemoStart")}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            markLiveActivityEnableDeferred();
+            emitOutcome("skipped", "offer");
+            onDeferAfterDeny?.();
+          }}
+          className="w-full rounded-xl bg-secondary/80 px-4 py-2.5 text-sm font-medium"
+        >
+          {t("tutorialLaDemoLater")}
+        </button>
+      </div>
+    );
+  }
+
   const title =
     phase === "preparing"
       ? t("tutorialLaDemoPreparingTitle")
-      : phase === "denied"
-        ? t("tutorialLaDemoDeniedTitle")
-        : phase === "complete"
-          ? t("tutorialLaDemoAllowedTitle")
-          : t("liveActivityOnboardingTitle");
+      : phase === "forceEnded"
+        ? t("tutorialLaDemoForceEndedTitle")
+        : phase === "denied"
+          ? t("tutorialLaDemoDeniedTitle")
+          : phase === "complete"
+            ? t("tutorialLaDemoAllowedTitle")
+            : t("liveActivityOnboardingTitle");
 
   const body =
     phase === "preparing"
       ? t("tutorialLaDemoPreparingBody")
-      : phase === "denied"
-        ? t("tutorialLaDemoDeniedBody")
-        : phase === "failed"
-          ? t("tutorialLaDemoFailedBody")
-          : phase === "complete" || displayOutcome === "allowed"
-            ? t("tutorialLaDemoAllowedBody")
+      : phase === "forceEnded"
+        ? t("tutorialLaDemoForceEndedBody")
+        : phase === "denied"
+          ? t("tutorialLaDemoDeniedRetryBody")
+          : phase === "failed"
+            ? t("tutorialLaDemoFailedBody")
             : t("tutorialLaDemoReadyBody");
 
   return (
     <div className={cn("space-y-3", className)}>
-      {showChecklist && (
-        <div className="space-y-1.5 rounded-xl bg-secondary/50 px-3 py-2.5">
-          <Step n={1} done={progress.systemOn} label={t("liveActivityStepSystem")} />
-          <Step n={2} done={progress.demoPresented} label={t("liveActivityStepDemo")} />
-          <Step n={3} done={progress.allowed} label={t("liveActivityStepAllow")} />
-          <Step n={4} done={progress.complete} label={t("liveActivityStepDone")} />
-        </div>
-      )}
-
       <div>
         <p className="text-sm font-semibold mb-1">{title}</p>
         <p className="text-sm leading-relaxed text-foreground/90">{body}</p>
@@ -530,58 +562,31 @@ export function LiveActivityDemoPanel({
         </div>
       )}
 
-      {phase === "denied" ? (
-        <>
-          <button
-            type="button"
-            onClick={() => void openLiveActivitySettings()}
-            className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold"
-          >
-            {t("liveActivityOpenLaSettings")}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              clearAllowWatch();
-              markLiveActivityEnableDeferred();
-              emitOutcome("skipped", "denied");
-              onDeferAfterDeny?.();
-            }}
-            className="w-full rounded-xl bg-secondary/80 px-4 py-2.5 text-sm font-medium"
-          >
-            {t("tutorialLaDemoLater")}
-          </button>
-        </>
-      ) : (
-        <>
-          {(phase === "ready" ||
-            phase === "failed" ||
-            phase === "idle" ||
-            phase === "complete") && (
-            <button
-              type="button"
-              disabled={busy || !progress.systemOn || flashOnLockScreen}
-              onClick={() => void runDemo({ fromRetryButton: true })}
-              className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-60"
-            >
-              {flashOnLockScreen
-                ? t("tutorialLaDemoOnLockScreen")
-                : phase === "idle" && !autoStart
-                  ? t("liveActivityTryDemo")
-                  : t("tutorialLaDemoShowAgain")}
-            </button>
-          )}
-          {!progress.systemOn && phase !== "denied" && (
-            <button
-              type="button"
-              onClick={() => void openLiveActivitySettings()}
-              className="w-full rounded-xl bg-secondary/80 px-4 py-2.5 text-sm font-medium"
-            >
-              {t("liveActivityOpenLaSettings")}
-            </button>
-          )}
-        </>
+      {phase === "denied" && canShowAgain && (
+        <button
+          type="button"
+          onClick={() => void openLiveActivitySettings()}
+          className="w-full rounded-xl bg-secondary/80 px-4 py-2.5 text-sm font-medium"
+        >
+          {t("liveActivityOpenLaSettings")}
+        </button>
       )}
+
+      {phase !== "preparing" &&
+        phase !== "forceEnded" &&
+        canShowAgain &&
+        (flashOnLockScreen ? (
+          <DemoFlashConfirm />
+        ) : (
+          <button
+            type="button"
+            disabled={busy || (!progress.systemOn && phase !== "denied" && phase !== "failed")}
+            onClick={() => void runDemo({ fromRetryButton: phase !== "idle" })}
+            className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold disabled:opacity-60"
+          >
+            {phase === "idle" ? t("liveActivityTryDemo") : t("tutorialLaDemoShowAgain")}
+          </button>
+        ))}
     </div>
   );
 }

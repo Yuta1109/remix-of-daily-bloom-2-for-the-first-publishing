@@ -70,13 +70,13 @@ private struct CountdownOrArrivedLabel: View {
     let target: Date
     let locale: String
     /// Bumped by Activity.update / FCM so Lock Screen re-evaluates relative text
-    /// even when TimelineView is throttled (common with the app killed).
+    /// even when TimelineView is throttled.
     let tick: Int
 
     var body: some View {
-        // Periodic redraw so the relative label advances while the system
-        // allows Live Activity timeline refreshes (and after push/local update).
-        TimelineView(.periodic(from: .now, by: 30)) { context in
+        // Wall-clock minute schedule: advances "N分後" even while the app is
+        // backgrounded or force-quit, without waiting for FCM tick pushes.
+        TimelineView(.everyMinute) { context in
             let now = context.date
             // Reference `tick` so content-state updates always invalidate this view.
             let _ = tick
@@ -92,7 +92,7 @@ private struct CountdownOrArrivedLabel: View {
         .foregroundStyle(EssencesLAStyle.accent)
         .lineLimit(1)
         .minimumScaleFactor(0.85)
-        .id(tick)
+        .id("\(tick)-\(Int(target.timeIntervalSince1970))")
     }
 }
 

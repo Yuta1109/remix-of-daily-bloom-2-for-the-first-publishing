@@ -226,23 +226,32 @@ const translations = {
     tutorialReusableTasks:
       "At the top of Settings, reusable tasks are shortcuts you can add to Today in one tap. Tap to continue.",
     tutorialLaDemoBody:
-      "Finally, there is a short Live Activity demo on the Lock Screen. If iOS asks to continue allowing Live Activities, choose Always Allow.",
+      "Finally, you can try a short Live Activity demo on the Lock Screen.",
+    tutorialLaDemoOfferTitle: "Lock Screen Live Activity demo",
+    tutorialLaDemoOfferBody:
+      "Would you like to show a short countdown demo on the Lock Screen now? You can also do this later in Settings.",
+    tutorialLaDemoStart: "Show Live Activity demo on the Lock Screen",
     tutorialLaDemoPreparingTitle: "Preparing Lock Screen demo…",
     tutorialLaDemoPreparingBody:
       "Starting a short countdown on the Lock Screen. This also prepares remote start after you force-quit the app.",
     tutorialLaDemoPreparingHint: "Please wait a moment",
     tutorialLaDemoReadyBody:
-      "Check the Lock Screen. If iOS asks to continue allowing Live Activities, choose Always Allow, then return here.",
+      "Check the Lock Screen. You can continue anytime, or show the demo again.",
     tutorialLaDemoAllowedTitle: "Lock Screen countdown",
     tutorialLaDemoAllowedBody:
-      "Live Activities are allowed. You can continue.",
+      "Live Activities are ready. You can continue.",
     tutorialLaDemoDeniedTitle: "Live Activities turned off",
     tutorialLaDemoDeniedBody:
-      "If you deny, Live Activities turn off in Settings, so the demo cannot run again here. Open iPhone Settings to turn them back on, or choose Later.",
+      "If you deny, Live Activities turn off in Settings. Open iPhone Settings to turn them back on, then try again — or continue.",
+    tutorialLaDemoDeniedRetryBody:
+      "Live Activities were turned off. Open iPhone Settings to turn them back on, then show the demo again — or tap Next to continue.",
+    tutorialLaDemoForceEndedTitle: "Demo finished",
+    tutorialLaDemoForceEndedBody:
+      "Live Activities were denied twice in a row, so the demo is ending. You can show the demo again later from Settings.",
     tutorialLaDemoFailedBody:
       "Could not start the demo. Try again, or continue and enable later in Settings.",
     tutorialLaDemoShowAgain: "Show Live Activity demo again",
-    tutorialLaDemoOnLockScreen: "Showing on the Lock Screen",
+    tutorialLaDemoOnLockScreen: "Shown — check the Lock Screen",
     tutorialLaDemoLater: "Later",
     tutorialLaDemoSettingsHint:
       "You can also enable Live Activities later in Settings with the same guided steps.",
@@ -254,10 +263,10 @@ const translations = {
     liveActivitySettingsDemoBody:
       "Finish these steps to enable Lock Screen countdowns. Each step unlocks the next.",
     liveActivitySettingsDemoSteps:
-      "1) On in iPhone Settings  2) Run demo  3) Always Allow  4) Done",
+      "1) On in iPhone Settings  2) Run demo  3) Confirm on Lock Screen  4) Done",
     liveActivityStepSystem: "Turn on Live Activities in iPhone Settings",
     liveActivityStepDemo: "Show the Lock Screen demo",
-    liveActivityStepAllow: "Choose Always Allow on the Lock Screen",
+    liveActivityStepAllow: "Confirm the Live Activity demo on the Lock Screen",
     liveActivityStepDone: "Enabled — ready for calendar events",
     settingsLaReenableIntro:
       "Live Activities were already set up once. Turn them back on in iPhone Settings.",
@@ -270,9 +279,9 @@ const translations = {
     settingsLaStep2Title: "Step 2 — Lock Screen demo",
     settingsLaStep2Body:
       "Show a short demo on the Lock Screen. This prepares Live Activities for when the app is force-quit.",
-    settingsLaStep3Title: "Step 3 — Always Allow",
+    settingsLaStep3Title: "Step 3 — Confirm on Lock Screen",
     settingsLaStep3Body:
-      "Check the Lock Screen. If iOS asks to continue allowing Live Activities, choose Always Allow, then return here.",
+      "Check the Lock Screen demo. If Live Activities were not turned off, tap Next to finish. You can show the demo again if needed.",
     settingsLaStep4Title: "Ready",
     settingsLaStep4Body: "Live Activities are enabled for calendar events.",
     tutorialDoneTitle: "You’re ready",
@@ -491,26 +500,35 @@ const translations = {
     tutorialReusableTasks:
       "設定の一番上にある定型タスクは、今日のリストへワンタップで追加できるショートカットです。タップで次へ。",
     tutorialLaDemoBody:
-      "最後に、ロック画面でのライブアクティビティの短いデモがあります。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選んでください。",
+      "最後に、ロック画面でのライブアクティビティの短いデモを試せます。",
+    tutorialLaDemoOfferTitle: "ロック画面のライブアクティビティデモ",
+    tutorialLaDemoOfferBody:
+      "短いカウントダウンのデモを、いまロック画面に表示しますか？あとから設定でも同じ操作ができます。",
+    tutorialLaDemoStart: "ライブアクティビティのデモをロック画面に表示する",
     tutorialLaDemoPreparingTitle: "デモを準備中…",
     tutorialLaDemoPreparingBody:
       "ロック画面に短いカウントダウンを表示します。アプリを完全終了したあとのリモート開始の準備にもなります。",
     tutorialLaDemoPreparingHint: "しばらくお待ちください",
     tutorialLaDemoReadyBody:
-      "ロック画面を確認してください。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選び、この画面に戻ってください。",
+      "ロック画面を確認してください。「次へ」で進めます。必要ならデモを再表示できます。",
     tutorialLaDemoAllowedTitle: "ロック画面のカウントダウン",
     tutorialLaDemoAllowedBody:
-      "ライブアクティビティが許可されました。次へ進めます。",
+      "ライブアクティビティの準備ができました。次へ進めます。",
     tutorialLaDemoDeniedTitle: "ライブアクティビティがオフになりました",
     tutorialLaDemoDeniedBody:
-      "拒否すると設定でライブアクティビティがオフになるので、もう一度ライブアクティビティのデモを表示することはできません。iPhoneの設定からオンにするか、「後で行う」を選んでください。",
+      "拒否すると設定でライブアクティビティがオフになります。iPhoneの設定からオンに戻して再表示するか、「次へ」で進んでください。",
+    tutorialLaDemoDeniedRetryBody:
+      "ライブアクティビティがオフになりました。iPhoneの設定からオンに戻してデモを再表示するか、「次へ」で進んでください。",
+    tutorialLaDemoForceEndedTitle: "デモを終了します",
+    tutorialLaDemoForceEndedBody:
+      "2度連続で拒否されたため、デモの表示を終了します。デモの表示はチュートリアルのあと、設定ページから行えます。",
     tutorialLaDemoFailedBody:
       "デモを開始できませんでした。再試行するか、あとで設定から有効にしてください。",
     tutorialLaDemoShowAgain: "もう一度ライブアクティビティのデモを表示する",
-    tutorialLaDemoOnLockScreen: "ロック画面に表示されています",
-    tutorialLaDemoLater: "後で行う",
+    tutorialLaDemoOnLockScreen: "表示されました。ロック画面を確認してください",
+    tutorialLaDemoLater: "後で",
     tutorialLaDemoSettingsHint:
-      "設定のライブアクティビティ欄でも、同じ手順で後から許可できます。",
+      "設定のライブアクティビティ欄でも、同じ手順で後から有効にできます。",
     tutorialLaDemoStarted:
       "デモを開始しました。ロック画面を確認してから「次へ」を押してください。",
     tutorialLaDemoNext: "次へ",
@@ -519,10 +537,10 @@ const translations = {
     liveActivitySettingsDemoBody:
       "下のステップを順に完了すると、ロック画面のカウントダウンが使えるようになります。",
     liveActivitySettingsDemoSteps:
-      "①iPhone設定でオン ②デモ表示 ③常に許可 ④完了",
+      "①iPhone設定でオン ②デモ表示 ③ロック画面で確認 ④完了",
     liveActivityStepSystem: "iPhoneの設定からライブアクティビティをオンにする",
     liveActivityStepDemo: "ライブアクティビティのデモを表示する",
-    liveActivityStepAllow: "デモでライブアクティビティを許可する",
+    liveActivityStepAllow: "ロック画面でライブアクティビティのデモを確認する",
     liveActivityStepDone: "有効完了 — カレンダー予定で利用できます",
     settingsLaReenableIntro:
       "一度有効化済みです。iPhoneの設定でライブアクティビティをオンに戻してください。",
@@ -535,9 +553,9 @@ const translations = {
     settingsLaStep2Title: "ステップ2 — ロック画面のデモ",
     settingsLaStep2Body:
       "短いデモをロック画面に表示します。アプリを完全終了したあとのリモート開始の準備にもなります。",
-    settingsLaStep3Title: "ステップ3 — 常に許可",
+    settingsLaStep3Title: "ステップ3 — ロック画面で確認",
     settingsLaStep3Body:
-      "ロック画面を確認してください。iOSが「許可を継続しますか？」と聞いたら「常に許可」を選び、この画面に戻ってください。",
+      "ロック画面のデモを確認してください。ライブアクティビティがオフでなければ「次へ」で完了できます。必要ならデモを再表示できます。",
     settingsLaStep4Title: "完了",
     settingsLaStep4Body: "ライブアクティビティが有効になりました。カレンダー予定で利用できます。",
     tutorialDoneTitle: "準備完了",

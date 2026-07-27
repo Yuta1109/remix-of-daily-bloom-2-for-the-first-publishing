@@ -38,7 +38,7 @@ const BUNDLE_ID = "com.confast.essences";
 const TASK_FN = "dispatchLiveActivityTask";
 const REFRESH_FN = "refreshLiveActivityTask";
 /** Remote Lock Screen redraw every 30s (custom relative labels need Activity.update). */
-const REFRESH_INTERVAL_MS = 30 * 1000;
+const REFRESH_INTERVAL_MS = 60 * 1000;
 /** Fire a single audible/haptic Live Activity alert this far before start. */
 const ONE_MINUTE_MS = 60 * 1000;
 /** Keep "予定時間になりました" at least this long after start / arrived update. */
@@ -298,15 +298,18 @@ function usableLiveActivityUpdateToken(device, now = Date.now()) {
 
   if (device.lastRemoteLaStartOk === true) {
     const ptsAt = Number(device.lastRemoteLaStartAt || 0);
+    // After PTS, only accept tokens uploaded at/after that start (new Activity).
     if (ptsAt > 0 && tokenAt < ptsAt) return null;
     return token;
   }
 
-  // Local-only generation: require an open card window set by the client
-  // after Activity.request, plus a token from that generation.
+  // Local ActivityKit generation: any update token while the card window is
+  // open. Do NOT require tokenAt ≈ lastLocalCalendarLaAt — token often arrives
+  // before/after markLocalCalendarLiveActivity and the old ±15s window dropped
+  // usable tokens, so FCM minute refreshes never ran while backgrounded.
   const cardUntil = Number(device.laCardActiveUntil || 0);
   const localAt = Number(device.lastLocalCalendarLaAt || 0);
-  if (cardUntil > now && localAt > 0 && tokenAt >= localAt - 15_000) {
+  if (cardUntil > now && localAt > 0) {
     return token;
   }
   return null;
@@ -840,8 +843,8 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
   const now = Date.now();
   if (!fcmToken || !updateToken) {
     // After force-quit push-to-start, updateToken often is not uploaded until
-    // the app opens — that is expected. Do not treat it as a hard failure that
-    // demotes the schedule; TimelineView still advances from start content-state.
+    // the app opens — that is expected. Lock Screen "N分後" still advances via
+    // TimelineView(.everyMinute); FCM tick updates remain a backup.
     // Also skip stale pre-PTS tokens (they can dismiss the new Activity).
     const deviceRecentPts =
       device.lastRemoteLaStartOk === true &&
