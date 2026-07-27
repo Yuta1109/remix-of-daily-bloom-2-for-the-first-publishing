@@ -71,9 +71,23 @@ describe("selectLiveActivityRows", () => {
       { title: "Soon", startEpochMs: now + 60_000, color: "red" },
       { title: "Later", startEpochMs: now + 120_000, color: "orange" },
     ];
-    const { items, overflow } = selectLiveActivityRows(rows, now, 3);
+    const { items, overflow, droppedArrived } = selectLiveActivityRows(rows, now, 3);
     expect(overflow).toBe(1);
     expect(items.map((i) => i.title)).toEqual(["Arr2", "Soon", "Later"]);
+    expect(droppedArrived.map((i) => i.title)).toEqual(["Arr1"]);
+  });
+
+  it("drops all arrived when 3 countdowns already fill the card", () => {
+    const rows = [
+      { title: "It's time", startEpochMs: now - 10_000, color: "blue" },
+      { title: "1", startEpochMs: now + 10_000, color: "green" },
+      { title: "2", startEpochMs: now + 20_000, color: "red" },
+      { title: "3", startEpochMs: now + 30_000, color: "orange" },
+    ];
+    const { items, overflow, droppedArrived } = selectLiveActivityRows(rows, now, 3);
+    expect(overflow).toBe(1);
+    expect(items.map((i) => i.title)).toEqual(["1", "2", "3"]);
+    expect(droppedArrived.map((i) => i.title)).toEqual(["It's time"]);
   });
 
   it("keeps soonest countdowns when only countdowns overflow", () => {
@@ -83,8 +97,9 @@ describe("selectLiveActivityRows", () => {
       { title: "3", startEpochMs: now + 30_000, color: "red" },
       { title: "4", startEpochMs: now + 40_000, color: "orange" },
     ];
-    const { items, overflow } = selectLiveActivityRows(rows, now, 3);
+    const { items, overflow, droppedArrived } = selectLiveActivityRows(rows, now, 3);
     expect(overflow).toBe(1);
     expect(items.map((i) => i.title)).toEqual(["1", "2", "3"]);
+    expect(droppedArrived).toEqual([]);
   });
 });

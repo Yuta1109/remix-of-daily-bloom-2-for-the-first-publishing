@@ -94,7 +94,7 @@ const MAX_LA_ITEMS = 3;
 
 /**
  * Pick up to maxItems rows for the shared Live Activity card.
- * ≤3: keep all (including arrived). >3: drop earliest arrived first.
+ * ≤3: keep all (including arrived). >3: countdown slots first, then newest arrived.
  */
 function selectLiveActivityRows(rows, nowMs, maxItems = MAX_LA_ITEMS) {
   const countdown = rows
@@ -108,22 +108,29 @@ function selectLiveActivityRows(rows, nowMs, maxItems = MAX_LA_ITEMS) {
     return {
       items: [...rows].sort((a, b) => a.startEpochMs - b.startEpochMs),
       overflow: 0,
+      droppedArrived: [],
     };
   }
 
-  const keptArrived = [...arrived];
-  while (countdown.length + keptArrived.length > maxItems && keptArrived.length > 0) {
-    keptArrived.shift();
-  }
-  const keptCountdown =
-    countdown.length + keptArrived.length > maxItems
-      ? countdown.slice(0, maxItems - keptArrived.length)
-      : countdown;
+  const keptCountdown = countdown.slice(0, maxItems);
+  const slotsLeft = maxItems - keptCountdown.length;
+  const keptArrived =
+    slotsLeft > 0 ? arrived.slice(Math.max(0, arrived.length - slotsLeft)) : [];
+  const droppedArrived = arrived.filter(
+    (a) =>
+      !keptArrived.some(
+        (k) => k.startEpochMs === a.startEpochMs && k.title === a.title,
+      ),
+  );
 
   const items = [...keptCountdown, ...keptArrived].sort(
     (a, b) => a.startEpochMs - b.startEpochMs,
   );
-  return { items, overflow: Math.max(0, rows.length - items.length) };
+  return {
+    items,
+    overflow: Math.max(0, rows.length - items.length),
+    droppedArrived,
+  };
 }
 
 /**
@@ -168,7 +175,31 @@ async function buildAggregatedContentState(
     });
   }
 
-  const { items, overflow } = selectLiveActivityRows(rows, now, MAX_LA_ITEMS);
+  const { items, overflow, droppedArrived } = selectLiveActivityRows(
+    rows,
+    now,
+    MAX_LA_ITEMS,
+  );
+  // Evicted "It's time" rows must not linger until the 1h endAt — expire them
+  // so the next kill-path update cannot bring them back.
+  for (const dropped of droppedArrived) {
+    for (const [id, d] of byId) {
+      if (!d) continue;
+      if (Number(d.startEpochMs) !== Number(dropped.startEpochMs)) continue;
+      if (String(d.title || "") !== String(dropped.title || "")) continue;
+      if (d.status !== "arrived" && d.status !== "started") continue;
+      if (Number(d.startEpochMs) > now) continue;
+      try {
+        await db.collection("laSchedules").doc(id).update({
+          status: "expired",
+          expiredReason: "overflow-evict-arrived",
+          updatedAt: Date.now(),
+        });
+      } catch (err) {
+        logger.warn("Failed to expire overflow-evicted arrived", id, err);
+      }
+    }
+  }
   const maxEndAt = items.reduce(
     (m, r) => Math.max(m, Number(r.endAtEpochMs) || 0),
     0,

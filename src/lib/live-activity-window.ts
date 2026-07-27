@@ -100,14 +100,15 @@ export type LiveActivityRowLike = {
  * Pick up to `maxItems` rows for the shared Live Activity card.
  *
  * - ≤ maxItems: keep all (including "予定時間になりました" arrived rows).
- * - > maxItems: drop earliest arrived first so countdown rows keep slots;
- *   if still over capacity, keep the soonest countdowns.
+ * - > maxItems: fill countdown slots first, then newest arrived into leftovers.
+ *   So when the card is already full of countdowns (or 2 countdown + arrived)
+ *   and a new Live Activity starts, "It's time" rows are dropped immediately.
  */
 export function selectLiveActivityRows<T extends LiveActivityRowLike>(
   rows: T[],
   nowMs: number,
   maxItems = 3,
-): { items: T[]; overflow: number } {
+): { items: T[]; overflow: number; droppedArrived: T[] } {
   const countdown = rows
     .filter((r) => r.startEpochMs > nowMs)
     .sort((a, b) => a.startEpochMs - b.startEpochMs);
@@ -117,20 +118,23 @@ export function selectLiveActivityRows<T extends LiveActivityRowLike>(
 
   if (rows.length <= maxItems) {
     const items = [...rows].sort((a, b) => a.startEpochMs - b.startEpochMs);
-    return { items, overflow: 0 };
+    return { items, overflow: 0, droppedArrived: [] };
   }
 
-  const keptArrived = [...arrived];
-  while (countdown.length + keptArrived.length > maxItems && keptArrived.length > 0) {
-    keptArrived.shift(); // earliest arrived first
-  }
-  const keptCountdown =
-    countdown.length + keptArrived.length > maxItems
-      ? countdown.slice(0, maxItems - keptArrived.length)
-      : countdown;
+  const keptCountdown = countdown.slice(0, maxItems);
+  const slotsLeft = maxItems - keptCountdown.length;
+  const keptArrived =
+    slotsLeft > 0 ? arrived.slice(Math.max(0, arrived.length - slotsLeft)) : [];
+  const droppedArrived = arrived.filter(
+    (a) => !keptArrived.some((k) => k.startEpochMs === a.startEpochMs && k.title === a.title),
+  );
 
   const items = [...keptCountdown, ...keptArrived].sort(
     (a, b) => a.startEpochMs - b.startEpochMs,
   );
-  return { items, overflow: Math.max(0, rows.length - items.length) };
+  return {
+    items,
+    overflow: Math.max(0, rows.length - items.length),
+    droppedArrived,
+  };
 }

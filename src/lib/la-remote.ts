@@ -19,7 +19,13 @@ import {
   where,
   type Firestore,
 } from "firebase/firestore";
-import { LiveActivities, isLiveActivitySupported, currentLocale, getLiveActivityLocalStatus } from "./live-activity";
+import {
+  LiveActivities,
+  isLiveActivitySupported,
+  currentLocale,
+  getLiveActivityLocalStatus,
+  isArrivedLiveActivityDismissed,
+} from "./live-activity";
 import { collectLiveActivityWindows } from "./live-activity-window";
 import { laDebugLog } from "./la-debug-log";
 
@@ -760,10 +766,18 @@ export async function syncLiveActivitySchedulesRemote(): Promise<void> {
     const nowMs = now.getTime();
     const locale = currentLocale();
     // Keep lead + linger windows so remote aggregates can show up to 3 rows.
+    // Skip arrived rows the user already cleared (open app / 3-slot overflow).
     const windows = userOn
-      ? collectLiveActivityWindows(now).filter(
-          (w) => w.visibleNow || w.showAtEpochMs > nowMs,
-        )
+      ? collectLiveActivityWindows(now).filter((w) => {
+          if (!(w.visibleNow || w.showAtEpochMs > nowMs)) return false;
+          if (
+            nowMs >= w.startEpochMs &&
+            isArrivedLiveActivityDismissed(w.eventId, w.startEpochMs)
+          ) {
+            return false;
+          }
+          return true;
+        })
       : [];
 
     const existing = await getDocs(

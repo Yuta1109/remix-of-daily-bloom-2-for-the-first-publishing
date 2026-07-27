@@ -522,7 +522,7 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             if #available(iOS 16.1, *) {
                 Task {
                     // Keep the card if any row is still counting down OR still
-                    // inside arrived linger (start + 60s).
+                    // inside arrived linger (start + 1h).
                     let now = Date()
                     let linger: TimeInterval = 60 * 60
                     let keep = Activity<EssencesWidgetAttributes>.activities.contains { activity in

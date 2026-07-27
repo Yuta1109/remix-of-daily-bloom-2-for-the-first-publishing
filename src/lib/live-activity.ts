@@ -4,6 +4,7 @@ import {
   collectLiveActivityWindows,
   LIVE_ACTIVITY_ARRIVED_MS,
   selectLiveActivityRows,
+  type LiveActivityWindow,
 } from "./live-activity-window";
 import { canScheduleLiveActivities } from "./live-activity-prefs";
 
@@ -88,8 +89,67 @@ function currentLocale(): "en" | "ja" {
   return (navigator.language || "en").startsWith("ja") ? "ja" : "en";
 }
 
+/** Soft preference while the app is foregrounded (cleared on background). */
+let preferDismissArrived = false;
 /**
- * Items still on the Lock Screen: lead window through short post-start linger.
+ * Arrived rows the user already cleared by opening the app (or overflow).
+ * Persists across background so "予定時間になりました" does not come back.
+ */
+const DISMISSED_ARRIVED_KEY = "essences-la-dismissed-arrived-v1";
+type DismissedArrived = { key: string; untilMs: number };
+
+function readDismissedArrived(): DismissedArrived[] {
+  try {
+    const raw = localStorage.getItem(DISMISSED_ARRIVED_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as DismissedArrived[];
+    if (!Array.isArray(parsed)) return [];
+    const now = Date.now();
+    return parsed.filter((e) => e && e.key && Number(e.untilMs) > now);
+  } catch {
+    return [];
+  }
+}
+
+function writeDismissedArrived(list: DismissedArrived[]): void {
+  try {
+    localStorage.setItem(DISMISSED_ARRIVED_KEY, JSON.stringify(list.slice(-80)));
+  } catch {
+    /* ignore */
+  }
+}
+
+function arrivedKey(eventId: string, startEpochMs: number): string {
+  return `${eventId}|${startEpochMs}`;
+}
+
+/** True when this occurrence's "It's time" row was cleared (open app / overflow). */
+export function isArrivedLiveActivityDismissed(
+  eventId: string,
+  startEpochMs: number,
+): boolean {
+  const key = arrivedKey(eventId, startEpochMs);
+  return readDismissedArrived().some((e) => e.key === key);
+}
+
+function rememberArrivedDismissed(
+  entries: { eventId: string; startEpochMs: number; untilMs: number }[],
+): void {
+  if (!entries.length) return;
+  const map = new Map(readDismissedArrived().map((e) => [e.key, e]));
+  for (const e of entries) {
+    const key = arrivedKey(e.eventId, e.startEpochMs);
+    const prev = map.get(key);
+    map.set(key, {
+      key,
+      untilMs: Math.max(Number(prev?.untilMs || 0), e.untilMs),
+    });
+  }
+  writeDismissedArrived([...map.values()]);
+}
+
+/**
+ * Items still on the Lock Screen: lead window through post-start linger.
  * When dismissArrived is true (app became active), drop rows at/after start.
  */
 function collectVisibleItems(
@@ -99,34 +159,74 @@ function collectVisibleItems(
   items: LiveActivityItem[];
   overflow: number;
   phase: "countdown" | "arrived";
+  droppedArrivedWindows: LiveActivityWindow[];
 } {
   const nowMs = now.getTime();
   const earlyMs = opts.allowEarlyShowMs ?? 0;
-  const windows = collectLiveActivityWindows(now)
-    .filter((w) => {
-      // Kill-path belt: when backgrounding, arm LA a bit before showAt so a
-      // subsequent force-quit still leaves a Lock Screen card (PTS remains primary).
-      const early =
-        earlyMs > 0 &&
-        w.showAtEpochMs > nowMs &&
-        w.showAtEpochMs - nowMs <= earlyMs &&
-        nowMs < w.endEpochMs;
-      if (!w.visibleNow && !early) return false;
-      if (opts.dismissArrived && nowMs >= w.startEpochMs) return false;
-      return true;
-    })
-    .map((w) => ({
-      title: w.title,
-      startEpochMs: w.startEpochMs,
-      color: w.color,
-    }));
+  const candidateWindows = collectLiveActivityWindows(now).filter((w) => {
+    const early =
+      earlyMs > 0 &&
+      w.showAtEpochMs > nowMs &&
+      w.showAtEpochMs - nowMs <= earlyMs &&
+      nowMs < w.endEpochMs;
+    if (!w.visibleNow && !early) return false;
+    if (isArrivedLiveActivityDismissed(w.eventId, w.startEpochMs) && nowMs >= w.startEpochMs) {
+      return false;
+    }
+    if (opts.dismissArrived && nowMs >= w.startEpochMs) return false;
+    return true;
+  });
 
-  const { items, overflow } = selectLiveActivityRows(windows, nowMs, MAX_ITEMS);
+  if (opts.dismissArrived) {
+    rememberArrivedDismissed(
+      collectLiveActivityWindows(now)
+        .filter((w) => nowMs >= w.startEpochMs && nowMs < w.endEpochMs)
+        .map((w) => ({
+          eventId: w.eventId,
+          startEpochMs: w.startEpochMs,
+          untilMs: w.endEpochMs,
+        })),
+    );
+  }
+
+  const windows = candidateWindows.map((w) => ({
+    title: w.title,
+    startEpochMs: w.startEpochMs,
+    color: w.color,
+    eventId: w.eventId,
+    endEpochMs: w.endEpochMs,
+  }));
+
+  const { items, overflow, droppedArrived } = selectLiveActivityRows(
+    windows,
+    nowMs,
+    MAX_ITEMS,
+  );
+  const droppedArrivedWindows = candidateWindows.filter((w) =>
+    droppedArrived.some(
+      (d) => d.startEpochMs === w.startEpochMs && d.title === w.title,
+    ),
+  );
+  if (droppedArrivedWindows.length) {
+    rememberArrivedDismissed(
+      droppedArrivedWindows.map((w) => ({
+        eventId: w.eventId,
+        startEpochMs: w.startEpochMs,
+        untilMs: w.endEpochMs,
+      })),
+    );
+  }
+
   const anyCounting = items.some((w) => nowMs < w.startEpochMs);
   return {
-    items,
+    items: items.map(({ title, startEpochMs, color }) => ({
+      title,
+      startEpochMs,
+      color,
+    })),
     overflow,
     phase: anyCounting ? "countdown" : "arrived",
+    droppedArrivedWindows,
   };
 }
 
@@ -148,7 +248,6 @@ export function msUntilNextLiveActivityBoundary(from = new Date()): number | nul
 }
 
 let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
-let preferDismissArrived = false;
 
 function scheduleNextBoundary(): void {
   clearTimeout(boundaryTimer);
@@ -184,23 +283,19 @@ export type LiveActivityLocalStatus = {
 let lastLocalError: string | null = null;
 let lastSystemEnabled: boolean | null = null;
 let lastActiveCount = 0;
-/** Soft lock so refreshLiveActivities does not endAll during the first-run demo. */
 let demoUntilMs = 0;
 let demoEndTimer: ReturnType<typeof setTimeout> | undefined;
-/** Single-flight so EventSheet / bootstrap / boundaries do not interleave end/start. */
 let refreshInFlight: Promise<void> | null = null;
 let refreshQueuedOpts: {
   dismissArrived?: boolean;
   allowEarlyShowMs?: number;
 } | null = null;
-/** Keys of rows currently on the Lock Screen: `${title}|${startEpochMs}`. */
 let lastVisibleItemKeys = new Set<string>();
 
 export function isDemoLiveActivityActive(): boolean {
   return Date.now() < demoUntilMs;
 }
 
-/** True when this event row is on the local Live Activity card right now. */
 export function isEventOnLocalLiveActivity(title: string, startEpochMs: number): boolean {
   return lastVisibleItemKeys.has(`${title}|${startEpochMs}`);
 }
