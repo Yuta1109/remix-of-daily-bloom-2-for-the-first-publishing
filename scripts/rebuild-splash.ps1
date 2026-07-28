@@ -13,8 +13,8 @@ $OutNames = @(
 )
 
 $Canvas = 2732
-# Match previous splash: icon ~28% of canvas.
-$IconDraw = [int][math]::Round($Canvas * 0.28)
+# One step smaller than the previous ~28% mark.
+$IconDraw = [int][math]::Round($Canvas * 0.22)
 # Frame slightly smaller than the icon — hides L/R black slivers + corner black.
 $InsetRatio = 0.030
 $Bg = [System.Drawing.Color]::FromArgb(255, 0xFA, 0xF8, 0xF5)

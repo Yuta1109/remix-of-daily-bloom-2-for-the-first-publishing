@@ -530,23 +530,25 @@ async function refreshLiveActivitiesInner(
     // treating a stale token as success (or skipping PTS when there is no card).
     try {
       const remote = await import("./la-remote");
-      await remote.markLocalCalendarLiveActivity({ endEpochMs: safeEndEpochMs });
+      let appActive = true;
+      try {
+        const { App } = await import("@capacitor/app");
+        appActive = (await App.getState()).isActive;
+      } catch {
+        /* assume active */
+      }
+      await remote.markLocalCalendarLiveActivity({
+        endEpochMs: safeEndEpochMs,
+        claimPresentation: isNewLocalCard && appActive,
+      });
       // Always sync after open-app dismiss / overflow-evict so remote kill-path
       // cannot resurrect "予定時間になりました".
       if (dismissedNow) {
         await remote.syncLiveActivitySchedulesRemote();
       }
       if (isNewLocalCard) {
-        // Foreground: one Capacitor haptic. Background: FCM ActivityKit alert
-        // (banner + system haptic) via requestLiveActivityPresentationAlert.
-        // Never both — stacking with PTS alert caused ~3 buzzes on Test 3.
-        let appActive = true;
-        try {
-          const { App } = await import("@capacitor/app");
-          appActive = (await App.getState()).isActive;
-        } catch {
-          /* assume active */
-        }
+        // Foreground: one Capacitor haptic + claim device presentation so remote
+        // PTS/alert will stay silent. Background: FCM presentation alert only.
         if (appActive) {
           const { liveActivityStartHaptic } = await import("./haptics");
           void liveActivityStartHaptic();

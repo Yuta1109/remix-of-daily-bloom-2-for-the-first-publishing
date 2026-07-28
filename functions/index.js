@@ -318,6 +318,12 @@ const PTS_CLAIM_MS = 120_000;
  * that left Test 1 blank until the app was opened.
  */
 const LOCAL_PENDING_GRACE_MS = 90_000;
+/**
+ * After remote PTS, protect against demote/second-PTS while the Lock Screen card
+ * exists but the update token has not been uploaded yet. Past this, sweep may
+ * recover a blank/frozen generation.
+ */
+const PTS_TOKEN_GRACE_MS = 180_000;
 
 /**
  * Update token for the *current* Lock Screen card.
@@ -408,6 +414,8 @@ async function clearDeviceLiveActivityGeneration(deviceId) {
         liveActivityUpdateToken: FieldValue.delete(),
         liveActivityUpdateTokenAt: FieldValue.delete(),
         laLastPushStartAt: 0,
+        laGenerationPresentedAt: FieldValue.delete(),
+        laGenerationPresentedBy: FieldValue.delete(),
       },
       { merge: true },
     );
@@ -553,19 +561,81 @@ async function claimOneMinuteAlert(scheduleId, now = Date.now()) {
 }
 
 /**
+ * One presentation (banner + haptic) per schedule. Used for PTS / kill-path
+ * presentAlert / client requestPresentationAlert — never stack.
+ */
+async function claimPresentationAlert(scheduleId, now = Date.now()) {
+  const ref = db.collection("laSchedules").doc(scheduleId);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return false;
+      const data = snap.data() || {};
+      if (data.laPresentedAlertAt) return false;
+      tx.update(ref, {
+        laPresentedAlertAt: now,
+        requestPresentationAlert: FieldValue.delete(),
+      });
+      return true;
+    });
+  } catch (err) {
+    logger.warn("claimPresentationAlert failed", scheduleId, err);
+    return false;
+  }
+}
+
+/**
+ * One presentation per device card generation (shared multi-row Activity).
+ * Prevents Test1 open + Test2 PTS from each firing a full alert stack.
+ */
+async function claimDeviceGenerationPresentation(deviceId, scheduleId, now = Date.now()) {
+  const ref = db.collection("devices").doc(deviceId);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const d = snap.exists ? snap.data() || {} : {};
+      const presentedAt = Number(d.laGenerationPresentedAt || 0);
+      const genAt = Math.max(
+        Number(d.lastRemoteLaStartAt || 0),
+        Number(d.lastLocalCalendarLaAt || 0),
+      );
+      if (presentedAt > 0 && (genAt <= 0 || presentedAt >= genAt - 2_000)) {
+        return false;
+      }
+      tx.set(
+        ref,
+        {
+          laGenerationPresentedAt: now,
+          laGenerationPresentedBy: scheduleId,
+        },
+        { merge: true },
+      );
+      return true;
+    });
+  } catch (err) {
+    logger.warn("claimDeviceGenerationPresentation failed", deviceId, err);
+    return false;
+  }
+}
+
+/** True when we may include an ActivityKit `alert` on start/update. */
+async function tryClaimStartPresentation(deviceId, scheduleId, now = Date.now()) {
+  const deviceOk = await claimDeviceGenerationPresentation(deviceId, scheduleId, now);
+  if (!deviceOk) return false;
+  const scheduleOk = await claimPresentationAlert(scheduleId, now);
+  return scheduleOk;
+}
+
+/**
  * Ensure a schedule is on the Lock Screen.
  *
- * Ownership model:
- *  A) App process alive + local card / pending local start → update or wait.
- *     Never PTS (PTS on top of local ActivityKit = duplicate card + multi-haptic).
- *     Promote due→started so FCM minute refresh + 1-minute alert chains run
- *     (TimelineView.everyMinute alone is unreliable on Lock Screen).
- *  B) App dead + live card evidence (laCardActiveUntil + usable token) →
- *     FCM update only (force-quit after local/PTS start). Never second PTS.
- *  C) App dead + no live card → exactly one push-to-start per claim window.
- *
- * Never mark `started` from a bare update token with no card window — that
- * blocked PTS and left the Lock Screen blank after force-quit.
+ * Ownership model (single lease):
+ *  A) App alive + usable live card → silent update; promote started.
+ *  B) App alive + fresh local pending (grace) → wait only — do NOT mark started
+ *     without a card (that blocked kill-path PTS / left Lock Screen blank).
+ *  C) Kill-path + live card → update (+ at most one presentation alert).
+ *  D) Recent PTS awaiting update token → wait for onDeviceTokenWrite; no 2nd PTS.
+ *  E) Otherwise exactly one push-to-start (optional single alert).
  */
 async function sendStartForSchedule(scheduleId, data, opts = {}) {
   const deviceSnap = await db.collection("devices").doc(data.deviceId).get();
@@ -606,7 +676,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   let alreadyPtsThis =
     deviceFresh.lastRemoteLaStartOk === true &&
     deviceFresh.lastRemoteLaStartScheduleId === scheduleId &&
-    now - Number(deviceFresh.lastRemoteLaStartAt || 0) < 20 * 60_000;
+    now - Number(deviceFresh.lastRemoteLaStartAt || 0) < PTS_TOKEN_GRACE_MS;
 
   const recordEnsure = async (path, reason) => {
     try {
@@ -625,24 +695,21 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
   };
 
   // ── A. App process alive → prefer local ActivityKit ────────────────
-  // Only PTS while appAlive when there is *no* local-card evidence (blank
-  // Lock Screen stuck at due). Never PTS while local ActivityKit is pending —
-  // that stacked a second card and caused ~3 haptics (Test 3).
+  // Never PTS while a fresh local card is pending. Never mark `started`
+  // without live-card evidence (blank Lock Screen + stuck refresh chain).
   if (appAlive) {
     if (liveCard) {
       logger.info("LA app-alive content refresh", scheduleId);
-      await sendUpdateForSchedule(scheduleId, data, "countdown", {
+      const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
         withAlert: false,
         contentState: aggregated.contentState,
         staleSec: aggregated.staleSec,
       });
-      // Client sync leaves rows as "due"; without promoting to started the
-      // refresh / 1-minute-alert Cloud Tasks never run, so Lock Screen freezes
-      // after the app backgrounds (native heartbeat suspends).
       if (
-        data.status === "due" ||
-        data.status === "pending" ||
-        data.status === "error"
+        ok &&
+        (data.status === "due" ||
+          data.status === "pending" ||
+          data.status === "error")
       ) {
         await markDueSchedulesStartedForItems(
           data.deviceId,
@@ -650,7 +717,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
           data,
           aggregated.contentState.items,
         );
-      } else {
+      } else if (ok && data.status === "started") {
         try {
           await enqueueOneMinuteAndArrived(scheduleId, data);
           await enqueueRefresh(scheduleId, now + REFRESH_INTERVAL_MS);
@@ -658,19 +725,13 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
           logger.warn("Failed to ensure LA refresh while app-alive", err);
         }
       }
-      await recordEnsure("local-owned", "app-alive");
-      return true;
+      await recordEnsure("local-owned", ok ? "app-alive" : "app-alive-update-miss");
+      return ok;
     }
     if (hasLocalCardPending(deviceFresh, now)) {
-      if (
-        data.status === "due" ||
-        data.status === "pending" ||
-        data.status === "error"
-      ) {
-        await markStartedAndEnqueueRefresh(scheduleId, data);
-      }
+      // Leave status as due/pending so sweep can PTS after grace if local fails.
       await recordEnsure("wait-token", "app-alive-local-pending-token");
-      return true;
+      return false;
     }
     logger.info(
       "LA app-alive but no local card evidence — falling through to PTS/update",
@@ -681,12 +742,13 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
 
   // ── B. Kill-path with a *live* card → update only (no second PTS) ──
   if (liveCard) {
-    // Presentation alert only when the app is not alive (local path uses
-    // Capacitor haptic / a single requestPresentationAlert instead).
-    // Skip when the 1-minute alert window is open — that push already buzzes
-    // (Test 2 saw ~2 haptics then the banner).
+    const wantPresent =
+      !appAlive &&
+      !data.laPresentedAlertAt &&
+      !wantsOneMinuteAlert(data, now);
     const presentAlert =
-      !appAlive && !data.laPresentedAlertAt && !wantsOneMinuteAlert(data, now);
+      wantPresent &&
+      (await tryClaimStartPresentation(data.deviceId, scheduleId, now));
     logger.info("LA kill-path update (live card)", scheduleId, { presentAlert });
     const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
       withAlert: presentAlert,
@@ -706,15 +768,6 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
         data,
         aggregated.contentState.items,
       );
-      if (presentAlert) {
-        try {
-          await db.collection("laSchedules").doc(scheduleId).update({
-            laPresentedAlertAt: Date.now(),
-          });
-        } catch {
-          /* ignore */
-        }
-      }
       try {
         await db.collection("devices").doc(data.deviceId).set(
           {
@@ -744,6 +797,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
           lastRemoteLaStartOk: false,
           lastLocalCalendarLaAt: FieldValue.delete(),
           localLaActive: false,
+          laGenerationPresentedAt: FieldValue.delete(),
         },
         { merge: true },
       );
@@ -757,26 +811,46 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
 
   // ── C. Same schedule already PTSd; token not uploaded yet ──────────
   if (alreadyPtsThis) {
-    await markStartedAndEnqueueRefresh(scheduleId, data);
+    const tokenReady = !!usableLiveActivityUpdateToken(deviceFresh, now);
+    if (tokenReady) {
+      const ok = await sendUpdateForSchedule(scheduleId, data, "countdown", {
+        withAlert: false,
+        contentState: aggregated.contentState,
+        staleSec: aggregated.staleSec,
+      });
+      if (ok) {
+        await markDueSchedulesStartedForItems(
+          data.deviceId,
+          scheduleId,
+          data,
+          aggregated.contentState.items,
+        );
+      }
+      await recordEnsure("pts-reuse", ok ? "pts-token-ready" : "pts-token-update-miss");
+      return ok;
+    }
+    // Card should already be on Lock Screen from PTS — arm refresh kicks only.
+    // Do not re-mark started in a loop; onDeviceTokenWrite will update.
+    if (data.status === "due" || data.status === "pending" || data.status === "error") {
+      await markStartedAndEnqueueRefresh(scheduleId, data);
+    } else {
+      try {
+        await enqueueRefresh(scheduleId, now + 20_000);
+        await enqueueOneMinuteAndArrived(scheduleId, data);
+      } catch (err) {
+        logger.warn("Failed to kick refresh while awaiting PTS token", err);
+      }
+    }
     await recordEnsure("pts-reuse", "already-pts-awaiting-token");
     return true;
   }
 
   // Local ActivityKit card window still open but update token not uploaded yet.
-  // Wait — PTS would stack a second card on top of the surviving local one.
-  // Still promote to started so the minute / 1m-alert task chain is armed;
-  // onDeviceTokenWrite kicks the first FCM update once the token lands.
+  // Wait — do NOT mark started (no card evidence for kill-path).
   const localCardWindow = hasLocalCardPending(deviceFresh, now);
   if (localCardWindow) {
-    if (
-      data.status === "due" ||
-      data.status === "pending" ||
-      data.status === "error"
-    ) {
-      await markStartedAndEnqueueRefresh(scheduleId, data);
-    }
     await recordEnsure("wait-token", "local-card-awaiting-update-token");
-    return true;
+    return false;
   }
 
   // Generation live for another schedule, no usable token → wait (no second PTS).
@@ -796,7 +870,6 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     logger.warn("Missing pushToStart token for device", data.deviceId);
     await recordEnsure("error", "missing pushToStart token");
     try {
-      // Release exclusive claim so a later retry (after token upload) can PTS.
       await db.collection("devices").doc(data.deviceId).set(
         { laLastPushStartAt: 0 },
         { merge: true },
@@ -817,6 +890,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     data.locale === "en"
       ? "Countdown on Lock Screen"
       : "ロック画面でカウントダウン中";
+  const presentAlert = await tryClaimStartPresentation(data.deviceId, scheduleId, now);
   try {
     const aps = {
       timestamp: nowSec,
@@ -826,11 +900,13 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       attributes: { name: "Essences" },
       "stale-date": aggregated.staleSec,
       "input-push-token": 1,
-      alert: {
+    };
+    if (presentAlert) {
+      aps.alert = {
         title: alertTitle,
         body: alertBody,
-      },
-    };
+      };
+    }
     const messageId = await messaging.send({
       token: fcmToken,
       apns: {
@@ -850,17 +926,23 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
           lastRemoteLaStartOk: true,
           lastRemoteLaStartScheduleId: scheduleId,
           lastRemoteLaStartMessageId: String(messageId || ""),
-          lastRemoteLaStartHadAlert: true,
+          lastRemoteLaStartHadAlert: presentAlert,
           lastRemoteLaStartItemCount: aggregated.contentState.items.length,
           laCardActiveUntil: cardUntilMs,
           lastLaEnsureAt: Date.now(),
           lastLaEnsurePath: "pts",
-          lastLaEnsureReason: "push-to-start",
+          lastLaEnsureReason: presentAlert ? "push-to-start" : "push-to-start-silent",
           lastLaEnsureScheduleId: scheduleId,
           // New card — drop old update token until the app uploads a fresh one.
           liveActivityUpdateToken: FieldValue.delete(),
           liveActivityUpdateTokenAt: FieldValue.delete(),
           lastLocalCalendarLaAt: FieldValue.delete(),
+          localLaActive: false,
+          ...(presentAlert
+            ? {}
+            : {
+                /* generation presentation may already be claimed silently */
+              }),
         },
         { merge: true },
       );
@@ -873,13 +955,6 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       data,
       aggregated.contentState.items,
     );
-    try {
-      await db.collection("laSchedules").doc(scheduleId).update({
-        laPresentedAlertAt: Date.now(),
-      });
-    } catch {
-      /* ignore */
-    }
     await recordRemoteResult(scheduleId, data.deviceId, {
       ok: true,
       phase: "start",
@@ -890,6 +965,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       messageId,
       itemCount: aggregated.contentState.items.length,
       staleSec: aggregated.staleSec,
+      presentAlert,
     });
     return true;
   } catch (err) {
@@ -908,7 +984,6 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
           lastRemoteLaStartScheduleId: scheduleId,
           lastRemoteLaStartError: String(err?.message || err).slice(0, 300),
           laCardActiveUntil: 0,
-          // Release claim so a later retry can PTS.
           laLastPushStartAt: 0,
         },
         { merge: true },
@@ -979,10 +1054,18 @@ async function enqueueOneMinuteAndArrived(scheduleId, data) {
       logger.warn("Failed to enqueue LA 1-minute alert", err);
     }
   }
-  if (startAt > Date.now()) {
-    // Hit start time precisely (and nearby) so "予定時間になりました" is not
-    // delayed until the next heartbeat — that made arrived flash then vanish.
-    for (const at of [startAt - 5_000, startAt, startAt + 10_000, startAt + 25_000]) {
+  if (startAt > Date.now() - 60_000) {
+    // Dense arrived ticks — TimelineView does not reliably flip copy; FCM must.
+    for (const at of [
+      startAt - 5_000,
+      startAt - 1_000,
+      startAt,
+      startAt + 5_000,
+      startAt + 15_000,
+      startAt + 30_000,
+      startAt + 60_000,
+      startAt + 120_000,
+    ]) {
       if (at <= Date.now() - 2_000) continue;
       try {
         await enqueueRefresh(scheduleId, at);
@@ -991,8 +1074,6 @@ async function enqueueOneMinuteAndArrived(scheduleId, data) {
       }
     }
   }
-  // Dismiss after arrived linger — retry soon after endAt so we don't wait for
-  // the next 1-minute sweep (that made dismiss feel like 1m or 2m at random).
   if (endAt > Date.now()) {
     for (const at of [endAt, endAt + 15_000, endAt + 35_000]) {
       try {
@@ -1089,8 +1170,8 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
     };
   }
 
-  // Priority 10 counts toward Apple's Live Activity push budget and can trigger
-  // the system "continue allowing Live Activities?" prompt. Use 5 for heartbeats.
+  // Priority 10 counts toward Apple's Live Activity push budget. Use 5 for
+  // silent heartbeats; 10 only for alerts / arrived (must land for copy flip).
   const urgent =
     withAlert || phase === "arrived" || phase === "notify1m" || opts.urgent === true;
   const apnsPriority = urgent ? "10" : "5";
@@ -1120,13 +1201,24 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
       error: null,
     });
     if (withAlert && phase === "notify1m") {
-      // Claim may already have set oneMinuteAlertSentAt; keep it on success.
       try {
         await db.collection("laSchedules").doc(scheduleId).update({
           oneMinuteAlertSentAt: now,
         });
       } catch (err) {
         logger.warn("Failed to mark oneMinuteAlertSentAt", err);
+      }
+    }
+    // Near start: reinforce arrived enqueue so copy flips without TimelineView.
+    if (
+      (phase === "countdown" || phase === "notify1m") &&
+      Number(data.startEpochMs) > now &&
+      Number(data.startEpochMs) - now < 120_000
+    ) {
+      try {
+        await enqueueRefresh(scheduleId, Number(data.startEpochMs));
+      } catch {
+        /* ignore */
       }
     }
     return true;
@@ -1409,7 +1501,7 @@ export const refreshLiveActivityTask = onTaskDispatched(
         scheduleId,
         { ...data, endAtEpochMs: lingerEnd },
         "arrived",
-        { urgent: true },
+        { urgent: true, withAlert: false },
       );
       if (ok) {
         await snap.ref.update({
@@ -1521,10 +1613,14 @@ export const sweepLiveActivityRefresh = onSchedule(
         let device = deviceSnap.data() || {};
         device = await clearStaleLocalOwnershipIfNeeded(data.deviceId, device, now);
         hasCard = await deviceHasLiveCard(device, data.deviceId, now);
+        const ptsAge = now - Number(device.lastRemoteLaStartAt || 0);
+        // Protect briefly after PTS while update token uploads. Past grace without
+        // a live card → demote so kill-path can recover (blank/frozen Test1).
         ptsOwnsThis =
           device.lastRemoteLaStartOk === true &&
           device.lastRemoteLaStartScheduleId === docSnap.id &&
-          now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
+          ptsAge >= 0 &&
+          ptsAge < PTS_TOKEN_GRACE_MS;
         // Only wait for a *fresh* local card (grace window). Stale localLaActive
         // after force-quit must not block demote→PTS (Test 1 blank Lock Screen).
         localCardWindow = !hasCard && hasLocalCardPending(device, now);
@@ -1634,7 +1730,7 @@ export const sweepLiveActivityRefresh = onSchedule(
           docSnap.id,
           { ...data, endAtEpochMs: lingerEnd },
           "arrived",
-          { urgent: true },
+          { urgent: true, withAlert: false },
         );
         if (ok) {
           await docSnap.ref.update({
@@ -1725,7 +1821,6 @@ export const onLaScheduleWrite = onDocumentWritten(
 
     // Client local-start → one-shot ActivityKit presentation (banner + haptic).
     if (after.requestPresentationAlert && !after.laPresentedAlertAt) {
-      // Let the dedicated 1-minute alert own the haptic in that window.
       if (wantsOneMinuteAlert(after, Date.now())) {
         try {
           await afterSnap.ref.update({
@@ -1733,6 +1828,21 @@ export const onLaScheduleWrite = onDocumentWritten(
           });
         } catch (err) {
           logger.warn("Failed to clear requestPresentationAlert near 1m", err);
+        }
+        return;
+      }
+      const presentAlert = await tryClaimStartPresentation(
+        after.deviceId,
+        scheduleId,
+        Date.now(),
+      );
+      if (!presentAlert) {
+        try {
+          await afterSnap.ref.update({
+            requestPresentationAlert: FieldValue.delete(),
+          });
+        } catch {
+          /* ignore */
         }
         return;
       }
@@ -1750,7 +1860,8 @@ export const onLaScheduleWrite = onDocumentWritten(
       try {
         await afterSnap.ref.update({
           requestPresentationAlert: FieldValue.delete(),
-          ...(ok ? { laPresentedAlertAt: Date.now() } : {}),
+          // laPresentedAlertAt already set by claim when presentAlert true
+          ...(ok ? {} : { laPresentedAlertAt: FieldValue.delete() }),
         });
       } catch (err) {
         logger.warn("Failed to clear requestPresentationAlert", err);

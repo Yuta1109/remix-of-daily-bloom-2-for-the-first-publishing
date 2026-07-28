@@ -552,15 +552,27 @@ async function upsertDeviceDoc(extra?: Record<string, unknown>): Promise<void> {
  */
 export async function markLocalCalendarLiveActivity(opts?: {
   endEpochMs?: number;
+  /** Foreground start already buzzed — prevent remote PTS/presentation stacking. */
+  claimPresentation?: boolean;
 }): Promise<void> {
   const ok = await ensureFirebase();
   if (!ok || !db || !deviceUid) return;
   const endEpochMs = Number(opts?.endEpochMs || 0);
+  const now = Date.now();
   await upsertDeviceDoc({
-    lastLocalCalendarLaAt: Date.now(),
-    appAliveAt: Date.now(),
+    lastLocalCalendarLaAt: now,
+    appAliveAt: now,
     localLaActive: true,
-    ...(endEpochMs > Date.now() ? { laCardActiveUntil: endEpochMs } : {}),
+    // Local ActivityKit owns this generation — kill-path must not treat stale PTS
+    // flags as a live remote card.
+    lastRemoteLaStartOk: false,
+    ...(endEpochMs > now ? { laCardActiveUntil: endEpochMs } : {}),
+    ...(opts?.claimPresentation
+      ? {
+          laGenerationPresentedAt: now,
+          laGenerationPresentedBy: "local",
+        }
+      : {}),
   });
   await syncLiveActivitySchedulesRemote();
 }
@@ -647,6 +659,22 @@ export async function requestLiveActivityPresentationAlert(): Promise<void> {
       if (data.status !== "due" && data.status !== "started") continue;
       if (Number(data.showAtEpochMs) > now) continue;
       if (Number(data.endAtEpochMs) > 0 && Number(data.endAtEpochMs) <= now) continue;
+      // Device generation already presented (local haptic or prior PTS) — skip.
+      try {
+        const deviceSnap = await getDoc(doc(db, "devices", deviceUid));
+        const d = deviceSnap.exists() ? deviceSnap.data() : null;
+        const presentedAt = Number(d?.laGenerationPresentedAt || 0);
+        const genAt = Math.max(
+          Number(d?.lastRemoteLaStartAt || 0),
+          Number(d?.lastLocalCalendarLaAt || 0),
+        );
+        if (presentedAt > 0 && (genAt <= 0 || presentedAt >= genAt - 2_000)) {
+          laDebugLog("la", "presentation alert skipped (generation already presented)", "info");
+          return;
+        }
+      } catch {
+        /* continue */
+      }
       await setDoc(
         doc(db, "laSchedules", d.id),
         { requestPresentationAlert: true, updatedAt: now },

@@ -208,12 +208,18 @@ export function CoachOverlay({
             }}
           />
         ))
-      ) : captureOutsideClick ? (
+      ) : (
+        // Always intercept background taps when not punching a through-hole.
+        // (LA demo / welcome used to leave pointer-events-none dimmer only,
+        // so the app behind stayed tappable.)
         <div
           className="absolute inset-0 pointer-events-auto"
-          onClick={() => onOutsideTap?.()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (captureOutsideClick) onOutsideTap?.();
+          }}
         />
-      ) : null}
+      )}
 
       <div
         ref={bubbleRef}

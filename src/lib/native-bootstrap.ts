@@ -53,7 +53,6 @@ export async function initNative(): Promise<void> {
       void syncSchedules({ dismissArrived: true });
     });
     await LocalNotifications.addListener("localNotificationReceived", () => {
-      // Reminder taps / any leftover wake — keep LA in sync.
       void syncSchedules();
     });
   } catch {
@@ -86,6 +85,7 @@ export async function initNative(): Promise<void> {
     clearSyncTimers();
     if (isActive) {
       // Opening the app drops arrived ("It's time") rows immediately.
+      // One coalesced reconcile — do NOT re-init FCM/LA (that caused alert storms).
       setLiveActivityDismissArrivedOnRefresh(true);
       startAppAliveHeartbeat();
       void pulseAppAlive();
@@ -93,8 +93,6 @@ export async function initNative(): Promise<void> {
         resumeSyncTimer = null;
         void syncSchedules({ dismissArrived: true });
         scheduleLiveActivityBoundaries();
-        void initFcmRegistration();
-        void initLiveActivityRemote();
       }, 350);
     } else {
       // Final heartbeat + schedule sync before suspend. Heartbeat tells the
@@ -104,11 +102,12 @@ export async function initNative(): Promise<void> {
       stopAppAliveHeartbeat();
       backgroundSyncTimer = window.setTimeout(() => {
         backgroundSyncTimer = null;
-        // Do not arm minutes early (showed ~11m on a 10m lead). Tiny skew only.
         void pulseAppAlive()
           .then(() => refreshLiveActivities({ allowEarlyShowMs: 15_000 }))
           .then(async () => {
             await syncLiveActivitySchedulesRemote();
+            // Upload update token while process still alive (critical after PTS).
+            await pulseAppAlive();
             const { requestLiveActivityPresentationAlert } = await import(
               "./la-remote"
             );
@@ -122,13 +121,8 @@ export async function initNative(): Promise<void> {
       }, 200);
     }
   });
-  App.addListener("resume", () => {
-    clearSyncTimers();
-    resumeSyncTimer = window.setTimeout(() => {
-      resumeSyncTimer = null;
-      void syncSchedules({ dismissArrived: true });
-    }, 350);
-  });
+  // `resume` often duplicates `appStateChange(isActive)` on iOS — ignore to
+  // avoid double dismissArrived refresh + haptic/init storms.
   App.addListener("appUrlOpen", () => {
     void syncSchedules({ dismissArrived: true });
   });
