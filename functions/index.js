@@ -41,7 +41,10 @@ const BUNDLE_ID = "com.confast.essences";
 const TASK_FN = "dispatchLiveActivityTask";
 const REFRESH_FN = "refreshLiveActivityTask";
 /** Remote Lock Screen redraw every 30s (custom relative labels need Activity.update). */
-const REFRESH_INTERVAL_MS = 60 * 1000;
+const REFRESH_INTERVAL_MS = 30 * 1000;
+/** Last N minutes before start: denser silent ticks so "N分後" does not jump. */
+const NEAR_START_DENSE_MS = 5 * 60 * 1000;
+const NEAR_START_INTERVAL_MS = 15 * 1000;
 /** Fire a single audible/haptic Live Activity alert this far before start. */
 const ONE_MINUTE_MS = 60 * 1000;
 /** Keep "予定時間になりました" at least this long after start / arrived update. */
@@ -78,19 +81,59 @@ function refreshTaskQueue() {
 }
 
 function buildContentState(data, tick = 0, phase = "countdown") {
+  const now = Date.now();
+  const startEpochMs = Number(data.startEpochMs);
+  const locale = String(data.locale || "ja");
   return {
     items: [
       {
         title: String(data.title || ""),
-        startEpochMs: Number(data.startEpochMs),
+        startEpochMs,
         color: String(data.color || "blue"),
+        statusText: formatLaStatusText(startEpochMs, locale, now),
       },
     ],
     overflow: 0,
-    locale: String(data.locale || "ja"),
+    locale,
     tick: Number(tick) || 0,
     phase: String(phase || "countdown"),
   };
+}
+
+/**
+ * Bake Lock Screen copy into content-state so FCM updates change the visible
+ * string even when TimelineView is throttled (kill-path / Always Allow).
+ */
+function formatLaStatusText(startEpochMs, locale, now = Date.now()) {
+  const secs = (Number(startEpochMs) - now) / 1000;
+  const ja = locale !== "en";
+  if (!(secs > 0)) {
+    return ja ? "予定時間になりました" : "It's time";
+  }
+  if (secs < 60) {
+    return ja ? "まもなく" : "soon";
+  }
+  const totalMinutes = Math.floor(secs / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (ja) {
+    if (hours > 0 && minutes > 0) return `${hours}時間${minutes}分後`;
+    if (hours > 0) return `${hours}時間後`;
+    return `${totalMinutes}分後`;
+  }
+  if (hours > 0 && minutes > 0) return `in ${hours}h ${minutes}m`;
+  if (hours > 0) return `in ${hours}h`;
+  return `in ${totalMinutes}m`;
+}
+
+/** Adaptive silent tick spacing: 15s near start, else 30s. */
+function nextRefreshDelayMs(data, now = Date.now()) {
+  const startAt = Number(data?.startEpochMs) || 0;
+  const left = startAt - now;
+  if (startAt > 0 && left > 0 && left <= NEAR_START_DENSE_MS) {
+    return NEAR_START_INTERVAL_MS;
+  }
+  return REFRESH_INTERVAL_MS;
 }
 
 const MAX_LA_ITEMS = 3;
@@ -217,6 +260,7 @@ async function buildAggregatedContentState(
         title,
         startEpochMs,
         color,
+        statusText: formatLaStatusText(startEpochMs, includeData?.locale || locale || "ja", now),
       })),
       overflow,
       locale: String(includeData?.locale || locale || "ja"),
@@ -591,6 +635,9 @@ async function claimPresentationAlert(scheduleId, now = Date.now()) {
 /**
  * One presentation per device card generation (shared multi-row Activity).
  * Prevents Test1 open + Test2 PTS from each firing a full alert stack.
+ *
+ * Cold kill-path PTS (no live card) uses forceScheduleAlert so a prior demo /
+ * Always-Allow generation claim cannot leave the next event silent-invisible.
  */
 async function claimDeviceGenerationPresentation(deviceId, scheduleId, now = Date.now()) {
   const ref = db.collection("devices").doc(deviceId);
@@ -603,6 +650,19 @@ async function claimDeviceGenerationPresentation(deviceId, scheduleId, now = Dat
         Number(d.lastRemoteLaStartAt || 0),
         Number(d.lastLocalCalendarLaAt || 0),
       );
+      const cardLive = Number(d.laCardActiveUntil || 0) > now;
+      // Stale claim after demo/ended card must not block the next cold PTS.
+      if (presentedAt > 0 && !cardLive && genAt > 0 && now - genAt > 90_000) {
+        tx.set(
+          ref,
+          {
+            laGenerationPresentedAt: now,
+            laGenerationPresentedBy: scheduleId,
+          },
+          { merge: true },
+        );
+        return true;
+      }
       if (presentedAt > 0 && (genAt <= 0 || presentedAt >= genAt - 2_000)) {
         return false;
       }
@@ -623,7 +683,25 @@ async function claimDeviceGenerationPresentation(deviceId, scheduleId, now = Dat
 }
 
 /** True when we may include an ActivityKit `alert` on start/update. */
-async function tryClaimStartPresentation(deviceId, scheduleId, now = Date.now()) {
+async function tryClaimStartPresentation(deviceId, scheduleId, now = Date.now(), opts = {}) {
+  // Cold PTS: one alert per schedule even if a prior demo claimed the generation.
+  if (opts.forceScheduleAlert === true) {
+    const ok = await claimPresentationAlert(scheduleId, now);
+    if (ok) {
+      try {
+        await db.collection("devices").doc(deviceId).set(
+          {
+            laGenerationPresentedAt: now,
+            laGenerationPresentedBy: scheduleId,
+          },
+          { merge: true },
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+    return ok;
+  }
   const deviceOk = await claimDeviceGenerationPresentation(deviceId, scheduleId, now);
   if (!deviceOk) return false;
   const scheduleOk = await claimPresentationAlert(scheduleId, now);
@@ -724,7 +802,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       } else if (ok && data.status === "started") {
         try {
           await enqueueOneMinuteAndArrived(scheduleId, data);
-          await enqueueRefresh(scheduleId, now + REFRESH_INTERVAL_MS);
+          await enqueueRefresh(scheduleId, now + nextRefreshDelayMs(data, now));
         } catch (err) {
           logger.warn("Failed to ensure LA refresh while app-alive", err);
         }
@@ -894,7 +972,10 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
     data.locale === "en"
       ? "Countdown on Lock Screen"
       : "ロック画面でカウントダウン中";
-  const presentAlert = await tryClaimStartPresentation(data.deviceId, scheduleId, now);
+  const presentAlert = await tryClaimStartPresentation(data.deviceId, scheduleId, now, {
+    // Cold push-to-start must present; silent PTS after demo left Test1/Test3 invisible.
+    forceScheduleAlert: true,
+  });
   try {
     const aps = {
       timestamp: nowSec,
@@ -959,6 +1040,14 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       await sendTokenHarvestWake(fcmToken, data.deviceId);
     } catch {
       /* ignore */
+    }
+    // Follow-up wakes: force-quit often misses the first content-available.
+    for (const delayMs of [8_000, 25_000, 55_000]) {
+      try {
+        await enqueueRefresh(scheduleId, Date.now() + delayMs);
+      } catch {
+        /* ignore */
+      }
     }
     await markDueSchedulesStartedForItems(
       data.deviceId,
@@ -1027,7 +1116,7 @@ async function markStartedAndEnqueueRefresh(scheduleId, data) {
   } catch (err) {
     logger.warn("Failed to enqueue LA kick refresh", err);
   }
-  const nextRefresh = now + REFRESH_INTERVAL_MS;
+  const nextRefresh = now + nextRefreshDelayMs(data, now);
   if (nextRefresh < startAt) {
     try {
       await enqueueRefresh(scheduleId, nextRefresh);
@@ -1067,7 +1156,13 @@ async function enqueueOneMinuteAndArrived(scheduleId, data) {
   }
   if (startAt > Date.now() - 60_000) {
     // Dense arrived ticks — TimelineView does not reliably flip copy; FCM must.
+    // Also pre-bake statusText via frequent content updates in the last 5 minutes.
+    const dense = [];
+    for (let t = startAt - NEAR_START_DENSE_MS; t < startAt; t += NEAR_START_INTERVAL_MS) {
+      if (t > Date.now() - 2_000) dense.push(t);
+    }
     for (const at of [
+      ...dense,
       startAt - 5_000,
       startAt - 1_000,
       startAt,
@@ -1116,6 +1211,7 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
       now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
     const hadRawToken = !!device.liveActivityUpdateToken;
     const skipCode = deviceRecentPts ? "awaiting-update-token" : "missing-tokens";
+    const prevSkipAt = Number(device.laUpdateSkipMissingTokenAt || 0);
     logger.info("Skip LA refresh — missing/stale update token", scheduleId, {
       hasFcm: !!fcmToken,
       hasUsableUpdate: !!updateToken,
@@ -1137,15 +1233,40 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
     } catch {
       /* ignore */
     }
-    // Always record — otherwise TestFlight logs look "healthy" while ticks starve.
-    await recordRemoteResult(scheduleId, data.deviceId, {
-      ok: false,
-      phase,
-      code: skipCode,
-      error: deviceRecentPts
-        ? "awaiting liveActivityUpdateToken after push-to-start"
-        : "missing fcmToken or liveActivityUpdateToken",
-    });
+    // Re-nudge token harvest while waiting (kill-path after PTS).
+    if (deviceRecentPts && fcmToken) {
+      try {
+        await sendTokenHarvestWake(fcmToken, data.deviceId);
+      } catch {
+        /* ignore */
+      }
+    }
+    // Throttle attempt-ring spam for routine countdown skips (Test3 flooded
+    // diagnostics with awaiting-update-token). Always record arrived/notify1m.
+    const recordAttempt =
+      !deviceRecentPts ||
+      phase === "arrived" ||
+      phase === "notify1m" ||
+      prevSkipAt <= 0 ||
+      now - prevSkipAt > 55_000;
+    if (recordAttempt) {
+      await recordRemoteResult(scheduleId, data.deviceId, {
+        ok: false,
+        phase,
+        code: skipCode,
+        error: deviceRecentPts
+          ? "awaiting liveActivityUpdateToken after push-to-start"
+          : "missing fcmToken or liveActivityUpdateToken",
+      });
+    }
+    // Dense retry for arrived / notify so late token still flips copy.
+    if (phase === "arrived" || phase === "notify1m") {
+      try {
+        await enqueueRefresh(scheduleId, now + 8_000);
+      } catch {
+        /* ignore */
+      }
+    }
     return false;
   }
   const withAlert = opts.withAlert === true;
@@ -1609,11 +1730,22 @@ export const refreshLiveActivityTask = onTaskDispatched(
     }
 
     if (data.status === "arrived") {
-      // Still lingering — wake again at endAt (and a short retry).
+      const lingerEnd = Number(data.endAtEpochMs) || 0;
+      if (lingerEnd <= now) {
+        await sendEndForSchedule(scheduleId, data);
+        return;
+      }
+      // Re-push arrived copy while lingering. FCM can report ok while Lock Screen
+      // stays on "1分後" (Test 2/4) — baked statusText + repeats fix that.
+      await sendUpdateForSchedule(scheduleId, data, "arrived", {
+        urgent: true,
+        withAlert: false,
+      });
+      const next = Math.min(now + 45_000, lingerEnd);
       try {
-        await enqueueRefresh(scheduleId, Number(data.endAtEpochMs));
+        await enqueueRefresh(scheduleId, next > now + 5_000 ? next : lingerEnd);
       } catch (err) {
-        logger.warn("Failed to enqueue LA end from arrived", err);
+        logger.warn("Failed to enqueue LA arrived linger refresh", err);
       }
       return;
     }
@@ -1677,7 +1809,7 @@ export const refreshLiveActivityTask = onTaskDispatched(
       }
     }
 
-    const next = now + REFRESH_INTERVAL_MS;
+    const next = now + nextRefreshDelayMs(data, now);
     if (next < Number(data.startEpochMs)) {
       try {
         await enqueueRefresh(scheduleId, next);
@@ -1778,6 +1910,9 @@ export const sweepLiveActivityRefresh = onSchedule(
             liveActivityUpdateTokenAt: FieldValue.delete(),
             laCardActiveUntil: 0,
             lastRemoteLaStartOk: false,
+            laGenerationPresentedAt: FieldValue.delete(),
+            laGenerationPresentedBy: FieldValue.delete(),
+            laAwaitingUpdateToken: false,
           },
           { merge: true },
         );
@@ -2146,7 +2281,7 @@ export const onDeviceTokenWrite = onDocumentWritten(
             }
           } else {
             await sendUpdateForSchedule(docSnap.id, data, "countdown");
-            await enqueueRefresh(docSnap.id, now + REFRESH_INTERVAL_MS);
+            await enqueueRefresh(docSnap.id, now + nextRefreshDelayMs(data, now));
             await enqueueOneMinuteAndArrived(docSnap.id, data);
           }
           logger.info("Kicked refresh after device token upload", docSnap.id);

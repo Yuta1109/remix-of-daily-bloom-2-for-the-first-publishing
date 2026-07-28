@@ -20,6 +20,7 @@ enum LiveActivityRefreshCenter {
     private static var heartbeat: Task<Void, Never>?
     private static var tokenWatchers: [String: Task<Void, Never>] = [:]
     private static var lastUpdateToken: String?
+    private static var lastSeenActivityIds: Set<String> = []
     private static var didAttemptPushRelaunchThisProcess = false
     private static let lock = NSLock()
 
@@ -173,8 +174,8 @@ enum LiveActivityRefreshCenter {
         let task = Task.detached(priority: .utility) {
             await bumpTicks()
             while !Task.isCancelled {
-                // Align with minute-granularity Lock Screen copy ("N分後").
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                // Align with denser Lock Screen copy ("N分後") — 30s while process alive.
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
                 await bumpTicks()
             }
         }
@@ -186,11 +187,19 @@ enum LiveActivityRefreshCenter {
     private static func watchExistingActivities() {
         let ids = Set(Activity<EssencesWidgetAttributes>.activities.map(\.id))
         lock.lock()
+        let prev = lastSeenActivityIds
+        lastSeenActivityIds = ids
         for (id, task) in tokenWatchers where !ids.contains(id) {
             task.cancel()
             tokenWatchers[id] = nil
         }
         lock.unlock()
+
+        let brandNew = ids.subtracting(prev)
+        if !brandNew.isEmpty {
+            // PTS / new request — cached token belongs to a prior Activity.
+            invalidateCachedUpdateToken(reason: "new-activity")
+        }
 
         for activity in Activity<EssencesWidgetAttributes>.activities {
             watchPushToken(for: activity)
@@ -218,11 +227,35 @@ enum LiveActivityRefreshCenter {
         lock.unlock()
     }
 
+    /// Drop cached update token when the Activity set changes so we never
+    /// re-upload a pre-PTS token with a fresh timestamp (server would treat it
+    /// as usable and silent ticks would target a dead Activity).
+    static func invalidateCachedUpdateToken(reason: String) {
+        lock.lock()
+        lastUpdateToken = nil
+        lock.unlock()
+        UserDefaults.standard.removeObject(forKey: updateTokenKey)
+        NSLog("[Essences LA] updateToken cache cleared (%@)", reason)
+    }
+
     private static func bumpTicks() async {
+        let now = Date()
         for activity in Activity<EssencesWidgetAttributes>.activities {
             let current = activity.content.state
+            let nextItems = current.items.map { item in
+                EssencesWidgetAttributes.Item(
+                    title: item.title,
+                    startEpochMs: item.startEpochMs,
+                    color: item.color,
+                    statusText: EssencesWidgetAttributes.statusText(
+                        startEpochMs: item.startEpochMs,
+                        locale: current.locale,
+                        now: now
+                    )
+                )
+            }
             let next = EssencesWidgetAttributes.ContentState(
-                items: current.items,
+                items: nextItems,
                 overflow: current.overflow,
                 locale: current.locale,
                 tick: current.tick &+ 1,

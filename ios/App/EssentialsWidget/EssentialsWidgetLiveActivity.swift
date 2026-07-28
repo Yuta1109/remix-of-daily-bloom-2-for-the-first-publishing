@@ -72,6 +72,8 @@ private struct CountdownOrArrivedLabel: View {
     /// Bumped by Activity.update / FCM so Lock Screen re-evaluates relative text
     /// even when TimelineView is throttled.
     let tick: Int
+    /// Prefer server/app-baked copy when present (kill-path reliable).
+    let bakedStatusText: String
 
     var body: some View {
         // Wall-clock minute schedule: advances "N分後" even while the app is
@@ -80,19 +82,25 @@ private struct CountdownOrArrivedLabel: View {
             let now = context.date
             // Reference `tick` so content-state updates always invalidate this view.
             let _ = tick
-            // Per-row: each event has its own start — do not use a global phase
-            // (that made every row flip to "arrived" when the earliest started).
-            Text(
-                now >= target
-                    ? arrivedText(locale)
-                    : relativeRemainingText(to: target, now: now, locale: locale)
-            )
+            let baked = bakedStatusText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let computed = now >= target
+                ? arrivedText(locale)
+                : relativeRemainingText(to: target, now: now, locale: locale)
+            // Hybrid: wall-clock advances "N分後" between FCM pushes; baked
+            // arrived wins when TimelineView is stuck pre-start after a successful
+            // FCM arrived (Test 2/4: server ok, Lock Screen still showed countdown).
+            let text: String = {
+                if now >= target { return arrivedText(locale) }
+                if baked == arrivedText(locale) { return baked }
+                return computed
+            }()
+            Text(text)
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(EssencesLAStyle.accent)
         .lineLimit(1)
         .minimumScaleFactor(0.85)
-        .id("\(tick)-\(Int(target.timeIntervalSince1970))")
+        .id("\(tick)-\(Int(target.timeIntervalSince1970))-\(bakedStatusText)")
     }
 }
 
@@ -128,7 +136,8 @@ struct LockScreenView: View {
                     CountdownOrArrivedLabel(
                         target: item.startDate,
                         locale: state.locale,
-                        tick: state.tick
+                        tick: state.tick,
+                        bakedStatusText: item.statusText
                     )
                     .frame(minWidth: 72, alignment: .trailing)
                 }

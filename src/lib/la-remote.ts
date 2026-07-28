@@ -173,6 +173,8 @@ let fcmToken: string | null = null;
 let liveActivityUpdateToken: string | null = null;
 /** Last update-token string written to Firestore (avoid bumping tokenAt on every pulse). */
 let lastUploadedUpdateToken: string | null = null;
+/** Wall-clock when the in-memory update token was received from ActivityKit. */
+let updateTokenAcquiredAt = 0;
 let lastError: string | null = null;
 let lastSyncAt: number | null = null;
 let cachedConfig: FirebaseWebConfig | null | undefined;
@@ -538,6 +540,7 @@ export async function pulseAppAlive(opts?: {
   const ok = await ensureFirebase();
   if (!ok || !db || !deviceUid) return;
   await syncNativeTokenUploadContext();
+  await reconcileUpdateTokenWithDeviceDoc();
   const local =
     typeof opts?.localLaActive === "boolean"
       ? opts.localLaActive
@@ -611,6 +614,46 @@ async function upsertDeviceDoc(extra?: Record<string, unknown>): Promise<void> {
 }
 
 /**
+ * After remote PTS the server deletes liveActivityUpdateToken. Re-uploading a
+ * pre-PTS ActivityKit token with a fresh tokenAt makes the server treat it as
+ * usable — silent ticks then target a dead Activity. Drop memory/cache if our
+ * token is older than the last PTS.
+ */
+async function reconcileUpdateTokenWithDeviceDoc(): Promise<void> {
+  if (!db || !deviceUid) return;
+  try {
+    const deviceSnap = await getDoc(doc(db, "devices", deviceUid));
+    if (!deviceSnap.exists()) return;
+    const d = deviceSnap.data() || {};
+    const ptsAt = Number(d.lastRemoteLaStartAt || 0);
+    const ptsOk = d.lastRemoteLaStartOk === true;
+    if (ptsOk && ptsAt > 0 && updateTokenAcquiredAt > 0 && updateTokenAcquiredAt < ptsAt - 500) {
+      laDebugLog(
+        "la",
+        `updateToken invalidated (acquired before PTS at ${new Date(ptsAt).toISOString()})`,
+        "warn",
+      );
+      liveActivityUpdateToken = null;
+      lastUploadedUpdateToken = null;
+      updateTokenAcquiredAt = 0;
+      try {
+        const { token } = await LiveActivities.getUpdateToken();
+        if (token) {
+          liveActivityUpdateToken = token;
+          updateTokenAcquiredAt = Date.now();
+          laDebugLog("la", `updateToken refreshed from native after PTS (len=${token.length})`, "ok");
+          await upsertDeviceDoc();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
  * Call after a *calendar* Live Activity was started locally.
  * Sets laCardActiveUntil so kill-path can UPDATE the surviving card (no PTS).
  * Without this window, server must PTS — a bare update token is not enough.
@@ -646,6 +689,7 @@ export async function markLocalCalendarLiveActivity(opts?: {
 export async function clearLocalLiveActivityRemoteState(): Promise<void> {
   liveActivityUpdateToken = null;
   lastUploadedUpdateToken = null;
+  updateTokenAcquiredAt = 0;
   const ok = await ensureFirebase();
   if (!ok || !db || !deviceUid) return;
   try {
@@ -659,6 +703,8 @@ export async function clearLocalLiveActivityRemoteState(): Promise<void> {
       liveActivityUpdateTokenAt: deleteField(),
       lastRemoteLaStartOk: false,
       lastRemoteLaStartScheduleId: deleteField(),
+      laGenerationPresentedAt: deleteField(),
+      laGenerationPresentedBy: deleteField(),
     });
   } catch {
     await upsertDeviceDoc({
@@ -666,6 +712,7 @@ export async function clearLocalLiveActivityRemoteState(): Promise<void> {
       laCardActiveUntil: 0,
       laLastPushStartAt: 0,
       lastRemoteLaStartOk: false,
+      laGenerationPresentedAt: 0,
     });
   }
 }
@@ -694,7 +741,17 @@ export async function requestLiveActivityPresentationAlert(): Promise<void> {
   // Update token often lands a beat after Activity.request — wait briefly.
   let token = liveActivityUpdateToken;
   if (!token) {
-    for (let i = 0; i < 10 && !liveActivityUpdateToken; i++) {
+    for (let i = 0; i < 20 && !liveActivityUpdateToken; i++) {
+      try {
+        const { token: native } = await LiveActivities.getUpdateToken();
+        if (native) {
+          liveActivityUpdateToken = native;
+          updateTokenAcquiredAt = Date.now();
+          break;
+        }
+      } catch {
+        /* ignore */
+      }
       await new Promise((r) => setTimeout(r, 200));
     }
     token = liveActivityUpdateToken;
@@ -724,16 +781,23 @@ export async function requestLiveActivityPresentationAlert(): Promise<void> {
       if (data.status !== "due" && data.status !== "started") continue;
       if (Number(data.showAtEpochMs) > now) continue;
       if (Number(data.endAtEpochMs) > 0 && Number(data.endAtEpochMs) <= now) continue;
-      // Device generation already presented (local haptic or prior PTS) — skip.
+      // Device generation already presented with a real alert — skip.
+      // Silent PTS (Always Allow / demo claim) must still allow recovery buzz.
       try {
         const deviceSnap = await getDoc(doc(db, "devices", deviceUid));
-        const d = deviceSnap.exists() ? deviceSnap.data() : null;
-        const presentedAt = Number(d?.laGenerationPresentedAt || 0);
+        const dd = deviceSnap.exists() ? deviceSnap.data() : null;
+        const presentedAt = Number(dd?.laGenerationPresentedAt || 0);
         const genAt = Math.max(
-          Number(d?.lastRemoteLaStartAt || 0),
-          Number(d?.lastLocalCalendarLaAt || 0),
+          Number(dd?.lastRemoteLaStartAt || 0),
+          Number(dd?.lastLocalCalendarLaAt || 0),
         );
-        if (presentedAt > 0 && (genAt <= 0 || presentedAt >= genAt - 2_000)) {
+        const silentPts =
+          dd?.lastRemoteLaStartOk === true && dd?.lastRemoteLaStartHadAlert === false;
+        if (
+          !silentPts &&
+          presentedAt > 0 &&
+          (genAt <= 0 || presentedAt >= genAt - 2_000)
+        ) {
           laDebugLog("la", "presentation alert skipped (generation already presented)", "info");
           return;
         }
@@ -792,6 +856,7 @@ export async function initLiveActivityRemote(): Promise<void> {
       await cap.addListener("liveActivityUpdateToken", (data) => {
         if (!data.token) return;
         liveActivityUpdateToken = data.token;
+        updateTokenAcquiredAt = Date.now();
         laDebugLog("la", `updateToken ingested (len=${data.token.length})`, "ok");
         void ensureFirebase().then((ok) => {
           if (ok) void upsertDeviceDoc();
@@ -852,8 +917,8 @@ export async function initLiveActivityRemote(): Promise<void> {
       const { token } = await LiveActivities.getUpdateToken();
       if (token) {
         liveActivityUpdateToken = token;
+        updateTokenAcquiredAt = Date.now();
         laDebugLog("la", `updateToken from native cache (len=${token.length})`, "ok");
-        await upsertDeviceDoc();
       } else {
         laDebugLog(
           "la",
@@ -880,6 +945,7 @@ export async function initLiveActivityRemote(): Promise<void> {
   const ok = await ensureFirebase();
   laDebugLog("la", `firebase ensure → ${ok} uid=${deviceUid?.slice(0, 8) ?? "none"}`);
   if (!ok) return;
+  await reconcileUpdateTokenWithDeviceDoc();
   await upsertDeviceDoc();
   startAppAliveHeartbeat();
   await syncLiveActivitySchedulesRemote();

@@ -25,10 +25,39 @@ const MAX_ITEMS = 3;
 const LA_NOTIF_ID_BASE = 50_000;
 const LA_NOTIF_ID_MAX = 59_999;
 
+/** Same rules as Cloud Functions / Swift — bake into Activity content-state. */
+export function formatLaStatusText(
+  startEpochMs: number,
+  locale: "en" | "ja",
+  nowMs: number = Date.now(),
+): string {
+  const secs = (Number(startEpochMs) - nowMs) / 1000;
+  const ja = locale !== "en";
+  if (!(secs > 0)) {
+    return ja ? "予定時間になりました" : "It's time";
+  }
+  if (secs < 60) {
+    return ja ? "まもなく" : "soon";
+  }
+  const totalMinutes = Math.floor(secs / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (ja) {
+    if (hours > 0 && minutes > 0) return `${hours}時間${minutes}分後`;
+    if (hours > 0) return `${hours}時間後`;
+    return `${totalMinutes}分後`;
+  }
+  if (hours > 0 && minutes > 0) return `in ${hours}h ${minutes}m`;
+  if (hours > 0) return `in ${hours}h`;
+  return `in ${totalMinutes}m`;
+}
+
 export interface LiveActivityItem {
   title: string;
   startEpochMs: number;
   color: string;
+  /** Baked Lock Screen copy — preferred over TimelineView alone. */
+  statusText?: string;
 }
 
 export interface LiveActivityPayload {
@@ -226,11 +255,13 @@ function collectVisibleItems(
   }
 
   const anyCounting = items.some((w) => nowMs < w.startEpochMs);
+  const locale = currentLocale();
   return {
     items: items.map(({ title, startEpochMs, color }) => ({
       title,
       startEpochMs,
       color,
+      statusText: formatLaStatusText(startEpochMs, locale, nowMs),
     })),
     overflow,
     phase: anyCounting ? "countdown" : "arrived",
@@ -358,6 +389,7 @@ export async function startDemoLiveActivity(opts?: {
           title,
           startEpochMs: now + 10 * 60_000,
           color: "orange",
+          statusText: formatLaStatusText(now + 10 * 60_000, locale, now),
         },
       ],
       overflow: 0,

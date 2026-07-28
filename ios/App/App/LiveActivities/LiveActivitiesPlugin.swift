@@ -268,7 +268,14 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                 start = 0
             }
             let color = obj["color"] as? String ?? "blue"
-            items.append(.init(title: title, startEpochMs: start, color: color))
+            let statusText = obj["statusText"] as? String ?? ""
+            let baked = statusText.isEmpty
+                ? EssencesWidgetAttributes.statusText(
+                    startEpochMs: start,
+                    locale: locale
+                )
+                : statusText
+            items.append(.init(title: title, startEpochMs: start, color: color, statusText: baked))
         }
 
         guard !items.isEmpty else {
@@ -517,9 +524,22 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
                 Task {
                     for activity in Activity<EssencesWidgetAttributes>.activities {
                         let cur = activity.content.state
-                        // Per-row UI uses each item's startDate; bump tick so TimelineView redraws.
+                        let now = Date()
+                        let nextItems = cur.items.map { item in
+                            EssencesWidgetAttributes.Item(
+                                title: item.title,
+                                startEpochMs: item.startEpochMs,
+                                color: item.color,
+                                statusText: EssencesWidgetAttributes.statusText(
+                                    startEpochMs: item.startEpochMs,
+                                    locale: locale.isEmpty ? cur.locale : locale,
+                                    now: now
+                                )
+                            )
+                        }
+                        // Per-row UI prefers baked statusText; bump tick so Lock Screen redraws.
                         let next = EssencesWidgetAttributes.ContentState(
-                            items: cur.items,
+                            items: nextItems,
                             overflow: cur.overflow,
                             locale: locale.isEmpty ? cur.locale : locale,
                             tick: cur.tick &+ 1,
