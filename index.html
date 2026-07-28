@@ -25,8 +25,8 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: #faf8f5;
-        transition: opacity 0.35s ease;
+        background: #fefefe;
+        transition: opacity 0.28s ease;
         pointer-events: none;
       }
       #boot-splash.boot-splash-hide {
@@ -46,13 +46,13 @@
         align-items: baseline;
         justify-content: center;
         gap: 0.35em;
-        min-height: 1.4em;
+        min-height: 1.5em;
         padding: 0 16px;
       }
       #boot-splash .boot-crafted {
         margin: 0;
         font-family: Georgia, "Times New Roman", Times, serif;
-        font-size: 16px;
+        font-size: 18px;
         font-style: italic;
         font-weight: 400;
         color: #8a8a8a;
@@ -61,9 +61,9 @@
       #boot-splash .boot-confast {
         margin: 0;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        font-size: 18px;
+        font-size: 21px;
         font-weight: 600;
-        color: var(--boot-accent, #ea863e);
+        color: #ea863e;
         letter-spacing: -0.01em;
       }
     </style>
@@ -78,23 +78,6 @@
     </div>
     <script>
       (function () {
-        var hex = {
-          orange: "#EA863E",
-          coral: "#EF5D39",
-          amber: "#F2A60D",
-          lime: "#67AE29",
-          teal: "#259D91",
-          sky: "#2095E9",
-          violet: "#804BDD",
-          rose: "#DF3A76",
-        };
-        var accent = hex.orange;
-        try {
-          var id = localStorage.getItem("essences-theme-accent");
-          if (id && hex[id]) accent = hex[id];
-        } catch (e) {}
-        document.documentElement.style.setProperty("--boot-accent", accent);
-
         var crafted = "crafted by";
         var confast = "Confast";
         var craftedEl = document.getElementById("boot-crafted");
@@ -113,10 +96,10 @@
             if (i > crafted.length) {
               phase = 1;
               i = 0;
-              window.setTimeout(tick, 120);
+              tick();
               return;
             }
-            window.setTimeout(tick, 42);
+            window.setTimeout(tick, 36);
             return;
           }
           confastEl.textContent = confast.slice(0, i);
@@ -125,12 +108,9 @@
             resolveReady();
             return;
           }
-          window.setTimeout(tick, 48);
+          window.setTimeout(tick, 40);
         }
-        // Start after first paint so native→web handoff shows logo first.
-        window.requestAnimationFrame(function () {
-          window.setTimeout(tick, 180);
-        });
+        window.requestAnimationFrame(tick);
       })();
     </script>
     <div id="root"></div>
