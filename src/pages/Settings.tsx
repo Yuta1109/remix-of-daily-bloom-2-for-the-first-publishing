@@ -39,6 +39,7 @@ import {
 import {
   getLiveActivityLocalStatus,
   refreshLiveActivities,
+  LiveActivities,
 } from "@/lib/live-activity";
 import {
   getLiveActivityEnableProgress,
@@ -112,15 +113,19 @@ export default function Settings({ staticPreview = false }: Props) {
   };
 
   const copyLaLog = async () => {
+    setLaBusy(true);
     let diag = laDiag;
     try {
       // Always refresh so copy includes deviceDoc / schedules (stale null digests
       // looked like "no server state" in TestFlight pastes).
+      await initLiveActivityRemote();
       diag = await fetchRemoteLaDiagnostics();
       setLaDiag(diag);
       setLaRemoteTick((n) => n + 1);
     } catch {
       /* use last known */
+    } finally {
+      setLaBusy(false);
     }
     const report = formatLaDiagnosticsReport(
       getLiveActivityRemoteStatus(),
@@ -129,11 +134,21 @@ export default function Settings({ staticPreview = false }: Props) {
       formatLaDebugLogForCopy(),
     );
     try {
-      await navigator.clipboard.writeText(report);
+      if (isNative()) {
+        await LiveActivities.copyText({ text: report });
+      } else {
+        await navigator.clipboard.writeText(report);
+      }
       setLaCopied(true);
-      window.setTimeout(() => setLaCopied(false), 2000);
+      window.setTimeout(() => setLaCopied(false), 2500);
     } catch {
-      window.prompt("Copy LA log:", report);
+      try {
+        await navigator.clipboard.writeText(report);
+        setLaCopied(true);
+        window.setTimeout(() => setLaCopied(false), 2500);
+      } catch {
+        window.prompt("Copy LA log:", report);
+      }
     }
   };
 
@@ -525,27 +540,26 @@ export default function Settings({ staticPreview = false }: Props) {
                 </div>
               ) : null}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => void copyLaLog()}
+                disabled={laBusy}
+                className="w-full bg-accent text-accent-foreground rounded-xl px-3 py-3 text-sm font-semibold disabled:opacity-60"
+              >
+                {laCopied ? t("remoteLaCopied") : t("remoteLaCopyAll")}
+              </button>
               <button
                 type="button"
                 onClick={() => void refreshLaDiagnostics()}
                 disabled={laBusy}
-                className="flex-1 bg-secondary/60 rounded-xl px-3 py-2.5 text-sm font-medium disabled:opacity-60"
+                className="w-full bg-secondary/60 rounded-xl px-3 py-2.5 text-sm font-medium disabled:opacity-60"
               >
                 {t("remoteLaRecheck")}
               </button>
-              <button
-                type="button"
-                onClick={() => void copyLaLog()}
-                className="flex-1 bg-accent text-accent-foreground rounded-xl px-3 py-2.5 text-sm font-medium"
-              >
-                {laCopied ? t("remoteLaCopied") : t("remoteLaCopyLog")}
-              </button>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-              {locale === "ja"
-                ? "ログは端末に保存され、予定の削除では消えません。テスト一式のあと「ログをコピー」でまとめて送れます。"
-                : "Logs are kept on device and survive deleting events. Copy once after a full test session."}
+              {t("remoteLaCopyHint")}
             </p>
           </div>
         )}

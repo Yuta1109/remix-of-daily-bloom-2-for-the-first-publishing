@@ -122,6 +122,14 @@ export type RemoteLaDiagnostics = {
     appAliveAt?: number;
     localLaActive?: boolean;
     laCardActiveUntil?: number;
+    liveActivityUpdateTokenAt?: number;
+    laAwaitingUpdateToken?: boolean;
+    laUpdateSkipMissingTokenCount?: number;
+    laUpdateSkipMissingTokenAt?: number;
+    laUpdateSkipMissingTokenPhase?: string;
+    lastNativeUpdateTokenUploadAt?: number;
+    lastNativeUpdateTokenUploadSource?: string;
+    lastUpdateTokenKickAt?: number;
   };
 };
 
@@ -293,6 +301,14 @@ export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | 
         appAliveAt: deviceData?.appAliveAt,
         localLaActive: deviceData?.localLaActive,
         laCardActiveUntil: deviceData?.laCardActiveUntil,
+        liveActivityUpdateTokenAt: deviceData?.liveActivityUpdateTokenAt,
+        laAwaitingUpdateToken: deviceData?.laAwaitingUpdateToken === true,
+        laUpdateSkipMissingTokenCount: deviceData?.laUpdateSkipMissingTokenCount,
+        laUpdateSkipMissingTokenAt: deviceData?.laUpdateSkipMissingTokenAt,
+        laUpdateSkipMissingTokenPhase: deviceData?.laUpdateSkipMissingTokenPhase,
+        lastNativeUpdateTokenUploadAt: deviceData?.lastNativeUpdateTokenUploadAt,
+        lastNativeUpdateTokenUploadSource: deviceData?.lastNativeUpdateTokenUploadSource,
+        lastUpdateTokenKickAt: deviceData?.lastUpdateTokenKickAt,
       },
     };
 
@@ -333,15 +349,27 @@ export async function fetchRemoteLaDiagnostics(): Promise<RemoteLaDiagnostics | 
   }
 }
 
-/** Plain-text report for TestFlight screenshots / paste into chat. */
+/** Plain-text report for TestFlight — one-tap copy of everything useful. */
 export function formatLaDiagnosticsReport(
   remote: LiveActivityRemoteStatus,
   diag: RemoteLaDiagnostics | null,
   local: { systemEnabled: boolean | null; activeCount: number; lastError: string | null },
   clientLog: string,
 ): string {
+  const iso = (ms: unknown) => {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return "-";
+    try {
+      return new Date(n).toISOString();
+    } catch {
+      return String(n);
+    }
+  };
   const lines: string[] = [];
   lines.push(`=== Essences LA diagnostics ${new Date().toISOString()} ===`);
+  lines.push(
+    "HOW TO CAPTURE: Keep schedules until AFTER this copy. Do not delete events first (that clears tokens / schedules). Prefer copy while Lock Screen still shows the card.",
+  );
   lines.push(
     `client: supported=${remote.supported} config=${remote.configPresent} auth=${remote.authenticated} uid=${remote.deviceUid || "-"}`,
   );
@@ -356,10 +384,13 @@ export function formatLaDiagnosticsReport(
   if (diag?.device) {
     const d = diag.device;
     lines.push(
-      `deviceDoc: FCM=${d.hasFcmToken ? "✓" : "✗"} PTS=${d.hasPushToStartToken ? "✓" : "✗"} update=${d.hasUpdateToken ? "✓" : "✗"} claimAt=${d.laLastPushStartAt || "-"} claimBy=${d.laLastPushStartBy || "-"} lastStartOk=${d.lastRemoteLaStartOk ?? "-"} lastStartAt=${d.lastRemoteLaStartAt || "-"} alert=${d.lastRemoteLaStartHadAlert ?? "-"} items=${d.lastRemoteLaStartItemCount ?? "-"} msgId=${(d.lastRemoteLaStartMessageId || "-").toString().slice(0, 24)} startErr=${(d.lastRemoteLaStartError || "-").slice(0, 80)}`,
+      `deviceDoc: FCM=${d.hasFcmToken ? "✓" : "✗"} PTS=${d.hasPushToStartToken ? "✓" : "✗"} update=${d.hasUpdateToken ? "✓" : "✗"} tokenAt=${iso(d.liveActivityUpdateTokenAt)} awaitingToken=${d.laAwaitingUpdateToken ?? "-"} claimAt=${iso(d.laLastPushStartAt)} claimBy=${d.laLastPushStartBy || "-"} lastStartOk=${d.lastRemoteLaStartOk ?? "-"} lastStartAt=${iso(d.lastRemoteLaStartAt)} alert=${d.lastRemoteLaStartHadAlert ?? "-"} items=${d.lastRemoteLaStartItemCount ?? "-"} msgId=${(d.lastRemoteLaStartMessageId || "-").toString().slice(0, 24)} startErr=${(d.lastRemoteLaStartError || "-").slice(0, 80)}`,
     );
     lines.push(
-      `ensure: path=${d.lastLaEnsurePath || "-"} reason=${d.lastLaEnsureReason || "-"} sched=${(d.lastLaEnsureScheduleId || "-").toString().slice(-12)} at=${d.lastLaEnsureAt || "-"} localCalAt=${d.lastLocalCalendarLaAt || "-"}`,
+      `tokenHealth: skipMissingCount=${d.laUpdateSkipMissingTokenCount ?? 0} lastSkipAt=${iso(d.laUpdateSkipMissingTokenAt)} lastSkipPhase=${d.laUpdateSkipMissingTokenPhase || "-"} nativeUploadAt=${iso(d.lastNativeUpdateTokenUploadAt)} nativeSource=${d.lastNativeUpdateTokenUploadSource || "-"} kickAt=${iso(d.lastUpdateTokenKickAt)}`,
+    );
+    lines.push(
+      `ensure: path=${d.lastLaEnsurePath || "-"} reason=${d.lastLaEnsureReason || "-"} sched=${(d.lastLaEnsureScheduleId || "-").toString().slice(-12)} at=${iso(d.lastLaEnsureAt)} localCalAt=${iso(d.lastLocalCalendarLaAt)}`,
     );
     const aliveAge =
       d.appAliveAt != null ? Math.round((Date.now() - Number(d.appAliveAt)) / 1000) : null;
@@ -372,7 +403,7 @@ export function formatLaDiagnosticsReport(
         ? Math.round((Number(d.laCardActiveUntil) - Date.now()) / 1000)
         : null;
     lines.push(
-      `ownership: appAliveAgeSec=${aliveAge ?? "-"} localLa=${d.localLaActive ?? "-"} localAgeSec=${localAge ?? "-"} cardUntil=${d.laCardActiveUntil || "-"} cardLeftSec=${cardLeft ?? "-"}`,
+      `ownership: appAliveAgeSec=${aliveAge ?? "-"} localLa=${d.localLaActive ?? "-"} localAgeSec=${localAge ?? "-"} cardUntil=${iso(d.laCardActiveUntil)} cardLeftSec=${cardLeft ?? "-"}`,
     );
   } else if (diag === null) {
     lines.push("deviceDoc: (fetch failed or timed out — tap Refresh then copy again)");
@@ -380,8 +411,16 @@ export function formatLaDiagnosticsReport(
   if (diag?.lastAttempt) {
     const a = diag.lastAttempt;
     lines.push(
-      `lastAttempt: ok=${a.ok} phase=${a.phase || "-"} code=${a.code || "-"} err=${(a.error || "").slice(0, 120)} at=${a.at || "-"} sched=${(a.scheduleId || "-").toString().slice(-12)}`,
+      `lastAttempt: ok=${a.ok} phase=${a.phase || "-"} code=${a.code || "-"} err=${(a.error || "").slice(0, 160)} at=${iso(a.at)} sched=${(a.scheduleId || "-").toString().slice(-12)}`,
     );
+  }
+  if (diag?.attempts?.length) {
+    lines.push(`attempts: count=${diag.attempts.length}`);
+    for (const a of diag.attempts.slice(0, 12)) {
+      lines.push(
+        `  attempt ${iso(a.at)} ok=${a.ok} phase=${a.phase || "-"} code=${a.code || "-"} sched=${(a.scheduleId || "-").toString().slice(-12)} err=${(a.error || "-").slice(0, 100)}`,
+      );
+    }
   }
   const schedules = diag?.schedules || [];
   lines.push(`schedules: count=${schedules.length}`);
@@ -393,7 +432,7 @@ export function formatLaDiagnosticsReport(
     const endIn =
       s.endAtEpochMs != null ? Math.round((Number(s.endAtEpochMs) - Date.now()) / 1000) : null;
     lines.push(
-      `schedule ${s.id.slice(-12)}: status=${s.status} title=${s.title || "-"} showInSec=${showIn ?? "-"} startInSec=${startIn ?? "-"} endInSec=${endIn ?? "-"} updOk=${s.lastRemoteUpdateOk ?? "-"} phase=${s.lastRemoteUpdatePhase || "-"} alert1m=${s.oneMinuteAlertSentAt ? "sent" : "-"} presented=${s.laPresentedAlertAt ? "yes" : "-"} reqAlert=${s.requestPresentationAlert ? "yes" : "-"} err=${s.lastError || s.lastRemoteUpdateError || "-"}`,
+      `schedule ${s.id.slice(-12)}: status=${s.status} title=${s.title || "-"} showAt=${iso(s.showAtEpochMs)} startAt=${iso(s.startEpochMs)} endAt=${iso(s.endAtEpochMs)} showInSec=${showIn ?? "-"} startInSec=${startIn ?? "-"} endInSec=${endIn ?? "-"} updOk=${s.lastRemoteUpdateOk ?? "-"} updAt=${iso(s.lastRemoteUpdateAt)} phase=${s.lastRemoteUpdatePhase || "-"} code=${s.lastRemoteUpdateCode || "-"} alert1m=${s.oneMinuteAlertSentAt ? iso(s.oneMinuteAlertSentAt) : "-"} presented=${s.laPresentedAlertAt ? iso(s.laPresentedAlertAt) : "-"} reqAlert=${s.requestPresentationAlert ? "yes" : "-"} err=${s.lastError || s.lastRemoteUpdateError || "-"}`,
     );
   }
   lines.push("--- client log ---");
@@ -456,6 +495,7 @@ async function ensureFirebase(): Promise<boolean> {
       30_000,
       "Firebase Auth",
     );
+    await syncNativeTokenUploadContext();
     return true;
   })().catch((err) => {
     setError(err);
@@ -463,6 +503,30 @@ async function ensureFirebase(): Promise<boolean> {
     return false;
   });
   return initPromise;
+}
+
+const REGION_FN = "asia-northeast1";
+
+/** Pass Auth context to native so update tokens upload without WKWebView. */
+async function syncNativeTokenUploadContext(): Promise<void> {
+  if (!isLiveActivitySupported() || !auth?.currentUser || !deviceUid) return;
+  try {
+    const idToken = await auth.currentUser.getIdToken();
+    const projectId = webConfig()?.projectId || PROJECT_ID;
+    const uploadUrl =
+      `https://${REGION_FN}-${projectId}.cloudfunctions.net/uploadLiveActivityUpdateToken`;
+    await LiveActivities.setTokenUploadContext({
+      deviceId: deviceUid,
+      idToken,
+      uploadUrl,
+    });
+  } catch (err) {
+    laDebugLog(
+      "la",
+      `setTokenUploadContext failed: ${err instanceof Error ? err.message : String(err)}`,
+      "warn",
+    );
+  }
 }
 
 let alivePulseTimer: number | null = null;
@@ -473,6 +537,7 @@ export async function pulseAppAlive(opts?: {
 }): Promise<void> {
   const ok = await ensureFirebase();
   if (!ok || !db || !deviceUid) return;
+  await syncNativeTokenUploadContext();
   const local =
     typeof opts?.localLaActive === "boolean"
       ? opts.localLaActive

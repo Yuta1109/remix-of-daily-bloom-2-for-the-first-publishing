@@ -165,6 +165,8 @@ enum LiveActivityRefreshCenter {
             object: nil,
             userInfo: ["token": token, "activityId": activityId]
         )
+        // Upload even when WKWebView/JS is suspended — silent FCM ticks need it.
+        LiveActivityTokenUploader.uploadIfNeeded(token: token)
     }
 
     private static func startHeartbeat() {

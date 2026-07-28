@@ -24,6 +24,8 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getTokenDebugInfo", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "rebroadcastApnsToken", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openLiveActivitySettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setTokenUploadContext", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "copyText", returnType: CAPPluginReturnPromise),
     ]
 
     /// activityId → first-seen time. Unknown ids (push-to-start) are treated as oldest
@@ -189,7 +191,37 @@ public class LiveActivitiesPlugin: CAPPlugin, CAPBridgedPlugin {
             info["hasUpdateToken"] = false
             info["laStartedWithoutPush"] = NSNull()
         }
+        for (key, value) in LiveActivityTokenUploader.debugStatus() {
+            info[key] = value
+        }
         call.resolve(info)
+    }
+
+    /// JS passes Firebase Auth context so native can upload update tokens while WebView sleeps.
+    @objc func setTokenUploadContext(_ call: CAPPluginCall) {
+        guard let deviceId = call.getString("deviceId"),
+              let idToken = call.getString("idToken"),
+              let uploadUrl = call.getString("uploadUrl"),
+              !deviceId.isEmpty,
+              !idToken.isEmpty,
+              !uploadUrl.isEmpty else {
+            call.reject("deviceId, idToken, and uploadUrl are required")
+            return
+        }
+        LiveActivityTokenUploader.configure(deviceId: deviceId, idToken: idToken, uploadUrl: uploadUrl)
+        call.resolve(["ok": true])
+    }
+
+    /// Reliable clipboard for TestFlight diagnostics (WebView clipboard often fails).
+    @objc func copyText(_ call: CAPPluginCall) {
+        guard let text = call.getString("text") else {
+            call.reject("text is required")
+            return
+        }
+        DispatchQueue.main.async {
+            UIPasteboard.general.string = text
+            call.resolve(["ok": true, "length": text.count])
+        }
     }
 
     /// Force Capacitor Firebase Messaging to see the cached APNs device token again.

@@ -15,10 +15,12 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
+import { getAuth } from "firebase-admin/auth";
 import { getFunctions } from "firebase-admin/functions";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onTaskDispatched } from "firebase-functions/v2/tasks";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onRequest } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import { logger } from "firebase-functions";
 import { GoogleAuth } from "google-auth-library";
@@ -30,6 +32,7 @@ setGlobalOptions({ region: REGION });
 
 const db = getFirestore();
 const messaging = getMessaging();
+const adminAuth = getAuth();
 
 /** Must match the Swift `ActivityAttributes` type name exactly. */
 const ATTRIBUTES_TYPE = "EssencesWidgetAttributes";
@@ -416,6 +419,7 @@ async function clearDeviceLiveActivityGeneration(deviceId) {
         laLastPushStartAt: 0,
         laGenerationPresentedAt: FieldValue.delete(),
         laGenerationPresentedBy: FieldValue.delete(),
+        laAwaitingUpdateToken: false,
       },
       { merge: true },
     );
@@ -938,6 +942,7 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
           liveActivityUpdateTokenAt: FieldValue.delete(),
           lastLocalCalendarLaAt: FieldValue.delete(),
           localLaActive: false,
+          laAwaitingUpdateToken: true,
           ...(presentAlert
             ? {}
             : {
@@ -948,6 +953,12 @@ async function sendStartForSchedule(scheduleId, data, opts = {}) {
       );
     } catch (err) {
       logger.warn("Failed to record PTS success", err);
+    }
+    // Best-effort wake so a suspended process can harvest the new update token.
+    try {
+      await sendTokenHarvestWake(fcmToken, data.deviceId);
+    } catch {
+      /* ignore */
     }
     await markDueSchedulesStartedForItems(
       data.deviceId,
@@ -1098,28 +1109,43 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
   const now = Date.now();
   if (!fcmToken || !updateToken) {
     // After force-quit push-to-start, updateToken often is not uploaded until
-    // the app opens — expected briefly. Custom "N分後" copy does NOT reliably
-    // advance via TimelineView alone; Cloud Tasks + usable update token are
-    // required for background / kill-path minute updates.
-    // Also skip stale pre-PTS tokens (they can dismiss the new Activity).
+    // the app process harvests it (native uploader / brief wake). Custom "N分後"
+    // copy does NOT reliably advance via TimelineView alone.
     const deviceRecentPts =
       device.lastRemoteLaStartOk === true &&
       now - Number(device.lastRemoteLaStartAt || 0) < 20 * 60_000;
     const hadRawToken = !!device.liveActivityUpdateToken;
+    const skipCode = deviceRecentPts ? "awaiting-update-token" : "missing-tokens";
     logger.info("Skip LA refresh — missing/stale update token", scheduleId, {
       hasFcm: !!fcmToken,
       hasUsableUpdate: !!updateToken,
       hadRawToken,
       deviceRecentPts,
+      phase,
     });
-    if (!deviceRecentPts) {
-      await recordRemoteResult(scheduleId, data.deviceId, {
-        ok: false,
-        phase,
-        code: "missing-tokens",
-        error: "missing fcmToken or liveActivityUpdateToken",
-      });
+    try {
+      await db.collection("devices").doc(data.deviceId).set(
+        {
+          laUpdateSkipMissingTokenCount: FieldValue.increment(1),
+          laUpdateSkipMissingTokenAt: now,
+          laUpdateSkipMissingTokenPhase: phase,
+          laUpdateSkipMissingTokenScheduleId: scheduleId,
+          laAwaitingUpdateToken: true,
+        },
+        { merge: true },
+      );
+    } catch {
+      /* ignore */
     }
+    // Always record — otherwise TestFlight logs look "healthy" while ticks starve.
+    await recordRemoteResult(scheduleId, data.deviceId, {
+      ok: false,
+      phase,
+      code: skipCode,
+      error: deviceRecentPts
+        ? "awaiting liveActivityUpdateToken after push-to-start"
+        : "missing fcmToken or liveActivityUpdateToken",
+    });
     return false;
   }
   const withAlert = opts.withAlert === true;
@@ -1208,6 +1234,13 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
       } catch (err) {
         logger.warn("Failed to mark oneMinuteAlertSentAt", err);
       }
+      // Token is known-good at this moment — re-arm dense arrived ticks so
+      // "1分後" → "予定時間になりました" does not depend on TimelineView.
+      try {
+        await enqueueOneMinuteAndArrived(scheduleId, data);
+      } catch (err) {
+        logger.warn("Failed to re-arm arrived after notify1m", err);
+      }
     }
     // Near start: reinforce arrived enqueue so copy flips without TimelineView.
     if (
@@ -1217,6 +1250,8 @@ async function sendUpdateForSchedule(scheduleId, data, phase = "countdown", opts
     ) {
       try {
         await enqueueRefresh(scheduleId, Number(data.startEpochMs));
+        await enqueueRefresh(scheduleId, Number(data.startEpochMs) + 5_000);
+        await enqueueRefresh(scheduleId, Number(data.startEpochMs) + 15_000);
       } catch {
         /* ignore */
       }
@@ -1394,7 +1429,107 @@ function hintForRemoteError(code, error) {
   if (c.includes("registration-token-not-registered") || c.includes("invalid-registration")) {
     return "FCM or Live Activity token is stale — reopen the app so tokens re-upload.";
   }
+  if (c === "awaiting-update-token" || c === "missing-tokens") {
+    return (
+      "Silent Lock Screen ticks need liveActivityUpdateToken after push-to-start. " +
+      "Native/JS must upload the new Activity token; until then countdown freezes."
+    );
+  }
   return null;
+}
+
+/**
+ * Native (or JS) uploads the ActivityKit update push token without Firestore SDK.
+ * Auth: Firebase ID token (Anonymous Auth). Body: { deviceId, updateToken, source? }.
+ */
+export const uploadLiveActivityUpdateToken = onRequest(
+  {
+    cors: true,
+    invoker: "public",
+    timeoutSeconds: 30,
+  },
+  async (req, res) => {
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({ error: "POST only" });
+      return;
+    }
+
+    try {
+      const authHeader = String(req.get("authorization") || "");
+      const match = authHeader.match(/^Bearer\s+(.+)$/i);
+      if (!match) {
+        res.status(401).json({ error: "missing Authorization Bearer token" });
+        return;
+      }
+      const decoded = await adminAuth.verifyIdToken(match[1]);
+      const uid = decoded.uid;
+      const body = req.body || {};
+      const deviceId = String(body.deviceId || "");
+      const updateToken = String(body.updateToken || "").trim();
+      const source = String(body.source || "unknown").slice(0, 32);
+      if (!deviceId || deviceId !== uid) {
+        res.status(403).json({ error: "deviceId must match authenticated uid" });
+        return;
+      }
+      if (updateToken.length < 32) {
+        res.status(400).json({ error: "invalid updateToken" });
+        return;
+      }
+
+      const now = Date.now();
+      await db.collection("devices").doc(deviceId).set(
+        {
+          liveActivityUpdateToken: updateToken,
+          liveActivityUpdateTokenAt: now,
+          laAwaitingUpdateToken: false,
+          lastNativeUpdateTokenUploadAt: now,
+          lastNativeUpdateTokenUploadSource: source,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      logger.info("uploadLiveActivityUpdateToken ok", {
+        deviceId: deviceId.slice(0, 8),
+        source,
+        tokenLen: updateToken.length,
+      });
+      res.status(200).json({ ok: true, at: now });
+    } catch (err) {
+      logger.warn("uploadLiveActivityUpdateToken failed", err);
+      res.status(401).json({
+        error: String(err?.message || err).slice(0, 200),
+      });
+    }
+  },
+);
+
+/** Silent content-available wake so suspended apps can harvest the update token. */
+async function sendTokenHarvestWake(fcmToken, deviceId) {
+  if (!fcmToken) return;
+  try {
+    await messaging.send({
+      token: fcmToken,
+      data: { type: "la-token-harvest" },
+      apns: {
+        headers: {
+          "apns-priority": "5",
+          "apns-push-type": "background",
+        },
+        payload: {
+          aps: {
+            "content-available": 1,
+          },
+        },
+      },
+    });
+    logger.info("LA token-harvest wake sent", deviceId?.slice?.(0, 8) || deviceId);
+  } catch (err) {
+    logger.warn("LA token-harvest wake failed", err);
+  }
 }
 
 /**
@@ -1937,7 +2072,7 @@ export const onLaScheduleWrite = onDocumentWritten(
 
 /**
  * When the device finally uploads liveActivityUpdateToken (often AFTER a local
- * Live Activity start), kick the refresh loop for active schedules.
+ * Live Activity start or PTS harvest), kick the refresh loop for active schedules.
  */
 export const onDeviceTokenWrite = onDocumentWritten(
   "devices/{deviceId}",
@@ -1953,6 +2088,19 @@ export const onDeviceTokenWrite = onDocumentWritten(
     if (tokenNow === tokenBefore && fcmNow === before?.fcmToken) return;
 
     const deviceId = event.params.deviceId;
+    const now = Date.now();
+    try {
+      await db.collection("devices").doc(deviceId).set(
+        {
+          laAwaitingUpdateToken: false,
+          lastUpdateTokenKickAt: now,
+        },
+        { merge: true },
+      );
+    } catch {
+      /* ignore */
+    }
+
     const snap = await db
       .collection("laSchedules")
       .where("deviceId", "==", deviceId)
@@ -1962,25 +2110,60 @@ export const onDeviceTokenWrite = onDocumentWritten(
       const data = docSnap.data();
       const status = data.status;
       if (status === "pending") continue;
-      if (Number(data.endAtEpochMs) <= Date.now()) continue;
+      if (Number(data.endAtEpochMs) <= now) continue;
 
       if (status === "due" || status === "error") {
         // Token just arrived — update only when a real card still exists.
         const preferUpdateOnly = await deviceHasLiveCard(
           after,
           deviceId,
-          Date.now(),
+          now,
         );
         await sendStartForSchedule(docSnap.id, data, { preferUpdateOnly });
         continue;
       }
       if (status === "started") {
         try {
-          await sendUpdateForSchedule(docSnap.id, data, "countdown");
-          await enqueueRefresh(docSnap.id, Date.now() + REFRESH_INTERVAL_MS);
+          if (Number(data.startEpochMs) <= now) {
+            // Missed arrived while token was missing — flip copy immediately.
+            const startMs = Number(data.startEpochMs) || now;
+            const lingerEnd = Math.max(
+              Number(data.endAtEpochMs) || 0,
+              startMs + ARRIVED_LINGER_MS,
+            );
+            const ok = await sendUpdateForSchedule(
+              docSnap.id,
+              { ...data, endAtEpochMs: lingerEnd },
+              "arrived",
+              { urgent: true, withAlert: false },
+            );
+            if (ok) {
+              await docSnap.ref.update({
+                status: "arrived",
+                arrivedAt: now,
+                endAtEpochMs: lingerEnd,
+              });
+            }
+          } else {
+            await sendUpdateForSchedule(docSnap.id, data, "countdown");
+            await enqueueRefresh(docSnap.id, now + REFRESH_INTERVAL_MS);
+            await enqueueOneMinuteAndArrived(docSnap.id, data);
+          }
           logger.info("Kicked refresh after device token upload", docSnap.id);
         } catch (err) {
           logger.warn("Failed to kick refresh after device token", err);
+        }
+        continue;
+      }
+      if (status === "arrived") {
+        try {
+          await sendUpdateForSchedule(docSnap.id, data, "arrived", {
+            urgent: true,
+            withAlert: false,
+          });
+          logger.info("Kicked arrived refresh after device token upload", docSnap.id);
+        } catch (err) {
+          logger.warn("Failed to kick arrived after device token", err);
         }
       }
     }

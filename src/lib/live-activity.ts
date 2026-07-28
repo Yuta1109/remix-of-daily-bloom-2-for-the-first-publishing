@@ -71,6 +71,14 @@ export interface LiveActivitiesPlugin {
   }>;
   /** Opens Essences in iOS Settings (Live Activities toggle is on that page). */
   openLiveActivitySettings(): Promise<void>;
+  /** Native HTTPS upload of update tokens while WKWebView may be suspended. */
+  setTokenUploadContext(opts: {
+    deviceId: string;
+    idToken: string;
+    uploadUrl: string;
+  }): Promise<{ ok: boolean }>;
+  /** Reliable clipboard via UIPasteboard (WebView clipboard often fails). */
+  copyText(opts: { text: string }): Promise<{ ok: boolean; length: number }>;
 }
 
 export const LiveActivities = registerPlugin<LiveActivitiesPlugin>("LiveActivities");

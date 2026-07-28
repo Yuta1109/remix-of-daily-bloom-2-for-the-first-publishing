@@ -164,9 +164,12 @@ const translations = {
     remoteLaError: "Error",
     remoteLaRecheck: "Refresh diagnostics",
     remoteLaCopyLog: "Copy log",
-    remoteLaCopied: "Copied",
+    remoteLaCopyAll: "Copy all diagnostics",
+    remoteLaCopied: "Copied — paste into chat",
     remoteLaTokens: "Tokens",
     remoteLaSchedules: "Schedules",
+    remoteLaCopyHint:
+      "Tap Copy all while schedules still exist and the Lock Screen card is visible. Deleting events first clears tokens/schedules from the report. The button refreshes server state, then copies everything (device, skips, attempts, schedules, client log) via the system clipboard.",
     remoteLaPermissionHint:
       "If iOS asks “Continue allowing Live Activities?”, tap Always Allow. Apps cannot hide that system prompt.",
     localLaOff:
@@ -437,9 +440,12 @@ const translations = {
     remoteLaError: "エラー",
     remoteLaRecheck: "診断を更新",
     remoteLaCopyLog: "ログをコピー",
-    remoteLaCopied: "コピーしました",
+    remoteLaCopyAll: "すべてコピー",
+    remoteLaCopied: "コピーしました — チャットに貼り付けてください",
     remoteLaTokens: "トークン",
     remoteLaSchedules: "スケジュール",
+    remoteLaCopyHint:
+      "予定を消す前に、ロック画面にカードが出ている状態で「すべてコピー」を押してください。予定削除後はトークン／スケジュールがログから消えます。ボタンはサーバ状態を更新してから、端末・スキップ回数・試行履歴・スケジュール・クライアントログをまとめてシステムクリップボードへ入れます。",
     remoteLaPermissionHint:
       "「ライブアクティビティの許可を継続しますか？」と出たら「常に許可」を選んでください。この表示は iOS のシステムUIで、アプリ側では消せません。",
     localLaOff:

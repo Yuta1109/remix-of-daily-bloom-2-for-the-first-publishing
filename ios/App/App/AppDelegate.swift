@@ -76,6 +76,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        // After push-to-start, server may send a silent wake so we can harvest
+        // the Activity update token without waiting for the user to open the app.
+        let type = userInfo["type"] as? String
+        if type == "la-token-harvest" {
+            LiveActivityTokenUploader.harvestAfterWake()
+        }
         NotificationCenter.default.post(
             name: Notification.Name("didReceiveRemoteNotification"),
             object: completionHandler,
