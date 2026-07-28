@@ -1,4 +1,4 @@
-import { useState, useEffect, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useState, useEffect, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   Globe,
@@ -28,30 +28,14 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { App } from "@capacitor/app";
-import {
-  fetchRemoteLaDiagnostics,
-  formatLaDiagnosticsReport,
-  getLiveActivityRemoteStatus,
-  initLiveActivityRemote,
-  syncLiveActivitySchedulesRemote,
-  type RemoteLaDiagnostics,
-} from "@/lib/la-remote";
-import {
-  getLiveActivityLocalStatus,
-  refreshLiveActivities,
-  LiveActivities,
-} from "@/lib/live-activity";
+import { syncLiveActivitySchedulesRemote } from "@/lib/la-remote";
+import { refreshLiveActivities } from "@/lib/live-activity";
 import {
   getLiveActivityEnableProgress,
   getLiveActivityGate,
   type LiveActivityGate,
 } from "@/lib/live-activity-prefs";
 import { LiveActivityDemoPanel } from "@/components/LiveActivityDemoPanel";
-import {
-  formatLaDebugLogForCopy,
-  getLaDebugLog,
-  subscribeLaDebugLog,
-} from "@/lib/la-debug-log";
 import {
   THEME_ACCENTS,
   getThemeAccentId,
@@ -79,15 +63,6 @@ export default function Settings({ staticPreview = false }: Props) {
   const [listOpen, setListOpen] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [themeAccent, setThemeAccent] = useState<ThemeAccentId>(() => getThemeAccentId());
-  const [laBusy, setLaBusy] = useState(false);
-  const [laCopied, setLaCopied] = useState(false);
-  const [laDiag, setLaDiag] = useState<RemoteLaDiagnostics | null>(null);
-  const [laRemoteTick, setLaRemoteTick] = useState(0);
-  const debugLog = useSyncExternalStore(subscribeLaDebugLog, getLaDebugLog, getLaDebugLog);
-  const laRemote = getLiveActivityRemoteStatus();
-  const laLocal = getLiveActivityLocalStatus();
-  void laRemoteTick;
-  void debugLog;
 
   const refreshPermission = async () => {
     if (!isNative()) return;
@@ -95,60 +70,12 @@ export default function Settings({ staticPreview = false }: Props) {
     setPerm(s);
   };
 
-  const refreshLaDiagnostics = async () => {
+  const refreshLaGate = async () => {
     if (!isNative() || staticPreview) return;
-    setLaBusy(true);
     try {
-      await initLiveActivityRemote();
-      const [diag, gate] = await Promise.all([
-        fetchRemoteLaDiagnostics(),
-        getLiveActivityGate(),
-      ]);
-      setLaDiag(diag);
-      setLaGate(gate);
-      setLaRemoteTick((n) => n + 1);
-    } finally {
-      setLaBusy(false);
-    }
-  };
-
-  const copyLaLog = async () => {
-    setLaBusy(true);
-    let diag = laDiag;
-    try {
-      // Always refresh so copy includes deviceDoc / schedules (stale null digests
-      // looked like "no server state" in TestFlight pastes).
-      await initLiveActivityRemote();
-      diag = await fetchRemoteLaDiagnostics();
-      setLaDiag(diag);
-      setLaRemoteTick((n) => n + 1);
+      setLaGate(await getLiveActivityGate());
     } catch {
-      /* use last known */
-    } finally {
-      setLaBusy(false);
-    }
-    const report = formatLaDiagnosticsReport(
-      getLiveActivityRemoteStatus(),
-      diag,
-      getLiveActivityLocalStatus(),
-      formatLaDebugLogForCopy(),
-    );
-    try {
-      if (isNative()) {
-        await LiveActivities.copyText({ text: report });
-      } else {
-        await navigator.clipboard.writeText(report);
-      }
-      setLaCopied(true);
-      window.setTimeout(() => setLaCopied(false), 2500);
-    } catch {
-      try {
-        await navigator.clipboard.writeText(report);
-        setLaCopied(true);
-        window.setTimeout(() => setLaCopied(false), 2500);
-      } catch {
-        window.prompt("Copy LA log:", report);
-      }
+      /* ignore */
     }
   };
 
@@ -158,7 +85,7 @@ export default function Settings({ staticPreview = false }: Props) {
   }, []);
   useEffect(() => {
     if (!isNative() || staticPreview) return;
-    void refreshLaDiagnostics();
+    void refreshLaGate();
   }, [staticPreview]);
 
   useEffect(() => {
@@ -179,7 +106,7 @@ export default function Settings({ staticPreview = false }: Props) {
     void App.addListener("appStateChange", ({ isActive }) => {
       if (isActive) {
         void refreshPermission();
-        void refreshLaDiagnostics();
+        void refreshLaGate();
       }
     }).then((h) => {
       handle = h;
@@ -378,7 +305,7 @@ export default function Settings({ staticPreview = false }: Props) {
                 showChecklist
                 onOutcome={(outcome) => {
                   if (outcome === "allowed") {
-                    void refreshLaDiagnostics();
+                    void refreshLaGate();
                     void refreshLiveActivities()
                       .then(() => syncLiveActivitySchedulesRemote())
                       .catch(() => {
@@ -481,88 +408,6 @@ export default function Settings({ staticPreview = false }: Props) {
             {t("version")} {APP_VERSION}
           </p>
         </div>
-
-        {/* 7. LA diagnostics (TestFlight copy) */}
-        {isNative() && (
-          <div className="bg-card rounded-2xl p-5 shadow-soft mb-6">
-            <div className="flex items-center gap-2 mb-1">
-              <Activity className="w-4 h-4 text-accent" />
-              <p className="text-sm font-semibold">{t("remoteLaStatus")}</p>
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">{t("remoteLaPermissionHint")}</p>
-            <div className="space-y-1.5 text-xs font-mono bg-secondary/50 rounded-xl px-3 py-2.5 mb-3">
-              <p>
-                {t("remoteLaTokens")}: FCM {laRemote.hasFcmToken ? "✓" : "✗"} · PTS{" "}
-                {laRemote.hasPushToStartToken ? "✓" : "✗"} · upd{" "}
-                {laRemote.hasUpdateToken ? "✓" : "✗"}
-              </p>
-              <p>
-                local: enabled={String(laLocal.systemEnabled)} count={laLocal.activeCount}
-              </p>
-              {laDiag?.device && (
-                <p className="break-all">
-                  lastStart: ok={String(laDiag.device.lastRemoteLaStartOk ?? "-")} alert=
-                  {String(laDiag.device.lastRemoteLaStartHadAlert ?? "-")} items=
-                  {String(laDiag.device.lastRemoteLaStartItemCount ?? "-")}
-                  {laDiag.device.lastRemoteLaStartError
-                    ? ` err=${String(laDiag.device.lastRemoteLaStartError).slice(0, 60)}`
-                    : ""}
-                </p>
-              )}
-              <p>
-                {laRemote.authenticated
-                  ? t("remoteLaOk")
-                  : laRemote.configPresent
-                    ? t("remoteLaWaiting")
-                    : t("remoteLaNoConfig")}
-              </p>
-              {(laRemote.lastError || laLocal.lastError) && (
-                <p className="text-destructive break-all">
-                  {t("remoteLaError")}: {laRemote.lastError || laLocal.lastError}
-                </p>
-              )}
-              {laDiag?.schedules?.length ? (
-                <div className="pt-1 border-t border-border/40 space-y-1">
-                  <p>
-                    {t("remoteLaSchedules")} ({laDiag.schedules.length})
-                  </p>
-                  {laDiag.schedules.slice(0, 6).map((s) => (
-                    <p key={s.id} className="break-all">
-                      {s.status} · {s.title || "?"} · upd=
-                      {s.lastRemoteUpdateOk == null
-                        ? "-"
-                        : s.lastRemoteUpdateOk
-                          ? "ok"
-                          : "fail"}
-                      {s.lastError ? ` · ${String(s.lastError).slice(0, 40)}` : ""}
-                    </p>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => void copyLaLog()}
-                disabled={laBusy}
-                className="w-full bg-accent text-accent-foreground rounded-xl px-3 py-3 text-sm font-semibold disabled:opacity-60"
-              >
-                {laCopied ? t("remoteLaCopied") : t("remoteLaCopyAll")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void refreshLaDiagnostics()}
-                disabled={laBusy}
-                className="w-full bg-secondary/60 rounded-xl px-3 py-2.5 text-sm font-medium disabled:opacity-60"
-              >
-                {t("remoteLaRecheck")}
-              </button>
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-              {t("remoteLaCopyHint")}
-            </p>
-          </div>
-        )}
       </div>
 
       {!staticPreview &&
