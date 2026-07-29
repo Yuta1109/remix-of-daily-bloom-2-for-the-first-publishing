@@ -17,6 +17,9 @@
     <meta name="twitter:title" content="Essences" />
     <meta name="twitter:description" content="A calm calendar for the plans that matter." />
     <style>
+      html, body {
+        background: #fefefe;
+      }
       #boot-splash {
         position: fixed;
         inset: 0;
@@ -36,6 +39,7 @@
         width: 76px;
         height: 76px;
         object-fit: contain;
+        image-rendering: auto;
       }
       #boot-splash .boot-brand {
         position: absolute;
@@ -70,7 +74,7 @@
   </head>
   <body>
     <div id="boot-splash" aria-hidden="true">
-      <img class="boot-logo" src="/splash-logo.png" alt="" width="76" height="76" />
+      <img class="boot-logo" src="/splash-logo.png" alt="" width="228" height="228" />
       <div class="boot-brand">
         <span class="boot-crafted" id="boot-crafted"></span>
         <span class="boot-confast" id="boot-confast"></span>
@@ -82,35 +86,46 @@
         var confast = "Confast";
         var craftedEl = document.getElementById("boot-crafted");
         var confastEl = document.getElementById("boot-confast");
+        var started = false;
         var resolveReady;
         window.__bootSplashReady = new Promise(function (resolve) {
           resolveReady = resolve;
         });
 
-        var i = 0;
-        var phase = 0;
-        function tick() {
-          if (phase === 0) {
-            craftedEl.textContent = crafted.slice(0, i);
-            i += 1;
-            if (i > crafted.length) {
-              phase = 1;
-              i = 0;
-              tick();
+        function startTypewriter() {
+          if (started) return;
+          started = true;
+          var i = 0;
+          var phase = 0;
+          function tick() {
+            if (phase === 0) {
+              craftedEl.textContent = crafted.slice(0, i);
+              i += 1;
+              if (i > crafted.length) {
+                phase = 1;
+                i = 0;
+                tick();
+                return;
+              }
+              window.setTimeout(tick, 36);
               return;
             }
-            window.setTimeout(tick, 36);
-            return;
+            confastEl.textContent = confast.slice(0, i);
+            i += 1;
+            if (i > confast.length) {
+              resolveReady();
+              return;
+            }
+            window.setTimeout(tick, 40);
           }
-          confastEl.textContent = confast.slice(0, i);
-          i += 1;
-          if (i > confast.length) {
-            resolveReady();
-            return;
-          }
-          window.setTimeout(tick, 40);
+          tick();
         }
-        window.requestAnimationFrame(tick);
+
+        // main.tsx calls this after the native launch screen is hidden so the
+        // user only ever sees: icon alone → typewriter (no pre-typed flash).
+        window.__startBootTypewriter = startTypewriter;
+        // Web / fallback if native hide never signals.
+        window.setTimeout(startTypewriter, 900);
       })();
     </script>
     <div id="root"></div>

@@ -29,6 +29,15 @@ async function syncSchedules(opts: { dismissArrived?: boolean } = {}) {
   void rescheduleLiveActivityWakes();
 }
 
+export async function hideNativeSplash(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await SplashScreen.hide();
+  } catch {
+    /* not available */
+  }
+}
+
 export async function initNative(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
 
@@ -42,11 +51,8 @@ export async function initNative(): Promise<void> {
     /* not available */
   }
 
-  try {
-    await SplashScreen.hide();
-  } catch {
-    /* not available */
-  }
+  // Splash is dismissed from main.tsx as soon as the web boot splash is ready,
+  // so FCM / LA work below does not block the launch animation.
 
   try {
     await LocalNotifications.addListener("localNotificationActionPerformed", () => {
