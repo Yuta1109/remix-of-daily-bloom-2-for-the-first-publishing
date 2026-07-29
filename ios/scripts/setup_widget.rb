@@ -107,7 +107,7 @@ widget_target.build_configurations.each do |cfg|
   bs["INFOPLIST_FILE"] = "#{WIDGET_NAME}/Info.plist"
   bs["IPHONEOS_DEPLOYMENT_TARGET"] = DEPLOYMENT_TARGET
   bs["SWIFT_VERSION"] = SWIFT_VERSION
-  bs["TARGETED_DEVICE_FAMILY"] = "1,2"
+  bs["TARGETED_DEVICE_FAMILY"] = "1"
   bs["CODE_SIGN_STYLE"] = "Automatic"
   # Let xcodebuild / Automatic pick identity — do not force Distribution here.
   bs.delete("CODE_SIGN_IDENTITY")
