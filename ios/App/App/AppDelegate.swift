@@ -8,6 +8,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Cream under the webview so Dark Mode / systemBackground never flashes black
+        // between LaunchScreen dismiss and the first HTML paint.
+        let cream = UIColor(red: 254.0 / 255.0, green: 254.0 / 255.0, blue: 254.0 / 255.0, alpha: 1.0)
+        window?.backgroundColor = cream
+        window?.rootViewController?.view.backgroundColor = cream
+        DispatchQueue.main.async {
+            self.window?.backgroundColor = cream
+            self.window?.rootViewController?.view.backgroundColor = cream
+        }
         // Start ActivityKit push-to-start token observation early and keep the
         // Task alive for the process lifetime (see LiveActivityPushTokenCenter).
         LiveActivityPushTokenCenter.start()

@@ -32,9 +32,9 @@ syncBootSplashAccent();
 createRoot(document.getElementById("root")!).render(<App />);
 initKeyboardAvoidance();
 
-// Native system launch: HQ icon only (LaunchScreen storyboard).
-// Web splash: text only — no icon. Capacitor must NOT re-show LaunchScreen
-// (launchShowDuration 0), or users see icon → blank → icon → typing.
+// Native system launch: HQ icon only.
+// Web: text-only branding. WKWebView / window background must be #fefefe
+// (see capacitor ios.backgroundColor) or Dark Mode shows a black gap.
 void (async () => {
   await (window.__bootSplashVisible ?? Promise.resolve());
   await hideNativeSplash();

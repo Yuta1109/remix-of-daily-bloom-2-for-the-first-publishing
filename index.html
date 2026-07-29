@@ -17,8 +17,9 @@
     <meta name="twitter:title" content="Essences" />
     <meta name="twitter:description" content="A calm calendar for the plans that matter." />
     <style>
-      html, body {
+      html, body, #root {
         background: #fefefe;
+        margin: 0;
       }
       #boot-splash {
         position: fixed;
@@ -107,14 +108,9 @@
           resolveVisible = resolve;
         });
 
-        window.requestAnimationFrame(function () {
-          window.requestAnimationFrame(function () {
-            resolveVisible();
-            // Start under the system launch screen so the handoff is icon → typing
-            // (not icon → blank cream → typing).
-            startTypewriter();
-          });
-        });
+        // Start typing immediately so when LaunchScreen lifts, branding is already on screen.
+        startTypewriter();
+        resolveVisible();
 
         function startTypewriter() {
           if (started) return;
