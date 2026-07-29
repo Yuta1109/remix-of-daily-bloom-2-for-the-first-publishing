@@ -110,6 +110,9 @@
         window.requestAnimationFrame(function () {
           window.requestAnimationFrame(function () {
             resolveVisible();
+            // Start under the system launch screen so the handoff is icon → typing
+            // (not icon → blank cream → typing).
+            startTypewriter();
           });
         });
 

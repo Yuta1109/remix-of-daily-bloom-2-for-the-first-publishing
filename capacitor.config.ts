@@ -23,10 +23,11 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      // Keep LaunchScreen (HQ logo only) until the web branding splash is ready.
-      // Web splash shows text only — no second logo — so the cut is icon → text.
-      launchShowDuration: 30_000,
-      launchAutoHide: false,
+      // 0 = do not re-mount LaunchScreen as a Capacitor overlay. With duration > 0,
+      // iOS shows the system launch icon, then Capacitor shows the same icon again
+      // (icon → blank → icon → typing). Duration 0 keeps: system icon → web typing.
+      launchShowDuration: 0,
+      launchAutoHide: true,
       backgroundColor: "#fefefe",
       showSpinner: false,
     },

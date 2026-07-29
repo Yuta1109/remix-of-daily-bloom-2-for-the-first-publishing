@@ -32,9 +32,9 @@ syncBootSplashAccent();
 createRoot(document.getElementById("root")!).render(<App />);
 initKeyboardAvoidance();
 
-// Native launch: HQ icon only.
-// Web splash: no icon — only centered "crafted by Confast" (accent-colored Confast).
-// This avoids a same-logo handoff blink between native and web.
+// Native system launch: HQ icon only (LaunchScreen storyboard).
+// Web splash: text only — no icon. Capacitor must NOT re-show LaunchScreen
+// (launchShowDuration 0), or users see icon → blank → icon → typing.
 void (async () => {
   await (window.__bootSplashVisible ?? Promise.resolve());
   await hideNativeSplash();
