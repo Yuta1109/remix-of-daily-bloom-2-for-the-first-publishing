@@ -32,7 +32,8 @@ async function syncSchedules(opts: { dismissArrived?: boolean } = {}) {
 export async function hideNativeSplash(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
-    await SplashScreen.hide();
+    // Instant cut — default 200ms fade reveals a blank WebView frame (the blink).
+    await SplashScreen.hide({ fadeOutDuration: 0 });
   } catch {
     /* not available */
   }

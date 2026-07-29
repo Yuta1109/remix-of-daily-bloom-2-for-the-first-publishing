@@ -8,6 +8,7 @@ import { initThemeAccent } from "./lib/theme-accent";
 declare global {
   interface Window {
     __bootSplashReady?: Promise<void>;
+    __bootSplashVisible?: Promise<void>;
     __startBootTypewriter?: () => void;
   }
 }
@@ -23,12 +24,11 @@ initThemeAccent();
 createRoot(document.getElementById("root")!).render(<App />);
 initKeyboardAvoidance();
 
-// Splash timeline (must not wait on FCM / Live Activity init):
-// 1) Native launch = logo only → hide as soon as web boot splash is up
-// 2) Typewriter starts
-// 3) ~1s after typing finishes → fade boot splash
-// Heavy native work runs in parallel and must not hold the splash.
+// Native = HQ centered logo only (same asset family as web).
+// After web logo is painted, cut native overlay with fadeOutDuration 0,
+// then type "crafted by Confast" under the logo in the screen center.
 void (async () => {
+  await (window.__bootSplashVisible ?? Promise.resolve());
   await hideNativeSplash();
   window.__startBootTypewriter?.();
 })();

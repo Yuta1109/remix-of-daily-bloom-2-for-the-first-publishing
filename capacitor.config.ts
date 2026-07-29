@@ -23,7 +23,8 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 0,
+      // Keep LaunchScreen (HQ logo only) until the matching web splash is painted.
+      launchShowDuration: 30_000,
       launchAutoHide: false,
       backgroundColor: "#fefefe",
       showSpinner: false,

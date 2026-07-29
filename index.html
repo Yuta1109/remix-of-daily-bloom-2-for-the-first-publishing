@@ -25,7 +25,6 @@
         inset: 0;
         z-index: 99999;
         display: flex;
-        flex-direction: column;
         align-items: center;
         justify-content: center;
         background: #fefefe;
@@ -35,23 +34,29 @@
       #boot-splash.boot-splash-hide {
         opacity: 0;
       }
+      #boot-splash .boot-center {
+        position: relative;
+        width: 76px;
+        height: 76px;
+        flex-shrink: 0;
+      }
       #boot-splash .boot-logo {
         width: 76px;
         height: 76px;
         object-fit: contain;
-        image-rendering: auto;
+        display: block;
       }
       #boot-splash .boot-brand {
         position: absolute;
-        left: 0;
-        right: 0;
-        bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+        top: calc(100% + 18px);
+        left: 50%;
+        transform: translateX(-50%);
         display: flex;
         align-items: baseline;
         justify-content: center;
         gap: 0.35em;
         min-height: 1.5em;
-        padding: 0 16px;
+        white-space: nowrap;
       }
       #boot-splash .boot-crafted {
         margin: 0;
@@ -74,10 +79,12 @@
   </head>
   <body>
     <div id="boot-splash" aria-hidden="true">
-      <img class="boot-logo" src="/splash-logo.png" alt="" width="228" height="228" />
-      <div class="boot-brand">
-        <span class="boot-crafted" id="boot-crafted"></span>
-        <span class="boot-confast" id="boot-confast"></span>
+      <div class="boot-center">
+        <img class="boot-logo" id="boot-logo" src="/splash-logo.png" alt="" width="456" height="456" decoding="sync" fetchpriority="high" />
+        <div class="boot-brand">
+          <span class="boot-crafted" id="boot-crafted"></span>
+          <span class="boot-confast" id="boot-confast"></span>
+        </div>
       </div>
     </div>
     <script>
@@ -86,17 +93,40 @@
         var confast = "Confast";
         var craftedEl = document.getElementById("boot-crafted");
         var confastEl = document.getElementById("boot-confast");
+        var logoEl = document.getElementById("boot-logo");
         var started = false;
         var resolveReady;
+        var resolveVisible;
         window.__bootSplashReady = new Promise(function (resolve) {
           resolveReady = resolve;
         });
+        window.__bootSplashVisible = new Promise(function (resolve) {
+          resolveVisible = resolve;
+        });
+
+        function markVisible() {
+          window.requestAnimationFrame(function () {
+            window.requestAnimationFrame(function () {
+              resolveVisible();
+            });
+          });
+        }
+
+        if (logoEl.complete && logoEl.naturalWidth > 0) {
+          markVisible();
+        } else {
+          logoEl.addEventListener("load", markVisible, { once: true });
+          logoEl.addEventListener("error", markVisible, { once: true });
+        }
 
         function startTypewriter() {
           if (started) return;
           started = true;
           var i = 0;
           var phase = 0;
+          // Slower cadence so the branding is easy to notice.
+          var craftedMs = 85;
+          var confastMs = 95;
           function tick() {
             if (phase === 0) {
               craftedEl.textContent = crafted.slice(0, i);
@@ -104,10 +134,10 @@
               if (i > crafted.length) {
                 phase = 1;
                 i = 0;
-                tick();
+                window.setTimeout(tick, 160);
                 return;
               }
-              window.setTimeout(tick, 36);
+              window.setTimeout(tick, craftedMs);
               return;
             }
             confastEl.textContent = confast.slice(0, i);
@@ -116,16 +146,12 @@
               resolveReady();
               return;
             }
-            window.setTimeout(tick, 40);
+            window.setTimeout(tick, confastMs);
           }
           tick();
         }
 
-        // main.tsx calls this after the native launch screen is hidden so the
-        // user only ever sees: icon alone → typewriter (no pre-typed flash).
         window.__startBootTypewriter = startTypewriter;
-        // Web / fallback if native hide never signals.
-        window.setTimeout(startTypewriter, 900);
       })();
     </script>
     <div id="root"></div>
