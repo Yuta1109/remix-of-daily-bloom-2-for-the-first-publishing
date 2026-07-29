@@ -34,34 +34,19 @@
       #boot-splash.boot-splash-hide {
         opacity: 0;
       }
-      #boot-splash .boot-center {
-        position: relative;
-        width: 76px;
-        height: 76px;
-        flex-shrink: 0;
-      }
-      #boot-splash .boot-logo {
-        width: 76px;
-        height: 76px;
-        object-fit: contain;
-        display: block;
-      }
       #boot-splash .boot-brand {
-        position: absolute;
-        top: calc(100% + 18px);
-        left: 50%;
-        transform: translateX(-50%);
         display: flex;
         align-items: baseline;
         justify-content: center;
-        gap: 0.35em;
-        min-height: 1.5em;
+        gap: 0.4em;
+        min-height: 1.6em;
         white-space: nowrap;
+        padding: 0 20px;
       }
       #boot-splash .boot-crafted {
         margin: 0;
         font-family: Georgia, "Times New Roman", Times, serif;
-        font-size: 18px;
+        font-size: 22px;
         font-style: italic;
         font-weight: 400;
         color: #8a8a8a;
@@ -70,21 +55,40 @@
       #boot-splash .boot-confast {
         margin: 0;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        font-size: 21px;
+        font-size: 26px;
         font-weight: 600;
-        color: #ea863e;
+        color: var(--boot-accent, #ea863e);
         letter-spacing: -0.01em;
       }
     </style>
+    <script>
+      // Apply saved accent before first paint of "Confast" (no orange→other flash).
+      (function () {
+        var hex = {
+          orange: "#EA863E",
+          coral: "#EF5D39",
+          amber: "#F2A60D",
+          lime: "#67AE29",
+          teal: "#259D91",
+          sky: "#2095E9",
+          violet: "#804BDD",
+          rose: "#DF3A76",
+        };
+        var accent = hex.orange;
+        try {
+          var id = localStorage.getItem("essences-theme-accent");
+          if (id && hex[id]) accent = hex[id];
+        } catch (e) {}
+        document.documentElement.style.setProperty("--boot-accent", accent);
+      })();
+    </script>
   </head>
   <body>
+    <!-- Native launch = HQ icon only. Web splash = branding text only (avoids logo handoff blink). -->
     <div id="boot-splash" aria-hidden="true">
-      <div class="boot-center">
-        <img class="boot-logo" id="boot-logo" src="/splash-logo.png" alt="" width="456" height="456" decoding="sync" fetchpriority="high" />
-        <div class="boot-brand">
-          <span class="boot-crafted" id="boot-crafted"></span>
-          <span class="boot-confast" id="boot-confast"></span>
-        </div>
+      <div class="boot-brand">
+        <span class="boot-crafted" id="boot-crafted"></span>
+        <span class="boot-confast" id="boot-confast"></span>
       </div>
     </div>
     <script>
@@ -93,7 +97,6 @@
         var confast = "Confast";
         var craftedEl = document.getElementById("boot-crafted");
         var confastEl = document.getElementById("boot-confast");
-        var logoEl = document.getElementById("boot-logo");
         var started = false;
         var resolveReady;
         var resolveVisible;
@@ -104,27 +107,17 @@
           resolveVisible = resolve;
         });
 
-        function markVisible() {
+        window.requestAnimationFrame(function () {
           window.requestAnimationFrame(function () {
-            window.requestAnimationFrame(function () {
-              resolveVisible();
-            });
+            resolveVisible();
           });
-        }
-
-        if (logoEl.complete && logoEl.naturalWidth > 0) {
-          markVisible();
-        } else {
-          logoEl.addEventListener("load", markVisible, { once: true });
-          logoEl.addEventListener("error", markVisible, { once: true });
-        }
+        });
 
         function startTypewriter() {
           if (started) return;
           started = true;
           var i = 0;
           var phase = 0;
-          // Slower cadence so the branding is easy to notice.
           var craftedMs = 85;
           var confastMs = 95;
           function tick() {

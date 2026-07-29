@@ -36,6 +36,18 @@ export const THEME_ACCENTS: ThemeAccentOption[] = [
   { id: "rose", accent: "338 72% 55%", streak: "338 78% 50%", labelKey: "themeAccentRose" },
 ];
 
+/** Hex twins of THEME_ACCENTS for boot splash "Confast" branding. */
+export const THEME_ACCENT_HEX: Record<ThemeAccentId, string> = {
+  orange: "#EA863E",
+  coral: "#EF5D39",
+  amber: "#F2A60D",
+  lime: "#67AE29",
+  teal: "#259D91",
+  sky: "#2095E9",
+  violet: "#804BDD",
+  rose: "#DF3A76",
+};
+
 const DEFAULT_ID: ThemeAccentId = "orange";
 
 function isAccentId(v: string | null | undefined): v is ThemeAccentId {

@@ -3,7 +3,7 @@ import App from "./App.tsx";
 import "./index.css";
 import { hideNativeSplash, initNative } from "./lib/native-bootstrap";
 import { initKeyboardAvoidance } from "./lib/keyboard-avoidance";
-import { initThemeAccent } from "./lib/theme-accent";
+import { getThemeAccentId, initThemeAccent, THEME_ACCENT_HEX } from "./lib/theme-accent";
 
 declare global {
   interface Window {
@@ -11,6 +11,13 @@ declare global {
     __bootSplashVisible?: Promise<void>;
     __startBootTypewriter?: () => void;
   }
+}
+
+function syncBootSplashAccent(): void {
+  document.documentElement.style.setProperty(
+    "--boot-accent",
+    THEME_ACCENT_HEX[getThemeAccentId()],
+  );
 }
 
 function dismissBootSplash(): void {
@@ -21,12 +28,13 @@ function dismissBootSplash(): void {
 }
 
 initThemeAccent();
+syncBootSplashAccent();
 createRoot(document.getElementById("root")!).render(<App />);
 initKeyboardAvoidance();
 
-// Native = HQ centered logo only (same asset family as web).
-// After web logo is painted, cut native overlay with fadeOutDuration 0,
-// then type "crafted by Confast" under the logo in the screen center.
+// Native launch: HQ icon only.
+// Web splash: no icon — only centered "crafted by Confast" (accent-colored Confast).
+// This avoids a same-logo handoff blink between native and web.
 void (async () => {
   await (window.__bootSplashVisible ?? Promise.resolve());
   await hideNativeSplash();

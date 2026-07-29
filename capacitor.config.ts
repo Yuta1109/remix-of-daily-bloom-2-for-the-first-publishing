@@ -23,7 +23,8 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      // Keep LaunchScreen (HQ logo only) until the matching web splash is painted.
+      // Keep LaunchScreen (HQ logo only) until the web branding splash is ready.
+      // Web splash shows text only — no second logo — so the cut is icon → text.
       launchShowDuration: 30_000,
       launchAutoHide: false,
       backgroundColor: "#fefefe",
