@@ -2,6 +2,13 @@ name: Deploy GitHub Pages (privacy policy)
 
 # Publishes docs/ (privacy-policy.html) to GitHub Pages.
 # One-time setup required: Repo Settings → Pages → Source: GitHub Actions.
+#
+# To keep the App Store privacy URL working after this app repo is made
+# Private (GitHub Free cannot host Pages from private repos), publish the
+# separate public site from privacy-public-site/ (see that folder's README)
+# and point App Store Connect to:
+#   https://yuta1109.github.io/essences-privacy/privacy-policy.html
+# Then you can disable Pages on this repository.
 on:
   push:
     branches: [main]

@@ -1,0 +1,2 @@
+# Nested git used only when publishing this folder as its own repo.
+.git/
