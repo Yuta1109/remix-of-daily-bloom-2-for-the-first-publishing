@@ -144,8 +144,8 @@ function MonthGrid({
                       color: `hsl(${colorHslFor(e.color)})`,
                     }}
                   >
-                    {!e.allDay && e.startTime ? `${e.startTime} ` : ""}
                     {e.title}
+                    {!e.allDay && e.startTime ? ` ${e.startTime}` : ""}
                   </div>
                 ))}
                 {more > 0 && (
