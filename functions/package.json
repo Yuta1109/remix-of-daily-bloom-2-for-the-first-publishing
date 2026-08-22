@@ -11,5 +11,8 @@
     "firebase-functions": "^6.0.0",
     "google-auth-library": "^9.15.1"
   },
+  "scripts": {
+    "test": "node --test quota-logic.test.js"
+  },
   "private": true
 }

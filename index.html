@@ -117,8 +117,8 @@
           started = true;
           var i = 0;
           var phase = 0;
-          var craftedMs = 85;
-          var confastMs = 95;
+          var craftedMs = 57;
+          var confastMs = 63;
           function tick() {
             if (phase === 0) {
               craftedEl.textContent = crafted.slice(0, i);
@@ -126,7 +126,7 @@
               if (i > crafted.length) {
                 phase = 1;
                 i = 0;
-                window.setTimeout(tick, 160);
+                window.setTimeout(tick, 107);
                 return;
               }
               window.setTimeout(tick, craftedMs);

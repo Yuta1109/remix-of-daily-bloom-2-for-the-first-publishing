@@ -17,6 +17,7 @@ const config: CapacitorConfig = {
     // CapApp-SPM by scripts/ensure-spm-firebase-app-link.mjs instead.
     includePlugins: [
       "@capacitor-firebase/messaging",
+      "@capacitor/camera",
       "@capacitor/haptics",
       "@capacitor/keyboard",
       "@capacitor/local-notifications",

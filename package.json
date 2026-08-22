@@ -1,7 +1,7 @@
 {
   "name": "essences",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run && node --test functions/quota-logic.test.js",
     "test:watch": "vitest",
     "cap:sync": "npm run build && npx cap sync ios && node scripts/ensure-spm-firebase-app-link.mjs && node scripts/run-setup-widget.mjs",
     "cap:ios": "npm run cap:sync && npx cap open ios",
@@ -20,6 +20,7 @@
     "@capacitor-firebase/app": "^8.3.0",
     "@capacitor-firebase/messaging": "^8.3.0",
     "@capacitor/app": "^8.1.0",
+    "@capacitor/camera": "^8.2.3",
     "@capacitor/cli": "^8.4.1",
     "@capacitor/core": "^8.4.1",
     "@capacitor/haptics": "^8.0.2",

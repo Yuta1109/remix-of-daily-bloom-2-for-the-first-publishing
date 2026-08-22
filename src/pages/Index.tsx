@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, type KeyboardEvent } from "react";
-import { Plus, Flame, Target, Calendar } from "lucide-react";
+import { Plus, Flame, Target, Calendar, History, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { TaskItem } from "@/components/TaskItem";
 import {
@@ -16,6 +16,10 @@ import { InsetScrollArea } from "@/components/InsetScrollArea";
 import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 import type { DayData, Task } from "@/lib/store";
+import { TaskHistorySheet } from "@/components/TaskHistorySheet";
+import { ImagePickSheet } from "@/components/ImagePickSheet";
+import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
+import { extractTextFromPickedImage, ocrToastKey, type ImageSource } from "@/lib/ocr";
 
 export default function Index() {
   const { t, formatDate } = useI18n();
@@ -24,6 +28,9 @@ export default function Index() {
   const [newTask, setNewTask] = useState("");
   const [reusable, setReusable] = useState<ReusableTask[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [ocrBusy, setOcrBusy] = useState(false);
   const streak = getStreak();
   const completion = getCompletionRate(dayData);
   const totalActiveDays = Object.values(getAllData()).filter((d) => d.tasks.length > 0).length;
@@ -66,6 +73,76 @@ export default function Index() {
     persist({ ...dayData, tasks: [...dayData.tasks, task] });
     if (isTutorialActive()) emitTutorial("task-added", { id: task.id });
     return true;
+  };
+
+  const bringHistoryTasks = (texts: string[]) => {
+    const seen = new Set(
+      dayData.tasks.filter((item) => !item.completed).map((item) => item.text),
+    );
+    const nextTasks = [...dayData.tasks];
+    for (const text of texts) {
+      const trimmed = text.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      nextTasks.push({
+        id: crypto.randomUUID(),
+        text: trimmed,
+        completed: false,
+        date: today,
+      });
+    }
+    if (nextTasks.length === dayData.tasks.length) {
+      toast(t("alreadyInToday"));
+      return;
+    }
+    persist({ ...dayData, tasks: nextTasks });
+    setHistoryOpen(false);
+  };
+
+  const addOcrTasks = (texts: string[]) => {
+    const seen = new Set(
+      dayData.tasks.filter((item) => !item.completed).map((item) => item.text),
+    );
+    const nextTasks = [...dayData.tasks];
+    for (const text of texts) {
+      const trimmed = text.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      nextTasks.push({
+        id: crypto.randomUUID(),
+        text: trimmed,
+        completed: false,
+        date: today,
+      });
+    }
+    if (nextTasks.length === dayData.tasks.length) {
+      toast(t("alreadyInToday"));
+      return;
+    }
+    persist({ ...dayData, tasks: nextTasks });
+  };
+
+  const onOcr = async (source: ImageSource) => {
+    if (ocrBusy) return;
+    setPickOpen(false);
+    setOcrBusy(true);
+    try {
+      const result = await extractTextFromPickedImage("tasks", source);
+      if (!result.ok) {
+        const key = ocrToastKey(result.error);
+        if (key) toast(t(key as "ocrQuota"));
+        return;
+      }
+      if (!("tasks" in result) || !result.tasks?.length) {
+        toast(t("ocrUnreadable"));
+        return;
+      }
+      addOcrTasks(result.tasks);
+    } catch {
+      toast(t("ocrGeneric"));
+    } finally {
+      setOcrBusy(false);
+    }
   };
 
   const finishNewTask = () => {
@@ -120,13 +197,23 @@ export default function Index() {
           className="bg-card rounded-3xl p-4 shadow-card animate-fade-in-up"
           data-tutorial="today-stats"
         >
-          <div className="mb-3">
+          <div className="mb-3 relative pr-10">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
               {formatDate(now, { weekday: "long" })}
             </p>
             <h1 className="text-2xl font-bold tracking-tight mt-0.5">
               {formatDate(now, { month: "long", day: "numeric" })}
             </h1>
+            {!isTutorialActive() && (
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(true)}
+                className="absolute top-0 right-0 p-2 rounded-xl text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+                aria-label={t("taskHistory")}
+              >
+                <History className="w-5 h-5" strokeWidth={2} />
+              </button>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-secondary/60 rounded-2xl p-3 text-center">
@@ -234,8 +321,30 @@ export default function Index() {
             <Plus className="w-4 h-4" strokeWidth={2.5} />
             {t("add")}
           </button>
+          <button
+            type="button"
+            onClick={() => setPickOpen(true)}
+            disabled={ocrBusy}
+            className="bg-card rounded-xl px-3 py-2.5 shadow-soft text-foreground/80 disabled:opacity-40"
+            aria-label={t("ocrAddImage")}
+          >
+            <Camera className="w-5 h-5" />
+          </button>
         </div>
       </div>
+      <TaskHistorySheet
+        open={historyOpen}
+        todayKey={today}
+        onOpenChange={setHistoryOpen}
+        onBringTasks={bringHistoryTasks}
+      />
+      <ImagePickSheet
+        open={pickOpen}
+        onPhotos={() => void onOcr("photos")}
+        onCamera={() => void onOcr("camera")}
+        onCancel={() => setPickOpen(false)}
+      />
+      <OcrBusyOverlay open={ocrBusy} />
     </div>
   );
 }

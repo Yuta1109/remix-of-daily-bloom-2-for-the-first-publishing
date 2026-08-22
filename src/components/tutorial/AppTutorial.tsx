@@ -24,6 +24,7 @@ import {
   setTutorialInProgress,
   setTutorialStepFlag,
   subscribeTutorial,
+  TUTORIAL_RESTART_EVENT,
   TUTORIAL_STEPS,
   type TutorialStep,
 } from "@/lib/tutorial";
@@ -43,6 +44,7 @@ export function AppTutorial() {
   const [laPhase, setLaPhase] = useState<LaDemoPhase>("offer");
   const laDemoSucceededRef = useRef(false);
   const advancingRef = useRef(false);
+  const replayRef = useRef(false);
 
   const step: TutorialStep | null = running ? TUTORIAL_STEPS[index] ?? null : null;
 
@@ -54,8 +56,36 @@ export function AppTutorial() {
     setTutorialStepFlag(null);
     setRunning(false);
     advancingRef.current = false;
+    replayRef.current = false;
     navigate("/", { replace: true });
   }, [navigate]);
+
+  const skipTour = useCallback(() => {
+    if (!replayRef.current) {
+      clearTutorialScratchData();
+      markLiveActivityEnableDeferred();
+    }
+    finish();
+  }, [finish]);
+
+  const startTourFrom = useCallback(
+    (opts: { wipeScratch: boolean; replay: boolean }) => {
+      replayRef.current = opts.replay;
+      if (opts.wipeScratch) clearTutorialScratchData();
+      markTutorialBootstrapStarted();
+      saveTutorialStepIndex(0);
+      setTutorialInProgress(true);
+      setTutorialActiveFlag(true);
+      advancingRef.current = false;
+      setLaShowNext(false);
+      setLaPhase("offer");
+      laDemoSucceededRef.current = false;
+      setIndex(0);
+      setRunning(true);
+      navigate("/", { replace: true });
+    },
+    [navigate],
+  );
 
   const goNext = useCallback(() => {
     if (advancingRef.current) return;
@@ -100,14 +130,7 @@ export function AppTutorial() {
       }
       if (cancelled || isTutorialDone()) return;
 
-      clearTutorialScratchData();
-      saveTutorialStepIndex(0);
-      setTutorialInProgress(true);
-      setTutorialActiveFlag(true);
-      advancingRef.current = false;
-      setIndex(0);
-      setRunning(true);
-      navigate("/", { replace: true });
+      startTourFrom({ wipeScratch: true, replay: false });
     }, 700);
 
     return () => {
@@ -116,6 +139,14 @@ export function AppTutorial() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const onRestart = () => {
+      startTourFrom({ wipeScratch: false, replay: true });
+    };
+    window.addEventListener(TUTORIAL_RESTART_EVENT, onRestart);
+    return () => window.removeEventListener(TUTORIAL_RESTART_EVENT, onRestart);
+  }, [startTourFrom]);
 
   useEffect(() => {
     if (!running || !step) {
@@ -268,10 +299,24 @@ export function AppTutorial() {
         body={body}
         hint={isAction ? undefined : hint}
         onOutsideTap={isTap ? goNext : undefined}
+        actions={
+          step.id === "welcome" ? (
+            <>
+              <p className="text-xs text-muted-foreground">{t("tutorialDurationNote")}</p>
+              <button
+                type="button"
+                onClick={skipTour}
+                className="w-full rounded-xl bg-secondary px-4 py-3 text-sm font-medium"
+              >
+                {t("tutorialSkip")}
+              </button>
+            </>
+          ) : undefined
+        }
       />
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, t, laShowNext, laPhase, goNext, finishLaStep]);
+  }, [step, t, laShowNext, laPhase, goNext, finishLaStep, skipTour]);
 
   if (!running || !step) return null;
   return overlay;

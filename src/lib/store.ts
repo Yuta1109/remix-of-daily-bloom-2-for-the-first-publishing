@@ -44,6 +44,15 @@ export function getAllData(): Record<string, DayData> {
   return loadData();
 }
 
+/** Past days that have at least one task, newest first. */
+export function getPastDaysWithTasks(todayKey: string): { date: string; data: DayData }[] {
+  const all = loadData();
+  return Object.entries(all)
+    .filter(([date, day]) => date < todayKey && day.tasks.length > 0)
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([date, data]) => ({ date, data }));
+}
+
 export function getCompletionRate(dayData: DayData): number {
   if (dayData.tasks.length === 0) return 0;
   const done = dayData.tasks.filter((t) => t.completed).length;

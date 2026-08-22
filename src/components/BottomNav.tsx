@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Home, Calendar, Settings } from "lucide-react";
+import { Home, Calendar, StickyNote, Settings } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -33,6 +33,7 @@ export function BottomNav() {
   const tabs = [
     { path: "/", icon: Home, label: t("today"), tutorial: "nav-today" },
     { path: "/calendar", icon: Calendar, label: t("calendar"), tutorial: "nav-calendar" },
+    { path: "/notes", icon: StickyNote, label: t("memoTab") },
     { path: "/settings", icon: Settings, label: t("settings"), tutorial: "nav-settings" },
   ];
 
@@ -59,7 +60,7 @@ export function BottomNav() {
                 }
               }}
               className={cn(
-                "flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-colors justify-center",
+                "flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-colors justify-center min-w-[64px]",
                 active ? "text-accent" : "text-muted-foreground"
               )}
             >

@@ -183,6 +183,16 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
 ];
 
+export const TUTORIAL_RESTART_EVENT = "essences-tutorial-restart";
+
+export function requestTutorialRestart(): void {
+  try {
+    window.dispatchEvent(new Event(TUTORIAL_RESTART_EVENT));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function isTutorialDone(): boolean {
   try {
     return localStorage.getItem(DONE_KEY) === "true";

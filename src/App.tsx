@@ -7,6 +7,7 @@ import { AppTutorial } from "@/components/tutorial/AppTutorial";
 import { I18nProvider } from "@/lib/i18n";
 import Index from "./pages/Index";
 import Calendar from "./pages/Calendar";
+import Notes from "./pages/Notes";
 import Settings from "./pages/Settings";
 import Privacy from "./pages/Privacy";
 import NotFound from "./pages/NotFound";
@@ -22,6 +23,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/calendar" element={<Calendar />} />
+        <Route path="/notes" element={<Notes />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="*" element={<NotFound />} />

@@ -5,7 +5,7 @@ import { SwipeBackPage } from "@/components/SwipeBackPage";
 import Settings from "@/pages/Settings";
 
 const CONTACT_EMAIL = "essences.app.support@gmail.com";
-const LAST_UPDATED = "2026-07-26";
+const LAST_UPDATED = "2026-08-21";
 
 export default function Privacy() {
   const navigate = useNavigate();
@@ -53,6 +53,9 @@ export default function Privacy() {
               </ul>
               <p>
                 予定の詳細なメモやタスク本文など、表示に不要な内容は送信しません。広告・解析用のサードパーティ SDK は使用していません。
+              </p>
+              <p>
+                「写真から文字を読み取る」を使う場合、選んだ画像は文字認識のため Google Cloud Functions へ一度送信されます（Google Gemini および／または Cloud Vision）。画像は文字の取り出しにのみ使われ、サーバー上に写真ライブラリとして保存しません。この機能を使わなければ送信されません。
               </p>
             </section>
             <section className="space-y-1">
@@ -118,6 +121,13 @@ export default function Privacy() {
               <p>
                 We do not send unnecessary event notes or task body text. The app
                 does not include advertising or analytics SDKs.
+              </p>
+              <p>
+                If you use “read text from a photo”, the selected image is sent
+                once to our Google Cloud Function so text can be recognized
+                (Google Gemini and/or Cloud Vision). The image is processed to
+                extract text and is not stored as a photo library on our
+                servers. You can keep using the app without this feature.
               </p>
             </section>
             <section className="space-y-1">

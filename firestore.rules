@@ -14,5 +14,8 @@ service cloud.firestore {
       allow read: if request.auth != null
         && resource.data.deviceId == request.auth.uid;
     }
+    match /geminiQuota/{modelId} {
+      allow read, write: if false;
+    }
   }
 }

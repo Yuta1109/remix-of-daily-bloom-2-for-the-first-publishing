@@ -188,7 +188,7 @@ function makeInitial(target: EventSheetTarget | null): CalendarEvent | null {
     repeat: "none",
     location: "",
     notes: "",
-    liveActivity: true,
+    liveActivity: false,
     liveActivityLead: "1h",
   };
 }
