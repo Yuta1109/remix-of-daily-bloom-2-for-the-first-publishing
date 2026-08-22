@@ -75,6 +75,8 @@
 	<string>写真から文字を読み取り、メモや今日のタスクに追加するためにカメラを使います。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>写真から文字を読み取り、メモや今日のタスクに追加するためにフォトライブラリへアクセスします。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>読み取った写真を保存する場合にフォトライブラリへアクセスします。</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 </dict>

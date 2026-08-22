@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Activity,
   Palette,
-  GraduationCap,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useI18n, type Locale } from "@/lib/i18n";
@@ -43,9 +42,8 @@ import {
   setThemeAccentId,
   type ThemeAccentId,
 } from "@/lib/theme-accent";
-import { requestTutorialRestart, isTutorialActive } from "@/lib/tutorial";
 
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 const PREVIEW_LIMIT = 4;
 
 interface Props {
@@ -285,25 +283,6 @@ export default function Settings({ staticPreview = false }: Props) {
             )}
           </div>
         )}
-
-        <div className="bg-card rounded-2xl p-5 shadow-soft">
-          <div className="flex items-center gap-2 mb-1">
-            <GraduationCap className="w-4 h-4 text-accent" />
-            <p className="text-sm font-semibold">{t("settingsReplayTutorial")}</p>
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">{t("settingsReplayTutorialDesc")}</p>
-          <button
-            type="button"
-            onClick={() => {
-              if (isTutorialActive()) return;
-              requestTutorialRestart();
-            }}
-            className="w-full flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-3 text-sm hover:bg-secondary transition-colors"
-          >
-            <span>{t("settingsReplayTutorial")}</span>
-            <ChevronRight className="w-4 h-4 text-muted-foreground" />
-          </button>
-        </div>
 
         {/* 3. Live Activities */}
         {isNative() && (

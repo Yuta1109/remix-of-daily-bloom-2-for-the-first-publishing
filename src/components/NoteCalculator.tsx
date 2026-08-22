@@ -37,15 +37,34 @@ export function NoteCalculator({ open, onClose, onInsert }: Props) {
   const [acc, setAcc] = useState<number | null>(null);
   const [op, setOp] = useState<Op | null>(null);
   const [fresh, setFresh] = useState(true);
+  const [exprLeft, setExprLeft] = useState("");
+  const [shownEq, setShownEq] = useState(false);
+
+  const expression = (() => {
+    if (shownEq && exprLeft) return `${exprLeft} =`;
+    if (op && exprLeft) return exprLeft;
+    return "";
+  })();
 
   const reset = () => {
     setDisplay("0");
     setAcc(null);
     setOp(null);
     setFresh(true);
+    setExprLeft("");
+    setShownEq(false);
   };
 
   const inputDigit = (d: string) => {
+    if (shownEq) {
+      setAcc(null);
+      setOp(null);
+      setExprLeft("");
+      setShownEq(false);
+      setDisplay(d === "." ? "0." : d);
+      setFresh(false);
+      return;
+    }
     setDisplay((cur) => {
       if (fresh || cur === "Error") return d === "." ? "0." : d;
       if (d === "." && cur.includes(".")) return cur;
@@ -57,37 +76,85 @@ export function NoteCalculator({ open, onClose, onInsert }: Props) {
 
   const applyOp = (next: Op) => {
     const n = Number(display);
+    if (shownEq) {
+      const left = display === "Error" ? "" : display;
+      setAcc(Number.isFinite(n) ? n : null);
+      setOp(next);
+      setExprLeft(left ? `${left} ${next}` : "");
+      setShownEq(false);
+      setFresh(true);
+      return;
+    }
     if (acc != null && op && !fresh) {
       const r = compute(acc, n, op);
       const shown = formatNum(r);
       setDisplay(shown);
       setAcc(Number.isFinite(r) ? r : null);
+      setOp(next);
+      setExprLeft(Number.isFinite(r) ? `${shown} ${next}` : "");
     } else {
       setAcc(Number.isFinite(n) ? n : null);
+      setOp(next);
+      setExprLeft(display === "Error" ? "" : `${display} ${next}`);
     }
-    setOp(next);
     setFresh(true);
   };
 
   const equals = () => {
     const n = Number(display);
-    if (acc == null || !op) return;
+    if (acc == null || !op || shownEq) return;
     const r = compute(acc, n, op);
-    setDisplay(formatNum(r));
-    setAcc(null);
-    setOp(null);
-    setFresh(true);
-  };
-
-  const percent = () => {
-    const n = Number(display) / 100;
-    setDisplay(formatNum(n));
+    const shown = formatNum(r);
+    setExprLeft(`${formatNum(acc)} ${op} ${display}`);
+    setDisplay(shown);
+    setAcc(Number.isFinite(r) ? r : null);
+    setShownEq(true);
     setFresh(true);
   };
 
   const negate = () => {
-    if (display === "Error") return;
+    if (display === "Error" || shownEq) return;
     setDisplay(display.startsWith("-") ? display.slice(1) : display === "0" ? display : `-${display}`);
+  };
+
+  const backspace = () => {
+    if (shownEq) {
+      setShownEq(false);
+      setOp(null);
+      setAcc(null);
+      setExprLeft("");
+      return;
+    }
+    if (!fresh && display !== "Error" && display.length > 1) {
+      const next = display.slice(0, -1);
+      setDisplay(next === "-" || next === "" ? "0" : next);
+      return;
+    }
+    if (!fresh && display.length <= 1) {
+      setDisplay("0");
+      setFresh(true);
+      return;
+    }
+    if (op) {
+      setOp(null);
+      setExprLeft("");
+      if (acc != null) setDisplay(formatNum(acc));
+      setFresh(true);
+    }
+  };
+
+  const pasteResult = () => {
+    if (display === "Error") return;
+    onInsert(display);
+    onClose();
+  };
+
+  const pasteExpression = () => {
+    if (display === "Error") return;
+    if (shownEq && exprLeft) onInsert(`${exprLeft} = ${display}`);
+    else if (op && exprLeft) onInsert(`${exprLeft} ${display}`);
+    else onInsert(display);
+    onClose();
   };
 
   const key = useCallback(
@@ -99,8 +166,8 @@ export function NoteCalculator({ open, onClose, onInsert }: Props) {
           if (kind === "digit") inputDigit(label);
           else if (kind === "op") applyOp(label as Op);
           else if (label === "AC") reset();
+          else if (label === "⌫") backspace();
           else if (label === "±") negate();
-          else if (label === "%") percent();
           else if (label === "=") equals();
         }}
         className={cn(
@@ -116,7 +183,7 @@ export function NoteCalculator({ open, onClose, onInsert }: Props) {
         {label}
       </button>
     ),
-    [display, acc, op, fresh],
+    [display, acc, op, fresh, shownEq, exprLeft],
   );
 
   if (!open) return null;
@@ -139,13 +206,16 @@ export function NoteCalculator({ open, onClose, onInsert }: Props) {
           style={{ flex: "1 1 0%" }}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <div className="bg-card rounded-2xl px-4 py-4 mb-3 text-right text-3xl font-semibold tracking-tight shadow-soft min-h-[64px] break-all">
-            {display}
+          <div className="bg-card rounded-2xl px-4 py-3 mb-3 text-right shadow-soft min-h-[88px] flex flex-col justify-end">
+            <p className="text-xs text-muted-foreground min-h-[16px] break-all leading-snug">
+              {expression || "\u00a0"}
+            </p>
+            <p className="text-3xl font-semibold tracking-tight break-all mt-1">{display}</p>
           </div>
           <div className="grid grid-cols-4 gap-2">
             {key("AC", "fn")}
+            {key("⌫", "fn")}
             {key("±", "fn")}
-            {key("%", "fn")}
             {key("÷", "op")}
             {key("7", "digit")}
             {key("8", "digit")}
@@ -163,16 +233,22 @@ export function NoteCalculator({ open, onClose, onInsert }: Props) {
             {key(".", "digit")}
             {key("=", "eq")}
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (display !== "Error") onInsert(display);
-              onClose();
-            }}
-            className="mt-3 w-full rounded-xl bg-secondary py-3 text-sm font-medium"
-          >
-            {t("memoInsertResult")}
-          </button>
+          <div className="mt-3 grid grid-cols-1 gap-2">
+            <button
+              type="button"
+              onClick={pasteResult}
+              className="w-full rounded-xl bg-secondary py-3 text-sm font-medium"
+            >
+              {t("memoInsertResultOnly")}
+            </button>
+            <button
+              type="button"
+              onClick={pasteExpression}
+              className="w-full rounded-xl bg-secondary py-3 text-sm font-medium"
+            >
+              {t("memoInsertExpression")}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

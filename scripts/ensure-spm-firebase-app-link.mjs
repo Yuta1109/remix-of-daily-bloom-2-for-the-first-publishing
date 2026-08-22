@@ -110,6 +110,35 @@ function rewritePackageSwift() {
   console.log("[spm] Package.swift uses VendoredAppPlugin (no external /app package)");
 }
 
+function ensureCameraPackage() {
+  if (!fs.existsSync(packageSwiftPath)) {
+    throw new Error(`Missing ${packageSwiftPath}. Run npx cap sync ios first.`);
+  }
+  let text = fs.readFileSync(packageSwiftPath, "utf8");
+  if (!text.includes("CapacitorCamera")) {
+    if (!text.includes('name: "CapacitorHaptics"')) {
+      throw new Error("Package.swift missing CapacitorHaptics; cannot insert CapacitorCamera");
+    }
+    text = text.replace(
+      /\.package\(name:\s*"CapacitorHaptics"/,
+      `.package(name: "CapacitorCamera", path: "../../../node_modules/@capacitor/camera"),
+        .package(name: "CapacitorHaptics"`,
+    );
+    text = text.replace(
+      /\.product\(name:\s*"CapacitorHaptics"/,
+      `.product(name: "CapacitorCamera", package: "CapacitorCamera"),
+                .product(name: "CapacitorHaptics"`,
+    );
+    fs.writeFileSync(packageSwiftPath, text);
+    console.log("[spm] Inserted CapacitorCamera into Package.swift");
+  }
+  text = fs.readFileSync(packageSwiftPath, "utf8");
+  if (!text.includes("CapacitorCamera")) {
+    throw new Error("Package.swift missing CapacitorCamera — camera/photos permissions will never appear");
+  }
+}
+
 vendorAppPluginSource();
 rewritePackageSwift();
+ensureCameraPackage();
 console.log("[spm] CapApp-SPM package identities OK.");

@@ -163,13 +163,18 @@ html.overlay-open #root {
 
 .note-editor ul {
   list-style: disc;
-  padding-left: 1.25rem;
+  list-style-position: outside;
+  padding-left: 1.75rem;
   margin: 0.25rem 0;
 }
 .note-editor ol {
   list-style: decimal;
-  padding-left: 1.25rem;
+  list-style-position: outside;
+  padding-left: 2.25rem;
   margin: 0.25rem 0;
+}
+.note-editor li {
+  padding-left: 0.35rem;
 }
 .note-editor:empty:before,
 .note-editor[data-placeholder]:empty:before {

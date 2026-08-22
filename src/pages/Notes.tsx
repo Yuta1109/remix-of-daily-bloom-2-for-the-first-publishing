@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   Bold,
   Underline,
   List,
@@ -9,7 +14,9 @@ import {
   Calculator,
   Plus,
   ChevronDown,
+  Redo2,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -29,9 +36,12 @@ import {
 } from "@/lib/notes-store";
 import { NoteCalculator } from "@/components/NoteCalculator";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
+import { hideKeyboard } from "@/lib/keyboard-avoidance";
 
-function runFormat(cmd: string) {
-  document.execCommand(cmd, false);
+type Align = "left" | "center" | "right";
+
+function runFormat(cmd: string, value?: string) {
+  document.execCommand(cmd, false, value);
 }
 
 function previewText(html: string): string {
@@ -43,15 +53,25 @@ export default function NotesPage() {
   const { t } = useI18n();
   const editorRef = useRef<HTMLDivElement>(null);
   const skipHtmlSync = useRef(false);
+  const keepKeyboard = useRef(false);
   const [pages, setPages] = useState<MemoPage[]>(() => loadMemoPages());
   const [activeId, setActiveId] = useState(() => getActiveMemoId());
+  const [editing, setEditing] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
-  const [formats, setFormats] = useState({ bold: false, underline: false, ul: false, ol: false });
+  const [kbHeight, setKbHeight] = useState(0);
+  const [formats, setFormats] = useState({
+    bold: false,
+    underline: false,
+    ul: false,
+    ol: false,
+    align: "left" as Align,
+  });
 
   const page = pages.find((p) => p.id === activeId) ?? pages[0];
+  const overlayOpen = listOpen || calcOpen || pickOpen;
 
   const persist = useCallback(
     (patch: Partial<MemoPage>) => {
@@ -76,22 +96,76 @@ export default function NotesPage() {
     return () => setOverlayChrome(false);
   }, [listOpen, calcOpen]);
 
+  const focusEditor = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount === 0) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }, []);
+
+  useEffect(() => {
+    keepKeyboard.current = editing && !overlayOpen;
+    if (!editing || overlayOpen) {
+      if (!overlayOpen) void hideKeyboard();
+      return;
+    }
+    const timer = window.setTimeout(() => focusEditor(), 40);
+    return () => window.clearTimeout(timer);
+  }, [editing, overlayOpen, focusEditor]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let cancelled = false;
+    const show = Keyboard.addListener("keyboardDidShow", (info) => {
+      if (!cancelled) setKbHeight(info.keyboardHeight ?? 0);
+    });
+    const hide = Keyboard.addListener("keyboardDidHide", () => {
+      setKbHeight(0);
+      if (!keepKeyboard.current) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement) return;
+      window.setTimeout(() => focusEditor(), 30);
+    });
+    return () => {
+      cancelled = true;
+      void show.then((h) => h.remove());
+      void hide.then((h) => h.remove());
+    };
+  }, [focusEditor]);
+
   const refreshFormats = () => {
     try {
+      let align: Align = "left";
+      if (document.queryCommandState("justifyCenter")) align = "center";
+      else if (document.queryCommandState("justifyRight")) align = "right";
       setFormats({
         bold: document.queryCommandState("bold"),
         underline: document.queryCommandState("underline"),
         ul: document.queryCommandState("insertUnorderedList"),
         ol: document.queryCommandState("insertOrderedList"),
+        align,
       });
     } catch {
       /* ignore */
     }
   };
 
+  const persistEditor = () => {
+    const el = editorRef.current;
+    if (el) persist({ html: el.innerHTML });
+  };
+
   const insertAtCaret = (html: string) => {
     const el = editorRef.current;
     if (!el) return;
+    setEditing(true);
     el.focus();
     skipHtmlSync.current = true;
     document.execCommand("insertHTML", false, html);
@@ -109,7 +183,7 @@ export default function NotesPage() {
       const result = await extractTextFromPickedImage("note", source);
       if (!result.ok) {
         const key = ocrToastKey(result.error);
-        if (key) toast(t(key as "ocrQuota"));
+        if (key) toast(t(key));
         return;
       }
       if (!("text" in result) || !result.text) {
@@ -136,11 +210,10 @@ export default function NotesPage() {
         onClick();
         editorRef.current?.focus();
         refreshFormats();
-        const el = editorRef.current;
-        if (el) persist({ html: el.innerHTML });
+        persistEditor();
       }}
       className={cn(
-        "flex-1 h-11 rounded-xl flex items-center justify-center",
+        "h-10 min-w-10 px-2 rounded-xl flex items-center justify-center",
         active ? "bg-accent text-accent-foreground" : "text-foreground/80",
       )}
     >
@@ -148,66 +221,98 @@ export default function NotesPage() {
     </button>
   );
 
+  const toolbarBottom = kbHeight > 0 ? kbHeight : undefined;
+
   return (
     <div className="page-shell">
       <div className="shrink-0 px-3 pt-1 pb-2 flex items-center gap-2">
         <div className="flex-1 min-w-0 flex items-center gap-1 bg-secondary/70 rounded-full pl-2 pr-1 py-1">
-          <button
-            type="button"
-            onClick={() => setListOpen(true)}
-            className="p-1.5 rounded-full text-muted-foreground shrink-0"
-            aria-label={t("memoPages")}
-          >
-            <ChevronDown className="w-4 h-4" />
-          </button>
-          <input
-            value={page.title}
-            onChange={(e) => persist({ title: e.target.value })}
-            placeholder={t("memoTitlePlaceholder")}
-            className="flex-1 min-w-0 bg-transparent text-sm font-semibold outline-none placeholder:text-muted-foreground/50"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              const { pages: next, created } = addMemoPage();
-              setPages(next);
-              setActiveId(created.id);
-            }}
-            className="p-1.5 rounded-full text-accent shrink-0"
-            aria-label={t("memoNew")}
-          >
-            <Plus className="w-4 h-4" strokeWidth={2.5} />
-          </button>
+          {editing && (
+            <button
+              type="button"
+              onClick={() => setListOpen(true)}
+              className="p-1.5 rounded-full text-muted-foreground shrink-0"
+              aria-label={t("memoPages")}
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          )}
+          {editing ? (
+            <input
+              value={page.title}
+              onChange={(e) => persist({ title: e.target.value })}
+              placeholder={t("memoTitlePlaceholder")}
+              className="flex-1 min-w-0 bg-transparent text-sm font-semibold outline-none placeholder:text-muted-foreground/50"
+            />
+          ) : (
+            <p className="flex-1 min-w-0 px-2 text-sm font-semibold truncate">
+              {page.title.trim() || t("memoUntitled")}
+            </p>
+          )}
+          {editing && (
+            <button
+              type="button"
+              onClick={() => {
+                const { pages: next, created } = addMemoPage();
+                setPages(next);
+                setActiveId(created.id);
+              }}
+              className="p-1.5 rounded-full text-accent shrink-0"
+              aria-label={t("memoNew")}
+            >
+              <Plus className="w-4 h-4" strokeWidth={2.5} />
+            </button>
+          )}
         </div>
 
-        <div className="shrink-0 flex items-center gap-0.5 bg-card rounded-full shadow-soft border border-border/70 px-1 py-1">
-          <button
-            type="button"
-            aria-label={t("memoScan")}
-            disabled={ocrBusy}
-            onClick={() => setPickOpen(true)}
-            className="h-9 w-9 rounded-full flex items-center justify-center text-foreground/80 disabled:opacity-40"
-          >
-            <Camera className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            aria-label={t("memoCalculator")}
-            onClick={() => setCalcOpen(true)}
-            className="h-9 w-9 rounded-full flex items-center justify-center text-foreground/80"
-          >
-            <Calculator className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (editing) keepKeyboard.current = false;
+            setEditing((v) => !v);
+          }}
+          className="shrink-0 h-9 px-3 rounded-full bg-card shadow-soft border border-border/70 text-xs font-semibold"
+        >
+          {editing ? t("memoView") : t("memoEdit")}
+        </button>
+
+        {editing && (
+          <div className="shrink-0 flex items-center gap-0.5 bg-card rounded-full shadow-soft border border-border/70 px-1 py-1">
+            <button
+              type="button"
+              aria-label={t("memoScan")}
+              disabled={ocrBusy}
+              onClick={() => setPickOpen(true)}
+              className="h-9 w-9 rounded-full flex items-center justify-center text-foreground/80 disabled:opacity-40"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              aria-label={t("memoCalculator")}
+              onClick={() => setCalcOpen(true)}
+              className="h-9 w-9 rounded-full flex items-center justify-center text-foreground/80"
+            >
+              <Calculator className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 min-h-0 px-4">
+      <div
+        className="flex-1 min-h-0 px-4"
+        style={{ paddingBottom: editing ? (kbHeight > 0 ? kbHeight + 108 : 108) : 8 }}
+      >
         <div
           ref={editorRef}
-          contentEditable
+          contentEditable={editing}
           suppressContentEditableWarning
-          data-placeholder={t("memoBodyPlaceholder")}
-          className="note-editor h-full overflow-y-auto overscroll-contain outline-none text-base leading-relaxed text-foreground"
+          data-placeholder={editing ? t("memoBodyPlaceholder") : undefined}
+          data-kb-ignore=""
+          className={cn(
+            "note-editor h-full overflow-y-auto overscroll-contain outline-none text-base leading-relaxed text-foreground",
+            !editing && "cursor-default",
+          )}
           onInput={() => {
             skipHtmlSync.current = true;
             persist({ html: editorRef.current?.innerHTML || "" });
@@ -217,27 +322,69 @@ export default function NotesPage() {
           }}
           onKeyUp={refreshFormats}
           onMouseUp={refreshFormats}
+          onBlur={() => {
+            window.setTimeout(() => {
+              if (!keepKeyboard.current) return;
+              const active = document.activeElement;
+              if (active instanceof HTMLInputElement) return;
+              if (active === editorRef.current) return;
+              focusEditor();
+            }, 40);
+          }}
         />
       </div>
 
-      <div className="shrink-0 px-3 pt-1 pb-2">
-        <div className="bg-card rounded-2xl shadow-soft border border-border/60 flex items-center px-1 py-0.5">
-          {fmtBtn(t("memoBold"), formats.bold, () => runFormat("bold"), <Bold className="w-4 h-4" />)}
-          {fmtBtn(
-            t("memoUnderline"),
-            formats.underline,
-            () => runFormat("underline"),
-            <Underline className="w-4 h-4" />,
-          )}
-          {fmtBtn(t("memoBullets"), formats.ul, () => runFormat("insertUnorderedList"), <List className="w-4 h-4" />)}
-          {fmtBtn(
-            t("memoNumbers"),
-            formats.ol,
-            () => runFormat("insertOrderedList"),
-            <ListOrdered className="w-4 h-4" />,
-          )}
-        </div>
-      </div>
+      {editing &&
+        createPortal(
+          <div
+            className="fixed left-0 right-0 z-[60] px-3 pointer-events-none"
+            style={{
+              bottom: toolbarBottom ?? "var(--bottom-nav-offset)",
+            }}
+          >
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-soft border border-border/60 px-1 py-1 mb-1">
+              <div className="flex items-center justify-between gap-0.5">
+                {fmtBtn(t("memoUndo"), false, () => runFormat("undo"), <Undo2 className="w-4 h-4" />)}
+                {fmtBtn(t("memoRedo"), false, () => runFormat("redo"), <Redo2 className="w-4 h-4" />)}
+                {fmtBtn(t("memoBold"), formats.bold, () => runFormat("bold"), <Bold className="w-4 h-4" />)}
+                {fmtBtn(
+                  t("memoUnderline"),
+                  formats.underline,
+                  () => runFormat("underline"),
+                  <Underline className="w-4 h-4" />,
+                )}
+                {fmtBtn(t("memoBullets"), formats.ul, () => runFormat("insertUnorderedList"), <List className="w-4 h-4" />)}
+                {fmtBtn(
+                  t("memoNumbers"),
+                  formats.ol,
+                  () => runFormat("insertOrderedList"),
+                  <ListOrdered className="w-4 h-4" />,
+                )}
+              </div>
+              <div className="flex items-center justify-center gap-0.5 mt-0.5">
+                {fmtBtn(
+                  t("memoAlignLeft"),
+                  formats.align === "left",
+                  () => runFormat("justifyLeft"),
+                  <AlignLeft className="w-4 h-4" />,
+                )}
+                {fmtBtn(
+                  t("memoAlignCenter"),
+                  formats.align === "center",
+                  () => runFormat("justifyCenter"),
+                  <AlignCenter className="w-4 h-4" />,
+                )}
+                {fmtBtn(
+                  t("memoAlignRight"),
+                  formats.align === "right",
+                  () => runFormat("justifyRight"),
+                  <AlignRight className="w-4 h-4" />,
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       <NoteCalculator
         open={calcOpen}

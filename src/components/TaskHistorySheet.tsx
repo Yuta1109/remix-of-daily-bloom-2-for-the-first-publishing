@@ -1,9 +1,17 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Drawer as DrawerPrimitive } from "vaul";
 import { Plus } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-import { getCompletionRate, getPastDaysWithTasks, type Task } from "@/lib/store";
+import {
+  getCompletionRate,
+  getDaysWithTasksInRange,
+  getHistoryMonthKeys,
+  getWeeksInMonth,
+  weekIndexForDate,
+  type Task,
+} from "@/lib/store";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
+import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -12,11 +20,54 @@ interface Props {
   onBringTasks: (texts: string[]) => void;
 }
 
+function monthLabel(monthKey: string, locale: "en" | "ja"): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const d = new Date(y, (m || 1) - 1, 1);
+  return d.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
+    year: "numeric",
+    month: "long",
+  });
+}
+
+function defaultMonthWeek(todayKey: string): { monthKey: string; week: number } {
+  const months = getHistoryMonthKeys(todayKey);
+  const monthKey = months[0];
+  const yesterday = new Date(`${todayKey}T00:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const y = yesterday.getFullYear();
+  const m = String(yesterday.getMonth() + 1).padStart(2, "0");
+  const d = String(yesterday.getDate()).padStart(2, "0");
+  const ymd = `${y}-${m}-${d}`;
+  if (ymd.startsWith(monthKey)) {
+    return { monthKey, week: weekIndexForDate(monthKey, ymd) };
+  }
+  const weeks = getWeeksInMonth(monthKey);
+  return { monthKey, week: weeks[weeks.length - 1]?.week ?? 1 };
+}
+
 export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }: Props) {
-  const { t, formatDateStr } = useI18n();
+  const { t, locale, formatDateStr } = useI18n();
+  const months = useMemo(() => getHistoryMonthKeys(todayKey), [todayKey]);
+  const initial = useMemo(() => defaultMonthWeek(todayKey), [todayKey]);
+  const [monthKey, setMonthKey] = useState(initial.monthKey);
+  const [week, setWeek] = useState(initial.week);
+
+  useEffect(() => {
+    if (!open) return;
+    const next = defaultMonthWeek(todayKey);
+    setMonthKey(next.monthKey);
+    setWeek(next.week);
+  }, [open, todayKey]);
+
+  const weeks = useMemo(() => getWeeksInMonth(monthKey), [monthKey]);
+  const selectedWeek = weeks.find((w) => w.week === week) ?? weeks[0];
+
   const days = useMemo(
-    () => (open ? getPastDaysWithTasks(todayKey) : []),
-    [open, todayKey],
+    () =>
+      open && selectedWeek
+        ? getDaysWithTasksInRange(selectedWeek.startKey, selectedWeek.endKey, todayKey)
+        : [],
+    [open, selectedWeek, todayKey],
   );
 
   useEffect(() => {
@@ -40,6 +91,40 @@ export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }:
               {t("taskHistory")}
             </DrawerPrimitive.Title>
             <p className="text-xs text-muted-foreground mt-1">{t("taskHistoryHint")}</p>
+            <div className="flex gap-1.5 overflow-x-auto mt-3 pb-0.5 -mx-0.5 px-0.5">
+              {months.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    setMonthKey(key);
+                    const nextWeeks = getWeeksInMonth(key);
+                    setWeek(nextWeeks[0]?.week ?? 1);
+                  }}
+                  className={cn(
+                    "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium",
+                    monthKey === key ? "bg-accent text-accent-foreground" : "bg-secondary text-foreground",
+                  )}
+                >
+                  {monthLabel(key, locale)}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto mt-2 pb-0.5">
+              {weeks.map((item) => (
+                <button
+                  key={item.week}
+                  type="button"
+                  onClick={() => setWeek(item.week)}
+                  className={cn(
+                    "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium",
+                    week === item.week ? "bg-accent text-accent-foreground" : "bg-secondary text-foreground",
+                  )}
+                >
+                  {locale === "ja" ? `第${item.week}週` : `Week ${item.week}`}
+                </button>
+              ))}
+            </div>
           </div>
           <div
             className="event-sheet-scroll min-h-0 overflow-y-scroll overscroll-contain px-4 py-3"

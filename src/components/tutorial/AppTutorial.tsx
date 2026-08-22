@@ -6,6 +6,7 @@ import {
   type LaDemoPhase,
 } from "@/components/LiveActivityDemoPanel";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { ensurePermission, isNative } from "@/lib/notifications";
 import {
   markLiveActivityEnableAllowed,
@@ -34,7 +35,7 @@ import {
  * Progress is persisted so route changes / remounts do not reset to welcome.
  */
 export function AppTutorial() {
-  const { t } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const [running, setRunning] = useState(false);
@@ -302,6 +303,28 @@ export function AppTutorial() {
         actions={
           step.id === "welcome" ? (
             <>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLocale("ja")}
+                  className={cn(
+                    "flex-1 rounded-xl px-3 py-2.5 text-sm font-medium",
+                    locale === "ja" ? "bg-accent text-accent-foreground" : "bg-secondary",
+                  )}
+                >
+                  {t("tutorialLangJa")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLocale("en")}
+                  className={cn(
+                    "flex-1 rounded-xl px-3 py-2.5 text-sm font-medium",
+                    locale === "en" ? "bg-accent text-accent-foreground" : "bg-secondary",
+                  )}
+                >
+                  {t("tutorialLangEn")}
+                </button>
+              </div>
               <p className="text-xs text-muted-foreground">{t("tutorialDurationNote")}</p>
               <button
                 type="button"
@@ -316,7 +339,7 @@ export function AppTutorial() {
       />
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, t, laShowNext, laPhase, goNext, finishLaStep, skipTour]);
+  }, [step, t, locale, laShowNext, laPhase, goNext, finishLaStep, skipTour]);
 
   if (!running || !step) return null;
   return overlay;

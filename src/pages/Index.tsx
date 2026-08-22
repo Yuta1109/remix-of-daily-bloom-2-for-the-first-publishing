@@ -323,9 +323,12 @@ export default function Index() {
           </button>
           <button
             type="button"
-            onClick={() => setPickOpen(true)}
-            disabled={ocrBusy}
-            className="bg-card rounded-xl px-3 py-2.5 shadow-soft text-foreground/80 disabled:opacity-40"
+            onClick={() => {
+              if (isTutorialActive()) return;
+              setPickOpen(true);
+            }}
+            disabled={ocrBusy || isTutorialActive()}
+            className="bg-card rounded-xl px-3 py-2.5 shadow-soft text-foreground/80 disabled:pointer-events-none disabled:opacity-40"
             aria-label={t("ocrAddImage")}
           >
             <Camera className="w-5 h-5" />
