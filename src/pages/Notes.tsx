@@ -179,23 +179,25 @@ export default function NotesPage() {
     if (ocrBusy) return;
     setPickOpen(false);
     setOcrBusy(true);
+    let message: string | null = null;
     try {
       const result = await extractTextFromPickedImage("note", source);
       if (!result.ok) {
         const key = ocrToastKey(result.error);
-        if (key) toast(t(key));
+        if (key) message = t(key);
         return;
       }
       if (!("text" in result) || !result.text) {
-        toast(t("ocrUnreadable"));
+        message = t("ocrUnreadable");
         return;
       }
       insertAtCaret(textToNoteHtml(result.text));
     } catch {
-      toast(t("ocrGeneric"));
+      message = t("ocrGeneric");
     } finally {
       setOcrBusy(false);
     }
+    if (message) toast(message);
   };
 
   if (!page) return null;
@@ -271,7 +273,7 @@ export default function NotesPage() {
             if (editing) keepKeyboard.current = false;
             setEditing((v) => !v);
           }}
-          className="shrink-0 h-9 px-3 rounded-full bg-card shadow-soft border border-border/70 text-xs font-semibold"
+          className="shrink-0 h-9 px-3 rounded-full bg-accent text-accent-foreground text-xs font-semibold shadow-soft"
         >
           {editing ? t("memoView") : t("memoEdit")}
         </button>

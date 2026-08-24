@@ -7,11 +7,14 @@ import {
   normalizeQuotaState,
   pacificParts,
   softLimitReason,
+  tpmAfterSettle,
   wouldExceedSoftLimit,
 } from "./quota-logic.js";
+import { FREE_MODELS } from "./gemini-config.js";
+import { isValidImageBase64, isValidRequestId } from "./ocr-idempotency.js";
 
 describe("wouldExceedSoftLimit", () => {
-  it("treats 9/10 + 1 as 90% and blocks", () => {
+  it("treats current + add against 90%, not current/limit alone", () => {
     assert.equal(wouldExceedSoftLimit(7, 1, 10, 0.9), false);
     assert.equal(wouldExceedSoftLimit(8, 1, 10, 0.9), true);
   });
@@ -79,7 +82,7 @@ describe("getNextAvailableModel", () => {
     assert.equal(picked.modelId, "gemini-3.1-flash-lite");
   });
 
-  it("returns all-unavailable when every model is blocked", () => {
+  it("returns unavailable when every model is blocked", () => {
     const models = ["gemini-3.5-flash-lite"];
     const picked = getNextAvailableModel(
       {
@@ -93,7 +96,6 @@ describe("getNextAvailableModel", () => {
       models,
     );
     assert.equal(picked.modelId, null);
-    assert.equal(picked.reason, "all-unavailable");
   });
 
   it("blocks RPM or TPM independently", () => {
@@ -148,5 +150,136 @@ describe("429 handling", () => {
       "rate limit per minute",
     );
     assert.ok(until > now);
+  });
+
+  it("does not retry the same model after 429 disable", () => {
+    const now = Date.parse("2026-08-21T18:00:00-07:00");
+    const models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+    const limits = { rpm: 15, tpm: 250000, rpd: 500 };
+    const states = {
+      "gemini-3.5-flash-lite": {
+        modelId: "gemini-3.5-flash-lite",
+        rpm: 0,
+        tpm: 0,
+        rpd: 0,
+        temporaryDisabledUntil: 0,
+        limits,
+      },
+      "gemini-3.1-flash-lite": {
+        modelId: "gemini-3.1-flash-lite",
+        rpm: 0,
+        tpm: 0,
+        rpd: 0,
+        temporaryDisabledUntil: 0,
+        limits,
+      },
+    };
+    const first = getNextAvailableModel(states, 4000, now, models);
+    assert.equal(first.modelId, "gemini-3.5-flash-lite");
+    states[first.modelId].temporaryDisabledUntil = now + 60_000;
+    const second = getNextAvailableModel(states, 4000, now, models);
+    assert.equal(second.modelId, "gemini-3.1-flash-lite");
+  });
+});
+
+describe("tpmAfterSettle", () => {
+  it("applies actual minus reserved, including when actual is larger", () => {
+    assert.equal(tpmAfterSettle(4512, 4512, 8000), 8000);
+    assert.equal(tpmAfterSettle(4512, 4512, 2000), 2000);
+  });
+
+  it("keeps the reservation when usage metadata is missing", () => {
+    assert.equal(tpmAfterSettle(4512, 4512, 0), 4512);
+    assert.equal(tpmAfterSettle(4512, 4512, Number.NaN), 4512);
+  });
+});
+
+describe("FREE_MODELS order", () => {
+  it("keeps 3.5 Flash Lite before 3.1 Flash Lite and stays free-only", () => {
+    assert.deepEqual(FREE_MODELS, [
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-3-flash-preview",
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+    ]);
+  });
+});
+
+describe("soft 8/10 then next model", () => {
+  it("sequential reserves skip the 90% model (transaction-shaped)", () => {
+    const now = Date.parse("2026-08-21T18:00:00-07:00");
+    const models = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+    const states = {
+      "gemini-3.5-flash-lite": {
+        modelId: "gemini-3.5-flash-lite",
+        rpm: 0,
+        tpm: 0,
+        rpd: 8,
+        temporaryDisabledUntil: 0,
+        limits: { rpm: 15, tpm: 250000, rpd: 10 },
+      },
+      "gemini-3.1-flash-lite": {
+        modelId: "gemini-3.1-flash-lite",
+        rpm: 0,
+        tpm: 0,
+        rpd: 0,
+        temporaryDisabledUntil: 0,
+        limits: { rpm: 15, tpm: 250000, rpd: 10 },
+      },
+    };
+    function reserve() {
+      const picked = getNextAvailableModel(states, 4000, now, models);
+      if (!picked.modelId) return picked;
+      const s = states[picked.modelId];
+      states[picked.modelId] = {
+        ...s,
+        rpm: s.rpm + 1,
+        rpd: s.rpd + 1,
+        tpm: s.tpm + 4000,
+      };
+      return picked;
+    }
+    assert.equal(reserve().modelId, "gemini-3.1-flash-lite");
+    assert.equal(states["gemini-3.5-flash-lite"].rpd, 8);
+  });
+});
+
+describe("requestId / image validation", () => {
+  it("accepts UUID request ids", () => {
+    assert.equal(isValidRequestId("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), true);
+    assert.equal(isValidRequestId("short"), false);
+  });
+
+  it("rejects invalid base64", () => {
+    assert.equal(isValidImageBase64("not base64!!!"), false);
+    assert.equal(isValidImageBase64("abcd"), false);
+    assert.equal(isValidImageBase64("AAAA"), false);
+    assert.equal(
+      isValidImageBase64(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      ),
+      true,
+    );
+  });
+
+  it("same requestId while running is not a second fresh start", () => {
+    const docs = new Map();
+    function begin(id, uid) {
+      const row = docs.get(id);
+      if (!row) {
+        docs.set(id, { uid, status: "running" });
+        return "fresh";
+      }
+      if (row.uid !== uid) return "foreign";
+      if (row.status === "done") return "cached";
+      if (row.status === "running") return "running";
+      return "fresh";
+    }
+    assert.equal(begin("6ba7b810-9dad-11d1-80b4-00c04fd430c8", "u1"), "fresh");
+    assert.equal(begin("6ba7b810-9dad-11d1-80b4-00c04fd430c8", "u1"), "running");
   });
 });

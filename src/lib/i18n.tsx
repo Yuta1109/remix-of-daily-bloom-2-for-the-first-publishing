@@ -184,6 +184,8 @@ const translations = {
     memoOcrEmpty: "No text found in the photo.",
     memoOcrFailed: "Could not read the photo. Try again online.",
     ocrAddImage: "Add image",
+    ocrHelp:
+      "Reads handwriting or printed text. On Today it becomes tasks; on Notes it is inserted as text. Choose a photo or take a picture.",
     ocrPickPhotos: "Choose photo",
     ocrTakePhoto: "Take photo",
     ocrReading: "Reading the image…",
@@ -491,6 +493,8 @@ const translations = {
     memoOcrEmpty: "写真から文字を見つけられませんでした。",
     memoOcrFailed: "読み取れませんでした。オンラインで再試行してください。",
     ocrAddImage: "画像を追加",
+    ocrHelp:
+      "手書きや印刷の文字を読み取ります。今日のページではタスクに、メモでは本文に追加します。写真を選ぶか、カメラで撮影してください。",
     ocrPickPhotos: "写真を選択",
     ocrTakePhoto: "カメラで撮影",
     ocrReading: "画像を読み取っています…",

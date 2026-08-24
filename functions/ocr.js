@@ -24,6 +24,12 @@ import {
   reserveNextModel,
   settleReservation,
 } from "./quota-manager.js";
+import {
+  beginOcrRequest,
+  finishOcrRequest,
+  isValidImageBase64,
+  waitForOcrRequest,
+} from "./ocr-idempotency.js";
 
 const REGION = "asia-northeast1";
 const MAX_BYTES = 1_800_000;
@@ -83,12 +89,13 @@ async function callGemini({ modelId, apiKey, mimeType, imageBase64, mode }) {
       "Content-Type": "application/json",
       "x-goog-api-key": apiKey,
     },
+    signal: AbortSignal.timeout(25_000),
     body: JSON.stringify({
       contents: [
         {
           parts: [
             { text: prompt },
-            { inline_data: { mime_type: mimeType, data: imageBase64 } },
+            { inlineData: { mimeType, data: imageBase64 } },
           ],
         },
       ],
@@ -203,23 +210,39 @@ async function extractWithFallback({ apiKey, mimeType, imageBase64, mode }) {
 export const extractTextFromImage = onCall(
   {
     region: REGION,
-    timeoutSeconds: 60,
+    timeoutSeconds: 120,
     memory: "512MiB",
     cors: true,
     secrets: [geminiKey],
+    // App Check can be enabled later with enforceAppCheck: true (not required now).
   },
   async (req) => {
     if (!req.auth?.uid) {
       throw new HttpsError("unauthenticated", "Sign-in required.");
     }
+
     const imageBase64 = String(req.data?.imageBase64 || "").replace(/\s/g, "");
     const mimeType = String(req.data?.mimeType || "image/jpeg");
     const mode = req.data?.mode === "tasks" ? "tasks" : "note";
-    if (!imageBase64 || imageBase64.length > MAX_BYTES) {
+    const requestId = String(req.data?.requestId || "");
+    if (!imageBase64 || imageBase64.length > MAX_BYTES || !isValidImageBase64(imageBase64)) {
       throw new HttpsError("invalid-argument", "Image is missing or too large.");
     }
     if (!/^image\/(jpeg|jpg|png|webp|heic|heif)$/i.test(mimeType)) {
       throw new HttpsError("invalid-argument", "Unsupported image type.");
+    }
+
+    const begun = await beginOcrRequest(requestId, req.auth.uid);
+    if (begun.kind === "foreign") {
+      throw new HttpsError("permission-denied", "Invalid request.");
+    }
+    if (begun.kind === "cached") {
+      return begun.result;
+    }
+    if (begun.kind === "running") {
+      const waited = await waitForOcrRequest(requestId, req.auth.uid);
+      if (waited) return waited;
+      throw new HttpsError("aborted", "OCR is already in progress for this request.");
     }
 
     const apiKey = geminiKey.value();
@@ -235,21 +258,27 @@ export const extractTextFromImage = onCall(
         imageBase64,
         mode,
       });
+      let payload;
       if (result.error === "quota") {
-        return { ok: false, error: "quota" };
+        payload = { ok: false, error: "quota" };
+      } else if (result.error) {
+        payload = { ok: false, error: "error" };
+      } else if (mode === "tasks") {
+        payload = result.tasks?.length
+          ? { ok: true, tasks: result.tasks }
+          : { ok: false, error: "unreadable" };
+      } else {
+        payload = result.text
+          ? { ok: true, text: result.text }
+          : { ok: false, error: "unreadable" };
       }
-      if (result.error) {
-        return { ok: false, error: "error" };
-      }
-      if (mode === "tasks") {
-        if (!result.tasks?.length) return { ok: false, error: "unreadable" };
-        return { ok: true, tasks: result.tasks };
-      }
-      if (!result.text) return { ok: false, error: "unreadable" };
-      return { ok: true, text: result.text };
+      await finishOcrRequest(requestId, req.auth.uid, payload, payload.ok === true);
+      return payload;
     } catch (err) {
       logger.error("extractTextFromImage failed", { message: String(err?.message || err) });
-      return { ok: false, error: "error" };
+      const payload = { ok: false, error: "error" };
+      await finishOcrRequest(requestId, req.auth.uid, payload, false);
+      return payload;
     }
   },
 );

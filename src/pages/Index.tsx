@@ -126,23 +126,25 @@ export default function Index() {
     if (ocrBusy) return;
     setPickOpen(false);
     setOcrBusy(true);
+    let message: string | null = null;
     try {
       const result = await extractTextFromPickedImage("tasks", source);
       if (!result.ok) {
         const key = ocrToastKey(result.error);
-        if (key) toast(t(key as "ocrQuota"));
+        if (key) message = t(key);
         return;
       }
       if (!("tasks" in result) || !result.tasks?.length) {
-        toast(t("ocrUnreadable"));
+        message = t("ocrUnreadable");
         return;
       }
       addOcrTasks(result.tasks);
     } catch {
-      toast(t("ocrGeneric"));
+      message = t("ocrGeneric");
     } finally {
       setOcrBusy(false);
     }
+    if (message) toast(message);
   };
 
   const finishNewTask = () => {

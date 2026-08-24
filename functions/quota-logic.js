@@ -30,6 +30,14 @@ export function wouldExceedSoftLimit(used, add, limit, threshold = QUOTA_THRESHO
   return (used + add) / limit >= threshold;
 }
 
+/** After a Gemini call, replace the reserved TPM estimate with measured usage. */
+export function tpmAfterSettle(currentTpm, estimatedTokens, actualTokens) {
+  const estimated = Number(estimatedTokens) || 0;
+  const actual = Number(actualTokens);
+  if (!Number.isFinite(actual) || actual <= 0) return Math.max(0, Number(currentTpm) || 0);
+  return Math.max(0, (Number(currentTpm) || 0) + (actual - estimated));
+}
+
 export function isFreeModel(modelId) {
   return FREE_ONLY && FREE_MODELS.includes(modelId);
 }

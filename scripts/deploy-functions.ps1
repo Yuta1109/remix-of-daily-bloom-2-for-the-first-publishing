@@ -48,10 +48,11 @@ try {
   }
 }
 
-Write-Host "Deploying Cloud Functions via npx firebase..." -ForegroundColor Cyan
+Write-Host "Deploying Cloud Functions and Firestore rules via npx firebase..." -ForegroundColor Cyan
 Set-Location $RepoRoot
 $env:NODE_OPTIONS = $FirebaseNodeOptions
-npx firebase deploy --only functions --project $ProjectId
+# OCR quota + requestId collections are Admin-only; rules must ship with Functions.
+npx firebase deploy --only functions,firestore:rules --project $ProjectId
 $deployExit = $LASTEXITCODE
 
 # Restore whatever the user had before this script.

@@ -10,6 +10,7 @@ import {
   formatQuotaStatus,
   getNextAvailableModel,
   normalizeQuotaState,
+  tpmAfterSettle,
 } from "./quota-logic.js";
 
 const COLLECTION = "geminiQuota";
@@ -91,7 +92,6 @@ export async function reserveNextModel(estimatedTokens = estimatedTokensForReque
 
 export async function settleReservation(modelId, estimatedTokens, actualTokens) {
   const nowMs = Date.now();
-  const delta = Math.max(0, Number(actualTokens) || 0) - Number(estimatedTokens || 0);
   await db().runTransaction(async (tx) => {
     const ref = docRef(modelId);
     const snap = await tx.get(ref);
@@ -102,7 +102,7 @@ export async function settleReservation(modelId, estimatedTokens, actualTokens) 
     );
     const next = {
       ...state,
-      tpm: Math.max(0, state.tpm + delta),
+      tpm: tpmAfterSettle(state.tpm, estimatedTokens, actualTokens),
     };
     tx.set(ref, serialize(next));
   });

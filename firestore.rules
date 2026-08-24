@@ -17,5 +17,8 @@ service cloud.firestore {
     match /geminiQuota/{modelId} {
       allow read, write: if false;
     }
+    match /ocrRequests/{id} {
+      allow read, write: if false;
+    }
   }
 }

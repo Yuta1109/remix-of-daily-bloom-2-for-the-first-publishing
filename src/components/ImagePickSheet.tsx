@@ -18,7 +18,10 @@ export function ImagePickSheet({ open, onPhotos, onCamera, onCancel }: Props) {
         className="relative z-10 w-full max-w-md rounded-t-3xl bg-background border shadow-float px-4 pt-4 pb-5"
         style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
       >
-        <p className="text-sm font-semibold text-center mb-3">{t("ocrAddImage")}</p>
+        <p className="text-sm font-semibold text-center mb-2">{t("ocrAddImage")}</p>
+        <p className="text-xs text-muted-foreground text-center leading-relaxed mb-3 px-1">
+          {t("ocrHelp")}
+        </p>
         <button
           type="button"
           onClick={onPhotos}
