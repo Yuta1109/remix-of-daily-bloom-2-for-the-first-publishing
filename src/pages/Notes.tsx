@@ -36,7 +36,7 @@ import {
 } from "@/lib/notes-store";
 import { NoteCalculator } from "@/components/NoteCalculator";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
-import { hideKeyboard } from "@/lib/keyboard-avoidance";
+import { hideKeyboard, prepareForOcr } from "@/lib/keyboard-avoidance";
 
 type Align = "left" | "center" | "right";
 
@@ -71,7 +71,8 @@ export default function NotesPage() {
   });
 
   const page = pages.find((p) => p.id === activeId) ?? pages[0];
-  const overlayOpen = listOpen || calcOpen || pickOpen;
+  const overlayOpen = listOpen || calcOpen || pickOpen || ocrBusy;
+  const blockKeyboard = overlayOpen;
 
   const persist = useCallback(
     (patch: Partial<MemoPage>) => {
@@ -111,14 +112,15 @@ export default function NotesPage() {
   }, []);
 
   useEffect(() => {
-    keepKeyboard.current = editing && !overlayOpen;
-    if (!editing || overlayOpen) {
-      if (!overlayOpen) void hideKeyboard();
+    keepKeyboard.current = editing && !blockKeyboard;
+    if (blockKeyboard || !editing) {
+      void hideKeyboard();
+      if (blockKeyboard) editorRef.current?.blur();
       return;
     }
     const timer = window.setTimeout(() => focusEditor(), 40);
     return () => window.clearTimeout(timer);
-  }, [editing, overlayOpen, focusEditor]);
+  }, [editing, blockKeyboard, focusEditor]);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -178,6 +180,8 @@ export default function NotesPage() {
   const onOcr = async (source: ImageSource) => {
     if (ocrBusy) return;
     setPickOpen(false);
+    await prepareForOcr();
+    editorRef.current?.blur();
     setOcrBusy(true);
     let message: string | null = null;
     try {
@@ -284,7 +288,11 @@ export default function NotesPage() {
               type="button"
               aria-label={t("memoScan")}
               disabled={ocrBusy}
-              onClick={() => setPickOpen(true)}
+              onClick={() => {
+                void prepareForOcr();
+                editorRef.current?.blur();
+                setPickOpen(true);
+              }}
               className="h-9 w-9 rounded-full flex items-center justify-center text-foreground/80 disabled:opacity-40"
             >
               <Camera className="w-4 h-4" />

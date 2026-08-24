@@ -1,5 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { callExtractTextFromImage, type OcrCallResult } from "./firebase-client";
+import { ocrDebugLog } from "./ocr-debug-log";
+import { prepareForOcr } from "./keyboard-avoidance";
 
 export type ImageSource = "photos" | "camera";
 export type OcrPickError = "cancelled" | "permission" | "unavailable";
@@ -99,14 +101,23 @@ async function pickNative(source: ImageSource): Promise<{ base64: string; mimeTy
   const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
   const need = source === "camera" ? "camera" : "photos";
   let perms = await Camera.checkPermissions();
+  ocrDebugLog("camera", `checkPermissions camera=${perms.camera} photos=${perms.photos}`, "info");
   if (need === "camera" && perms.camera !== "granted") {
     perms = await Camera.requestPermissions({ permissions: ["camera"] });
+    ocrDebugLog("camera", `request camera → ${perms.camera}`, perms.camera === "granted" ? "ok" : "warn");
     if (perms.camera !== "granted") throw new Error("ocr-permission");
   }
-  if (need === "photos" && perms.photos !== "granted" && perms.photos !== "limited") {
-    perms = await Camera.requestPermissions({ permissions: ["photos"] });
+  if (need === "photos") {
+    if (perms.photos !== "granted" && perms.photos !== "limited") {
+      perms = await Camera.requestPermissions({ permissions: ["photos"] });
+      ocrDebugLog("camera", `request photos → ${perms.photos}`, "info");
+    }
+    if (perms.photos !== "granted" && perms.photos !== "limited") {
+      throw new Error("ocr-permission");
+    }
   }
   try {
+    ocrDebugLog("camera", `getPhoto source=${source}`, "info");
     const photo = await Camera.getPhoto({
       quality: 70,
       width: 1280,
@@ -115,10 +126,19 @@ async function pickNative(source: ImageSource): Promise<{ base64: string; mimeTy
       source: source === "camera" ? CameraSource.Camera : CameraSource.Photos,
     });
     const raw = photo.base64String?.replace(/\s/g, "") || "";
-    if (!raw) return null;
+    if (!raw) {
+      ocrDebugLog("camera", "getPhoto returned empty base64", "warn");
+      return null;
+    }
+    ocrDebugLog(
+      "camera",
+      `getPhoto ok format=${photo.format || "?"} base64Len=${raw.length}`,
+      "ok",
+    );
     return { base64: raw, mimeType: mimeFromFormat(photo.format) };
   } catch (err) {
     const msg = String((err as { message?: string })?.message || err);
+    ocrDebugLog("camera", `getPhoto failed: ${msg.slice(0, 240)}`, "error");
     if (/cancel/i.test(msg)) return null;
     throw err;
   }
@@ -128,6 +148,8 @@ export async function extractTextFromPickedImage(
   mode: "note" | "tasks",
   source: ImageSource,
 ): Promise<OcrCallResult | { ok: false; error: OcrPickError }> {
+  ocrDebugLog("ocr", `start mode=${mode} source=${source}`, "info");
+  await prepareForOcr();
   try {
     let payload: { base64: string; mimeType: string } | null = null;
     if (Capacitor.isNativePlatform()) {
@@ -136,7 +158,10 @@ export async function extractTextFromPickedImage(
       const dataUrl = await pickWithInput(source === "camera");
       if (dataUrl) payload = await toJpegPayload(dataUrl);
     }
-    if (!payload?.base64) return { ok: false, error: "cancelled" };
+    if (!payload?.base64) {
+      ocrDebugLog("ocr", "cancelled (no image)", "info");
+      return { ok: false, error: "cancelled" };
+    }
     if (payload.base64.length > MAX_BASE64_CHARS) {
       if (payload.mimeType !== "image/jpeg") {
         payload = await toJpegPayload(`data:${payload.mimeType};base64,${payload.base64}`);
@@ -151,6 +176,7 @@ export async function extractTextFromPickedImage(
     });
   } catch (err) {
     const msg = String((err as { message?: string })?.message || err);
+    ocrDebugLog("ocr", `failed: ${msg.slice(0, 240)}`, "error");
     if (msg === "ocr-permission") return { ok: false, error: "permission" };
     if (/cancel/i.test(msg)) return { ok: false, error: "cancelled" };
     return { ok: false, error: "unavailable" };

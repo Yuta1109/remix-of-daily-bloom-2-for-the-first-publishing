@@ -9,6 +9,7 @@ import {
   type Auth,
 } from "firebase/auth";
 import { getFunctions, httpsCallable, type Functions } from "firebase/functions";
+import { ocrDebugLog } from "./ocr-debug-log";
 
 const PROJECT_ID = "todolist-app-project-4fd37";
 const REGION = "asia-northeast1";
@@ -87,19 +88,43 @@ function getOrInitAuth(firebaseApp: FirebaseApp): Auth {
   return getAuth(firebaseApp);
 }
 
+export function getFirebaseConfigStatus() {
+  const config = readWebConfig();
+  return {
+    present: !!config,
+    projectId: config?.projectId ?? null,
+    hasApiKey: !!config?.apiKey,
+    apiKeyPrefix: config?.apiKey?.slice(0, 8) ?? null,
+    appId: config?.appId ?? null,
+    messagingSenderId: config?.messagingSenderId ?? null,
+  };
+}
+
 export async function ensureCallableApp(): Promise<boolean> {
   if (ready) return ready;
   ready = (async () => {
     const config = readWebConfig();
-    if (!config) return false;
+    if (!config) {
+      ocrDebugLog("firebase", "readWebConfig returned null", "error");
+      return false;
+    }
+    ocrDebugLog(
+      "firebase",
+      `config ok projectId=${config.projectId} appId=${config.appId?.slice(0, 12)}…`,
+      "ok",
+    );
     app = getApps().length ? getApps()[0]! : initializeApp(config);
     auth = getOrInitAuth(app);
     if (!auth.currentUser) {
+      ocrDebugLog("firebase", "signInAnonymously…", "info");
       await withTimeout(signInAnonymously(auth), AUTH_TIMEOUT_MS, "ocr-auth-timeout");
     }
+    const uid = auth.currentUser?.uid;
+    ocrDebugLog("firebase", uid ? `auth uid=${uid.slice(0, 8)}…` : "auth missing uid", uid ? "ok" : "error");
     functions = getFunctions(app, REGION);
-    return true;
-  })().catch(() => {
+    return !!uid;
+  })().catch((err) => {
+    ocrDebugLog("firebase", `init failed: ${String((err as Error)?.message || err)}`, "error");
     ready = null;
     return false;
   });
@@ -114,11 +139,10 @@ export type OcrCallResult =
 function mapCallableError(err: unknown): OcrCallResult {
   const code = String((err as { code?: string })?.code || "");
   const msg = String((err as { message?: string })?.message || err);
+  ocrDebugLog("callable", `error code=${code || "none"} msg=${msg.slice(0, 240)}`, "error");
   if (
     code.includes("unauthenticated") ||
     msg.includes("ocr-auth-timeout") ||
-    msg.includes("ocr-auth-timeout") ||
-    msg.includes("ocr-call-timeout") ||
     msg.includes("ocr-call-timeout")
   ) {
     return { ok: false, error: "unavailable" };
@@ -138,6 +162,11 @@ export async function callExtractTextFromImage(payload: {
   mode: "note" | "tasks";
   requestId: string;
 }): Promise<OcrCallResult> {
+  ocrDebugLog(
+    "callable",
+    `extractTextFromImage mode=${payload.mode} base64Len=${payload.imageBase64.length} mime=${payload.mimeType} requestId=${payload.requestId.slice(0, 8)}…`,
+    "info",
+  );
   const ok = await ensureCallableApp();
   if (!ok || !functions) return { ok: false, error: "unavailable" };
   try {
@@ -147,6 +176,11 @@ export async function callExtractTextFromImage(payload: {
     >(functions, "extractTextFromImage", { timeout: CALLABLE_TIMEOUT_MS });
     const res = await withTimeout(fn(payload), CALLABLE_TIMEOUT_MS + 2_000, "ocr-call-timeout");
     const data = res.data;
+    ocrDebugLog(
+      "callable",
+      `response ok=${data?.ok} error=${data?.error ?? "none"} tasks=${data?.tasks?.length ?? 0} textLen=${String(data?.text || "").length}`,
+      data?.ok ? "ok" : "warn",
+    );
     if (data?.ok && payload.mode === "tasks") {
       const tasks = Array.isArray(data.tasks) ? data.tasks.map((t) => String(t).trim()).filter(Boolean) : [];
       if (!tasks.length) return { ok: false, error: "unreadable" };

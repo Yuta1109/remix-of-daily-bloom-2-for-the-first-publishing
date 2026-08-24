@@ -13,7 +13,7 @@ import {
 import { loadReusable, type ReusableTask } from "@/lib/reusable-tasks";
 import { useI18n } from "@/lib/i18n";
 import { InsetScrollArea } from "@/components/InsetScrollArea";
-import { hideKeyboard, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
+import { hideKeyboard, prepareForOcr, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
 import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 import type { DayData, Task } from "@/lib/store";
 import { TaskHistorySheet } from "@/components/TaskHistorySheet";
@@ -48,6 +48,10 @@ export default function Index() {
     window.addEventListener("essences-tutorial-data-cleared", reload);
     return () => window.removeEventListener("essences-tutorial-data-cleared", reload);
   }, [today]);
+
+  useEffect(() => {
+    if (pickOpen || ocrBusy) void hideKeyboard();
+  }, [pickOpen, ocrBusy]);
 
   const persist = useCallback(
     (updated: DayData) => {
@@ -125,6 +129,7 @@ export default function Index() {
   const onOcr = async (source: ImageSource) => {
     if (ocrBusy) return;
     setPickOpen(false);
+    await prepareForOcr();
     setOcrBusy(true);
     let message: string | null = null;
     try {
@@ -327,6 +332,7 @@ export default function Index() {
             type="button"
             onClick={() => {
               if (isTutorialActive()) return;
+              void prepareForOcr();
               setPickOpen(true);
             }}
             disabled={ocrBusy || isTutorialActive()}

@@ -231,6 +231,15 @@ export async function hideKeyboard(): Promise<void> {
   resetLifts();
 }
 
+/** Hide keyboard and blur inputs before camera / photo picker / OCR. */
+export async function prepareForOcr(): Promise<void> {
+  await hideKeyboard();
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body) {
+    active.blur();
+  }
+}
+
 export function initKeyboardAvoidance(): void {
   if (initialized || typeof window === "undefined") return;
   initialized = true;

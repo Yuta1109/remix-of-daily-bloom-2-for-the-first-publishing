@@ -1,0 +1,60 @@
+import { Capacitor } from "@capacitor/core";
+import { App } from "@capacitor/app";
+import {
+  ensureCallableApp,
+  getFirebaseConfigStatus,
+} from "./firebase-client";
+import { ocrDebugLog } from "./ocr-debug-log";
+
+const APP_VERSION = "1.1.0";
+
+export async function buildOcrDiagnosticHeader(): Promise<string> {
+  const cfg = getFirebaseConfigStatus();
+  let appInfo = "";
+  try {
+    if (Capacitor.isNativePlatform()) {
+      const info = await App.getInfo();
+      appInfo = `app=${info.name} v${info.version} build=${info.build} id=${info.id}`;
+    }
+  } catch {
+    /* ignore */
+  }
+  const lines = [
+    "=== Essences OCR diagnostic ===",
+    `exportedAt=${new Date().toISOString()}`,
+    `platform=${Capacitor.getPlatform()} native=${Capacitor.isNativePlatform()}`,
+    appInfo || `webVersion=${APP_VERSION}`,
+    `firebaseConfigPresent=${cfg.present}`,
+    `projectId=${cfg.projectId ?? "missing"}`,
+    `hasApiKey=${cfg.hasApiKey} apiKeyPrefix=${cfg.apiKeyPrefix ?? "none"}`,
+    `appId=${cfg.appId ?? "missing"} messagingSenderId=${cfg.messagingSenderId ?? "missing"}`,
+    `functionsRegion=asia-northeast1`,
+    `callable=extractTextFromImage`,
+  ];
+  return lines.join("\n");
+}
+
+/** Log environment + optional auth probe (no image upload). */
+export async function probeOcrEnvironment(source: string): Promise<void> {
+  const cfg = getFirebaseConfigStatus();
+  ocrDebugLog("probe", `start (${source}) platform=${Capacitor.getPlatform()}`, "info");
+  ocrDebugLog(
+    "probe",
+    `firebase config present=${cfg.present} projectId=${cfg.projectId ?? "missing"} hasApiKey=${cfg.hasApiKey}`,
+    cfg.present ? "ok" : "error",
+  );
+  if (!cfg.present) {
+    ocrDebugLog(
+      "probe",
+      "VITE_FIREBASE_WEB_CONFIG missing in this build — OCR callable cannot run",
+      "error",
+    );
+    return;
+  }
+  try {
+    const ok = await ensureCallableApp();
+    ocrDebugLog("probe", `ensureCallableApp → ${ok}`, ok ? "ok" : "error");
+  } catch (err) {
+    ocrDebugLog("probe", `ensureCallableApp threw: ${String((err as Error)?.message || err)}`, "error");
+  }
+}
