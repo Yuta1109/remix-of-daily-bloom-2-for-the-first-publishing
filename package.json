@@ -13,7 +13,10 @@
     "test:watch": "vitest",
     "cap:sync": "npm run build && npx cap sync ios && node scripts/ensure-spm-firebase-app-link.mjs && node scripts/run-setup-widget.mjs",
     "cap:ios": "npm run cap:sync && npx cap open ios",
+    "deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-functions.ps1",
     "deploy:functions": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-functions.ps1",
+    "deploy:functions": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-functions.ps1",
+    "firebase:login": "powershell -ExecutionPolicy Bypass -File ./scripts/firebase-login.ps1",
     "postinstall": "patch-package"
   },
   "dependencies": {
