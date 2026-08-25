@@ -2305,4 +2305,4 @@ export const onDeviceTokenWrite = onDocumentWritten(
   },
 );
 
-export { extractTextFromImage, getGeminiQuotaStatus } from "./ocr.js";
+export { extractTextFromImage, getGeminiQuotaStatus, probeGeminiApiKeyStatus } from "./ocr.js";

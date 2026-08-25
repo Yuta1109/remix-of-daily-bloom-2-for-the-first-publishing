@@ -70,3 +70,7 @@ if ($deployExit -ne 0) {
 }
 
 Write-Host "Done." -ForegroundColor Green
+Write-Host ""
+Write-Host "OCR requires GEMINI_API_KEY (Google AI Studio, not Firebase Web API key)." -ForegroundColor Yellow
+Write-Host "  npm run gemini:secret   # first time or when key changes" -ForegroundColor Yellow
+Write-Host "  npm run deploy          # again after setting the secret" -ForegroundColor Yellow

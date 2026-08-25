@@ -195,10 +195,11 @@ export function textToNoteHtml(text: string): string {
 }
 
 export function ocrToastKey(
-  error: "quota" | "unreadable" | "error" | "unavailable" | "cancelled" | "permission" | undefined,
-): "ocrQuota" | "ocrUnreadable" | "ocrPermission" | "ocrGeneric" | null {
+  error: "quota" | "unreadable" | "error" | "unavailable" | "cancelled" | "permission" | "config" | undefined,
+): "ocrQuota" | "ocrUnreadable" | "ocrPermission" | "ocrConfig" | "ocrGeneric" | null {
   if (!error || error === "cancelled") return null;
   if (error === "quota") return "ocrQuota";
+  if (error === "config") return "ocrConfig";
   if (error === "unreadable") return "ocrUnreadable";
   if (error === "permission") return "ocrPermission";
   return "ocrGeneric";

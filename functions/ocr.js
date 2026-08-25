@@ -31,6 +31,7 @@ import {
   isValidImageBase64,
   waitForOcrRequest,
 } from "./ocr-idempotency.js";
+import { normalizeGeminiApiKey, probeGeminiApiKey, validateGeminiApiKeyMeta } from "./gemini-key.js";
 
 const REGION = "asia-northeast1";
 const MAX_BYTES = 1_800_000;
@@ -170,6 +171,7 @@ function buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }) {
 }
 
 function finalError({ reserveReason, lastFailure, sawApiQuota }) {
+  if (lastFailure?.kind === "auth") return "config";
   if (reserveReason === "all-unavailable") return "quota";
   if (sawApiQuota && !lastFailure) return "quota";
   if (lastFailure?.kind === "api-quota" && sawApiQuota) return "quota";
@@ -408,10 +410,17 @@ export const extractTextFromImage = onCall(
       throw new HttpsError("aborted", "OCR is already in progress for this request.");
     }
 
-    const apiKey = geminiKey.value();
-    if (!apiKey) {
-      logger.error("GEMINI_API_KEY missing");
-      return { ok: false, error: "error" };
+    const apiKey = normalizeGeminiApiKey(geminiKey.value());
+    const keyMeta = validateGeminiApiKeyMeta(apiKey);
+    if (!keyMeta.ok) {
+      logger.error("GEMINI_API_KEY invalid", keyMeta);
+      const payload = {
+        ok: false,
+        error: "config",
+        debug: { keyReason: keyMeta.reason, keyLen: keyMeta.len, keyPrefix: keyMeta.prefix },
+      };
+      await finishOcrRequest(requestId, req.auth.uid, payload, false);
+      return payload;
     }
 
     try {
@@ -424,6 +433,15 @@ export const extractTextFromImage = onCall(
       let payload;
       if (result.error === "quota") {
         payload = { ok: false, error: "quota", debug: result.debug };
+      } else if (result.error === "config") {
+        payload = {
+          ok: false,
+          error: "config",
+          debug: {
+            ...result.debug,
+            hint: "GEMINI_API_KEY rejected by Google (401). Use a Google AI Studio key, not the Firebase Web API key.",
+          },
+        };
       } else if (result.error) {
         payload = { ok: false, error: "error", debug: result.debug };
       } else if (mode === "tasks") {
@@ -456,5 +474,19 @@ export const getGeminiQuotaStatus = onCall(
       throw new HttpsError("unauthenticated", "Sign-in required.");
     }
     return { models: await getQuotaStatus() };
+  },
+);
+
+export const probeGeminiApiKeyStatus = onCall(
+  {
+    region: REGION,
+    cors: true,
+    secrets: [geminiKey],
+  },
+  async (req) => {
+    if (!req.auth?.uid) {
+      throw new HttpsError("unauthenticated", "Sign-in required.");
+    }
+    return probeGeminiApiKey(geminiKey.value());
   },
 );

@@ -15,6 +15,7 @@
     "cap:ios": "npm run cap:sync && npx cap open ios",
     "deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-functions.ps1",
     "deploy:functions": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-functions.ps1",
+    "gemini:secret": "powershell -ExecutionPolicy Bypass -File ./scripts/set-gemini-secret.ps1",
     "firebase:login": "powershell -ExecutionPolicy Bypass -File ./scripts/firebase-login.ps1",
     "postinstall": "patch-package"
   },

@@ -134,7 +134,7 @@ export async function ensureCallableApp(): Promise<boolean> {
 export type OcrCallResult =
   | { ok: true; tasks: string[]; text?: undefined }
   | { ok: true; text: string; tasks?: undefined }
-  | { ok: false; error: "quota" | "unreadable" | "error" | "unavailable" };
+  | { ok: false; error: "quota" | "unreadable" | "error" | "unavailable" | "config" };
 
 function mapCallableError(err: unknown): OcrCallResult {
   const code = String((err as { code?: string })?.code || "");
@@ -202,6 +202,7 @@ export async function callExtractTextFromImage(payload: {
           dbg.structured != null ? `structured=${dbg.structured}` : "",
           dbg.sawApiQuota ? "sawApiQuota=true" : "",
           dbg.lastSnippet ? `snippet=${dbg.lastSnippet.slice(0, 160)}` : "",
+          (dbg as { hint?: string }).hint ? `hint=${String((dbg as { hint?: string }).hint).slice(0, 160)}` : "",
         ]
           .filter(Boolean)
           .join(" "),
@@ -224,7 +225,7 @@ export async function callExtractTextFromImage(payload: {
       return { ok: true, text };
     }
     const err = data?.error;
-    if (err === "quota" || err === "unreadable") return { ok: false, error: err };
+    if (err === "quota" || err === "unreadable" || err === "config") return { ok: false, error: err };
     return { ok: false, error: "error" };
   } catch (err) {
     return mapCallableError(err);
@@ -253,5 +254,34 @@ export async function fetchGeminiQuotaStatus(): Promise<string> {
       .join("\n");
   } catch (err) {
     return `quota probe failed: ${String((err as Error)?.message || err)}`;
+  }
+}
+
+export async function probeGeminiApiKeyFromServer(): Promise<string> {
+  const ok = await ensureCallableApp();
+  if (!ok || !functions) return "gemini key probe: firebase not ready";
+  try {
+    const fn = httpsCallable<
+      Record<string, never>,
+      {
+        ok?: boolean;
+        status?: number | null;
+        hint?: string | null;
+        snippet?: string | null;
+        meta?: { ok?: boolean; reason?: string | null; len?: number; prefix?: string | null };
+      }
+    >(functions, "probeGeminiApiKeyStatus", { timeout: 20_000 });
+    const res = await fn({});
+    const d = res.data;
+    const meta = d?.meta;
+    const parts = [
+      `geminiKey meta ok=${meta?.ok ?? "?"} reason=${meta?.reason ?? "none"} len=${meta?.len ?? "?"} prefix=${meta?.prefix ?? "?"}`,
+      `liveProbe ok=${d?.ok} http=${d?.status ?? "?"}`,
+      d?.hint ? `hint=${d.hint}` : "",
+      d?.snippet ? `snippet=${d.snippet.slice(0, 160)}` : "",
+    ].filter(Boolean);
+    return parts.join(" ");
+  } catch (err) {
+    return `gemini key probe failed: ${String((err as Error)?.message || err)}`;
   }
 }

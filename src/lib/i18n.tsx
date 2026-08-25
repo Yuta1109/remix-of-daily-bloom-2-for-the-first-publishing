@@ -194,6 +194,8 @@ const translations = {
     ocrUnreadable:
       "Could not read the image well. Try a clearer photo of the handwriting.",
     ocrGeneric: "Something went wrong while reading the image. Please try again.",
+    ocrConfig:
+      "Image recognition is not set up on the server (invalid Gemini API key). The developer must register a Google AI Studio key in Firebase.",
     ocrPermission: "Camera or Photos access is off. Enable it in iPhone Settings → Essences.",
     ocrDebugTitle: "Image recognition log (temporary)",
     ocrDebugHint:
@@ -512,6 +514,8 @@ const translations = {
     ocrUnreadable:
       "画像をうまく読み取れませんでした。文字がはっきり写っている写真でもう一度お試しください。",
     ocrGeneric: "画像の読み取り中にエラーが発生しました。もう一度お試しください。",
+    ocrConfig:
+      "画像認識のサーバー設定（Gemini APIキー）が無効です。Google AI Studio のキーを Firebase に設定してください。",
     ocrPermission: "カメラまたは写真へのアクセスがオフです。iPhoneの「設定」→ Essences から許可してください。",
     ocrDebugTitle: "画像認識ログ（一時表示）",
     ocrDebugHint:

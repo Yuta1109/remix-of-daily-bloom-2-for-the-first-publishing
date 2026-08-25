@@ -12,6 +12,7 @@ import {
 } from "./quota-logic.js";
 import { FREE_MODELS } from "./gemini-config.js";
 import { isValidImageBase64, isValidRequestId } from "./ocr-idempotency.js";
+import { normalizeGeminiApiKey, validateGeminiApiKeyMeta } from "./gemini-key.js";
 
 describe("wouldExceedSoftLimit", () => {
   it("treats current + add against 90%, not current/limit alone", () => {
@@ -245,6 +246,16 @@ describe("soft 8/10 then next model", () => {
     }
     assert.equal(reserve().modelId, "gemini-3.1-flash-lite");
     assert.equal(states["gemini-3.5-flash-lite"].rpd, 8);
+  });
+});
+
+describe("gemini API key", () => {
+  it("trims Bearer prefix and quotes", () => {
+    assert.equal(normalizeGeminiApiKey('  "AIzaSyTestKey123456789012345678901"  '), "AIzaSyTestKey123456789012345678901");
+  });
+
+  it("rejects empty keys", () => {
+    assert.equal(validateGeminiApiKeyMeta("").ok, false);
   });
 });
 

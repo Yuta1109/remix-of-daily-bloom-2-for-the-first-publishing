@@ -4,6 +4,7 @@ import {
   ensureCallableApp,
   fetchGeminiQuotaStatus,
   getFirebaseConfigStatus,
+  probeGeminiApiKeyFromServer,
 } from "./firebase-client";
 import { ocrDebugLog } from "./ocr-debug-log";
 
@@ -60,6 +61,12 @@ export async function probeOcrEnvironment(source: string): Promise<void> {
       for (const line of quota.split("\n")) {
         ocrDebugLog("probe", line, line.includes("blocked") ? "warn" : "info");
       }
+      const keyProbe = await probeGeminiApiKeyFromServer();
+      ocrDebugLog(
+        "probe",
+        keyProbe,
+        keyProbe.includes("liveProbe ok=true") ? "ok" : "error",
+      );
     }
   } catch (err) {
     ocrDebugLog("probe", `ensureCallableApp threw: ${String((err as Error)?.message || err)}`, "error");
