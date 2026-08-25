@@ -90,6 +90,29 @@ export async function reserveNextModel(estimatedTokens = estimatedTokensForReque
   });
 }
 
+/** Undo a failed attempt so soft limits are not consumed by Gemini errors. */
+export async function releaseReservation(modelId, estimatedTokens = estimatedTokensForRequest()) {
+  const nowMs = Date.now();
+  await db().runTransaction(async (tx) => {
+    const ref = docRef(modelId);
+    const snap = await tx.get(ref);
+    if (!snap.exists) return;
+    const state = normalizeQuotaState(
+      { ...(snap.data() || {}), modelId },
+      nowMs,
+      GEMINI_MODEL_CONFIG,
+    );
+    const next = {
+      ...state,
+      rpm: Math.max(0, state.rpm - 1),
+      rpd: Math.max(0, state.rpd - 1),
+      tpm: Math.max(0, state.tpm - estimatedTokens),
+    };
+    tx.set(ref, serialize(next));
+  });
+  logger.info("quota released", { model: modelId, estimatedTokens });
+}
+
 export async function settleReservation(modelId, estimatedTokens, actualTokens) {
   const nowMs = Date.now();
   await db().runTransaction(async (tx) => {

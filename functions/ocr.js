@@ -21,6 +21,7 @@ import { isQuotaHttpError, isTransientHttpError } from "./quota-logic.js";
 import {
   getQuotaStatus,
   markModelQuotaExhausted,
+  releaseReservation,
   reserveNextModel,
   settleReservation,
 } from "./quota-manager.js";
@@ -79,8 +80,23 @@ function candidateText(json) {
   return parts.map((p) => p.text || "").join("");
 }
 
-async function callGemini({ modelId, apiKey, mimeType, imageBase64, mode }) {
+function generationConfigForModel(modelId, mode, structured) {
   const schema = mode === "tasks" ? TASK_RESPONSE_SCHEMA : NOTE_RESPONSE_SCHEMA;
+  const config = {
+    temperature: 0.1,
+    maxOutputTokens: ESTIMATED_OUTPUT_TOKENS,
+  };
+  if (structured) {
+    config.responseMimeType = "application/json";
+    config.responseSchema = schema;
+  }
+  if (/^gemini-2\.5-flash(?!-lite)/.test(modelId)) {
+    config.thinkingConfig = { thinkingBudget: 0 };
+  }
+  return config;
+}
+
+async function callGemini({ modelId, apiKey, mimeType, imageBase64, mode, structured = true }) {
   const prompt = mode === "tasks" ? TASK_PROMPT : NOTE_PROMPT;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent`;
   const res = await fetch(url, {
@@ -99,12 +115,7 @@ async function callGemini({ modelId, apiKey, mimeType, imageBase64, mode }) {
           ],
         },
       ],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: ESTIMATED_OUTPUT_TOKENS,
-        responseMimeType: "application/json",
-        responseSchema: schema,
-      },
+      generationConfig: generationConfigForModel(modelId, mode, structured),
     }),
   });
   const bodyText = await res.text();
@@ -122,89 +133,228 @@ function normalizeTasks(parsed) {
   return list.map((t) => String(t || "").trim()).filter(Boolean);
 }
 
+function failureKind(status, bodyText) {
+  if (isQuotaHttpError(status, bodyText)) return "api-quota";
+  if (status === 404) return "model-not-found";
+  if (status === 401 || status === 403) return "auth";
+  if (status === 400) return "bad-request";
+  if (isTransientHttpError(status)) return "transient";
+  if (status >= 400) return "http";
+  return "unknown";
+}
+
+function buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }) {
+  return {
+    tried,
+    reserveReason: reserveReason || null,
+    lastModel: lastFailure?.modelId || null,
+    lastStatus: lastFailure?.status ?? null,
+    lastKind: lastFailure?.kind || null,
+    lastSnippet: lastFailure?.bodyText?.slice(0, 200) || null,
+    structured: lastFailure?.structured ?? null,
+    sawApiQuota: !!sawApiQuota,
+  };
+}
+
+function finalError({ reserveReason, lastFailure, sawApiQuota }) {
+  if (reserveReason === "all-unavailable") return "quota";
+  if (sawApiQuota && !lastFailure) return "quota";
+  if (lastFailure?.kind === "api-quota" && sawApiQuota) return "quota";
+  return "error";
+}
+
 async function extractWithFallback({ apiKey, mimeType, imageBase64, mode }) {
   const tried = [];
   const estimated = estimatedTokensForRequest();
+  let reserveReason = null;
+  let lastFailure = null;
+  let sawApiQuota = false;
 
   while (tried.length < FREE_MODELS.length) {
     const reserved = await reserveNextModel(estimated, tried);
     if (!reserved.ok) {
-      return { error: "quota", tried };
+      reserveReason = reserved.reason || "all-unavailable";
+      logger.info("ocr reserve failed", { reason: reserveReason, tried });
+      return {
+        error: "quota",
+        tried,
+        reserveReason,
+        lastFailure,
+        sawApiQuota,
+        debug: buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }),
+      };
     }
     const modelId = reserved.modelId;
     if (!FREE_ONLY || !FREE_MODELS.includes(modelId)) {
-      return { error: "quota", tried };
+      reserveReason = "invalid-model";
+      return {
+        error: "error",
+        tried,
+        reserveReason,
+        lastFailure,
+        sawApiQuota,
+        debug: buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }),
+      };
     }
     tried.push(modelId);
 
+    let modelSucceeded = false;
     let lastTransient = null;
-    for (let attempt = 0; attempt <= TEMP_UNAVAILABLE_RETRIES; attempt++) {
-      if (attempt > 0) {
-        await sleep(TEMP_UNAVAILABLE_BASE_MS * 2 ** (attempt - 1));
-      }
-      let result;
-      try {
-        result = await callGemini({
-          modelId,
-          apiKey,
-          mimeType,
-          imageBase64,
+    for (const structured of [true, false]) {
+      for (let attempt = 0; attempt <= TEMP_UNAVAILABLE_RETRIES; attempt++) {
+        if (attempt > 0) {
+          await sleep(TEMP_UNAVAILABLE_BASE_MS * 2 ** (attempt - 1));
+        }
+        let result;
+        try {
+          result = await callGemini({
+            modelId,
+            apiKey,
+            mimeType,
+            imageBase64,
+            mode,
+            structured,
+          });
+        } catch (err) {
+          lastTransient = err;
+          logger.warn("gemini network error", { model: modelId, attempt, structured });
+          continue;
+        }
+
+        const kind = failureKind(result.status, result.bodyText);
+        if (kind === "api-quota") {
+          sawApiQuota = true;
+          logger.info("gemini quota hard fallback", {
+            model: modelId,
+            status: result.status,
+            snippet: result.bodyText.slice(0, 120),
+          });
+          await markModelQuotaExhausted(modelId, result.bodyText);
+          lastFailure = {
+            modelId,
+            status: result.status,
+            bodyText: result.bodyText,
+            kind,
+            structured,
+          };
+          break;
+        }
+
+        if (kind === "transient") {
+          lastTransient = new Error(`http ${result.status}`);
+          logger.warn("gemini transient", {
+            model: modelId,
+            status: result.status,
+            attempt,
+            structured,
+          });
+          if (attempt < TEMP_UNAVAILABLE_RETRIES) continue;
+          lastFailure = {
+            modelId,
+            status: result.status,
+            bodyText: result.bodyText,
+            kind,
+            structured,
+          };
+          break;
+        }
+
+        if (!result.json || result.status >= 400) {
+          logger.warn("gemini call failed", {
+            model: modelId,
+            status: result.status,
+            kind,
+            structured,
+            snippet: result.bodyText.slice(0, 120),
+          });
+          lastFailure = {
+            modelId,
+            status: result.status,
+            bodyText: result.bodyText,
+            kind,
+            structured,
+          };
+          if (kind === "bad-request" && structured) {
+            break;
+          }
+          break;
+        }
+
+        const usage = usageFromGemini(result.json);
+        await settleReservation(modelId, estimated, usage.totalTokens || estimated);
+        modelSucceeded = true;
+        const parsed = parseJsonObject(candidateText(result.json));
+        logger.info("gemini ok", {
+          model: modelId,
           mode,
+          structured,
+          fallback: tried.length > 1,
+          triedCount: tried.length,
+          promptTokens: usage.promptTokens,
+          totalTokens: usage.totalTokens,
         });
-      } catch (err) {
-        lastTransient = err;
-        logger.warn("gemini network error", { model: modelId, attempt });
+        if (mode === "tasks") {
+          return {
+            error: null,
+            tasks: normalizeTasks(parsed),
+            modelId,
+            tried,
+            debug: buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }),
+          };
+        }
+        const text = String(parsed?.text || "").trim();
+        return {
+          error: null,
+          text,
+          modelId,
+          tried,
+          debug: buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }),
+        };
+      }
+
+      if (modelSucceeded) break;
+      if (lastFailure?.kind === "api-quota") break;
+      if (lastFailure?.kind === "bad-request" && structured) {
+        logger.info("gemini retry without schema", { model: modelId });
+        lastFailure = null;
         continue;
       }
-
-      if (isQuotaHttpError(result.status, result.bodyText)) {
-        logger.info("gemini quota hard fallback", {
-          model: modelId,
-          status: result.status,
-        });
-        await markModelQuotaExhausted(modelId, result.bodyText);
-        break;
-      }
-
-      if (isTransientHttpError(result.status)) {
-        lastTransient = new Error(`http ${result.status}`);
-        logger.warn("gemini transient", { model: modelId, status: result.status, attempt });
-        if (attempt < TEMP_UNAVAILABLE_RETRIES) continue;
-        break;
-      }
-
-      if (!result.json || result.status >= 400) {
-        logger.warn("gemini non-quota error, trying next model", {
-          model: modelId,
-          status: result.status,
-        });
-        break;
-      }
-
-      const usage = usageFromGemini(result.json);
-      await settleReservation(modelId, estimated, usage.totalTokens || estimated);
-      const parsed = parseJsonObject(candidateText(result.json));
-      logger.info("gemini ok", {
-        model: modelId,
-        mode,
-        fallback: tried.length > 1,
-        triedCount: tried.length,
-        promptTokens: usage.promptTokens,
-        totalTokens: usage.totalTokens,
-      });
-      if (mode === "tasks") {
-        return { error: null, tasks: normalizeTasks(parsed), modelId, tried };
-      }
-      const text = String(parsed?.text || "").trim();
-      return { error: null, text, modelId, tried };
+      break;
     }
 
+    if (!modelSucceeded) {
+      await releaseReservation(modelId, estimated);
+    }
+    if (lastFailure?.kind === "api-quota") continue;
+
     if (lastTransient && tried.length >= FREE_MODELS.length) {
-      return { error: "error", tried };
+      return {
+        error: "error",
+        tried,
+        reserveReason,
+        lastFailure,
+        sawApiQuota,
+        debug: buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }),
+      };
     }
   }
 
-  return { error: "quota", tried };
+  const error = finalError({ reserveReason, lastFailure, sawApiQuota });
+  logger.warn("ocr all models failed", {
+    error,
+    tried,
+    reserveReason,
+    lastFailure,
+    sawApiQuota,
+  });
+  return {
+    error,
+    tried,
+    reserveReason,
+    lastFailure,
+    sawApiQuota,
+    debug: buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }),
+  };
 }
 
 export const extractTextFromImage = onCall(
@@ -260,17 +410,17 @@ export const extractTextFromImage = onCall(
       });
       let payload;
       if (result.error === "quota") {
-        payload = { ok: false, error: "quota" };
+        payload = { ok: false, error: "quota", debug: result.debug };
       } else if (result.error) {
-        payload = { ok: false, error: "error" };
+        payload = { ok: false, error: "error", debug: result.debug };
       } else if (mode === "tasks") {
         payload = result.tasks?.length
-          ? { ok: true, tasks: result.tasks }
-          : { ok: false, error: "unreadable" };
+          ? { ok: true, tasks: result.tasks, debug: result.debug }
+          : { ok: false, error: "unreadable", debug: result.debug };
       } else {
         payload = result.text
-          ? { ok: true, text: result.text }
-          : { ok: false, error: "unreadable" };
+          ? { ok: true, text: result.text, debug: result.debug }
+          : { ok: false, error: "unreadable", debug: result.debug };
       }
       await finishOcrRequest(requestId, req.auth.uid, payload, payload.ok === true);
       return payload;

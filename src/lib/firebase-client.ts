@@ -172,10 +172,42 @@ export async function callExtractTextFromImage(payload: {
   try {
     const fn = httpsCallable<
       typeof payload,
-      { ok?: boolean; text?: string; tasks?: string[]; error?: string }
+      {
+        ok?: boolean;
+        text?: string;
+        tasks?: string[];
+        error?: string;
+        debug?: {
+          tried?: string[];
+          reserveReason?: string | null;
+          lastModel?: string | null;
+          lastStatus?: number | null;
+          lastKind?: string | null;
+          lastSnippet?: string | null;
+          structured?: boolean | null;
+          sawApiQuota?: boolean;
+        };
+      }
     >(functions, "extractTextFromImage", { timeout: CALLABLE_TIMEOUT_MS });
     const res = await withTimeout(fn(payload), CALLABLE_TIMEOUT_MS + 2_000, "ocr-call-timeout");
     const data = res.data;
+    const dbg = data?.debug;
+    if (dbg) {
+      ocrDebugLog(
+        "callable",
+        [
+          `debug tried=${dbg.tried?.join(",") || "none"}`,
+          `reserve=${dbg.reserveReason ?? "none"}`,
+          `last=${dbg.lastModel ?? "?"} status=${dbg.lastStatus ?? "?"} kind=${dbg.lastKind ?? "?"}`,
+          dbg.structured != null ? `structured=${dbg.structured}` : "",
+          dbg.sawApiQuota ? "sawApiQuota=true" : "",
+          dbg.lastSnippet ? `snippet=${dbg.lastSnippet.slice(0, 160)}` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        data?.ok ? "ok" : "warn",
+      );
+    }
     ocrDebugLog(
       "callable",
       `response ok=${data?.ok} error=${data?.error ?? "none"} tasks=${data?.tasks?.length ?? 0} textLen=${String(data?.text || "").length}`,
@@ -196,5 +228,30 @@ export async function callExtractTextFromImage(payload: {
     return { ok: false, error: "error" };
   } catch (err) {
     return mapCallableError(err);
+  }
+}
+
+export async function fetchGeminiQuotaStatus(): Promise<string> {
+  const ok = await ensureCallableApp();
+  if (!ok || !functions) return "quota probe: firebase not ready";
+  try {
+    const fn = httpsCallable<Record<string, never>, { models?: Array<Record<string, unknown>> }>(
+      functions,
+      "getGeminiQuotaStatus",
+      { timeout: 15_000 },
+    );
+    const res = await fn({});
+    const models = res.data?.models ?? [];
+    if (!models.length) return "quota probe: empty";
+    return models
+      .map((m) => {
+        const model = String(m.model ?? "?");
+        const available = m.available === true ? "ok" : "blocked";
+        const pct = m.percentage as { rpm?: number; tpm?: number; rpd?: number } | undefined;
+        return `${model} ${available} rpm=${m.rpm} tpm=${m.tpm} rpd=${m.rpd} pct=${pct?.rpm ?? "?"}%/${pct?.tpm ?? "?"}%/${pct?.rpd ?? "?"}%`;
+      })
+      .join("\n");
+  } catch (err) {
+    return `quota probe failed: ${String((err as Error)?.message || err)}`;
   }
 }

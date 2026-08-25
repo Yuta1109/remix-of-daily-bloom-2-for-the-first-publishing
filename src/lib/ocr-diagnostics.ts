@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import {
   ensureCallableApp,
+  fetchGeminiQuotaStatus,
   getFirebaseConfigStatus,
 } from "./firebase-client";
 import { ocrDebugLog } from "./ocr-debug-log";
@@ -54,6 +55,12 @@ export async function probeOcrEnvironment(source: string): Promise<void> {
   try {
     const ok = await ensureCallableApp();
     ocrDebugLog("probe", `ensureCallableApp → ${ok}`, ok ? "ok" : "error");
+    if (ok) {
+      const quota = await fetchGeminiQuotaStatus();
+      for (const line of quota.split("\n")) {
+        ocrDebugLog("probe", line, line.includes("blocked") ? "warn" : "info");
+      }
+    }
   } catch (err) {
     ocrDebugLog("probe", `ensureCallableApp threw: ${String((err as Error)?.message || err)}`, "error");
   }
