@@ -18,11 +18,12 @@ export const QUOTA_TIME_ZONE = "America/Los_Angeles";
 export const GEMINI_MODEL_CONFIG = {
   "gemini-3.5-flash-lite": { priority: 1, rpm: 15, tpm: 250000, rpd: 500 },
   "gemini-3.1-flash-lite": { priority: 2, rpm: 15, tpm: 250000, rpd: 500 },
-  "gemini-3.6-flash": { priority: 3, rpm: 5, tpm: 250000, rpd: 20 },
-  "gemini-3.5-flash": { priority: 4, rpm: 5, tpm: 250000, rpd: 20 },
-  "gemini-3-flash-preview": { priority: 5, rpm: 5, tpm: 250000, rpd: 20 },
-  "gemini-2.5-flash": { priority: 6, rpm: 5, tpm: 250000, rpd: 20 },
-  "gemini-2.5-flash-lite": { priority: 7, rpm: 10, tpm: 250000, rpd: 20 },
+  "gemini-3.7-flash": { priority: 3, rpm: 5, tpm: 250000, rpd: 20 },
+  "gemini-3.6-flash": { priority: 4, rpm: 5, tpm: 250000, rpd: 20 },
+  "gemini-3.5-flash": { priority: 5, rpm: 5, tpm: 250000, rpd: 20 },
+  "gemini-3-flash-preview": { priority: 6, rpm: 5, tpm: 250000, rpd: 20 },
+  "gemini-2.5-flash": { priority: 7, rpm: 5, tpm: 250000, rpd: 20 },
+  "gemini-2.5-flash-lite": { priority: 8, rpm: 10, tpm: 250000, rpd: 20 },
 };
 
 export const FREE_MODELS = Object.entries(GEMINI_MODEL_CONFIG)
@@ -49,17 +50,17 @@ export const NOTE_PROMPT = [
 ].join("\n");
 
 export const TASK_RESPONSE_SCHEMA = {
-  type: "OBJECT",
+  type: "object",
   properties: {
-    tasks: { type: "ARRAY", items: { type: "STRING" } },
+    tasks: { type: "array", items: { type: "string" } },
   },
   required: ["tasks"],
 };
 
 export const NOTE_RESPONSE_SCHEMA = {
-  type: "OBJECT",
+  type: "object",
   properties: {
-    text: { type: "STRING" },
+    text: { type: "string" },
   },
   required: ["text"],
 };

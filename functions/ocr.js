@@ -77,7 +77,22 @@ function usageFromGemini(json) {
 function candidateText(json) {
   const parts = json?.candidates?.[0]?.content?.parts;
   if (!Array.isArray(parts)) return "";
-  return parts.map((p) => p.text || "").join("");
+  return parts
+    .filter((p) => !p.thought)
+    .map((p) => p.text || "")
+    .join("");
+}
+
+/** Per https://ai.google.dev/gemini-api/docs/thinking — 3.x uses thinkingLevel; 2.5 uses thinkingBudget. */
+function thinkingConfigForModel(modelId) {
+  if (/^gemini-3\./.test(modelId)) {
+    // gemini-3.7-flash rejects "minimal"; "low" is safe for OCR on all 3.x models.
+    return { thinkingConfig: { thinkingLevel: "low" } };
+  }
+  if (/^gemini-2\.5-flash(?!-lite)/.test(modelId)) {
+    return { thinkingConfig: { thinkingBudget: 0 } };
+  }
+  return {};
 }
 
 function generationConfigForModel(modelId, mode, structured) {
@@ -85,13 +100,11 @@ function generationConfigForModel(modelId, mode, structured) {
   const config = {
     temperature: 0.1,
     maxOutputTokens: ESTIMATED_OUTPUT_TOKENS,
+    ...thinkingConfigForModel(modelId),
   };
   if (structured) {
     config.responseMimeType = "application/json";
     config.responseSchema = schema;
-  }
-  if (/^gemini-2\.5-flash(?!-lite)/.test(modelId)) {
-    config.thinkingConfig = { thinkingBudget: 0 };
   }
   return config;
 }
