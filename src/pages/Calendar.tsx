@@ -18,7 +18,7 @@ import {
 import { monthKeyFromDate } from "@/lib/month-goals";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { isJapaneseHoliday } from "@/lib/jp-holidays";
+import { getJapaneseHolidayName } from "@/lib/jp-holidays";
 import {
   loadCalendarViewMode,
   loadWeekStartsOn,
@@ -170,8 +170,10 @@ function MonthGrid({
                 >
                   {dayNum}
                 </span>
-                {locale === "ja" && isJapaneseHoliday(date) ? (
-                  <span className="text-[8px] font-bold text-red-500 leading-none">祝</span>
+                {locale === "ja" && getJapaneseHolidayName(date) ? (
+                  <span className="text-[9px] font-bold text-red-600 bg-red-500/15 px-1 py-px rounded leading-none">
+                    祝
+                  </span>
                 ) : null}
               </div>
               <div className="flex-1 space-y-[2px] overflow-hidden">
@@ -523,8 +525,10 @@ export default function CalendarPage() {
                             >
                               {d.getDate()}
                             </span>
-                            {locale === "ja" && isJapaneseHoliday(key) ? (
-                              <span className="text-[8px] font-bold text-red-500">祝</span>
+                            {locale === "ja" && getJapaneseHolidayName(key) ? (
+                              <span className="text-[9px] font-bold text-red-600 bg-red-500/15 px-1 py-px rounded leading-none">
+                                祝
+                              </span>
                             ) : (
                               <span className="h-2.5" />
                             )}

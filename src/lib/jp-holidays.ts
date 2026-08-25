@@ -34,45 +34,49 @@ function toKey(d: Date) {
   return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
-const cache = new Map<number, Set<string>>();
+const cache = new Map<number, Map<string, string>>();
 
-function holidaysForYear(year: number): Set<string> {
+function holidaysForYear(year: number): Map<string, string> {
   const hit = cache.get(year);
   if (hit) return hit;
-  const dates: Date[] = [
-    new Date(year, 0, 1),
-    nthMonday(year, 1, 2),
-    new Date(year, 1, 11),
-    new Date(year, 1, 23),
-    vernalEquinoxDay(year),
-    new Date(year, 3, 29),
-    new Date(year, 4, 3),
-    new Date(year, 4, 4),
-    new Date(year, 4, 5),
-    nthMonday(year, 7, 3),
-    new Date(year, 7, 11),
-    nthMonday(year, 9, 2),
-    autumnalEquinoxDay(year),
-    new Date(year, 10, 3),
-    new Date(year, 10, 23),
-  ];
+
+  const map = new Map<string, string>();
+  const add = (d: Date, name: string) => map.set(toKey(d), name);
+
+  add(new Date(year, 0, 1), "元日");
+  add(nthMonday(year, 1, 2), "成人の日");
+  add(new Date(year, 1, 11), "建国記念の日");
+  add(new Date(year, 1, 23), "天皇誕生日");
+  add(vernalEquinoxDay(year), "春分の日");
+  add(new Date(year, 3, 29), "昭和の日");
+  add(new Date(year, 4, 3), "憲法記念日");
+  add(new Date(year, 4, 4), "みどりの日");
+  add(new Date(year, 4, 5), "こどもの日");
+  add(nthMonday(year, 7, 3), "海の日");
+  add(new Date(year, 7, 11), "山の日");
+  add(nthMonday(year, 9, 2), "敬老の日");
+  add(autumnalEquinoxDay(year), "秋分の日");
+  add(new Date(year, 10, 3), "文化の日");
+  add(new Date(year, 10, 23), "勤労感謝の日");
+
   if (year === 2020) {
-    dates.push(new Date(2020, 6, 23), new Date(2020, 6, 24));
+    add(new Date(2020, 6, 23), "海の日");
+    add(new Date(2020, 6, 24), "スポーツの日");
   }
   if (year === 2021) {
-    dates.push(new Date(2021, 6, 22), new Date(2021, 6, 23));
+    add(new Date(2021, 6, 22), "海の日");
+    add(new Date(2021, 6, 23), "スポーツの日");
   }
 
-  const set = new Set(dates.map(toKey));
-
   // 振替休日
-  for (const key of [...set]) {
+  for (const [key, name] of [...map.entries()]) {
+    if (name === "振替休日" || name === "国民の休日") continue;
     const [y, m, d] = key.split("-").map(Number);
     const dt = new Date(y, m - 1, d);
     if (dt.getDay() !== 0) continue;
     let next = addDays(dt, 1);
-    while (set.has(toKey(next))) next = addDays(next, 1);
-    set.add(toKey(next));
+    while (map.has(toKey(next))) next = addDays(next, 1);
+    map.set(toKey(next), "振替休日");
   }
 
   // 国民の休日: weekday sandwiched by holidays
@@ -82,19 +86,23 @@ function holidaysForYear(year: number): Set<string> {
       const cur = new Date(year, month - 1, day);
       if (cur.getDay() === 0 || cur.getDay() === 6) continue;
       const k = toKey(cur);
-      if (set.has(k)) continue;
-      if (set.has(toKey(addDays(cur, -1))) && set.has(toKey(addDays(cur, 1)))) {
-        set.add(k);
+      if (map.has(k)) continue;
+      if (map.has(toKey(addDays(cur, -1))) && map.has(toKey(addDays(cur, 1)))) {
+        map.set(k, "国民の休日");
       }
     }
   }
 
-  cache.set(year, set);
-  return set;
+  cache.set(year, map);
+  return map;
+}
+
+export function getJapaneseHolidayName(dateYmd: string): string | null {
+  const y = Number(dateYmd.slice(0, 4));
+  if (!y) return null;
+  return holidaysForYear(y).get(dateYmd) ?? null;
 }
 
 export function isJapaneseHoliday(dateYmd: string): boolean {
-  const y = Number(dateYmd.slice(0, 4));
-  if (!y) return false;
-  return holidaysForYear(y).has(dateYmd);
+  return getJapaneseHolidayName(dateYmd) !== null;
 }

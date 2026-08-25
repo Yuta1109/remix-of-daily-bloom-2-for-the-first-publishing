@@ -84,15 +84,8 @@ function candidateText(json) {
     .join("");
 }
 
-/** Per https://ai.google.dev/gemini-api/docs/thinking — 3.x uses thinkingLevel; 2.5 uses thinkingBudget. */
-function thinkingConfigForModel(modelId) {
-  if (/^gemini-3\./.test(modelId)) {
-    // gemini-3.7-flash rejects "minimal"; "low" is safe for OCR on all 3.x models.
-    return { thinkingConfig: { thinkingLevel: "low" } };
-  }
-  if (/^gemini-2\.5-flash(?!-lite)/.test(modelId)) {
-    return { thinkingConfig: { thinkingBudget: 0 } };
-  }
+/** OCR uses direct JSON output — skip thinking to avoid truncating the response. */
+function thinkingConfigForModel(_modelId) {
   return {};
 }
 
@@ -147,9 +140,13 @@ function normalizeTasks(parsed) {
   return list.map((t) => String(t || "").trim()).filter(Boolean);
 }
 
+function asBool(v) {
+  return v === true || v === "true";
+}
+
 function qualityFlags(parsed) {
-  const empty = parsed?.empty === true;
-  const lowConfidence = parsed?.lowConfidence === true;
+  const empty = asBool(parsed?.empty);
+  const lowConfidence = asBool(parsed?.lowConfidence);
   const latex = Array.isArray(parsed?.latex)
     ? parsed.latex.map((s) => String(s || "").trim()).filter(Boolean)
     : [];
@@ -305,9 +302,28 @@ async function extractWithFallback({ apiKey, mimeType, imageBase64, mode }) {
         }
 
         const usage = usageFromGemini(result.json);
+        const rawText = candidateText(result.json);
+        const parsed = parseJsonObject(rawText);
+        if (!parsed) {
+          logger.warn("gemini unparseable response", {
+            model: modelId,
+            mode,
+            structured,
+            snippet: rawText.slice(0, 200),
+          });
+          lastFailure = {
+            modelId,
+            status: result.status,
+            bodyText: rawText,
+            kind: "bad-parse",
+            structured,
+          };
+          if (structured) break;
+          break;
+        }
+
         await settleReservation(modelId, estimated, usage.totalTokens || estimated);
         modelSucceeded = true;
-        const parsed = parseJsonObject(candidateText(result.json));
         logger.info("gemini ok", {
           model: modelId,
           mode,
@@ -347,6 +363,11 @@ async function extractWithFallback({ apiKey, mimeType, imageBase64, mode }) {
       if (lastFailure?.kind === "api-quota") break;
       if (lastFailure?.kind === "bad-request" && structured) {
         logger.info("gemini retry without schema", { model: modelId });
+        lastFailure = null;
+        continue;
+      }
+      if (lastFailure?.kind === "bad-parse" && structured) {
+        logger.info("gemini retry without schema after bad parse", { model: modelId });
         lastFailure = null;
         continue;
       }
@@ -461,28 +482,35 @@ export const extractTextFromImage = onCall(
       } else if (result.error) {
         payload = { ok: false, error: "error", debug: result.debug };
       } else if (mode === "tasks") {
-        const empty = result.empty || !result.tasks?.length;
+        const tasks = result.tasks || [];
+        const hasTasks = tasks.length > 0;
+        const empty = !hasTasks && result.empty === true;
         payload = empty
           ? { ok: false, error: "empty", debug: result.debug }
-          : {
-              ok: true,
-              tasks: result.tasks,
-              lowConfidence: !!result.lowConfidence,
-              debug: result.debug,
-            };
+          : hasTasks
+            ? {
+                ok: true,
+                tasks,
+                lowConfidence: !!result.lowConfidence,
+                debug: result.debug,
+              }
+            : { ok: false, error: "error", debug: result.debug };
       } else {
         const text = String(result.text || "").trim();
         const latex = Array.isArray(result.latex) ? result.latex.filter(Boolean) : [];
-        const empty = result.empty || (!text && !latex.length);
+        const hasContent = !!text || latex.length > 0;
+        const empty = !hasContent && result.empty === true;
         payload = empty
           ? { ok: false, error: "empty", debug: result.debug }
-          : {
-              ok: true,
-              text: result.text,
-              latex,
-              lowConfidence: !!result.lowConfidence,
-              debug: result.debug,
-            };
+          : hasContent
+            ? {
+                ok: true,
+                text: result.text,
+                latex,
+                lowConfidence: !!result.lowConfidence,
+                debug: result.debug,
+              }
+            : { ok: false, error: "error", debug: result.debug };
       }
       await finishOcrRequest(requestId, req.auth.uid, payload, payload.ok === true);
       return payload;

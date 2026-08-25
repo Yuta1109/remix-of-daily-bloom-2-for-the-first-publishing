@@ -6,7 +6,7 @@ export const QUOTA_THRESHOLD = 0.9;
 
 export const ESTIMATED_INPUT_TOKENS_PER_IMAGE = 4000;
 
-export const ESTIMATED_OUTPUT_TOKENS = 1024;
+export const ESTIMATED_OUTPUT_TOKENS = 2048;
 
 export const TEMP_UNAVAILABLE_RETRIES = 2;
 
@@ -38,7 +38,9 @@ export const TASK_PROMPT = [
   "内容を要約、言い換え、追加、創作しないでください。",
   "タスク本文に意味のある数字や記号が含まれる場合は保持してください。",
   "書かれていないタスクを追加しないでください。",
-  "読み取れる文字が全くない場合は tasks を空配列にして empty を true にしてください。",
+  "empty と lowConfidence は判定用フラグです。読み取った内容は必ず tasks に入れてください。",
+  "読み取れる文字が1つもない場合のみ empty を true にし、tasks は空配列にしてください。",
+  "文字が読み取れた場合は必ず empty を false にしてください。",
   "画像全体の文字のうち約8割以上が判読不能なときだけ lowConfidence を true にしてください。一部の文字が読みにくいだけでは false です。",
   "Respond with JSON only.",
 ].join("\n");
@@ -49,7 +51,9 @@ export const NOTE_PROMPT = [
   "改行、段落、箇条書きなど、画像内の構造を可能な限り維持してください。",
   "読めない文字を根拠なく創作しないでください。",
   "数式がある場合は latex 配列に LaTeX ソースを入れてください（$ 記号は付けない）。本文 text には数式の位置に [[MATH:n]] と書いてください（n は 0 始まりの latex インデックス）。",
-  "読み取れる文字が全くない場合は text を空文字、empty を true にしてください。",
+  "empty と lowConfidence は判定用フラグです。読み取れた内容は必ず text（と必要なら latex）に入れてください。",
+  "読み取れる文字が1つもない場合のみ empty を true にし、text は空文字にしてください。",
+  "文字が読み取れた場合は必ず empty を false にしてください。",
   "画像全体の文字のうち約8割以上が判読不能なときだけ lowConfidence を true にしてください。一部の文字が読みにくいだけでは false です。",
   "Respond with JSON only.",
 ].join("\n");
@@ -61,7 +65,7 @@ export const TASK_RESPONSE_SCHEMA = {
     empty: { type: "boolean" },
     lowConfidence: { type: "boolean" },
   },
-  required: ["tasks"],
+  required: ["tasks", "empty", "lowConfidence"],
 };
 
 export const NOTE_RESPONSE_SCHEMA = {
@@ -72,7 +76,7 @@ export const NOTE_RESPONSE_SCHEMA = {
     empty: { type: "boolean" },
     lowConfidence: { type: "boolean" },
   },
-  required: ["text"],
+  required: ["text", "empty", "lowConfidence"],
 };
 
 export function estimatedTokensForRequest() {

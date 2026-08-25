@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isJapaneseHoliday } from "./jp-holidays";
+import { getJapaneseHolidayName, isJapaneseHoliday } from "./jp-holidays";
 import { placeTimedEvents, timedSliceOnDate, timelineWindow } from "./week-timeline";
 
 describe("japanese holidays", () => {
@@ -7,6 +7,12 @@ describe("japanese holidays", () => {
     expect(isJapaneseHoliday("2026-01-01")).toBe(true);
     expect(isJapaneseHoliday("2026-05-03")).toBe(true);
     expect(isJapaneseHoliday("2026-08-25")).toBe(false);
+  });
+
+  it("returns holiday names", () => {
+    expect(getJapaneseHolidayName("2026-01-01")).toBe("元日");
+    expect(getJapaneseHolidayName("2026-05-03")).toBe("憲法記念日");
+    expect(getJapaneseHolidayName("2026-08-25")).toBeNull();
   });
 });
 
