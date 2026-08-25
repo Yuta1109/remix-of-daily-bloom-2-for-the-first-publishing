@@ -3,6 +3,7 @@ import { Clock, MapPin, Plus } from "lucide-react";
 import { type CalendarEvent, colorHslFor } from "@/lib/events-store";
 import { formatEventScheduleOnDate } from "@/lib/event-display";
 import { useI18n } from "@/lib/i18n";
+import { isJapaneseHoliday } from "@/lib/jp-holidays";
 
 interface Props {
   open: boolean;
@@ -41,8 +42,11 @@ export function DayEventsSheet({
 
           {/* Fixed header */}
           <div className="flex items-center justify-between px-5 pt-3 pb-3 border-b border-border/50 shrink-0">
-            <DrawerPrimitive.Title className="text-base font-semibold">
+            <DrawerPrimitive.Title className="text-base font-semibold flex items-center gap-1.5">
               {dateLabel}
+              {locale === "ja" && isJapaneseHoliday(date) ? (
+                <span className="text-xs font-semibold text-red-500">祝</span>
+              ) : null}
             </DrawerPrimitive.Title>
             <button
               type="button"

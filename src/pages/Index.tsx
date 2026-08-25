@@ -140,10 +140,11 @@ export default function Index() {
         return;
       }
       if (!("tasks" in result) || !result.tasks?.length) {
-        message = t("ocrUnreadable");
+        message = t("ocrEmpty");
         return;
       }
       addOcrTasks(result.tasks);
+      if (result.lowConfidence) message = t("ocrLowConfidence");
     } catch {
       message = t("ocrGeneric");
     } finally {

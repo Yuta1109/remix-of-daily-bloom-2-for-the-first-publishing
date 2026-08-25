@@ -132,9 +132,9 @@ export async function ensureCallableApp(): Promise<boolean> {
 }
 
 export type OcrCallResult =
-  | { ok: true; tasks: string[]; text?: undefined }
-  | { ok: true; text: string; tasks?: undefined }
-  | { ok: false; error: "quota" | "unreadable" | "error" | "unavailable" | "config" };
+  | { ok: true; tasks: string[]; text?: undefined; latex?: string[]; lowConfidence?: boolean }
+  | { ok: true; text: string; tasks?: undefined; latex?: string[]; lowConfidence?: boolean }
+  | { ok: false; error: "quota" | "unreadable" | "error" | "unavailable" | "config" | "empty" };
 
 function mapCallableError(err: unknown): OcrCallResult {
   const code = String((err as { code?: string })?.code || "");
@@ -176,6 +176,8 @@ export async function callExtractTextFromImage(payload: {
         ok?: boolean;
         text?: string;
         tasks?: string[];
+        latex?: string[];
+        lowConfidence?: boolean;
         error?: string;
         debug?: {
           tried?: string[];
@@ -216,16 +218,19 @@ export async function callExtractTextFromImage(payload: {
     );
     if (data?.ok && payload.mode === "tasks") {
       const tasks = Array.isArray(data.tasks) ? data.tasks.map((t) => String(t).trim()).filter(Boolean) : [];
-      if (!tasks.length) return { ok: false, error: "unreadable" };
-      return { ok: true, tasks };
+      if (!tasks.length) return { ok: false, error: "empty" };
+      return { ok: true, tasks, lowConfidence: !!data.lowConfidence };
     }
     if (data?.ok && payload.mode === "note") {
       const text = String(data.text || "").trim();
-      if (!text) return { ok: false, error: "unreadable" };
-      return { ok: true, text };
+      const latex = Array.isArray(data.latex) ? data.latex.map((s) => String(s).trim()).filter(Boolean) : [];
+      if (!text && !latex.length) return { ok: false, error: "empty" };
+      return { ok: true, text, latex, lowConfidence: !!data.lowConfidence };
     }
     const err = data?.error;
-    if (err === "quota" || err === "unreadable" || err === "config") return { ok: false, error: err };
+    if (err === "quota" || err === "unreadable" || err === "config" || err === "empty") {
+      return { ok: false, error: err };
+    }
     return { ok: false, error: "error" };
   } catch (err) {
     return mapCallableError(err);

@@ -183,23 +183,54 @@ export async function extractTextFromPickedImage(
   }
 }
 
-export function textToNoteHtml(text: string): string {
-  const escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  return escaped
-    .split(/\r?\n/)
-    .map((line) => `<div>${line || "<br>"}</div>`)
-    .join("");
+export function textToNoteHtml(text: string, latex: string[] = []): string {
+  const parts: string[] = [];
+  const chunks = String(text || "").split(/\[\[MATH:(\d+)\]\]/g);
+  for (let i = 0; i < chunks.length; i++) {
+    if (i % 2 === 1) {
+      const src = latex[Number(chunks[i])] || "";
+      if (src) {
+        const encoded = latex[Number(chunks[i])]
+          .replace(/&/g, "&amp;")
+          .replace(/"/g, "&quot;")
+          .replace(/</g, "&lt;");
+        parts.push(
+          `<div class="ocr-latex-block" contenteditable="false" data-latex="${encoded}"></div>`,
+        );
+      }
+      continue;
+    }
+    const escaped = chunks[i]
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    parts.push(
+      escaped
+        .split(/\r?\n/)
+        .map((line) => `<div>${line || "<br>"}</div>`)
+        .join(""),
+    );
+  }
+  for (let i = 0; i < latex.length; i++) {
+    if (String(text || "").includes(`[[MATH:${i}]]`)) continue;
+    const encoded = latex[i]
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;");
+    parts.push(
+      `<div class="ocr-latex-block" contenteditable="false" data-latex="${encoded}"></div>`,
+    );
+  }
+  return parts.join("");
 }
 
 export function ocrToastKey(
-  error: "quota" | "unreadable" | "error" | "unavailable" | "cancelled" | "permission" | "config" | undefined,
-): "ocrQuota" | "ocrUnreadable" | "ocrPermission" | "ocrConfig" | "ocrGeneric" | null {
+  error: "quota" | "unreadable" | "error" | "unavailable" | "cancelled" | "permission" | "config" | "empty" | undefined,
+): "ocrQuota" | "ocrUnreadable" | "ocrPermission" | "ocrConfig" | "ocrEmpty" | "ocrGeneric" | null {
   if (!error || error === "cancelled") return null;
   if (error === "quota") return "ocrQuota";
   if (error === "config") return "ocrConfig";
+  if (error === "empty") return "ocrEmpty";
   if (error === "unreadable") return "ocrUnreadable";
   if (error === "permission") return "ocrPermission";
   return "ocrGeneric";

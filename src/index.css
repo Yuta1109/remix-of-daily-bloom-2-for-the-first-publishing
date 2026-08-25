@@ -275,6 +275,40 @@ html.overlay-open #root {
 .animate-float-up   { animation: float-up 1.2s ease-out forwards; }
 .animate-tutorial-pop { animation: tutorial-pop 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
 
-.month-grid-fade {
-  transition: opacity 150ms ease-out;
+.ocr-latex-block {
+  margin: 0.5rem 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.75rem;
+  background: hsl(var(--secondary) / 0.6);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  text-align: center;
+  overflow-x: auto;
 }
+.ocr-latex-block::after {
+  content: attr(data-latex);
+}
+.ocr-latex-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.ocr-latex-inner {
+  display: flex;
+  justify-content: center;
+  min-width: min-content;
+  width: 100%;
+  text-align: center;
+}
+.ocr-latex-inner .katex-display {
+  margin: 0.4rem 0;
+}
+
+@keyframes week-swipe-nudge {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(14px); }
+}
+.week-swipe-hand {
+  animation: week-swipe-nudge 0.9s ease-in-out infinite;
+}
+

@@ -1,8 +1,9 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { ChevronDown } from "lucide-react";
-import { getDay, startOfMonth } from "date-fns";
+import { addWeeks, getDay, startOfMonth, startOfWeek } from "date-fns";
 import { EventSheet, type EventSheetTarget } from "@/components/EventSheet";
 import { DayEventsSheet } from "@/components/DayEventsSheet";
+import { DayTimeline } from "@/components/DayTimeline";
 import { FabButton } from "@/components/FabButton";
 import { MonthGoalsCard } from "@/components/MonthGoalsCard";
 import { MonthWheel } from "@/components/MonthWheel";
@@ -16,6 +17,15 @@ import {
 import { monthKeyFromDate } from "@/lib/month-goals";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { isJapaneseHoliday } from "@/lib/jp-holidays";
+import {
+  loadCalendarViewMode,
+  loadWeekStartsOn,
+  saveCalendarViewMode,
+  saveWeekStartsOn,
+  type CalendarViewMode,
+  type WeekStartsOn,
+} from "@/lib/calendar-prefs";
 import {
   emitTutorial,
   isTutorialActive,
@@ -50,6 +60,7 @@ interface MonthGridProps {
   faded?: boolean;
   interactive?: boolean;
   weekdayHeaders: string[];
+  locale: string;
   className?: string;
 }
 
@@ -61,6 +72,7 @@ function MonthGrid({
   faded,
   interactive = true,
   weekdayHeaders,
+  locale,
   className,
 }: MonthGridProps) {
   const today = todayKey();
@@ -121,7 +133,7 @@ function MonthGrid({
                 col === 6 && "border-r-0"
               )}
             >
-              <div className="flex items-center justify-center">
+              <div className="flex items-center justify-center gap-0.5">
                 <span
                   className={cn(
                     "inline-flex items-center justify-center text-[11px] font-semibold w-5 h-5 rounded-full",
@@ -133,6 +145,9 @@ function MonthGrid({
                 >
                   {dayNum}
                 </span>
+                {locale === "ja" && isJapaneseHoliday(date) ? (
+                  <span className="text-[8px] font-bold text-red-500 leading-none">祝</span>
+                ) : null}
               </div>
               <div className="flex-1 space-y-[2px] overflow-hidden">
                 {shown.map((e) => (
@@ -181,6 +196,10 @@ export default function CalendarPage() {
   const [goalsCollapseSignal, setGoalsCollapseSignal] = useState(0);
   const [blockDayTaps, setBlockDayTaps] = useState(false);
   const goalsCloseEmitted = useRef(false);
+  const [calView, setCalView] = useState<CalendarViewMode>(() => loadCalendarViewMode());
+  const [weekStartsOn, setWeekStartsOn] = useState<WeekStartsOn>(() => loadWeekStartsOn());
+  const [weekAnchor, setWeekAnchor] = useState(() => new Date());
+  const [weekDayKey, setWeekDayKey] = useState(todayKey);
 
   const refreshEvents = () => setEvents(loadEvents());
   useEffect(() => {
@@ -261,9 +280,33 @@ export default function CalendarPage() {
   };
 
   const goToday = () => {
-    setViewDate(new Date());
+    const now = new Date();
+    setViewDate(now);
+    setWeekAnchor(now);
+    setWeekDayKey(todayKey());
     if (isTutorialActive()) emitTutorial("calendar-today");
   };
+
+  const toggleCalView = () => {
+    const next = calView === "month" ? "week" : "month";
+    setCalView(next);
+    saveCalendarViewMode(next);
+    if (next === "week") {
+      setWeekAnchor(viewDate);
+      setWeekDayKey(todayKey());
+    }
+  };
+
+  const weekDays = useMemo(() => {
+    const start = startOfWeek(weekAnchor, { weekStartsOn });
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  }, [weekAnchor, weekStartsOn]);
+
+  const weekDayEvents = eventsForDate(weekDayKey, events);
 
   const onMonthStep = useCallback((delta: -1 | 1) => {
     setViewDate((d) => addMonths(d, delta));
@@ -337,43 +380,146 @@ export default function CalendarPage() {
             )}
           </div>
 
-          <button
-            data-tutorial="calendar-today"
-            onClick={goToday}
-            className="text-sm font-semibold text-accent hover:opacity-80 px-4 py-2 rounded-xl bg-accent/10 transition-opacity shrink-0 mr-1"
-          >
-            {t("today")}
-          </button>
+          <div className="flex items-center gap-2 shrink-0 mr-1">
+            <button
+              type="button"
+              onClick={toggleCalView}
+              className="text-sm font-semibold text-accent hover:opacity-80 px-3 py-2 rounded-xl bg-accent/10 transition-opacity"
+            >
+              {calView === "month" ? t("calendarWeek") : t("calendarMonth")}
+            </button>
+            <button
+              data-tutorial="calendar-today"
+              onClick={goToday}
+              className="text-sm font-semibold text-accent hover:opacity-80 px-4 py-2 rounded-xl bg-accent/10 transition-opacity"
+            >
+              {t("today")}
+            </button>
+          </div>
         </div>
 
         <div className="relative flex-1 min-h-0 px-3 pb-1">
-          <MonthWheel
-            monthKey={monthKeyOf(viewDate)}
-            disabled={overlayOpen}
-            onMonthStep={onMonthStep}
-            onInteractionStart={requestGoalsMinimize}
-          >
-            {(rel, { faded }) => {
-              const m = months[rel + 1];
-              return (
-                <MonthGrid
-                  year={m.getFullYear()}
-                  month={m.getMonth()}
-                  events={events}
-                  onDayTap={handleDayTap}
-                  faded={faded}
-                  interactive={rel === 0 && !faded && !blockDayTaps}
-                  weekdayHeaders={weekdayHeaders}
-                />
-              );
-            }}
-          </MonthWheel>
+          {calView === "week" ? (
+            <div className="h-full flex flex-col bg-card rounded-2xl shadow-card overflow-hidden">
+              <div className="shrink-0 flex items-center justify-between px-3 pt-2">
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground px-2 py-1"
+                  onClick={() => setWeekAnchor((d) => addWeeks(d, -1))}
+                >
+                  ‹
+                </button>
+                <p className="text-sm font-semibold">
+                  {formatDate(weekDays[0], { month: "short", day: "numeric" })}
+                  {" – "}
+                  {formatDate(weekDays[6], { month: "short", day: "numeric" })}
+                </p>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground px-2 py-1"
+                  onClick={() => setWeekAnchor((d) => addWeeks(d, 1))}
+                >
+                  ›
+                </button>
+              </div>
+              <div className="shrink-0 flex gap-1 px-2 py-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWeekStartsOn(0);
+                    saveWeekStartsOn(0);
+                  }}
+                  className={cn(
+                    "flex-1 text-[11px] rounded-lg py-1",
+                    weekStartsOn === 0 ? "bg-accent/15 text-accent font-semibold" : "text-muted-foreground",
+                  )}
+                >
+                  {t("weekStartSunday")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWeekStartsOn(1);
+                    saveWeekStartsOn(1);
+                  }}
+                  className={cn(
+                    "flex-1 text-[11px] rounded-lg py-1",
+                    weekStartsOn === 1 ? "bg-accent/15 text-accent font-semibold" : "text-muted-foreground",
+                  )}
+                >
+                  {t("weekStartMonday")}
+                </button>
+              </div>
+              <div className="shrink-0 grid grid-cols-7 px-1 pb-2">
+                {weekDays.map((d) => {
+                  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                  const selected = key === weekDayKey;
+                  const isToday = key === todayKey();
+                  const wd = d.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", { weekday: "short" });
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setWeekDayKey(key)}
+                      className="flex flex-col items-center gap-0.5 py-1"
+                    >
+                      <span className="text-[10px] text-muted-foreground">{wd}</span>
+                      <span
+                        className={cn(
+                          "w-8 h-8 rounded-full text-sm font-semibold inline-flex items-center justify-center",
+                          selected && "bg-accent text-accent-foreground",
+                          !selected && isToday && "text-accent",
+                        )}
+                      >
+                        {d.getDate()}
+                      </span>
+                      {locale === "ja" && isJapaneseHoliday(key) ? (
+                        <span className="text-[8px] font-bold text-red-500">祝</span>
+                      ) : (
+                        <span className="h-2.5" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <DayTimeline
+                date={weekDayKey}
+                events={weekDayEvents}
+                onOpenEvent={(id, occurrenceDate) => {
+                  handleEditEvent(id, occurrenceDate);
+                }}
+              />
+            </div>
+          ) : (
+            <MonthWheel
+              monthKey={monthKeyOf(viewDate)}
+              disabled={overlayOpen}
+              onMonthStep={onMonthStep}
+              onInteractionStart={requestGoalsMinimize}
+            >
+              {(rel, { faded }) => {
+                const m = months[rel + 1];
+                return (
+                  <MonthGrid
+                    year={m.getFullYear()}
+                    month={m.getMonth()}
+                    events={events}
+                    onDayTap={handleDayTap}
+                    faded={faded}
+                    interactive={rel === 0 && !faded && !blockDayTaps}
+                    weekdayHeaders={weekdayHeaders}
+                    locale={locale}
+                  />
+                );
+              }}
+            </MonthWheel>
+          )}
 
-          {/* Overlays the calendar top (~15%); does not push the grid down. */}
-          <div
-            className="absolute top-0 left-3 right-3 z-20 pointer-events-none"
-            style={goalsMinimized ? undefined : { height: "15%" }}
-          >
+          {calView === "month" && (
+            <div
+              className="absolute top-0 left-3 right-3 z-20 pointer-events-none"
+              style={goalsMinimized ? undefined : { height: "15%" }}
+            >
             <div
               className={cn(
                 "pointer-events-auto",
@@ -386,7 +532,8 @@ export default function CalendarPage() {
                 collapseSignal={goalsCollapseSignal}
               />
             </div>
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -394,7 +541,7 @@ export default function CalendarPage() {
         disabled={blockDayTaps}
         onClick={() => {
           if (blockDayTaps || isTutorialBlockingCalendarDays()) return;
-          setModalDate(todayKey());
+          setModalDate(calView === "week" ? weekDayKey : todayKey());
           setModalOpen(true);
         }}
         aria-label={t("addEvent")}

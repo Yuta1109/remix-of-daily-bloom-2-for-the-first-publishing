@@ -34,7 +34,7 @@ import {
   upsertMemoPage,
   type MemoPage,
 } from "@/lib/notes-store";
-import { NoteCalculator } from "@/components/NoteCalculator";
+import { NoteHtmlView } from "@/components/NoteHtmlView";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { hideKeyboard, prepareForOcr } from "@/lib/keyboard-avoidance";
 
@@ -86,10 +86,11 @@ export default function NotesPage() {
   );
 
   useEffect(() => {
+    if (!editing) return;
     const el = editorRef.current;
     if (!el || skipHtmlSync.current) return;
     if (el.innerHTML !== (page?.html || "")) el.innerHTML = page?.html || "";
-  }, [page?.id, page?.html]);
+  }, [page?.id, page?.html, editing]);
 
   useEffect(() => {
     if (!listOpen && !calcOpen) return;
@@ -191,11 +192,12 @@ export default function NotesPage() {
         if (key) message = t(key);
         return;
       }
-      if (!("text" in result) || !result.text) {
-        message = t("ocrUnreadable");
+      if (!("text" in result) || (!result.text && !result.latex?.length)) {
+        message = t("ocrEmpty");
         return;
       }
-      insertAtCaret(textToNoteHtml(result.text));
+      insertAtCaret(textToNoteHtml(result.text, result.latex || []));
+      if (result.lowConfidence) message = t("ocrLowConfidence");
     } catch {
       message = t("ocrGeneric");
     } finally {
@@ -314,34 +316,43 @@ export default function NotesPage() {
         style={{ paddingBottom: editing ? (kbHeight > 0 ? kbHeight + 108 : 108) : 8 }}
       >
         <div
-          ref={editorRef}
-          contentEditable={editing}
-          suppressContentEditableWarning
-          data-placeholder={editing ? t("memoBodyPlaceholder") : undefined}
-          data-kb-ignore=""
           className={cn(
-            "note-editor h-full overflow-y-auto overscroll-contain outline-none text-base leading-relaxed text-foreground",
+            "h-full overscroll-contain outline-none text-base leading-relaxed text-foreground",
+            editing ? "overflow-y-auto" : "overflow-y-auto scrollbar-none",
             !editing && "cursor-default",
           )}
-          onInput={() => {
-            skipHtmlSync.current = true;
-            persist({ html: editorRef.current?.innerHTML || "" });
-            queueMicrotask(() => {
-              skipHtmlSync.current = false;
-            });
-          }}
-          onKeyUp={refreshFormats}
-          onMouseUp={refreshFormats}
-          onBlur={() => {
-            window.setTimeout(() => {
-              if (!keepKeyboard.current) return;
-              const active = document.activeElement;
-              if (active instanceof HTMLInputElement) return;
-              if (active === editorRef.current) return;
-              focusEditor();
-            }, 40);
-          }}
-        />
+        >
+          {editing ? (
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              data-placeholder={t("memoBodyPlaceholder")}
+              data-kb-ignore=""
+              className="note-editor min-h-full outline-none"
+              onInput={() => {
+                skipHtmlSync.current = true;
+                persist({ html: editorRef.current?.innerHTML || "" });
+                queueMicrotask(() => {
+                  skipHtmlSync.current = false;
+                });
+              }}
+              onKeyUp={refreshFormats}
+              onMouseUp={refreshFormats}
+              onBlur={() => {
+                window.setTimeout(() => {
+                  if (!keepKeyboard.current) return;
+                  const active = document.activeElement;
+                  if (active instanceof HTMLInputElement) return;
+                  if (active === editorRef.current) return;
+                  focusEditor();
+                }, 40);
+              }}
+            />
+          ) : (
+            <NoteHtmlView html={page.html} />
+          )}
+        </div>
       </div>
 
       {editing &&

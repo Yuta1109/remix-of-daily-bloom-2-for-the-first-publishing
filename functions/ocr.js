@@ -147,6 +147,15 @@ function normalizeTasks(parsed) {
   return list.map((t) => String(t || "").trim()).filter(Boolean);
 }
 
+function qualityFlags(parsed) {
+  const empty = parsed?.empty === true;
+  const lowConfidence = parsed?.lowConfidence === true;
+  const latex = Array.isArray(parsed?.latex)
+    ? parsed.latex.map((s) => String(s || "").trim()).filter(Boolean)
+    : [];
+  return { empty, lowConfidence, latex };
+}
+
 function failureKind(status, bodyText) {
   if (isQuotaHttpError(status, bodyText)) return "api-quota";
   if (status === 404) return "model-not-found";
@@ -309,18 +318,25 @@ async function extractWithFallback({ apiKey, mimeType, imageBase64, mode }) {
           totalTokens: usage.totalTokens,
         });
         if (mode === "tasks") {
+          const q = qualityFlags(parsed);
           return {
             error: null,
             tasks: normalizeTasks(parsed),
+            empty: q.empty,
+            lowConfidence: q.lowConfidence,
             modelId,
             tried,
             debug: buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }),
           };
         }
+        const q = qualityFlags(parsed);
         const text = String(parsed?.text || "").trim();
         return {
           error: null,
           text,
+          latex: q.latex,
+          empty: q.empty,
+          lowConfidence: q.lowConfidence,
           modelId,
           tried,
           debug: buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }),
@@ -445,13 +461,26 @@ export const extractTextFromImage = onCall(
       } else if (result.error) {
         payload = { ok: false, error: "error", debug: result.debug };
       } else if (mode === "tasks") {
-        payload = result.tasks?.length
-          ? { ok: true, tasks: result.tasks, debug: result.debug }
-          : { ok: false, error: "unreadable", debug: result.debug };
+        const empty = result.empty || !result.tasks?.length;
+        payload = empty
+          ? { ok: false, error: "empty", debug: result.debug }
+          : {
+              ok: true,
+              tasks: result.tasks,
+              lowConfidence: !!result.lowConfidence,
+              debug: result.debug,
+            };
       } else {
-        payload = result.text
-          ? { ok: true, text: result.text, debug: result.debug }
-          : { ok: false, error: "unreadable", debug: result.debug };
+        const empty = result.empty || !String(result.text || "").trim();
+        payload = empty
+          ? { ok: false, error: "empty", debug: result.debug }
+          : {
+              ok: true,
+              text: result.text,
+              latex: result.latex || [],
+              lowConfidence: !!result.lowConfidence,
+              debug: result.debug,
+            };
       }
       await finishOcrRequest(requestId, req.auth.uid, payload, payload.ok === true);
       return payload;

@@ -19,7 +19,7 @@ export function ImagePickSheet({ open, onPhotos, onCamera, onCancel }: Props) {
         style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
       >
         <p className="text-sm font-semibold text-center mb-2">{t("ocrAddImage")}</p>
-        <p className="text-xs text-muted-foreground text-center leading-relaxed mb-3 px-1">
+        <p className="text-xs text-muted-foreground text-center leading-relaxed mb-1 px-1">
           {t("ocrHelp")}
         </p>
         <button
