@@ -206,6 +206,7 @@ export function AppTutorial() {
 
   const overlay = useMemo(() => {
     if (!step) return null;
+    const isWelcome = step.id === "welcome";
     const isTap = step.advance === "tap";
     const isEvent = step.advance === "event";
     const isAction = step.advance === "action";
@@ -285,21 +286,19 @@ export function AppTutorial() {
 
     const title = step.titleKey ? t(step.titleKey as TranslationKeys) : undefined;
     const body = t(step.bodyKey as TranslationKeys);
-    let hint: string | undefined;
-    if (isTap) hint = t("tutorialTapHint");
-    if (isEvent) hint = t("tutorialActionHint");
 
     return (
       <CoachOverlay
         key={`${step.id}-${isBookend ? "bookend" : "step"}`}
         targetSelector={step.target ? `[data-tutorial="${step.target}"]` : null}
-        captureOutsideClick={isTap}
+        captureOutsideClick={isTap && !isWelcome}
         allowThrough={isEvent}
         bubblePlacement={step.preferBubble}
+        bookend={isWelcome}
         title={title}
         body={body}
-        hint={isAction ? undefined : hint}
-        onOutsideTap={isTap ? goNext : undefined}
+        hint={isAction || isWelcome ? undefined : isTap ? t("tutorialTapHint") : isEvent ? t("tutorialActionHint") : undefined}
+        onOutsideTap={isTap && !isWelcome ? goNext : undefined}
         actions={
           step.id === "welcome" ? (
             <>
@@ -325,14 +324,24 @@ export function AppTutorial() {
                   {t("tutorialLangEn")}
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground">{t("tutorialDurationNote")}</p>
-              <button
-                type="button"
-                onClick={skipTour}
-                className="w-full rounded-xl bg-secondary px-4 py-3 text-sm font-medium"
-              >
-                {t("tutorialSkip")}
-              </button>
+              <p className="text-sm leading-relaxed text-foreground/85">{t("tutorialWelcomeIntro")}</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">{t("tutorialDurationNote")}</p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={goNext}
+                  className="flex-1 rounded-xl bg-accent text-accent-foreground px-4 py-3 text-sm font-semibold"
+                >
+                  {t("tutorialStart")}
+                </button>
+                <button
+                  type="button"
+                  onClick={skipTour}
+                  className="flex-1 rounded-xl bg-secondary px-4 py-3 text-sm font-medium"
+                >
+                  {t("tutorialSkip")}
+                </button>
+              </div>
             </>
           ) : undefined
         }

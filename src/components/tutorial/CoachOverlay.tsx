@@ -27,6 +27,8 @@ type Props = {
   actions?: ReactNode;
   onOutsideTap?: () => void;
   padding?: number;
+  /** Taller centered bubble for welcome / done screens */
+  bookend?: boolean;
 };
 
 function readRect(selector: string | null | undefined, pad: number): HighlightRect | null {
@@ -54,6 +56,7 @@ export function CoachOverlay({
   actions,
   onOutsideTap,
   padding = 8,
+  bookend = false,
 }: Props) {
   const [targetRect, setTargetRect] = useState<HighlightRect | null>(null);
   const [vvBottom, setVvBottom] = useState(0);
@@ -120,7 +123,7 @@ export function CoachOverlay({
   if (centerMode || !targetRect) {
     bubbleStyle = {
       ...bubbleStyle,
-      top: "42%",
+      top: bookend ? "50%" : "42%",
       transform: "translateY(-50%)",
     };
   } else if (coverTop) {
@@ -224,16 +227,17 @@ export function CoachOverlay({
       <div
         ref={bubbleRef}
         className={cn(
-          "absolute z-[111] pointer-events-auto rounded-2xl bg-card text-card-foreground shadow-float border border-border/60 px-4 py-3",
+          "absolute z-[111] pointer-events-auto rounded-2xl bg-card text-card-foreground shadow-float border border-border/60",
+          bookend ? "px-5 py-6 min-h-[min(72vh,420px)] flex flex-col justify-center gap-3" : "px-4 py-3",
           centerMode && "animate-tutorial-pop",
         )}
         style={bubbleStyle}
         onClick={(e) => e.stopPropagation()}
       >
-        {title && <p className="text-sm font-semibold mb-1">{title}</p>}
-        {body ? <p className="text-sm leading-relaxed text-foreground/90">{body}</p> : null}
+        {title && <p className={cn("font-semibold", bookend ? "text-base mb-1" : "text-sm mb-1")}>{title}</p>}
+        {body ? <p className={cn("leading-relaxed text-foreground/90", bookend ? "text-sm" : "text-sm")}>{body}</p> : null}
         {hint && <p className="text-xs text-muted-foreground mt-2">{hint}</p>}
-        {actions && <div className={cn("flex flex-col gap-2", body || title ? "mt-3" : undefined)}>{actions}</div>}
+        {actions && <div className={cn("flex flex-col gap-3", body || title ? (bookend ? "mt-4" : "mt-3") : undefined)}>{actions}</div>}
       </div>
     </div>
   );

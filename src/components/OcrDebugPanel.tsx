@@ -27,6 +27,7 @@ export function OcrDebugPanel({ className }: Props) {
   }, []);
 
   const handleCopy = async () => {
+    await probeOcrEnvironment("settings-copy");
     const header = await buildOcrDiagnosticHeader();
     const text = formatOcrDebugLogForCopy(header);
     const ok = await copyText(text);
@@ -59,21 +60,23 @@ export function OcrDebugPanel({ className }: Props) {
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
-      <div className="rounded-xl bg-secondary/40 border border-border/50 max-h-48 overflow-y-auto p-3 font-mono text-[10px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-all">
+      <div className="rounded-xl bg-secondary/40 border border-border/50 max-h-[min(50vh,420px)] overflow-y-auto p-3 font-mono text-[10px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-all">
         {entries.length === 0 ? (
           <span>{t("ocrDebugEmpty")}</span>
         ) : (
           entries
-            .slice(-80)
             .map((e) => {
-              const time = new Date(e.at).toISOString().slice(11, 23);
+              const time = new Date(e.at).toISOString();
               return `${time} [${e.level}] ${e.source}: ${e.message}`;
             })
             .join("\n")
         )}
       </div>
+      <p className="text-[10px] text-muted-foreground mt-2 tabular-nums">
+        {entries.length} entries
+      </p>
       {!Capacitor.isNativePlatform() ? (
-        <p className="text-[10px] text-muted-foreground mt-2">{t("ocrDebugWebNote")}</p>
+        <p className="text-[10px] text-muted-foreground mt-1">{t("ocrDebugWebNote")}</p>
       ) : null}
     </div>
   );

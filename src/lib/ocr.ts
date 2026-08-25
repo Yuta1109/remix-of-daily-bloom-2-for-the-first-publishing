@@ -76,6 +76,20 @@ async function toJpegPayload(dataUrl: string): Promise<{ base64: string; mimeTyp
   }
 }
 
+async function normalizeImagePayload(payload: { base64: string; mimeType: string }) {
+  const mime = String(payload.mimeType || "image/jpeg").toLowerCase();
+  const needsJpeg = mime !== "image/jpeg" && mime !== "image/jpg";
+  if (needsJpeg) {
+    ocrDebugLog("ocr", `converting ${mime} to jpeg before upload`, "info");
+    return toJpegPayload(`data:${mime};base64,${payload.base64}`);
+  }
+  if (payload.base64.length > MAX_BASE64_CHARS) {
+    ocrDebugLog("ocr", "recompressing large jpeg", "info");
+    return toJpegPayload(`data:image/jpeg;base64,${payload.base64}`);
+  }
+  return { base64: payload.base64, mimeType: "image/jpeg" };
+}
+
 async function pickWithInput(capture: boolean): Promise<string | null> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
@@ -162,18 +176,21 @@ export async function extractTextFromPickedImage(
       ocrDebugLog("ocr", "cancelled (no image)", "info");
       return { ok: false, error: "cancelled" };
     }
+    payload = await normalizeImagePayload(payload);
     if (payload.base64.length > MAX_BASE64_CHARS) {
-      if (payload.mimeType !== "image/jpeg") {
-        payload = await toJpegPayload(`data:${payload.mimeType};base64,${payload.base64}`);
-      }
-      if (payload.base64.length > MAX_BASE64_CHARS) return { ok: false, error: "unavailable" };
+      return { ok: false, error: "unavailable" };
     }
-    return await callExtractTextFromImage({
+    const result = await callExtractTextFromImage({
       imageBase64: payload.base64,
       mimeType: payload.mimeType,
       mode,
       requestId: requestIdForPayload(payload.base64, mode),
     });
+    if (!result.ok) {
+      lastOcrFingerprint = "";
+      lastOcrRequestId = "";
+    }
+    return result;
   } catch (err) {
     const msg = String((err as { message?: string })?.message || err);
     ocrDebugLog("ocr", `failed: ${msg.slice(0, 240)}`, "error");

@@ -153,6 +153,7 @@ const translations = {
     notificationsOffWarning: "Notifications are off. Enable them in Settings to receive reminders.",
     tutorialDurationNote: "The tutorial takes about 3 minutes.",
     tutorialSkip: "Skip tutorial",
+    tutorialStart: "Get started",
     tutorialLangJa: "日本語",
     tutorialLangEn: "English",
     taskHistory: "Task history",
@@ -203,7 +204,7 @@ const translations = {
     ocrPermission: "Camera or Photos access is off. Enable it in iPhone Settings → Essences.",
     ocrDebugTitle: "Image recognition log (temporary)",
     ocrDebugHint:
-      "If handwriting recognition fails, tap Copy log and send it. Includes Firebase config, camera, and API steps (no image data).",
+      "If image recognition fails, copy this full log and send it. It includes Firebase auth, Gemini quota, API key probe, and every OCR step (no image data).",
     ocrDebugCopy: "Copy full log",
     ocrDebugCopied: "Log copied",
     ocrDebugCopyFailed: "Could not copy — try again",
@@ -218,6 +219,7 @@ const translations = {
     tapToAdd: "Tap + to add one",
     calendarWeek: "Week",
     calendarMonth: "Month",
+    weekNavSwipeHint: "Swipe sideways to change weeks",
     weekStartSunday: "Sunday start",
     weekStartMonday: "Monday start",
     about: "About",
@@ -259,7 +261,9 @@ const translations = {
     liveActivityOnboardingLater: "Not now",
     tutorialWelcomeTitle: "Welcome to Essences",
     tutorialWelcomeBody:
-      "A short tour of Today, Calendar, and Settings. Tap anywhere to continue.",
+      "Essences helps you plan your day, keep a calendar, and capture notes — all in one calm place.",
+    tutorialWelcomeIntro:
+      "In a short tour you will try Today’s tasks, the calendar, reusable shortcuts in Settings, and an optional Lock Screen countdown demo. You can skip anytime.",
     tutorialQuickAdd:
       "Add today’s first task here. Type something and tap Add (or Done on the keyboard).",
     tutorialTaskSelect: "Nice! Tap the task you just added in the list.",
@@ -482,6 +486,7 @@ const translations = {
     notificationsOffWarning: "通知がオフになっています。設定でオンにするとリマインダーを受け取れます。",
     tutorialDurationNote: "チュートリアルは3分程度です。",
     tutorialSkip: "チュートリアルを飛ばす",
+    tutorialStart: "始める",
     tutorialLangJa: "日本語",
     tutorialLangEn: "English",
     taskHistory: "タスクの履歴",
@@ -531,7 +536,7 @@ const translations = {
     ocrPermission: "カメラまたは写真へのアクセスがオフです。iPhoneの「設定」→ Essences から許可してください。",
     ocrDebugTitle: "画像認識ログ（一時表示）",
     ocrDebugHint:
-      "読み取りに失敗したときは「ログをコピー」して送ってください。Firebase設定・カメラ・APIの各ステップが記録されます（画像データは含みません）。",
+      "画像認識がうまくいかないときは、このログをすべてコピーして送ってください。Firebase認証・Gemini枠・APIキー確認・OCRの各ステップが記録されます（画像データは含みません）。",
     ocrDebugCopy: "ログをすべてコピー",
     ocrDebugCopied: "ログをコピーしました",
     ocrDebugCopyFailed: "コピーできませんでした。もう一度お試しください",
@@ -546,6 +551,7 @@ const translations = {
     tapToAdd: "＋をタップして追加",
     calendarWeek: "週",
     calendarMonth: "月",
+    weekNavSwipeHint: "横にスワイプして週を切り替え",
     weekStartSunday: "日曜始まり",
     weekStartMonday: "月曜始まり",
     about: "アプリについて",
@@ -588,7 +594,9 @@ const translations = {
     liveActivityOnboardingLater: "あとで",
     tutorialWelcomeTitle: "Essences へようこそ",
     tutorialWelcomeBody:
-      "今日・カレンダー・設定を短く案内します。画面をタップすると次へ進みます。",
+      "Essences は、今日のタスク・カレンダー・メモをひとつのアプリでまとめて扱える生活プランナーです。",
+    tutorialWelcomeIntro:
+      "これから短い案内で「今日」のタスク追加、カレンダー、設定の定型タスク、ロック画面のカウントダウンデモ（任意）を体験できます。いつでもスキップできます。",
     tutorialQuickAdd:
       "下の「何をしますか？」に今日のタスクを入力し、「追加」またはキーボードの完了で登録してください。",
     tutorialTaskSelect: "追加できました。リストのそのタスクをタップしてください。",

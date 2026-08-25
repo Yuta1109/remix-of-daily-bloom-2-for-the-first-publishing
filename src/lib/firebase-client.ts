@@ -100,6 +100,14 @@ export function getFirebaseConfigStatus() {
   };
 }
 
+export function getCallableAuthSnapshot() {
+  return {
+    ready: !!auth?.currentUser,
+    uidPrefix: auth?.currentUser?.uid?.slice(0, 12) ?? null,
+    isAnonymous: auth?.currentUser?.isAnonymous ?? null,
+  };
+}
+
 export async function ensureCallableApp(): Promise<boolean> {
   if (ready) return ready;
   ready = (async () => {
@@ -213,7 +221,12 @@ export async function callExtractTextFromImage(payload: {
     }
     ocrDebugLog(
       "callable",
-      `response ok=${data?.ok} error=${data?.error ?? "none"} tasks=${data?.tasks?.length ?? 0} textLen=${String(data?.text || "").length}`,
+      `response ok=${data?.ok} error=${data?.error ?? "none"} tasks=${data?.tasks?.length ?? 0} textLen=${String(data?.text || "").length} lowConfidence=${data?.lowConfidence ? "true" : "false"}`,
+      data?.ok ? "ok" : "warn",
+    );
+    ocrDebugLog(
+      "callable",
+      `raw=${JSON.stringify(data ?? null).slice(0, 2000)}`,
       data?.ok ? "ok" : "warn",
     );
     if (data?.ok && payload.mode === "tasks") {

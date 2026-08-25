@@ -76,12 +76,25 @@ function usageFromGemini(json) {
 }
 
 function candidateText(json) {
-  const parts = json?.candidates?.[0]?.content?.parts;
+  const candidate = json?.candidates?.[0];
+  if (!candidate) return "";
+  const parts = candidate?.content?.parts;
   if (!Array.isArray(parts)) return "";
-  return parts
+  const text = parts
     .filter((p) => !p.thought)
     .map((p) => p.text || "")
     .join("");
+  if (text) return text;
+  return parts.map((p) => p.text || "").join("");
+}
+
+function candidateMeta(json) {
+  const candidate = json?.candidates?.[0];
+  return {
+    finishReason: candidate?.finishReason || null,
+    blockReason: json?.promptFeedback?.blockReason || null,
+    safetyRatings: candidate?.safetyRatings?.length ?? 0,
+  };
 }
 
 /** OCR uses direct JSON output — skip thinking to avoid truncating the response. */
@@ -112,7 +125,7 @@ async function callGemini({ modelId, apiKey, mimeType, imageBase64, mode, struct
       "Content-Type": "application/json",
       "x-goog-api-key": apiKey,
     },
-    signal: AbortSignal.timeout(25_000),
+    signal: AbortSignal.timeout(60_000),
     body: JSON.stringify({
       contents: [
         {
@@ -303,19 +316,22 @@ async function extractWithFallback({ apiKey, mimeType, imageBase64, mode }) {
 
         const usage = usageFromGemini(result.json);
         const rawText = candidateText(result.json);
+        const meta = candidateMeta(result.json);
         const parsed = parseJsonObject(rawText);
         if (!parsed) {
           logger.warn("gemini unparseable response", {
             model: modelId,
             mode,
             structured,
+            finishReason: meta.finishReason,
+            blockReason: meta.blockReason,
             snippet: rawText.slice(0, 200),
           });
           lastFailure = {
             modelId,
             status: result.status,
-            bodyText: rawText,
-            kind: "bad-parse",
+            bodyText: rawText || JSON.stringify(meta),
+            kind: meta.blockReason ? "blocked" : "bad-parse",
             structured,
           };
           if (structured) break;
@@ -376,18 +392,7 @@ async function extractWithFallback({ apiKey, mimeType, imageBase64, mode }) {
 
     if (!modelSucceeded) {
       await releaseReservation(modelId, estimated);
-    }
-    if (lastFailure?.kind === "api-quota") continue;
-
-    if (lastTransient && tried.length >= FREE_MODELS.length) {
-      return {
-        error: "error",
-        tried,
-        reserveReason,
-        lastFailure,
-        sawApiQuota,
-        debug: buildDebug({ tried, reserveReason, lastFailure, sawApiQuota }),
-      };
+      continue;
     }
   }
 
@@ -494,7 +499,7 @@ export const extractTextFromImage = onCall(
                 lowConfidence: !!result.lowConfidence,
                 debug: result.debug,
               }
-            : { ok: false, error: "error", debug: result.debug };
+            : { ok: false, error: "unreadable", debug: result.debug };
       } else {
         const text = String(result.text || "").trim();
         const latex = Array.isArray(result.latex) ? result.latex.filter(Boolean) : [];
@@ -510,7 +515,7 @@ export const extractTextFromImage = onCall(
                 lowConfidence: !!result.lowConfidence,
                 debug: result.debug,
               }
-            : { ok: false, error: "error", debug: result.debug };
+            : { ok: false, error: "unreadable", debug: result.debug };
       }
       await finishOcrRequest(requestId, req.auth.uid, payload, payload.ok === true);
       return payload;

@@ -5,6 +5,7 @@ import { EventSheet, type EventSheetTarget } from "@/components/EventSheet";
 import { DayEventsSheet } from "@/components/DayEventsSheet";
 import { WeekEventList } from "@/components/WeekEventList";
 import { WeekWheel } from "@/components/WeekWheel";
+import { WeekNavSwipeHint } from "@/components/WeekNavSwipeHint";
 import { FabButton } from "@/components/FabButton";
 import { MonthGoalsCard } from "@/components/MonthGoalsCard";
 import { MonthWheel } from "@/components/MonthWheel";
@@ -22,8 +23,10 @@ import { getJapaneseHolidayName } from "@/lib/jp-holidays";
 import {
   loadCalendarViewMode,
   loadWeekStartsOn,
+  markWeekViewOpened,
   saveCalendarViewMode,
   saveWeekStartsOn,
+  weekNavSwipeHintSeen,
   type CalendarViewMode,
   type WeekStartsOn,
 } from "@/lib/calendar-prefs";
@@ -226,6 +229,9 @@ export default function CalendarPage() {
   const [calView, setCalView] = useState<CalendarViewMode>(() => loadCalendarViewMode());
   const [weekStartsOn, setWeekStartsOn] = useState<WeekStartsOn>(() => loadWeekStartsOn());
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
+  const [weekNavHintOpen, setWeekNavHintOpen] = useState(
+    () => loadCalendarViewMode() === "week" && !weekNavSwipeHintSeen(),
+  );
   const [weekDayKey, setWeekDayKey] = useState(todayKey);
 
   const refreshEvents = () => setEvents(loadEvents());
@@ -319,10 +325,18 @@ export default function CalendarPage() {
     setCalView(next);
     saveCalendarViewMode(next);
     if (next === "week") {
+      markWeekViewOpened();
+      if (!weekNavSwipeHintSeen()) setWeekNavHintOpen(true);
       setWeekAnchor(viewDate);
       setWeekDayKey(todayKey());
+    } else {
+      setWeekNavHintOpen(false);
     }
   };
+
+  useEffect(() => {
+    if (calView === "week") markWeekViewOpened();
+  }, [calView]);
 
   const weekDays = useMemo(
     () => weekDaysFromAnchor(weekAnchor, weekStartsOn),
@@ -438,7 +452,8 @@ export default function CalendarPage() {
 
         <div className="relative flex-1 min-h-0 px-3 pb-1">
           {calView === "week" ? (
-            <WeekWheel
+            <div className="relative h-full">
+              <WeekWheel
               weekKey={weekKeyFromAnchor(weekAnchor, weekStartsOn)}
               disabled={overlayOpen}
               onWeekStep={onWeekStep}
@@ -548,6 +563,10 @@ export default function CalendarPage() {
                 );
               }}
             </WeekWheel>
+              {weekNavHintOpen ? (
+                <WeekNavSwipeHint onDismiss={() => setWeekNavHintOpen(false)} />
+              ) : null}
+            </div>
           ) : (
             <MonthWheel
               monthKey={monthKeyOf(viewDate)}

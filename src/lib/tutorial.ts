@@ -48,7 +48,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: "welcome",
     titleKey: "tutorialWelcomeTitle",
     bodyKey: "tutorialWelcomeBody",
-    advance: "tap",
+    advance: "action",
     route: "/",
     preferBubble: "center",
   },
