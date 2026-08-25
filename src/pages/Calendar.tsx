@@ -3,7 +3,8 @@ import { ChevronDown } from "lucide-react";
 import { addWeeks, getDay, startOfMonth, startOfWeek } from "date-fns";
 import { EventSheet, type EventSheetTarget } from "@/components/EventSheet";
 import { DayEventsSheet } from "@/components/DayEventsSheet";
-import { DayTimeline } from "@/components/DayTimeline";
+import { WeekEventList } from "@/components/WeekEventList";
+import { WeekWheel } from "@/components/WeekWheel";
 import { FabButton } from "@/components/FabButton";
 import { MonthGoalsCard } from "@/components/MonthGoalsCard";
 import { MonthWheel } from "@/components/MonthWheel";
@@ -50,6 +51,30 @@ function addMonths(date: Date, n: number) {
 
 function monthKeyOf(d: Date) {
   return `${d.getFullYear()}-${d.getMonth()}`;
+}
+
+function toDateKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function weekDaysFromAnchor(anchor: Date, weekStartsOn: WeekStartsOn) {
+  const start = startOfWeek(anchor, { weekStartsOn });
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
+  });
+}
+
+function weekKeyFromAnchor(anchor: Date, weekStartsOn: WeekStartsOn) {
+  return toDateKey(startOfWeek(anchor, { weekStartsOn }));
+}
+
+function selectedOffsetInWeek(weekDayKey: string, anchor: Date, weekStartsOn: WeekStartsOn) {
+  const start = startOfWeek(anchor, { weekStartsOn });
+  const [y, m, d] = weekDayKey.split("-").map(Number);
+  const sel = new Date(y, m - 1, d);
+  return Math.max(0, Math.min(6, Math.round((sel.getTime() - start.getTime()) / 86_400_000)));
 }
 
 interface MonthGridProps {
@@ -297,16 +322,27 @@ export default function CalendarPage() {
     }
   };
 
-  const weekDays = useMemo(() => {
-    const start = startOfWeek(weekAnchor, { weekStartsOn });
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      return d;
-    });
-  }, [weekAnchor, weekStartsOn]);
+  const weekDays = useMemo(
+    () => weekDaysFromAnchor(weekAnchor, weekStartsOn),
+    [weekAnchor, weekStartsOn],
+  );
+
+  const weekDayOffset = useMemo(
+    () => selectedOffsetInWeek(weekDayKey, weekAnchor, weekStartsOn),
+    [weekDayKey, weekAnchor, weekStartsOn],
+  );
 
   const weekDayEvents = eventsForDate(weekDayKey, events);
+
+  const onWeekStep = useCallback((delta: -1 | 1) => {
+    setWeekAnchor((d) => addWeeks(d, delta));
+    setWeekDayKey((key) => {
+      const [y, m, day] = key.split("-").map(Number);
+      const next = new Date(y, m - 1, day);
+      next.setDate(next.getDate() + delta * 7);
+      return toDateKey(next);
+    });
+  }, []);
 
   const onMonthStep = useCallback((delta: -1 | 1) => {
     setViewDate((d) => addMonths(d, delta));
@@ -400,96 +436,114 @@ export default function CalendarPage() {
 
         <div className="relative flex-1 min-h-0 px-3 pb-1">
           {calView === "week" ? (
-            <div className="h-full flex flex-col bg-card rounded-2xl shadow-card overflow-hidden">
-              <div className="shrink-0 flex items-center justify-between px-3 pt-2">
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground px-2 py-1"
-                  onClick={() => setWeekAnchor((d) => addWeeks(d, -1))}
-                >
-                  ‹
-                </button>
-                <p className="text-sm font-semibold">
-                  {formatDate(weekDays[0], { month: "short", day: "numeric" })}
-                  {" – "}
-                  {formatDate(weekDays[6], { month: "short", day: "numeric" })}
-                </p>
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground px-2 py-1"
-                  onClick={() => setWeekAnchor((d) => addWeeks(d, 1))}
-                >
-                  ›
-                </button>
-              </div>
-              <div className="shrink-0 flex gap-1 px-2 py-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setWeekStartsOn(0);
-                    saveWeekStartsOn(0);
-                  }}
-                  className={cn(
-                    "flex-1 text-[11px] rounded-lg py-1",
-                    weekStartsOn === 0 ? "bg-accent/15 text-accent font-semibold" : "text-muted-foreground",
-                  )}
-                >
-                  {t("weekStartSunday")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setWeekStartsOn(1);
-                    saveWeekStartsOn(1);
-                  }}
-                  className={cn(
-                    "flex-1 text-[11px] rounded-lg py-1",
-                    weekStartsOn === 1 ? "bg-accent/15 text-accent font-semibold" : "text-muted-foreground",
-                  )}
-                >
-                  {t("weekStartMonday")}
-                </button>
-              </div>
-              <div className="shrink-0 grid grid-cols-7 px-1 pb-2">
-                {weekDays.map((d) => {
-                  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-                  const selected = key === weekDayKey;
-                  const isToday = key === todayKey();
-                  const wd = d.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", { weekday: "short" });
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setWeekDayKey(key)}
-                      className="flex flex-col items-center gap-0.5 py-1"
-                    >
-                      <span className="text-[10px] text-muted-foreground">{wd}</span>
-                      <span
+            <WeekWheel
+              weekKey={weekKeyFromAnchor(weekAnchor, weekStartsOn)}
+              disabled={overlayOpen}
+              onWeekStep={onWeekStep}
+            >
+              {(rel, { faded }) => {
+                const anchor = addWeeks(weekAnchor, rel);
+                const days = weekDaysFromAnchor(anchor, weekStartsOn);
+                const activeDay = days[weekDayOffset] ?? days[0];
+                const activeKey = toDateKey(activeDay);
+                const dayEvents = rel === 0 ? weekDayEvents : eventsForDate(activeKey, events);
+                const interactive = rel === 0 && !faded;
+
+                return (
+                  <div
+                    className={cn(
+                      "h-full flex flex-col bg-card rounded-2xl shadow-card overflow-hidden",
+                      faded && "pointer-events-none",
+                    )}
+                  >
+                    <div className="shrink-0 px-3 pt-2 pb-1">
+                      <p className="text-sm font-semibold text-center">
+                        {formatDate(days[0], { month: "short", day: "numeric" })}
+                        {" – "}
+                        {formatDate(days[6], { month: "short", day: "numeric" })}
+                      </p>
+                    </div>
+                    <div className="shrink-0 flex gap-1 px-2 py-2">
+                      <button
+                        type="button"
+                        disabled={!interactive}
+                        onClick={() => {
+                          setWeekStartsOn(0);
+                          saveWeekStartsOn(0);
+                        }}
                         className={cn(
-                          "w-8 h-8 rounded-full text-sm font-semibold inline-flex items-center justify-center",
-                          selected && "bg-accent text-accent-foreground",
-                          !selected && isToday && "text-accent",
+                          "flex-1 text-[11px] rounded-lg py-1",
+                          weekStartsOn === 0
+                            ? "bg-accent/15 text-accent font-semibold"
+                            : "text-muted-foreground",
                         )}
                       >
-                        {d.getDate()}
-                      </span>
-                      {locale === "ja" && isJapaneseHoliday(key) ? (
-                        <span className="text-[8px] font-bold text-red-500">祝</span>
-                      ) : (
-                        <span className="h-2.5" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              <DayTimeline
-                date={weekDayKey}
-                events={weekDayEvents}
-                onOpenEvent={(id, occurrenceDate) => {
-                  handleEditEvent(id, occurrenceDate);
-                }}
-              />
-            </div>
+                        {t("weekStartSunday")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!interactive}
+                        onClick={() => {
+                          setWeekStartsOn(1);
+                          saveWeekStartsOn(1);
+                        }}
+                        className={cn(
+                          "flex-1 text-[11px] rounded-lg py-1",
+                          weekStartsOn === 1
+                            ? "bg-accent/15 text-accent font-semibold"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {t("weekStartMonday")}
+                      </button>
+                    </div>
+                    <div className="shrink-0 grid grid-cols-7 px-1 pb-2">
+                      {days.map((d) => {
+                        const key = toDateKey(d);
+                        const selected = key === (rel === 0 ? weekDayKey : activeKey);
+                        const isToday = key === todayKey();
+                        const wd = d.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
+                          weekday: "short",
+                        });
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            disabled={!interactive}
+                            onClick={() => setWeekDayKey(key)}
+                            className="flex flex-col items-center gap-0.5 py-1"
+                          >
+                            <span className="text-[10px] text-muted-foreground">{wd}</span>
+                            <span
+                              className={cn(
+                                "w-8 h-8 rounded-full text-sm font-semibold inline-flex items-center justify-center",
+                                selected && "bg-accent text-accent-foreground",
+                                !selected && isToday && "text-accent",
+                              )}
+                            >
+                              {d.getDate()}
+                            </span>
+                            {locale === "ja" && isJapaneseHoliday(key) ? (
+                              <span className="text-[8px] font-bold text-red-500">祝</span>
+                            ) : (
+                              <span className="h-2.5" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <WeekEventList
+                      date={rel === 0 ? weekDayKey : activeKey}
+                      events={dayEvents}
+                      onOpenEvent={(id, occurrenceDate) => {
+                        if (!interactive) return;
+                        handleEditEvent(id, occurrenceDate);
+                      }}
+                    />
+                  </div>
+                );
+              }}
+            </WeekWheel>
           ) : (
             <MonthWheel
               monthKey={monthKeyOf(viewDate)}

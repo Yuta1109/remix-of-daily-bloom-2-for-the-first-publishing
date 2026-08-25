@@ -35,6 +35,7 @@ import {
   type MemoPage,
 } from "@/lib/notes-store";
 import { NoteHtmlView } from "@/components/NoteHtmlView";
+import { NoteCalculator } from "@/components/NoteCalculator";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { hideKeyboard, prepareForOcr } from "@/lib/keyboard-avoidance";
 

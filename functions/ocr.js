@@ -471,13 +471,15 @@ export const extractTextFromImage = onCall(
               debug: result.debug,
             };
       } else {
-        const empty = result.empty || !String(result.text || "").trim();
+        const text = String(result.text || "").trim();
+        const latex = Array.isArray(result.latex) ? result.latex.filter(Boolean) : [];
+        const empty = result.empty || (!text && !latex.length);
         payload = empty
           ? { ok: false, error: "empty", debug: result.debug }
           : {
               ok: true,
               text: result.text,
-              latex: result.latex || [],
+              latex,
               lowConfidence: !!result.lowConfidence,
               debug: result.debug,
             };
