@@ -10,7 +10,6 @@ import {
   Underline,
   List,
   ListOrdered,
-  Camera,
   Calculator,
   Plus,
   ChevronDown,
@@ -19,6 +18,7 @@ import {
   Undo2,
   X,
 } from "lucide-react";
+import { AiCameraIcon } from "@/components/AiCameraIcon";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { extractTextFromPickedImage, ocrToastKey, textToNoteHtml, type ImageSource } from "@/lib/ocr";
@@ -57,6 +57,8 @@ function previewText(html: string): string {
 export default function NotesPage() {
   const { t } = useI18n();
   const editorRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const pendingFocusRef = useRef<"title" | "body" | null>(null);
   const skipHtmlSync = useRef(false);
   const keepKeyboard = useRef(false);
   const [pages, setPages] = useState<MemoPage[]>(() => loadMemoPages());
@@ -121,6 +123,11 @@ export default function NotesPage() {
     }
   }, []);
 
+  const enterEdit = useCallback((focus: "title" | "body") => {
+    pendingFocusRef.current = focus;
+    setEditing(true);
+  }, []);
+
   useEffect(() => {
     keepKeyboard.current = editing && !blockKeyboard;
     if (blockKeyboard || !editing) {
@@ -128,7 +135,20 @@ export default function NotesPage() {
       if (blockKeyboard) editorRef.current?.blur();
       return;
     }
-    const timer = window.setTimeout(() => focusEditor(), 40);
+    const target = pendingFocusRef.current ?? "body";
+    pendingFocusRef.current = null;
+    const timer = window.setTimeout(() => {
+      if (target === "title") {
+        const el = titleInputRef.current;
+        if (el) {
+          el.focus();
+          const len = el.value.length;
+          el.setSelectionRange(len, len);
+        }
+      } else {
+        focusEditor();
+      }
+    }, 40);
     return () => window.clearTimeout(timer);
   }, [editing, blockKeyboard, focusEditor]);
 
@@ -259,9 +279,9 @@ export default function NotesPage() {
 
   return (
     <div className="page-shell">
-      <div className="shrink-0 px-3 pt-1 pb-2 flex items-center gap-2">
-        <div className="flex-1 min-w-0 flex items-center gap-1 bg-secondary/70 rounded-full pl-2 pr-1 py-1">
-          {editing && (
+      {editing ? (
+        <div className="shrink-0 px-3 pt-1 pb-2 flex items-center gap-2">
+          <div className="flex-1 min-w-0 flex items-center gap-1 bg-secondary/70 rounded-full pl-2 pr-1 py-1">
             <button
               type="button"
               onClick={() => setListOpen(true)}
@@ -270,20 +290,13 @@ export default function NotesPage() {
             >
               <ChevronDown className="w-4 h-4" />
             </button>
-          )}
-          {editing ? (
             <input
+              ref={titleInputRef}
               value={page.title}
               onChange={(e) => persist({ title: e.target.value })}
               placeholder={t("memoTitlePlaceholder")}
               className="flex-1 min-w-0 bg-transparent text-sm font-semibold outline-none placeholder:text-muted-foreground/50"
             />
-          ) : (
-            <p className="flex-1 min-w-0 px-2 text-sm font-semibold truncate">
-              {page.title.trim() || t("memoUntitled")}
-            </p>
-          )}
-          {editing && (
             <button
               type="button"
               onClick={() => {
@@ -296,21 +309,8 @@ export default function NotesPage() {
             >
               <Plus className="w-4 h-4" strokeWidth={2.5} />
             </button>
-          )}
-        </div>
+          </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            if (editing) keepKeyboard.current = false;
-            setEditing((v) => !v);
-          }}
-          className="shrink-0 h-9 px-3 rounded-full bg-accent text-accent-foreground text-xs font-semibold shadow-soft"
-        >
-          {editing ? t("memoView") : t("memoEdit")}
-        </button>
-
-        {editing && (
           <div className="shrink-0 flex items-center gap-0.5 bg-card rounded-full shadow-soft border border-border/70 px-1 py-1">
             <button
               type="button"
@@ -323,7 +323,7 @@ export default function NotesPage() {
               }}
               className="h-9 w-9 rounded-full flex items-center justify-center text-foreground/80 disabled:opacity-40"
             >
-              <Camera className="w-4 h-4" />
+              <AiCameraIcon />
             </button>
             <button
               type="button"
@@ -334,15 +334,35 @@ export default function NotesPage() {
               <Calculator className="w-4 h-4" />
             </button>
           </div>
-        )}
-      </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              keepKeyboard.current = false;
+              setEditing(false);
+            }}
+            className="shrink-0 h-9 px-3 rounded-full bg-accent text-accent-foreground text-xs font-semibold shadow-soft"
+          >
+            {t("memoView")}
+          </button>
+        </div>
+      ) : (
+        <div className="shrink-0 px-4 pt-3 pb-4 flex justify-center items-center min-h-[3.5rem]">
+          <button
+            type="button"
+            onClick={() => enterEdit("title")}
+            className="text-xl font-bold text-center leading-snug max-w-full px-2 py-1 text-foreground"
+          >
+            {page.title.trim() || t("memoUntitled")}
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 px-4" style={{ paddingBottom: editing ? 0 : 8 }}>
         <div
           className={cn(
             "h-full overscroll-contain outline-none text-base leading-relaxed text-foreground",
-            editing ? "overflow-y-auto" : "overflow-y-auto scrollbar-none",
-            !editing && "cursor-default",
+            editing ? "overflow-y-auto" : "overflow-y-auto scrollbar-none cursor-text",
           )}
         >
           {editing ? (
@@ -374,7 +394,13 @@ export default function NotesPage() {
               }}
             />
           ) : (
-            <NoteHtmlView html={page.html} />
+            <button
+              type="button"
+              onClick={() => enterEdit("body")}
+              className="w-full min-h-full text-left cursor-text"
+            >
+              <NoteHtmlView html={page.html} />
+            </button>
           )}
         </div>
       </div>

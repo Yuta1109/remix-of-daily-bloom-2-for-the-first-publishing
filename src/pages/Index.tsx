@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, type KeyboardEvent } from "react";
-import { Plus, Flame, Target, Calendar, History, Camera } from "lucide-react";
+import { Plus, Flame, Target, Calendar, History } from "lucide-react";
+import { AiCameraIcon } from "@/components/AiCameraIcon";
 import { toast } from "sonner";
 import { TaskItem } from "@/components/TaskItem";
 import {
@@ -353,7 +354,7 @@ export default function Index() {
             className="bg-card rounded-xl px-3 py-2.5 shadow-soft text-foreground/80 disabled:pointer-events-none disabled:opacity-40"
             aria-label={t("ocrAddImage")}
           >
-            <Camera className="w-5 h-5" />
+            <AiCameraIcon iconClassName="w-5 h-5" />
           </button>
         </div>
       </div>
