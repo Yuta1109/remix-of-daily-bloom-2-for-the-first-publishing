@@ -21,9 +21,10 @@ import {
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { extractTextFromPickedImage, notifyOcrUser, ocrToastKey, textToNoteHtml, type ImageSource } from "@/lib/ocr";
+import { extractTextFromPickedImage, ocrToastKey, textToNoteHtml, type ImageSource } from "@/lib/ocr";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
+import { OcrResultSheet } from "@/components/OcrResultSheet";
 import {
   addMemoPage,
   deleteMemoPage,
@@ -39,6 +40,9 @@ import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { hideKeyboard, prepareForOcr } from "@/lib/keyboard-avoidance";
 
 type Align = "left" | "center" | "right";
+
+/** Space for the floating format toolbar (just above keyboard / bottom nav). */
+const NOTE_TOOLBAR_CLEARANCE = 92;
 
 function runFormat(cmd: string, value?: string) {
   document.execCommand(cmd, false, value);
@@ -61,6 +65,10 @@ export default function NotesPage() {
   const [calcOpen, setCalcOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrFeedback, setOcrFeedback] = useState<{
+    message: string;
+    kind: "info" | "warning";
+  } | null>(null);
   const [kbHeight, setKbHeight] = useState(0);
   const [formats, setFormats] = useState({
     bold: false,
@@ -71,7 +79,7 @@ export default function NotesPage() {
   });
 
   const page = pages.find((p) => p.id === activeId) ?? pages[0];
-  const overlayOpen = listOpen || calcOpen || pickOpen || ocrBusy;
+  const overlayOpen = listOpen || calcOpen || pickOpen || ocrBusy || !!ocrFeedback;
   const blockKeyboard = overlayOpen;
 
   const persist = useCallback(
@@ -210,7 +218,7 @@ export default function NotesPage() {
     } finally {
       setOcrBusy(false);
     }
-    if (message) notifyOcrUser(message, messageKind);
+    if (message) setOcrFeedback({ message, kind: messageKind });
   };
 
   if (!page) return null;
@@ -320,7 +328,7 @@ export default function NotesPage() {
 
       <div
         className="flex-1 min-h-0 px-4"
-        style={{ paddingBottom: editing ? (kbHeight > 0 ? kbHeight + 108 : 108) : 8 }}
+        style={{ paddingBottom: editing ? NOTE_TOOLBAR_CLEARANCE : 8 }}
       >
         <div
           className={cn(
@@ -336,7 +344,8 @@ export default function NotesPage() {
               suppressContentEditableWarning
               data-placeholder={t("memoBodyPlaceholder")}
               data-kb-ignore=""
-              className="note-editor min-h-full outline-none"
+              className="note-editor outline-none"
+              style={{ minHeight: "100%", paddingBottom: 4 }}
               onInput={() => {
                 skipHtmlSync.current = true;
                 persist({ html: editorRef.current?.innerHTML || "" });
@@ -426,6 +435,15 @@ export default function NotesPage() {
         onCancel={() => setPickOpen(false)}
       />
       <OcrBusyOverlay open={ocrBusy} />
+      <OcrResultSheet
+        open={!!ocrFeedback}
+        message={ocrFeedback?.message ?? ""}
+        kind={ocrFeedback?.kind}
+        onClose={() => {
+          setOcrFeedback(null);
+          if (editing) window.setTimeout(() => focusEditor(), 80);
+        }}
+      />
 
       {listOpen &&
         createPortal(

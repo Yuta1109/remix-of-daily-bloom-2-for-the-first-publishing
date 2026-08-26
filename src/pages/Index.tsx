@@ -19,7 +19,8 @@ import type { DayData, Task } from "@/lib/store";
 import { TaskHistorySheet } from "@/components/TaskHistorySheet";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
-import { extractTextFromPickedImage, notifyOcrUser, ocrToastKey, type ImageSource } from "@/lib/ocr";
+import { OcrResultSheet } from "@/components/OcrResultSheet";
+import { extractTextFromPickedImage, ocrToastKey, type ImageSource } from "@/lib/ocr";
 
 export default function Index() {
   const { t, formatDate } = useI18n();
@@ -31,6 +32,10 @@ export default function Index() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrFeedback, setOcrFeedback] = useState<{
+    message: string;
+    kind: "info" | "warning";
+  } | null>(null);
   const streak = getStreak();
   const completion = getCompletionRate(dayData);
   const totalActiveDays = Object.values(getAllData()).filter((d) => d.tasks.length > 0).length;
@@ -157,7 +162,7 @@ export default function Index() {
     } finally {
       setOcrBusy(false);
     }
-    if (message) notifyOcrUser(message, messageKind);
+    if (message) setOcrFeedback({ message, kind: messageKind });
   };
 
   const finishNewTask = () => {
@@ -364,6 +369,12 @@ export default function Index() {
         onCancel={() => setPickOpen(false)}
       />
       <OcrBusyOverlay open={ocrBusy} />
+      <OcrResultSheet
+        open={!!ocrFeedback}
+        message={ocrFeedback?.message ?? ""}
+        kind={ocrFeedback?.kind}
+        onClose={() => setOcrFeedback(null)}
+      />
     </div>
   );
 }

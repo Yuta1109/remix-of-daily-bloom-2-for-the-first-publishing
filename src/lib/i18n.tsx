@@ -199,6 +199,7 @@ const translations = {
     ocrLowConfidence:
       "The image may not have been recognized correctly. If the result looks wrong, take or choose the photo again.",
     ocrGeneric: "Something went wrong while reading the image. Please try again.",
+    ocrAcknowledge: "Got it",
     ocrConfig:
       "Image recognition is not set up on the server (invalid Gemini API key). The developer must register a Google AI Studio key in Firebase.",
     ocrConfigBadFormat:
@@ -533,6 +534,7 @@ const translations = {
     ocrLowConfidence:
       "画像認識が正しくできていない可能性があります。結果に問題がある場合には、再度撮影・選択してください。",
     ocrGeneric: "画像の読み取り中にエラーが発生しました。もう一度お試しください。",
+    ocrAcknowledge: "わかった",
     ocrConfig:
       "画像認識のサーバー設定（Gemini APIキー）が無効です。Google AI Studio のキーを Firebase に設定してください。",
     ocrConfigBadFormat:
