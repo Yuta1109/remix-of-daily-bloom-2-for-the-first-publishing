@@ -257,6 +257,14 @@ describe("gemini API key", () => {
   it("rejects empty keys", () => {
     assert.equal(validateGeminiApiKeyMeta("").ok, false);
   });
+
+  it("accepts standard AIza keys", () => {
+    assert.equal(validateGeminiApiKeyMeta("AIzaSyTestKey123456789012345678901").ok, true);
+  });
+
+  it("accepts auth AQ. keys", () => {
+    assert.equal(validateGeminiApiKeyMeta("AQ.Ab8RN6ExampleKeyForGeminiAuthFormat12345").ok, true);
+  });
 });
 
 describe("requestId / image validation", () => {

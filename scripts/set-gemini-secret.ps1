@@ -24,14 +24,14 @@ function Find-KeepaliveFile {
 function Test-GeminiApiKeyFormat([string]$Key) {
   $k = $Key.Trim().Trim('"').Trim("'")
   if (-not $k) { return @{ ok = $false; reason = "empty" } }
-  if ($k.Length -lt 30) { return @{ ok = $false; reason = "too-short" } }
-  if ($k -notmatch '^AIza[0-9A-Za-z_-]+$') {
-    if ($k.StartsWith("AQ.") -or $k.StartsWith("ya29.")) {
-      return @{ ok = $false; reason = "oauth-token" }
-    }
-    return @{ ok = $false; reason = "bad-format" }
+  if ($k.Length -lt 20) { return @{ ok = $false; reason = "too-short" } }
+  if ($k -match '^AIza[0-9A-Za-z_-]+$' -or $k -match '^AQ\.[0-9A-Za-z_.-]+$') {
+    return @{ ok = $true; reason = $null }
   }
-  return @{ ok = $true; reason = $null }
+  if ($k.StartsWith("ya29.")) {
+    return @{ ok = $false; reason = "oauth-token" }
+  }
+  return @{ ok = $false; reason = "bad-format" }
 }
 
 Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
@@ -45,25 +45,25 @@ Write-Host ""
 Write-Host "Gemini OCR needs a Google AI Studio API key in Secret Manager." -ForegroundColor Cyan
 Write-Host "Get one here: https://aistudio.google.com/apikey" -ForegroundColor Yellow
 Write-Host "Do NOT paste the Firebase Web API key from GoogleService-Info.plist." -ForegroundColor Yellow
-Write-Host "Do NOT paste OAuth/access tokens (often start with AQ. or ya29.)." -ForegroundColor Yellow
+Write-Host "Do NOT paste OAuth access tokens (often start with ya29.)." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Repo: $RepoRoot" -ForegroundColor Cyan
 Write-Host "Project: $ProjectId" -ForegroundColor Cyan
 
 $apiKey = $null
 while ($true) {
-  $apiKey = Read-Host "Paste Google AI Studio API key (starts with AIza)"
+  $apiKey = Read-Host "Paste Google AI Studio API key (AIza… or AQ.…)"
   $check = Test-GeminiApiKeyFormat $apiKey
   if ($check.ok) { break }
   switch ($check.reason) {
     "empty" { Write-Host "Key cannot be empty." -ForegroundColor Red }
-    "too-short" { Write-Host "Key is too short. Copy the full AIza key from Google AI Studio." -ForegroundColor Red }
+    "too-short" { Write-Host "Key is too short. Copy the full key from Google AI Studio." -ForegroundColor Red }
     "oauth-token" {
-      Write-Host "That looks like an OAuth/access token, not an API key." -ForegroundColor Red
-      Write-Host "Create a key at https://aistudio.google.com/apikey (starts with AIza)." -ForegroundColor Yellow
+      Write-Host "That looks like an OAuth access token, not a Gemini API key." -ForegroundColor Red
+      Write-Host "Create a key at https://aistudio.google.com/apikey (AIza… or AQ.…)." -ForegroundColor Yellow
     }
     default {
-      Write-Host "Invalid format. Google AI Studio keys start with AIza." -ForegroundColor Red
+      Write-Host "Invalid format. Gemini API keys start with AIza or AQ." -ForegroundColor Red
     }
   }
 }

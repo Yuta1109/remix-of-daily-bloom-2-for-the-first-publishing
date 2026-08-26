@@ -7,17 +7,24 @@ export function normalizeGeminiApiKey(raw) {
     .replace(/^["']|["']$/g, "");
 }
 
+/** Standard (AIza…) and auth (AQ.…) keys from Google AI Studio / Gemini API. */
+export function isValidGeminiApiKeyFormat(key) {
+  return (
+    /^AIza[0-9A-Za-z_-]+$/.test(key) ||
+    /^AQ\.[0-9A-Za-z_.-]+$/.test(key)
+  );
+}
+
 export function validateGeminiApiKeyMeta(apiKey) {
   const key = normalizeGeminiApiKey(apiKey);
   if (!key) return { ok: false, reason: "missing", len: 0, prefix: null };
-  if (key.length < 30) {
+  if (key.length < 20) {
     return { ok: false, reason: "too-short", len: key.length, prefix: key.slice(0, 8) };
   }
-  if (!/^AIza[0-9A-Za-z_-]+$/.test(key)) {
-    const hint =
-      key.startsWith("AQ.") || key.startsWith("ya29.")
-        ? "This looks like an OAuth/access token, not a Google AI Studio API key. Create a key at aistudio.google.com/apikey (starts with AIza)."
-        : "Google AI Studio API keys start with AIza. Create one at aistudio.google.com/apikey, then: npm run gemini:secret && npm run deploy";
+  if (!isValidGeminiApiKeyFormat(key)) {
+    const hint = key.startsWith("ya29.")
+      ? "This looks like an OAuth access token, not a Gemini API key. Use a key from aistudio.google.com/apikey (AIza… or AQ.…)."
+      : "Gemini API keys from Google AI Studio start with AIza or AQ. Create one at aistudio.google.com/apikey, then: npm run gemini:secret && npm run deploy";
     return { ok: false, reason: "bad-format", len: key.length, prefix: key.slice(0, 8), hint };
   }
   return { ok: true, reason: null, len: key.length, prefix: key.slice(0, 8), hint: null };
