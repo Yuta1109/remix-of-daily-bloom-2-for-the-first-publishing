@@ -21,6 +21,7 @@ import { ImagePickSheet } from "@/components/ImagePickSheet";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
 import { OcrResultSheet } from "@/components/OcrResultSheet";
 import { extractTextFromPickedImage, ocrToastKey, type ImageSource } from "@/lib/ocr";
+import { ocrDebugLog } from "@/lib/ocr-debug-log";
 
 export default function Index() {
   const { t, formatDate } = useI18n();
@@ -134,10 +135,10 @@ export default function Index() {
   const onOcr = async (source: ImageSource) => {
     if (ocrBusy) return;
     setPickOpen(false);
+    setOcrFeedback(null);
     await prepareForOcr();
     setOcrBusy(true);
-    let message: string | null = null;
-    let messageKind: "info" | "warning" = "info";
+    let feedback: { message: string; kind: "info" | "warning" } | null = null;
     try {
       const result = await extractTextFromPickedImage("tasks", source);
       if (!result.ok) {
@@ -145,24 +146,24 @@ export default function Index() {
           result.error,
           "configReason" in result ? result.configReason : undefined,
         );
-        if (key) message = t(key);
-        return;
-      }
-      if (!("tasks" in result) || !result.tasks?.length) {
-        message = t("ocrEmpty");
-        return;
-      }
-      addOcrTasks(result.tasks);
-      if (result.lowConfidence) {
-        message = t("ocrLowConfidence");
-        messageKind = "warning";
+        if (key) feedback = { message: t(key), kind: "info" };
+      } else if (!("tasks" in result) || !result.tasks?.length) {
+        feedback = { message: t("ocrEmpty"), kind: "info" };
+      } else {
+        addOcrTasks(result.tasks);
+        if (result.lowConfidence) {
+          feedback = { message: t("ocrLowConfidence"), kind: "warning" };
+        }
       }
     } catch {
-      message = t("ocrGeneric");
+      feedback = { message: t("ocrGeneric"), kind: "info" };
     } finally {
       setOcrBusy(false);
     }
-    if (message) setOcrFeedback({ message, kind: messageKind });
+    if (feedback) {
+      ocrDebugLog("ocr", `feedback kind=${feedback.kind} msg=${feedback.message.slice(0, 80)}`, "info");
+      setOcrFeedback(feedback);
+    }
   };
 
   const finishNewTask = () => {

@@ -22,6 +22,7 @@ import {
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { extractTextFromPickedImage, ocrToastKey, textToNoteHtml, type ImageSource } from "@/lib/ocr";
+import { ocrDebugLog } from "@/lib/ocr-debug-log";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
 import { OcrResultSheet } from "@/components/OcrResultSheet";
@@ -137,6 +138,9 @@ export default function NotesPage() {
     const show = Keyboard.addListener("keyboardDidShow", (info) => {
       if (!cancelled) setKbHeight(info.keyboardHeight ?? 0);
     });
+    const willShow = Keyboard.addListener("keyboardWillShow", (info) => {
+      if (!cancelled) setKbHeight(info.keyboardHeight ?? 0);
+    });
     const hide = Keyboard.addListener("keyboardDidHide", () => {
       setKbHeight(0);
       if (!keepKeyboard.current) return;
@@ -147,6 +151,7 @@ export default function NotesPage() {
     return () => {
       cancelled = true;
       void show.then((h) => h.remove());
+      void willShow.then((h) => h.remove());
       void hide.then((h) => h.remove());
     };
   }, [focusEditor]);
@@ -189,11 +194,11 @@ export default function NotesPage() {
   const onOcr = async (source: ImageSource) => {
     if (ocrBusy) return;
     setPickOpen(false);
+    setOcrFeedback(null);
     await prepareForOcr();
     editorRef.current?.blur();
     setOcrBusy(true);
-    let message: string | null = null;
-    let messageKind: "info" | "warning" = "info";
+    let feedback: { message: string; kind: "info" | "warning" } | null = null;
     try {
       const result = await extractTextFromPickedImage("note", source);
       if (!result.ok) {
@@ -201,24 +206,24 @@ export default function NotesPage() {
           result.error,
           "configReason" in result ? result.configReason : undefined,
         );
-        if (key) message = t(key);
-        return;
-      }
-      if (!("text" in result) || (!result.text && !result.latex?.length)) {
-        message = t("ocrEmpty");
-        return;
-      }
-      insertAtCaret(textToNoteHtml(result.text, result.latex || []));
-      if (result.lowConfidence) {
-        message = t("ocrLowConfidence");
-        messageKind = "warning";
+        if (key) feedback = { message: t(key), kind: "info" };
+      } else if (!("text" in result) || (!result.text && !result.latex?.length)) {
+        feedback = { message: t("ocrEmpty"), kind: "info" };
+      } else {
+        insertAtCaret(textToNoteHtml(result.text, result.latex || []));
+        if (result.lowConfidence) {
+          feedback = { message: t("ocrLowConfidence"), kind: "warning" };
+        }
       }
     } catch {
-      message = t("ocrGeneric");
+      feedback = { message: t("ocrGeneric"), kind: "info" };
     } finally {
       setOcrBusy(false);
     }
-    if (message) setOcrFeedback({ message, kind: messageKind });
+    if (feedback) {
+      ocrDebugLog("ocr", `feedback kind=${feedback.kind} msg=${feedback.message.slice(0, 80)}`, "info");
+      setOcrFeedback(feedback);
+    }
   };
 
   if (!page) return null;
@@ -245,6 +250,12 @@ export default function NotesPage() {
   );
 
   const toolbarBottom = kbHeight > 0 ? kbHeight : undefined;
+  const editorScrollPad =
+    editing && kbHeight > 0
+      ? kbHeight + NOTE_TOOLBAR_CLEARANCE
+      : editing
+        ? NOTE_TOOLBAR_CLEARANCE
+        : 0;
 
   return (
     <div className="page-shell">
@@ -326,10 +337,7 @@ export default function NotesPage() {
         )}
       </div>
 
-      <div
-        className="flex-1 min-h-0 px-4"
-        style={{ paddingBottom: editing ? NOTE_TOOLBAR_CLEARANCE : 8 }}
-      >
+      <div className="flex-1 min-h-0 px-4" style={{ paddingBottom: editing ? 0 : 8 }}>
         <div
           className={cn(
             "h-full overscroll-contain outline-none text-base leading-relaxed text-foreground",
@@ -345,7 +353,7 @@ export default function NotesPage() {
               data-placeholder={t("memoBodyPlaceholder")}
               data-kb-ignore=""
               className="note-editor outline-none"
-              style={{ minHeight: "100%", paddingBottom: 4 }}
+              style={{ minHeight: "100%", paddingBottom: editorScrollPad }}
               onInput={() => {
                 skipHtmlSync.current = true;
                 persist({ html: editorRef.current?.innerHTML || "" });
