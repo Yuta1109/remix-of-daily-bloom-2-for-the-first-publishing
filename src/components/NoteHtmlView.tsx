@@ -34,7 +34,7 @@ export function NoteHtmlView({ html }: { html: string }) {
   if (!html?.trim()) return null;
 
   return (
-    <div className="note-html-view text-base leading-relaxed text-foreground">
+    <div className="note-html-view w-full text-base leading-relaxed text-foreground text-left">
       {nodes.map((node, i) => {
         if (node instanceof HTMLElement && node.classList.contains("ocr-latex-block")) {
           return <LatexBlock key={i} latex={node.getAttribute("data-latex") || ""} />;

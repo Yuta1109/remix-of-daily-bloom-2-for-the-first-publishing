@@ -36,7 +36,6 @@ import {
   type LiveActivityGate,
 } from "@/lib/live-activity-prefs";
 import { LiveActivityDemoPanel } from "@/components/LiveActivityDemoPanel";
-import { OcrDebugPanel } from "@/components/OcrDebugPanel";
 import {
   THEME_ACCENTS,
   getThemeAccentId,
@@ -366,15 +365,7 @@ export default function Settings({ staticPreview = false }: Props) {
           </div>
         </div>
 
-        {/* 5. OCR debug log */}
-        {!staticPreview && (
-          <div className="bg-card rounded-2xl p-5 shadow-soft">
-            <p className="text-sm font-semibold mb-1">{t("ocrDebugTitle")}</p>
-            <OcrDebugPanel />
-          </div>
-        )}
-
-        {/* 6. Language */}
+        {/* 5. Language */}
         <div className="bg-card rounded-2xl p-5 shadow-soft">
           <div className="flex items-center gap-2 mb-1">
             <Globe className="w-4 h-4 text-accent" />

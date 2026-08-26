@@ -47,7 +47,10 @@ export function BottomNav() {
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
         {tabs.map(({ path, icon: Icon, label, tutorial }) => {
-          const active = location.pathname === path;
+          const active =
+            path === "/notes"
+              ? location.pathname === path || location.pathname.startsWith(`${path}/`)
+              : location.pathname === path;
           return (
             <button
               key={path}

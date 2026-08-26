@@ -23,7 +23,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/calendar" element={<Calendar />} />
-        <Route path="/notes" element={<Notes />} />
+        <Route path="/notes/*" element={<Notes />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="*" element={<NotFound />} />

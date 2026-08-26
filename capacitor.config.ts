@@ -21,6 +21,7 @@ const config: CapacitorConfig = {
       "@capacitor/haptics",
       "@capacitor/keyboard",
       "@capacitor/local-notifications",
+      "@capacitor/share",
       "@capacitor/splash-screen",
       "@capacitor/status-bar",
       "capacitor-native-settings",
