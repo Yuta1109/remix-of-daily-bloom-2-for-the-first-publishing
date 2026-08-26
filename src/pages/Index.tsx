@@ -19,7 +19,7 @@ import type { DayData, Task } from "@/lib/store";
 import { TaskHistorySheet } from "@/components/TaskHistorySheet";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
-import { extractTextFromPickedImage, ocrToastKey, type ImageSource } from "@/lib/ocr";
+import { extractTextFromPickedImage, notifyOcrUser, ocrToastKey, type ImageSource } from "@/lib/ocr";
 
 export default function Index() {
   const { t, formatDate } = useI18n();
@@ -132,6 +132,7 @@ export default function Index() {
     await prepareForOcr();
     setOcrBusy(true);
     let message: string | null = null;
+    let messageKind: "info" | "warning" = "info";
     try {
       const result = await extractTextFromPickedImage("tasks", source);
       if (!result.ok) {
@@ -147,13 +148,16 @@ export default function Index() {
         return;
       }
       addOcrTasks(result.tasks);
-      if (result.lowConfidence) message = t("ocrLowConfidence");
+      if (result.lowConfidence) {
+        message = t("ocrLowConfidence");
+        messageKind = "warning";
+      }
     } catch {
       message = t("ocrGeneric");
     } finally {
       setOcrBusy(false);
     }
-    if (message) toast(message);
+    if (message) notifyOcrUser(message, messageKind);
   };
 
   const finishNewTask = () => {

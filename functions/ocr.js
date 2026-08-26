@@ -157,6 +157,17 @@ function asBool(v) {
   return v === true || v === "true";
 }
 
+function stripMathPlaceholders(text) {
+  return String(text || "")
+    .replace(/\[\[MATH:\d+\]\]/g, "")
+    .trim();
+}
+
+function hasNoteContent(text, latex) {
+  if (stripMathPlaceholders(text).length > 0) return true;
+  return Array.isArray(latex) && latex.some((s) => String(s || "").trim().length > 0);
+}
+
 function qualityFlags(parsed) {
   const empty = asBool(parsed?.empty);
   const lowConfidence = asBool(parsed?.lowConfidence);
@@ -494,33 +505,31 @@ export const extractTextFromImage = onCall(
       } else if (mode === "tasks") {
         const tasks = result.tasks || [];
         const hasTasks = tasks.length > 0;
-        const empty = !hasTasks && result.empty === true;
-        payload = empty
-          ? { ok: false, error: "empty", debug: result.debug }
-          : hasTasks
-            ? {
-                ok: true,
-                tasks,
-                lowConfidence: !!result.lowConfidence,
-                debug: result.debug,
-              }
-            : { ok: false, error: "unreadable", debug: result.debug };
+        if (result.empty === true || !hasTasks) {
+          payload = { ok: false, error: "empty", debug: result.debug };
+        } else {
+          payload = {
+            ok: true,
+            tasks,
+            lowConfidence: !!result.lowConfidence,
+            debug: result.debug,
+          };
+        }
       } else {
         const text = String(result.text || "").trim();
         const latex = Array.isArray(result.latex) ? result.latex.filter(Boolean) : [];
-        const hasContent = !!text || latex.length > 0;
-        const empty = !hasContent && result.empty === true;
-        payload = empty
-          ? { ok: false, error: "empty", debug: result.debug }
-          : hasContent
-            ? {
-                ok: true,
-                text: result.text,
-                latex,
-                lowConfidence: !!result.lowConfidence,
-                debug: result.debug,
-              }
-            : { ok: false, error: "unreadable", debug: result.debug };
+        const hasContent = hasNoteContent(text, latex);
+        if (result.empty === true || !hasContent) {
+          payload = { ok: false, error: "empty", debug: result.debug };
+        } else {
+          payload = {
+            ok: true,
+            text: result.text,
+            latex,
+            lowConfidence: !!result.lowConfidence,
+            debug: result.debug,
+          };
+        }
       }
       await finishOcrRequest(requestId, req.auth.uid, payload, payload.ok === true);
       return payload;

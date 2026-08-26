@@ -23,6 +23,7 @@ import { getJapaneseHolidayName } from "@/lib/jp-holidays";
 import {
   loadCalendarViewMode,
   loadWeekStartsOn,
+  markWeekNavSwipeHintSeen,
   markWeekViewOpened,
   saveCalendarViewMode,
   saveWeekStartsOn,
@@ -72,6 +73,8 @@ function weekDaysFromAnchor(anchor: Date, weekStartsOn: WeekStartsOn) {
 function weekKeyFromAnchor(anchor: Date, weekStartsOn: WeekStartsOn) {
   return toDateKey(startOfWeek(anchor, { weekStartsOn }));
 }
+
+const WEEK_HINT_SWIPE_PX = 32;
 
 function selectedOffsetInWeek(weekDayKey: string, anchor: Date, weekStartsOn: WeekStartsOn) {
   const start = startOfWeek(anchor, { weekStartsOn });
@@ -233,6 +236,7 @@ export default function CalendarPage() {
     () => loadCalendarViewMode() === "week" && !weekNavSwipeHintSeen(),
   );
   const [weekDayKey, setWeekDayKey] = useState(todayKey);
+  const weekHintGesture = useRef({ active: false, startX: 0, startY: 0, maxDx: 0 });
 
   const refreshEvents = () => setEvents(loadEvents());
   useEffect(() => {
@@ -377,6 +381,43 @@ export default function CalendarPage() {
     [calView],
   );
 
+  const dismissWeekNavHint = useCallback(() => {
+    markWeekNavSwipeHintSeen();
+    setWeekNavHintOpen(false);
+  }, []);
+
+  const onWeekHintPointerDownCapture = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!weekNavHintOpen) return;
+      weekHintGesture.current = {
+        active: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        maxDx: 0,
+      };
+    },
+    [weekNavHintOpen],
+  );
+
+  const onWeekHintPointerMoveCapture = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const g = weekHintGesture.current;
+      if (!weekNavHintOpen || !g.active) return;
+      const dx = e.clientX - g.startX;
+      const dy = e.clientY - g.startY;
+      g.maxDx = Math.max(g.maxDx, Math.abs(dx));
+      if (g.maxDx >= WEEK_HINT_SWIPE_PX && g.maxDx > Math.abs(dy) * 1.15) {
+        g.active = false;
+        dismissWeekNavHint();
+      }
+    },
+    [weekNavHintOpen, dismissWeekNavHint],
+  );
+
+  const onWeekHintPointerEndCapture = useCallback(() => {
+    weekHintGesture.current.active = false;
+  }, []);
+
   const onMonthStep = useCallback((delta: -1 | 1) => {
     setViewDate((d) => addMonths(d, delta));
   }, []);
@@ -464,11 +505,17 @@ export default function CalendarPage() {
         <div
           className={cn(
             "relative flex-1 min-h-0 pb-1",
-            calView === "week" ? "px-1" : "px-3",
+            calView === "week" ? "px-2" : "px-3",
           )}
         >
           {calView === "week" ? (
-            <div className="relative h-full mt-3">
+            <div
+              className="relative h-full mt-3"
+              onPointerDownCapture={onWeekHintPointerDownCapture}
+              onPointerMoveCapture={onWeekHintPointerMoveCapture}
+              onPointerUpCapture={onWeekHintPointerEndCapture}
+              onPointerCancelCapture={onWeekHintPointerEndCapture}
+            >
               <WeekWheel
               weekKey={weekKeyFromAnchor(weekAnchor, weekStartsOn)}
               disabled={overlayOpen}
@@ -579,9 +626,7 @@ export default function CalendarPage() {
                 );
               }}
             </WeekWheel>
-              {weekNavHintOpen ? (
-                <WeekNavSwipeHint onDismiss={() => setWeekNavHintOpen(false)} />
-              ) : null}
+              {weekNavHintOpen ? <WeekNavSwipeHint /> : null}
             </div>
           ) : (
             <MonthWheel

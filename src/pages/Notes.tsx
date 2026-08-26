@@ -19,10 +19,9 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { extractTextFromPickedImage, ocrToastKey, textToNoteHtml, type ImageSource } from "@/lib/ocr";
+import { extractTextFromPickedImage, notifyOcrUser, ocrToastKey, textToNoteHtml, type ImageSource } from "@/lib/ocr";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
 import {
@@ -186,6 +185,7 @@ export default function NotesPage() {
     editorRef.current?.blur();
     setOcrBusy(true);
     let message: string | null = null;
+    let messageKind: "info" | "warning" = "info";
     try {
       const result = await extractTextFromPickedImage("note", source);
       if (!result.ok) {
@@ -201,13 +201,16 @@ export default function NotesPage() {
         return;
       }
       insertAtCaret(textToNoteHtml(result.text, result.latex || []));
-      if (result.lowConfidence) message = t("ocrLowConfidence");
+      if (result.lowConfidence) {
+        message = t("ocrLowConfidence");
+        messageKind = "warning";
+      }
     } catch {
       message = t("ocrGeneric");
     } finally {
       setOcrBusy(false);
     }
-    if (message) toast(message);
+    if (message) notifyOcrUser(message, messageKind);
   };
 
   if (!page) return null;

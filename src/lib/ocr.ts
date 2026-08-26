@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { toast } from "sonner";
 import { callExtractTextFromImage, type OcrCallResult } from "./firebase-client";
 import { ocrDebugLog } from "./ocr-debug-log";
 import { prepareForOcr } from "./keyboard-avoidance";
@@ -255,4 +256,11 @@ export function ocrToastKey(
   if (error === "unreadable") return "ocrUnreadable";
   if (error === "permission") return "ocrPermission";
   return "ocrGeneric";
+}
+
+export function notifyOcrUser(message: string, kind: "info" | "warning" = "info") {
+  window.setTimeout(() => {
+    if (kind === "warning") toast.warning(message, { duration: 6000 });
+    else toast(message, { duration: 5000 });
+  }, 100);
 }
