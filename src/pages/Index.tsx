@@ -135,7 +135,10 @@ export default function Index() {
     try {
       const result = await extractTextFromPickedImage("tasks", source);
       if (!result.ok) {
-        const key = ocrToastKey(result.error);
+        const key = ocrToastKey(
+          result.error,
+          "configReason" in result ? result.configReason : undefined,
+        );
         if (key) message = t(key);
         return;
       }

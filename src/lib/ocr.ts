@@ -243,10 +243,14 @@ export function textToNoteHtml(text: string, latex: string[] = []): string {
 
 export function ocrToastKey(
   error: "quota" | "unreadable" | "error" | "unavailable" | "cancelled" | "permission" | "config" | "empty" | undefined,
-): "ocrQuota" | "ocrUnreadable" | "ocrPermission" | "ocrConfig" | "ocrEmpty" | "ocrGeneric" | null {
+  configReason?: string | null,
+): "ocrQuota" | "ocrUnreadable" | "ocrPermission" | "ocrConfig" | "ocrConfigBadFormat" | "ocrEmpty" | "ocrGeneric" | null {
   if (!error || error === "cancelled") return null;
   if (error === "quota") return "ocrQuota";
-  if (error === "config") return "ocrConfig";
+  if (error === "config") {
+    if (configReason === "bad-format" || configReason === "too-short") return "ocrConfigBadFormat";
+    return "ocrConfig";
+  }
   if (error === "empty") return "ocrEmpty";
   if (error === "unreadable") return "ocrUnreadable";
   if (error === "permission") return "ocrPermission";

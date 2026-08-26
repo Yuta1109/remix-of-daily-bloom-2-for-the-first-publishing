@@ -459,7 +459,12 @@ export const extractTextFromImage = onCall(
       const payload = {
         ok: false,
         error: "config",
-        debug: { keyReason: keyMeta.reason, keyLen: keyMeta.len, keyPrefix: keyMeta.prefix },
+        debug: {
+          keyReason: keyMeta.reason,
+          keyLen: keyMeta.len,
+          keyPrefix: keyMeta.prefix,
+          hint: keyMeta.hint,
+        },
       };
       await finishOcrRequest(requestId, req.auth.uid, payload, false);
       return payload;

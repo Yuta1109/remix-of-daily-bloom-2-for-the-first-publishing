@@ -142,7 +142,7 @@ export async function ensureCallableApp(): Promise<boolean> {
 export type OcrCallResult =
   | { ok: true; tasks: string[]; text?: undefined; latex?: string[]; lowConfidence?: boolean }
   | { ok: true; text: string; tasks?: undefined; latex?: string[]; lowConfidence?: boolean }
-  | { ok: false; error: "quota" | "unreadable" | "error" | "unavailable" | "config" | "empty" };
+  | { ok: false; error: "quota" | "unreadable" | "error" | "unavailable" | "config" | "empty"; configReason?: string | null };
 
 function mapCallableError(err: unknown): OcrCallResult {
   const code = String((err as { code?: string })?.code || "");
@@ -196,6 +196,8 @@ export async function callExtractTextFromImage(payload: {
           lastSnippet?: string | null;
           structured?: boolean | null;
           sawApiQuota?: boolean;
+          keyReason?: string | null;
+          hint?: string | null;
         };
       }
     >(functions, "extractTextFromImage", { timeout: CALLABLE_TIMEOUT_MS });
@@ -242,7 +244,11 @@ export async function callExtractTextFromImage(payload: {
     }
     const err = data?.error;
     if (err === "quota" || err === "unreadable" || err === "config" || err === "empty") {
-      return { ok: false, error: err };
+      return {
+        ok: false,
+        error: err,
+        configReason: err === "config" ? dbg?.keyReason ?? null : undefined,
+      };
     }
     return { ok: false, error: "error" };
   } catch (err) {

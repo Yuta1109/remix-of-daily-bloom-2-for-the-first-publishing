@@ -14,9 +14,13 @@ export function validateGeminiApiKeyMeta(apiKey) {
     return { ok: false, reason: "too-short", len: key.length, prefix: key.slice(0, 8) };
   }
   if (!/^AIza[0-9A-Za-z_-]+$/.test(key)) {
-    return { ok: false, reason: "bad-format", len: key.length, prefix: key.slice(0, 8) };
+    const hint =
+      key.startsWith("AQ.") || key.startsWith("ya29.")
+        ? "This looks like an OAuth/access token, not a Google AI Studio API key. Create a key at aistudio.google.com/apikey (starts with AIza)."
+        : "Google AI Studio API keys start with AIza. Create one at aistudio.google.com/apikey, then: npm run gemini:secret && npm run deploy";
+    return { ok: false, reason: "bad-format", len: key.length, prefix: key.slice(0, 8), hint };
   }
-  return { ok: true, reason: null, len: key.length, prefix: key.slice(0, 8) };
+  return { ok: true, reason: null, len: key.length, prefix: key.slice(0, 8), hint: null };
 }
 
 /** Minimal live check against Generative Language API (no image). */
@@ -27,7 +31,7 @@ export async function probeGeminiApiKey(apiKey) {
       ok: false,
       status: null,
       meta,
-      hint: "Set GEMINI_API_KEY via Google AI Studio (not the Firebase Web API key).",
+      hint: meta.hint || "Set GEMINI_API_KEY via Google AI Studio (not the Firebase Web API key).",
     };
   }
   const url =

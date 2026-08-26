@@ -351,7 +351,11 @@ export default function CalendarPage() {
   const weekDayEvents = eventsForDate(weekDayKey, events);
 
   const onWeekStep = useCallback((delta: -1 | 1) => {
-    setWeekAnchor((d) => addWeeks(d, delta));
+    setWeekAnchor((d) => {
+      const next = addWeeks(d, delta);
+      setViewDate(next);
+      return next;
+    });
     setWeekDayKey((key) => {
       const [y, m, day] = key.split("-").map(Number);
       const next = new Date(y, m - 1, day);
@@ -359,6 +363,19 @@ export default function CalendarPage() {
       return toDateKey(next);
     });
   }, []);
+
+  const applyPickedMonth = useCallback(
+    (y: number, m: number) => {
+      const d = new Date(y, m, 1);
+      setViewDate(d);
+      if (calView === "week") {
+        setWeekAnchor(d);
+        setWeekDayKey(toDateKey(d));
+      }
+      setPickerOpen(false);
+    },
+    [calView],
+  );
 
   const onMonthStep = useCallback((delta: -1 | 1) => {
     setViewDate((d) => addMonths(d, delta));
@@ -401,10 +418,7 @@ export default function CalendarPage() {
                 <div className="absolute top-full left-0 mt-2 z-40 bg-card rounded-2xl shadow-card border border-border p-4 flex gap-3">
                   <select
                     value={month}
-                    onChange={(e) => {
-                      setViewDate(new Date(year, Number(e.target.value), 1));
-                      setPickerOpen(false);
-                    }}
+                    onChange={(e) => applyPickedMonth(year, Number(e.target.value))}
                     className="bg-secondary/60 rounded-lg px-3 py-2 text-sm outline-none"
                   >
                     {monthOptions.map((m) => (
@@ -415,10 +429,7 @@ export default function CalendarPage() {
                   </select>
                   <select
                     value={year}
-                    onChange={(e) => {
-                      setViewDate(new Date(Number(e.target.value), month, 1));
-                      setPickerOpen(false);
-                    }}
+                    onChange={(e) => applyPickedMonth(Number(e.target.value), month)}
                     className="bg-secondary/60 rounded-lg px-3 py-2 text-sm outline-none"
                   >
                     {yearOptions.map((y) => (
@@ -450,9 +461,14 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        <div className="relative flex-1 min-h-0 px-3 pb-1">
+        <div
+          className={cn(
+            "relative flex-1 min-h-0 pb-1",
+            calView === "week" ? "px-1" : "px-3",
+          )}
+        >
           {calView === "week" ? (
-            <div className="relative h-full">
+            <div className="relative h-full mt-3">
               <WeekWheel
               weekKey={weekKeyFromAnchor(weekAnchor, weekStartsOn)}
               disabled={overlayOpen}

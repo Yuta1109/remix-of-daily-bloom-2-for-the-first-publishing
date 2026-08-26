@@ -21,6 +21,19 @@ function Find-KeepaliveFile {
   return $null
 }
 
+function Test-GeminiApiKeyFormat([string]$Key) {
+  $k = $Key.Trim().Trim('"').Trim("'")
+  if (-not $k) { return @{ ok = $false; reason = "empty" } }
+  if ($k.Length -lt 30) { return @{ ok = $false; reason = "too-short" } }
+  if ($k -notmatch '^AIza[0-9A-Za-z_-]+$') {
+    if ($k.StartsWith("AQ.") -or $k.StartsWith("ya29.")) {
+      return @{ ok = $false; reason = "oauth-token" }
+    }
+    return @{ ok = $false; reason = "bad-format" }
+  }
+  return @{ ok = $true; reason = $null }
+}
+
 Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
 
 $Keepalive = Find-KeepaliveFile
@@ -32,9 +45,30 @@ Write-Host ""
 Write-Host "Gemini OCR needs a Google AI Studio API key in Secret Manager." -ForegroundColor Cyan
 Write-Host "Get one here: https://aistudio.google.com/apikey" -ForegroundColor Yellow
 Write-Host "Do NOT paste the Firebase Web API key from GoogleService-Info.plist." -ForegroundColor Yellow
+Write-Host "Do NOT paste OAuth/access tokens (often start with AQ. or ya29.)." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Repo: $RepoRoot" -ForegroundColor Cyan
 Write-Host "Project: $ProjectId" -ForegroundColor Cyan
+
+$apiKey = $null
+while ($true) {
+  $apiKey = Read-Host "Paste Google AI Studio API key (starts with AIza)"
+  $check = Test-GeminiApiKeyFormat $apiKey
+  if ($check.ok) { break }
+  switch ($check.reason) {
+    "empty" { Write-Host "Key cannot be empty." -ForegroundColor Red }
+    "too-short" { Write-Host "Key is too short. Copy the full AIza key from Google AI Studio." -ForegroundColor Red }
+    "oauth-token" {
+      Write-Host "That looks like an OAuth/access token, not an API key." -ForegroundColor Red
+      Write-Host "Create a key at https://aistudio.google.com/apikey (starts with AIza)." -ForegroundColor Yellow
+    }
+    default {
+      Write-Host "Invalid format. Google AI Studio keys start with AIza." -ForegroundColor Red
+    }
+  }
+}
+
+$apiKey = $apiKey.Trim().Trim('"').Trim("'")
 
 # Node on Windows needs --use-system-ca for Firebase/Google HTTPS (same as npm run deploy).
 $env:NODE_OPTIONS = "--use-system-ca --require=$Keepalive"
@@ -47,7 +81,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Setting secret GEMINI_API_KEY..." -ForegroundColor Cyan
-npx firebase functions:secrets:set GEMINI_API_KEY --project $ProjectId
+$apiKey | npx firebase functions:secrets:set GEMINI_API_KEY --project $ProjectId --data-file -
 $code = $LASTEXITCODE
 
 Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
