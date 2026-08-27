@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Capacitor } from "@capacitor/core";
@@ -85,6 +85,22 @@ const SEARCH_BAR_PX = 52;
 /** Visible on pastel cards; not clipped by inner overflow-hidden. */
 const DRAG_HIGHLIGHT_CLASS =
   "shadow-[0_0_0_2px_hsl(var(--accent)),0_0_0_4px_hsl(var(--background))]";
+
+function darkenHex(hex: string, factor = 0.78): string {
+  const raw = hex.replace("#", "");
+  if (raw.length !== 6) return hex;
+  const r = Math.round(parseInt(raw.slice(0, 2), 16) * factor);
+  const g = Math.round(parseInt(raw.slice(2, 4), 16) * factor);
+  const b = Math.round(parseInt(raw.slice(4, 6), 16) * factor);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
+function categoryHighlightStyle(cardColor: string): CSSProperties {
+  const ring = darkenHex(cardColor);
+  return {
+    boxShadow: `0 0 0 2px ${ring}, 0 0 0 4px hsl(var(--background))`,
+  };
+}
 
 function measureCategories(scrollRoot: HTMLElement, categoryIds: string[]): DragMeasurement[] {
   return categoryIds
@@ -186,6 +202,8 @@ export default function MemoListPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastScrollTop = useRef(0);
   const lastPointerRef = useRef({ x: 0, y: 0 });
+  const pressLongPressActiveRef = useRef(false);
+  const scrollLockRef = useRef<{ overflow: string; touchAction: string } | null>(null);
   const pressRef = useRef<{
     target: PressTarget;
     startX: number;
@@ -271,6 +289,22 @@ export default function MemoListPage() {
     navigate(`/notes/${pageId}`);
   };
 
+  const lockScrollRoot = () => {
+    const root = scrollRef.current;
+    if (!root || scrollLockRef.current) return;
+    scrollLockRef.current = { overflow: root.style.overflow, touchAction: root.style.touchAction };
+    root.style.overflow = "hidden";
+    root.style.touchAction = "none";
+  };
+
+  const unlockScrollRoot = () => {
+    const root = scrollRef.current;
+    if (!root || !scrollLockRef.current) return;
+    root.style.overflow = scrollLockRef.current.overflow;
+    root.style.touchAction = scrollLockRef.current.touchAction;
+    scrollLockRef.current = null;
+  };
+
   const clearPress = () => {
     if (pressRef.current) {
       clearTimeout(pressRef.current.timer);
@@ -286,7 +320,11 @@ export default function MemoListPage() {
     }
     setCategoryLongPressId(null);
     setMemoLongPressId(null);
+    pressLongPressActiveRef.current = false;
     setPressLongPressActive(false);
+    if (!memoDragStateRef.current && !categoryDragStateRef.current) {
+      unlockScrollRoot();
+    }
   };
 
   const tryCancelPressForScroll = (clientX: number, clientY: number) => {
@@ -338,10 +376,7 @@ export default function MemoListPage() {
 
     const prevOverflow = scrollRoot.style.overflow;
     const prevTouchAction = scrollRoot.style.touchAction;
-    if (draggingActive) {
-      scrollRoot.style.overflow = "hidden";
-      scrollRoot.style.touchAction = "none";
-    }
+    lockScrollRoot();
 
     let lastX = lastPointerRef.current.x;
     let lastY =
@@ -395,14 +430,26 @@ export default function MemoListPage() {
       lastPointerRef.current = { x: lastX, y: lastY };
     };
 
+    const preventTouchScroll = (e: TouchEvent) => {
+      if (pressLongPressActiveRef.current || memoDragStateRef.current || categoryDragStateRef.current) {
+        e.preventDefault();
+      }
+    };
+
     document.addEventListener("pointermove", onPointerMove, { passive: true });
+    document.addEventListener("touchmove", preventTouchScroll, { passive: false });
     rafId = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(rafId);
       document.removeEventListener("pointermove", onPointerMove);
-      scrollRoot.style.overflow = prevOverflow;
-      scrollRoot.style.touchAction = prevTouchAction;
+      document.removeEventListener("touchmove", preventTouchScroll);
+      if (!pressLongPressActiveRef.current && !memoDragStateRef.current && !categoryDragStateRef.current) {
+        unlockScrollRoot();
+      } else {
+        scrollRoot.style.overflow = prevOverflow;
+        scrollRoot.style.touchAction = prevTouchAction;
+      }
     };
   }, [autoScrollActive, draggingActive]);
 
@@ -449,7 +496,9 @@ export default function MemoListPage() {
     const timer = setTimeout(() => {
       if (!pressRef.current) return;
       pressRef.current.longPress = true;
+      pressLongPressActiveRef.current = true;
       setPressLongPressActive(true);
+      lockScrollRoot();
       try {
         pressRef.current.element.setPointerCapture(pointerId);
         pressRef.current.captured = true;
@@ -528,6 +577,7 @@ export default function MemoListPage() {
       const orderedIds = lib.categories.map((c) => c.id);
       categoryDragMetricsRef.current = measureCategories(scrollRoot, orderedIds);
       const fromIndex = orderedIds.indexOf(press.target.categoryId);
+      setCategoryLongPressId(null);
       setCategoryDragState({
         categoryId: press.target.categoryId,
         pointerY: clientY,
@@ -555,11 +605,13 @@ export default function MemoListPage() {
         if (drag) finishMemoDrag(saved.target, drag);
         setMemoDragState(null);
         memoDragMetricsRef.current = new Map();
+        unlockScrollRoot();
       } else {
         const drag = categoryDragStateRef.current;
         if (drag) finishCategoryDrag(saved.target.categoryId, drag.insertIndex);
         setCategoryDragState(null);
         categoryDragMetricsRef.current = [];
+        unlockScrollRoot();
       }
       return;
     }
@@ -799,19 +851,16 @@ export default function MemoListPage() {
             const isDraggingCategory = categoryDragState?.categoryId === category.id;
             const isMemoDropTarget =
               !!memoDragState && memoDragState.targetCategoryId === category.id;
-            const categoryHighlighted =
-              categoryLongPressId === category.id ||
-              categoryDragState?.categoryId === category.id ||
-              isMemoDropTarget;
+            const categoryLongPressHighlight =
+              categoryLongPressId === category.id && !isDraggingCategory;
+            const categoryHighlight = categoryLongPressHighlight || isMemoDropTarget;
             const shiftY = categoryDragState && !memoDragState ? categoryShiftMap.get(category.id) ?? 0 : 0;
 
             return (
               <div
                 key={category.id}
-                className={cn(
-                  "rounded-3xl transition-shadow duration-150",
-                  categoryHighlighted && DRAG_HIGHLIGHT_CLASS,
-                )}
+                className="rounded-3xl transition-shadow duration-150"
+                style={categoryHighlight ? categoryHighlightStyle(cardColor) : undefined}
               >
               <section
                 data-category-section
@@ -961,10 +1010,7 @@ export default function MemoListPage() {
       {categoryDragState &&
         createPortal(
           <div
-            className={cn(
-              "fixed z-[80] pointer-events-none rounded-3xl border border-border/50 shadow-float overflow-hidden",
-              DRAG_HIGHLIGHT_CLASS,
-            )}
+            className="fixed z-[80] pointer-events-none rounded-3xl border border-border/50 shadow-float overflow-hidden"
             style={{
               left: categoryDragState.anchorLeft,
               top: categoryDragState.pointerY - categoryDragState.pointerOffsetY,
