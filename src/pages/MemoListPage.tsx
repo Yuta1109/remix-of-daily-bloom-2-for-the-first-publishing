@@ -14,7 +14,7 @@ import {
   isWelcomeMemo,
   loadMemoLibrary,
   MEMO_CATEGORY_COLORS,
-  MEMO_CATEGORY_PICKER_COLORS,
+  categoryPickerColors,
   movePageToCategory,
   removeCategory,
   removeMemoPage,
@@ -37,31 +37,47 @@ type ContextMenu =
 
 type PressTarget =
   | { kind: "memo"; pageId: string; categoryId: string; index: number }
-  | { kind: "category"; categoryId: string; index: number };
+  | { kind: "category"; categoryId: string };
 
-type DragGhost = {
-  target: PressTarget;
+type MemoDragGhost = {
+  pageId: string;
+  categoryId: string;
+  index: number;
   x: number;
   y: number;
   width: number;
   label: string;
-  cardColor?: string;
 };
 
-type DropPreview =
-  | { kind: "memo"; categoryId: string; index: number }
-  | { kind: "category"; index: number };
+type MemoDropPreview = {
+  categoryId: string;
+  index: number;
+};
 
-const LONG_PRESS_MS = 420;
-const DRAG_THRESHOLD = 10;
+type CategoryDragState = {
+  categoryId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  cardColor: string;
+  pointerOffsetY: number;
+};
+
+type CategoryDropPosition = {
+  overCategoryId: string;
+  side: "before" | "after";
+};
 
 type MemoDisplayItem =
   | { kind: "memo"; page: MemoPage; index: number }
   | { kind: "placeholder" };
 
-type CategoryDisplayItem =
-  | { kind: "category"; category: MemoCategory; pages: MemoPage[]; catIndex: number }
-  | { kind: "placeholder" };
+const LONG_PRESS_MS = 420;
+const DRAG_THRESHOLD = 10;
+const CATEGORY_SHIFT_TRANSITION = "transform 180ms ease";
+const CATEGORY_LIST_GAP = 16;
 
 function memoInsertIndex(
   drag: { categoryId: string; index: number },
@@ -77,17 +93,17 @@ function memoInsertIndex(
 function buildMemoDisplayList(
   pages: MemoPage[],
   categoryId: string,
-  dragGhost: DragGhost | null,
-  dropPreview: DropPreview | null,
+  memoDragGhost: MemoDragGhost | null,
+  memoDropPreview: MemoDropPreview | null,
 ): MemoDisplayItem[] {
-  const drag = dragGhost?.target.kind === "memo" ? dragGhost.target : null;
-  const preview = dropPreview?.kind === "memo" ? dropPreview : null;
+  const drag = memoDragGhost;
+  const preview = memoDropPreview?.categoryId === categoryId ? memoDropPreview : null;
 
   const filtered =
     drag && drag.categoryId === categoryId ? pages.filter((p) => p.id !== drag.pageId) : pages;
 
   let insertAt: number | null = null;
-  if (drag && preview && preview.categoryId === categoryId) {
+  if (drag && preview) {
     insertAt = memoInsertIndex(drag, preview);
     insertAt = Math.min(insertAt, filtered.length);
   }
@@ -101,33 +117,87 @@ function buildMemoDisplayList(
   return items;
 }
 
-function buildCategoryDisplayList(
-  visibleCategories: Array<{ category: MemoCategory; pages: MemoPage[] }>,
-  dragGhost: DragGhost | null,
-  dropPreview: DropPreview | null,
-): CategoryDisplayItem[] {
-  const drag = dragGhost?.target.kind === "category" ? dragGhost.target : null;
-  const preview = dropPreview?.kind === "category" ? dropPreview : null;
+function findCategoryDropPosition(
+  pointerY: number,
+  draggingCategoryId: string,
+  orderedCategoryIds: string[],
+  scrollRoot: HTMLElement | null,
+): CategoryDropPosition | null {
+  if (!scrollRoot || orderedCategoryIds.length === 0) return null;
 
-  const filtered = drag
-    ? visibleCategories.filter(({ category }) => category.id !== drag.categoryId)
-    : visibleCategories;
+  const sections = orderedCategoryIds
+    .map((id) => scrollRoot.querySelector<HTMLElement>(`[data-category-section][data-category-id="${id}"]`))
+    .filter((el): el is HTMLElement => !!el);
 
-  let insertAt: number | null = null;
-  if (drag && preview) {
-    insertAt = preview.index;
-    if (drag.index < preview.index) insertAt -= 1;
-    insertAt = Math.max(0, Math.min(insertAt, filtered.length));
+  const others = sections.filter((el) => el.dataset.categoryId !== draggingCategoryId);
+  if (others.length === 0) return null;
+
+  for (const section of others) {
+    const rect = section.getBoundingClientRect();
+    if (pointerY >= rect.top && pointerY <= rect.bottom) {
+      const midpoint = (rect.top + rect.bottom) / 2;
+      return {
+        overCategoryId: section.dataset.categoryId!,
+        side: pointerY < midpoint ? "before" : "after",
+      };
+    }
   }
 
-  const items: CategoryDisplayItem[] = [];
-  filtered.forEach((entry, i) => {
-    if (insertAt === i) items.push({ kind: "placeholder" });
-    const catIndex = visibleCategories.findIndex((v) => v.category.id === entry.category.id);
-    items.push({ kind: "category", ...entry, catIndex });
+  const first = others[0];
+  const last = others[others.length - 1];
+  const firstRect = first.getBoundingClientRect();
+  const lastRect = last.getBoundingClientRect();
+
+  if (pointerY < firstRect.top) {
+    return { overCategoryId: first.dataset.categoryId!, side: "before" };
+  }
+  if (pointerY > lastRect.bottom) {
+    return { overCategoryId: last.dataset.categoryId!, side: "after" };
+  }
+
+  return null;
+}
+
+function computeCategoryShiftMap(
+  orderedIds: string[],
+  dragId: string,
+  dragHeight: number,
+  drop: CategoryDropPosition | null,
+): Map<string, number> {
+  const shifts = new Map<string, number>();
+  if (!drop) return shifts;
+
+  const fromIndex = orderedIds.indexOf(dragId);
+  const overIndex = orderedIds.indexOf(drop.overCategoryId);
+  if (fromIndex < 0 || overIndex < 0) return shifts;
+
+  const targetInsert = drop.side === "before" ? overIndex : overIndex + 1;
+
+  const shiftAmount = dragHeight + CATEGORY_LIST_GAP;
+
+  orderedIds.forEach((id, i) => {
+    if (id === dragId) return;
+    if (fromIndex < targetInsert) {
+      if (i > fromIndex && i < targetInsert) shifts.set(id, -shiftAmount);
+    } else if (fromIndex > targetInsert) {
+      if (i >= targetInsert && i < fromIndex) shifts.set(id, shiftAmount);
+    }
   });
-  if (insertAt === filtered.length) items.push({ kind: "placeholder" });
-  return items;
+
+  return shifts;
+}
+
+function applyCategoryDrop(lib: MemoLibrary, dragId: string, drop: CategoryDropPosition): MemoLibrary {
+  const ids = lib.categories.map((c) => c.id);
+  const fromIndex = ids.indexOf(dragId);
+  const overIndex = ids.indexOf(drop.overCategoryId);
+  if (fromIndex < 0 || overIndex < 0) return lib;
+
+  let insertAt = drop.side === "before" ? overIndex : overIndex + 1;
+  ids.splice(fromIndex, 1);
+  if (fromIndex < insertAt) insertAt -= 1;
+  ids.splice(insertAt, 0, dragId);
+  return reorderCategories(lib, ids);
 }
 
 function DragGap({ className }: { className?: string }) {
@@ -165,8 +235,10 @@ export default function MemoListPage() {
   const [renameTarget, setRenameTarget] = useState<
     { kind: "category"; id: string; value: string } | { kind: "memo"; id: string; value: string } | null
   >(null);
-  const [dragGhost, setDragGhost] = useState<DragGhost | null>(null);
-  const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
+  const [memoDragGhost, setMemoDragGhost] = useState<MemoDragGhost | null>(null);
+  const [memoDropPreview, setMemoDropPreview] = useState<MemoDropPreview | null>(null);
+  const [categoryDragState, setCategoryDragState] = useState<CategoryDragState | null>(null);
+  const [categoryDropPosition, setCategoryDropPosition] = useState<CategoryDropPosition | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastScrollTop = useRef(0);
@@ -181,8 +253,10 @@ export default function MemoListPage() {
   } | null>(null);
   const libRef = useRef(lib);
   libRef.current = lib;
-  const dropPreviewRef = useRef<DropPreview | null>(null);
-  dropPreviewRef.current = dropPreview;
+  const memoDropPreviewRef = useRef<MemoDropPreview | null>(null);
+  memoDropPreviewRef.current = memoDropPreview;
+  const categoryDropPositionRef = useRef<CategoryDropPosition | null>(null);
+  categoryDropPositionRef.current = categoryDropPosition;
 
   const matchedIds = useMemo(() => {
     const q = search.trim();
@@ -274,8 +348,7 @@ export default function MemoListPage() {
     }
   };
 
-  const onPageDrop = useCallback((drag: PressTarget, targetCategoryId: string, targetIndex: number) => {
-    if (drag.kind !== "memo") return;
+  const onMemoDrop = useCallback((drag: Extract<PressTarget, { kind: "memo" }>, targetCategoryId: string, targetIndex: number) => {
     const current = libRef.current;
     const fromCat = current.categories.find((c) => c.id === drag.categoryId);
     if (!fromCat) return;
@@ -287,80 +360,81 @@ export default function MemoListPage() {
     persist(movePageToCategory(current, drag.pageId, drag.categoryId, targetCategoryId, index));
   }, [persist]);
 
-  const onCategoryDrop = useCallback((dragId: string, targetIndex: number) => {
-    const current = libRef.current;
-    const ids = current.categories.map((c) => c.id);
-    const from = ids.indexOf(dragId);
-    if (from < 0) return;
-    ids.splice(from, 1);
-    ids.splice(Math.max(0, Math.min(targetIndex, ids.length)), 0, dragId);
-    persist(reorderCategories(current, ids));
-  }, [persist]);
-
-  const finishDrag = useCallback(
-    (clientX: number, clientY: number, target: PressTarget, preview: DropPreview | null) => {
-      if (target.kind === "memo") {
-        if (preview?.kind === "memo") {
-          onPageDrop(target, preview.categoryId, preview.index);
-          return;
-        }
-        const el = document.elementFromPoint(clientX, clientY);
-        const row = el?.closest("[data-memo-row]") as HTMLElement | null;
-        if (row) {
-          onPageDrop(target, row.dataset.categoryId!, Number(row.dataset.index ?? 0));
-        }
-      } else {
-        if (preview?.kind === "category") {
-          onCategoryDrop(target.categoryId, preview.index);
-          return;
-        }
-        const el = document.elementFromPoint(clientX, clientY);
-        const section = el?.closest("[data-category-section]") as HTMLElement | null;
-        if (section) {
-          onCategoryDrop(target.categoryId, Number(section.dataset.catIndex ?? 0));
-        }
-      }
-    },
-    [onCategoryDrop, onPageDrop],
-  );
-
-  const updateDropPreview = useCallback((clientX: number, clientY: number, target: PressTarget) => {
-    const el = document.elementFromPoint(clientX, clientY);
-    if (target.kind === "memo") {
-      const row = el?.closest("[data-memo-row]") as HTMLElement | null;
-      if (row) {
-        setDropPreview({
-          kind: "memo",
-          categoryId: row.dataset.categoryId!,
-          index: Number(row.dataset.index ?? 0),
-        });
+  const finishMemoDrag = useCallback(
+    (clientX: number, clientY: number, target: Extract<PressTarget, { kind: "memo" }>, preview: MemoDropPreview | null) => {
+      if (preview) {
+        onMemoDrop(target, preview.categoryId, preview.index);
         return;
       }
-      const section = el?.closest("[data-category-section]") as HTMLElement | null;
-      if (section) {
-        setDropPreview({
-          kind: "memo",
-          categoryId: section.dataset.categoryId!,
-          index: 0,
-        });
+      const el = document.elementFromPoint(clientX, clientY);
+      const row = el?.closest("[data-memo-row]") as HTMLElement | null;
+      if (row) {
+        onMemoDrop(target, row.dataset.categoryId!, Number(row.dataset.index ?? 0));
       }
+    },
+    [onMemoDrop],
+  );
+
+  const finishCategoryDrag = useCallback(
+    (dragId: string, drop: CategoryDropPosition | null) => {
+      if (!drop) return;
+      persist(applyCategoryDrop(libRef.current, dragId, drop));
+    },
+    [persist],
+  );
+
+  const updateMemoDropPreview = useCallback((clientX: number, clientY: number) => {
+    const el = document.elementFromPoint(clientX, clientY);
+    const row = el?.closest("[data-memo-row]") as HTMLElement | null;
+    if (row) {
+      setMemoDropPreview({
+        categoryId: row.dataset.categoryId!,
+        index: Number(row.dataset.index ?? 0),
+      });
       return;
     }
     const section = el?.closest("[data-category-section]") as HTMLElement | null;
     if (section) {
-      setDropPreview({ kind: "category", index: Number(section.dataset.catIndex ?? 0) });
+      setMemoDropPreview({
+        categoryId: section.dataset.categoryId!,
+        index: 0,
+      });
     }
   }, []);
 
+  const updateCategoryDropPosition = useCallback(
+    (clientY: number, draggingCategoryId: string, orderedCategoryIds: string[]) => {
+      const drop = findCategoryDropPosition(
+        clientY,
+        draggingCategoryId,
+        orderedCategoryIds,
+        scrollRef.current,
+      );
+      setCategoryDropPosition(drop);
+    },
+    [],
+  );
+
   useEffect(() => {
-    if (!dragGhost) return;
+    if (!memoDragGhost) return;
     const onMove = (e: PointerEvent) => {
-      setDragGhost((g) => (g ? { ...g, x: e.clientX, y: e.clientY } : null));
-      updateDropPreview(e.clientX, e.clientY, dragGhost.target);
+      setMemoDragGhost((g) => (g ? { ...g, x: e.clientX, y: e.clientY } : null));
+      updateMemoDropPreview(e.clientX, e.clientY);
     };
     document.addEventListener("pointermove", onMove);
     return () => document.removeEventListener("pointermove", onMove);
-  }, [dragGhost, updateDropPreview]);
+  }, [memoDragGhost?.pageId, updateMemoDropPreview]);
+
+  useEffect(() => {
+    if (!categoryDragState) return;
+    const dragId = categoryDragState.categoryId;
+    const onMove = (e: PointerEvent) => {
+      setCategoryDragState((s) => (s ? { ...s, x: e.clientX, y: e.clientY } : null));
+      updateCategoryDropPosition(e.clientY, dragId, libRef.current.categories.map((c) => c.id));
+    };
+    document.addEventListener("pointermove", onMove);
+    return () => document.removeEventListener("pointermove", onMove);
+  }, [categoryDragState?.categoryId, updateCategoryDropPosition]);
 
   const startPress = (target: PressTarget, el: HTMLElement, clientX: number, clientY: number) => {
     clearPress();
@@ -381,26 +455,38 @@ export default function MemoListPage() {
       press.moved = true;
       void tickHaptic();
       const rect = press.element.getBoundingClientRect();
-      const page = press.target.kind === "memo" ? pageMap.get(press.target.pageId) : null;
-      const cat =
-        press.target.kind === "category"
-          ? lib.categories.find((c) => c.id === press.target.categoryId)
-          : null;
-      setDragGhost({
-        target: press.target,
+      if (press.target.kind === "memo") {
+        const page = pageMap.get(press.target.pageId);
+        setMemoDragGhost({
+          pageId: press.target.pageId,
+          categoryId: press.target.categoryId,
+          index: press.target.index,
+          x: clientX,
+          y: clientY,
+          width: rect.width,
+          label: page?.title.trim() || t("memoUntitled"),
+        });
+        updateMemoDropPreview(clientX, clientY);
+        return;
+      }
+      const cat = lib.categories.find((c) => c.id === press.target.categoryId);
+      const section = press.element.closest("[data-category-section]") as HTMLElement | null;
+      const sectionRect = section?.getBoundingClientRect() ?? rect;
+      setCategoryDragState({
+        categoryId: press.target.categoryId,
         x: clientX,
         y: clientY,
-        width: rect.width,
-        label:
-          press.target.kind === "memo"
-            ? page?.title.trim() || t("memoUntitled")
-            : cat?.name.trim() || t("memoUntitledCategory"),
-        cardColor:
-          press.target.kind === "category"
-            ? cat?.color || MEMO_CATEGORY_COLORS[0]
-            : undefined,
+        width: sectionRect.width,
+        height: sectionRect.height,
+        label: cat?.name.trim() || t("memoUntitledCategory"),
+        cardColor: cat?.color || MEMO_CATEGORY_COLORS[0],
+        pointerOffsetY: clientY - sectionRect.top,
       });
-      updateDropPreview(clientX, clientY, press.target);
+      updateCategoryDropPosition(
+        clientY,
+        press.target.categoryId,
+        lib.categories.map((c) => c.id),
+      );
     }
   };
 
@@ -410,9 +496,15 @@ export default function MemoListPage() {
     clearPress();
 
     if (press.moved && press.longPress) {
-      finishDrag(clientX, clientY, press.target, dropPreviewRef.current);
-      setDragGhost(null);
-      setDropPreview(null);
+      if (press.target.kind === "memo") {
+        finishMemoDrag(clientX, clientY, press.target, memoDropPreviewRef.current);
+        setMemoDragGhost(null);
+        setMemoDropPreview(null);
+      } else {
+        finishCategoryDrag(press.target.categoryId, categoryDropPositionRef.current);
+        setCategoryDragState(null);
+        setCategoryDropPosition(null);
+      }
       return;
     }
 
@@ -453,10 +545,18 @@ export default function MemoListPage() {
     })
     .filter(({ pages }) => !matchedIds || pages.length > 0);
 
-
-  const categoryDisplayItems = useMemo(
-    () => buildCategoryDisplayList(visibleCategories, dragGhost, dropPreview),
-    [visibleCategories, dragGhost, dropPreview],
+  const orderedCategoryIds = visibleCategories.map(({ category }) => category.id);
+  const categoryShiftMap = useMemo(
+    () =>
+      categoryDragState
+        ? computeCategoryShiftMap(
+            orderedCategoryIds,
+            categoryDragState.categoryId,
+            categoryDragState.height,
+            categoryDropPosition,
+          )
+        : new Map<string, number>(),
+    [orderedCategoryIds, categoryDragState, categoryDropPosition],
   );
 
   const renderMemoRow = (page: MemoPage, category: MemoCategory, index: number) => {
@@ -600,31 +700,34 @@ export default function MemoListPage() {
         </div>
 
         <div className="space-y-4">
-          {categoryDisplayItems.map((item, displayIndex) => {
-            if (item.kind === "placeholder") {
-              return <DragGap key={`cat-gap-${displayIndex}`} className="rounded-3xl min-h-[4.5rem]" />;
-            }
-
-            const { category, pages, catIndex } = item;
+          {visibleCategories.map(({ category, pages }) => {
             const isRenaming =
               renameTarget?.kind === "category" && renameTarget.id === category.id;
             const cardColor = category.color || MEMO_CATEGORY_COLORS[0];
             const memoCount = category.pageIds.length;
-            const memoItems = buildMemoDisplayList(pages, category.id, dragGhost, dropPreview);
+            const memoItems = buildMemoDisplayList(pages, category.id, memoDragGhost, memoDropPreview);
             const crossCategoryMemoIncoming =
-              dragGhost?.target.kind === "memo" &&
-              dropPreview?.kind === "memo" &&
-              dropPreview.categoryId === category.id &&
-              dragGhost.target.categoryId !== category.id;
+              memoDragGhost &&
+              memoDropPreview?.categoryId === category.id &&
+              memoDragGhost.categoryId !== category.id;
+            const isDraggingCategory = categoryDragState?.categoryId === category.id;
+            const shiftY = categoryShiftMap.get(category.id) ?? 0;
 
             return (
               <section
                 key={category.id}
                 data-category-section
                 data-category-id={category.id}
-                data-cat-index={catIndex}
-                className="rounded-3xl border border-border/40 shadow-soft overflow-hidden transition-all duration-200 ease-out"
-                style={{ backgroundColor: cardColor }}
+                className={cn(
+                  "rounded-3xl border border-border/40 shadow-soft overflow-hidden",
+                  isDraggingCategory && "opacity-0 pointer-events-none",
+                )}
+                style={{
+                  backgroundColor: cardColor,
+                  transform: shiftY ? `translateY(${shiftY}px)` : undefined,
+                  transition: categoryDragState && !isDraggingCategory ? CATEGORY_SHIFT_TRANSITION : undefined,
+                  willChange: categoryDragState && !isDraggingCategory ? "transform" : undefined,
+                }}
               >
                 <div
                   className="flex items-center gap-2 px-4 py-3 touch-none"
@@ -632,7 +735,7 @@ export default function MemoListPage() {
                     if (isRenaming || (e.target as HTMLElement).closest("[data-pencil],[data-chevron]")) return;
                     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
                     startPress(
-                      { kind: "category", categoryId: category.id, index: catIndex },
+                      { kind: "category", categoryId: category.id },
                       e.currentTarget.closest("section") as HTMLElement,
                       e.clientX,
                       e.clientY,
@@ -726,20 +829,40 @@ export default function MemoListPage() {
         </div>
       </div>
 
-      {dragGhost &&
+      {memoDragGhost &&
         createPortal(
           <div
             className="fixed z-[80] pointer-events-none rounded-2xl border border-border/50 shadow-float px-4 py-3 font-semibold text-sm truncate"
             style={{
-              left: dragGhost.x,
-              top: dragGhost.y,
+              left: memoDragGhost.x,
+              top: memoDragGhost.y,
               transform: "translate(-50%, -50%)",
-              width: dragGhost.width,
-              backgroundColor: dragGhost.cardColor || "hsl(var(--card))",
+              width: memoDragGhost.width,
+              backgroundColor: "hsl(var(--card))",
               opacity: 0.95,
             }}
           >
-            {dragGhost.label}
+            {memoDragGhost.label}
+          </div>,
+          document.body,
+        )}
+
+      {categoryDragState &&
+        createPortal(
+          <div
+            className="fixed z-[80] pointer-events-none rounded-3xl border border-border/50 shadow-float overflow-hidden"
+            style={{
+              left: categoryDragState.x,
+              top: categoryDragState.y - categoryDragState.pointerOffsetY,
+              width: categoryDragState.width,
+              height: categoryDragState.height,
+              backgroundColor: categoryDragState.cardColor,
+              opacity: 0.96,
+              transform: "scale(1.02)",
+              transformOrigin: "top center",
+            }}
+          >
+            <div className="px-4 py-3 font-semibold text-base truncate">{categoryDragState.label}</div>
           </div>,
           document.body,
         )}
@@ -875,18 +998,31 @@ export default function MemoListPage() {
                 <div className="px-4 py-3">
                   <p className="text-sm font-semibold mb-3">{t("memoChangeColor")}</p>
                   <div className="flex flex-wrap gap-3 justify-center">
-                    {MEMO_CATEGORY_PICKER_COLORS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        className="w-10 h-10 rounded-full border-2 border-border/50 shadow-sm"
-                        style={{ backgroundColor: color }}
-                        onClick={() => {
-                          persist(setCategoryColor(lib, contextMenu.categoryId, color));
-                          setContextMenu(null);
-                        }}
-                      />
-                    ))}
+                    {(() => {
+                      const cat = lib.categories.find((c) => c.id === contextMenu.categoryId);
+                      const currentColor = cat?.color || MEMO_CATEGORY_COLORS[0];
+                      return categoryPickerColors(currentColor).map((color) => {
+                        const selected = color === currentColor;
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            className={cn(
+                              "w-10 h-10 rounded-full border-2 shadow-sm transition-shadow",
+                              selected
+                                ? "border-accent ring-2 ring-accent ring-offset-2 ring-offset-background"
+                                : "border-border/50",
+                            )}
+                            style={{ backgroundColor: color }}
+                            aria-pressed={selected}
+                            onClick={() => {
+                              persist(setCategoryColor(lib, contextMenu.categoryId, color));
+                              setContextMenu(null);
+                            }}
+                          />
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               )}

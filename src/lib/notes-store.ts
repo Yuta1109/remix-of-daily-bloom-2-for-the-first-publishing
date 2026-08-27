@@ -6,16 +6,26 @@ export type MemoPage = {
 };
 
 export const MEMO_CATEGORY_COLORS = [
-  "#F4FBF6",
-  "#F4F8FD",
-  "#FDF8F1",
-  "#F9F4FD",
-  "#FDF4F4",
-  "#F2FBFB",
+  "#C8E8D4",
+  "#C8DFF0",
+  "#F0DFC0",
+  "#DDD0F0",
+  "#F0C8C8",
+  "#C0E8E8",
 ] as const;
 
 /** Colors shown in the category color picker (excludes the last palette entry). */
 export const MEMO_CATEGORY_PICKER_COLORS = MEMO_CATEGORY_COLORS.slice(0, -1);
+
+/** Picker palette including the category's current color when it is not in the default set. */
+export function categoryPickerColors(currentColor?: string): string[] {
+  const active = currentColor || MEMO_CATEGORY_COLORS[0];
+  const colors = [...MEMO_CATEGORY_PICKER_COLORS];
+  if (!colors.includes(active)) {
+    colors.unshift(active);
+  }
+  return colors;
+}
 
 export function nextCategoryColor(lib: MemoLibrary): string {
   return MEMO_CATEGORY_COLORS[lib.categories.length % MEMO_CATEGORY_COLORS.length];

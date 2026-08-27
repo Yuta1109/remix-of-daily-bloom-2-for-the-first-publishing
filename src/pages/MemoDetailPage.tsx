@@ -63,7 +63,6 @@ export default function MemoDetailPage() {
   const draftHtmlRef = useRef("");
 
   const [page, setPage] = useState<MemoPage | null>(() => getMemoPage(loadMemoLibrary(), memoId) ?? null);
-  const [viewHtml, setViewHtml] = useState(() => getMemoPage(loadMemoLibrary(), memoId)?.html ?? "");
   const [editing, setEditing] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
@@ -88,7 +87,6 @@ export default function MemoDetailPage() {
       return;
     }
     setPage(found);
-    setViewHtml(found.html || "");
     draftHtmlRef.current = found.html || "";
   }, [memoId, navigate]);
 
@@ -163,7 +161,7 @@ export default function MemoDetailPage() {
   }, []);
 
   const enterEdit = useCallback((focus: "title" | "body", e?: React.MouseEvent) => {
-    if (page) draftHtmlRef.current = viewHtml || page.html || "";
+    if (page) draftHtmlRef.current = page.html || "";
     pendingFocusRef.current = focus;
     if (focus === "body") {
       const hasContent = page ? htmlToPlainText(page.html).length > 0 : false;
@@ -185,7 +183,7 @@ export default function MemoDetailPage() {
       }
     }
     setEditing(true);
-  }, [page, viewHtml]);
+  }, [page]);
 
   useEffect(() => {
     keepKeyboard.current = editing && !blockKeyboard;
@@ -253,11 +251,10 @@ export default function MemoDetailPage() {
     }
   };
 
-  const persistEditor = () => {
+  const syncDraftFromEditor = () => {
     const el = editorRef.current;
     if (!el) return;
     draftHtmlRef.current = el.innerHTML;
-    persist({ html: el.innerHTML });
   };
 
   const insertAtCaret = (html: string) => {
@@ -274,10 +271,9 @@ export default function MemoDetailPage() {
   };
 
   const insertAtEnd = (html: string) => {
-    const base = normalizeNoteHtml(viewHtml || page?.html || "");
+    const base = normalizeNoteHtml(page?.html || "");
     const next = normalizeNoteHtml(base + html);
     draftHtmlRef.current = next;
-    setViewHtml(next);
     persist({ html: next });
   };
 
@@ -294,7 +290,6 @@ export default function MemoDetailPage() {
     const el = editorRef.current;
     const html = normalizeNoteHtml(el?.innerHTML || draftHtmlRef.current || "");
     draftHtmlRef.current = html;
-    setViewHtml(html);
     persist({ html });
     keepKeyboard.current = false;
     setEditing(false);
@@ -348,7 +343,7 @@ export default function MemoDetailPage() {
         onClick();
         editorRef.current?.focus();
         refreshFormats();
-        persistEditor();
+        syncDraftFromEditor();
       }}
       className={cn(
         "h-11 min-w-11 px-2 rounded-xl flex items-center justify-center",
@@ -527,8 +522,8 @@ export default function MemoDetailPage() {
               }}
               className="w-full text-left cursor-text pt-3 block"
             >
-              {htmlToPlainText(viewHtml) ? (
-                <NoteHtmlView html={viewHtml} />
+              {htmlToPlainText(page.html) ? (
+                <NoteHtmlView html={page.html} />
               ) : (
                 <p className="text-muted-foreground/40 text-base">{t("memoClickToEdit")}</p>
               )}
