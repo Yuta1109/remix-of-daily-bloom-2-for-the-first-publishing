@@ -14,17 +14,16 @@ export const MEMO_CATEGORY_COLORS = [
   "#C0E8E8",
 ] as const;
 
-/** Colors shown in the category color picker (excludes the last palette entry). */
-export const MEMO_CATEGORY_PICKER_COLORS = MEMO_CATEGORY_COLORS.slice(0, -1);
+/** All palette colors shown in the category color picker. */
+export const MEMO_CATEGORY_PICKER_COLORS = [...MEMO_CATEGORY_COLORS];
 
 /** Picker palette including the category's current color when it is not in the default set. */
 export function categoryPickerColors(currentColor?: string): string[] {
   const active = currentColor || MEMO_CATEGORY_COLORS[0];
-  const colors = [...MEMO_CATEGORY_PICKER_COLORS];
-  if (!colors.includes(active)) {
-    colors.unshift(active);
+  if ((MEMO_CATEGORY_COLORS as readonly string[]).includes(active)) {
+    return [...MEMO_CATEGORY_COLORS];
   }
-  return colors;
+  return [active, ...MEMO_CATEGORY_COLORS];
 }
 
 export function nextCategoryColor(lib: MemoLibrary): string {
