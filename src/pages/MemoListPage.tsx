@@ -14,6 +14,8 @@ import {
   pointerYInScrollContainer,
   type DragMeasurement,
 } from "@/lib/list-drag";
+import {
+  addCategory,
   addMemoToCategory,
   htmlToPlainText,
   isWelcomeMemo,
