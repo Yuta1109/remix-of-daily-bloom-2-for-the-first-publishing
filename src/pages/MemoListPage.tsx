@@ -77,10 +77,14 @@ type MemoDragState = {
 
 const LONG_PRESS_MS = 420;
 const DRAG_THRESHOLD = 10;
-const SCROLL_CANCEL_PX = 8;
+const SCROLL_CANCEL_PX = 12;
 const SHIFT_TRANSITION = "transform 180ms ease";
 const CATEGORY_LIST_GAP = 16;
 const MEMO_LIST_GAP = 8;
+const SEARCH_BAR_PX = 52;
+/** Visible on pastel cards; not clipped by inner overflow-hidden. */
+const DRAG_HIGHLIGHT_CLASS =
+  "shadow-[0_0_0_2px_hsl(var(--accent)),0_0_0_4px_hsl(var(--background))]";
 
 function measureCategories(scrollRoot: HTMLElement, categoryIds: string[]): DragMeasurement[] {
   return categoryIds
@@ -105,10 +109,24 @@ function measureMemos(scrollRoot: HTMLElement, categoryId: string, pageIds: stri
 }
 
 function findCategoryIdAtPointer(clientX: number, clientY: number, scrollRoot: HTMLElement): string | null {
-  const section = document
-    .elementFromPoint(clientX, clientY)
-    ?.closest("[data-category-section]") as HTMLElement | null;
-  return section?.dataset.categoryId ?? null;
+  const hit = document.elementFromPoint(clientX, clientY)?.closest("[data-category-section]") as
+    | HTMLElement
+    | null;
+  if (hit?.dataset.categoryId) return hit.dataset.categoryId;
+
+  const sections = scrollRoot.querySelectorAll<HTMLElement>("[data-category-section]");
+  for (const section of sections) {
+    const rect = section.getBoundingClientRect();
+    if (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom
+    ) {
+      return section.dataset.categoryId ?? null;
+    }
+  }
+  return null;
 }
 
 function applyCategoryDropByIndex(lib: MemoLibrary, dragId: string, insertIndex: number): MemoLibrary {
@@ -163,9 +181,11 @@ export default function MemoListPage() {
   >(null);
   const [memoDragState, setMemoDragState] = useState<MemoDragState | null>(null);
   const [categoryDragState, setCategoryDragState] = useState<CategoryDragState | null>(null);
+  const [pressLongPressActive, setPressLongPressActive] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastScrollTop = useRef(0);
+  const lastPointerRef = useRef({ x: 0, y: 0 });
   const pressRef = useRef<{
     target: PressTarget;
     startX: number;
@@ -266,6 +286,7 @@ export default function MemoListPage() {
     }
     setCategoryLongPressId(null);
     setMemoLongPressId(null);
+    setPressLongPressActive(false);
   };
 
   const tryCancelPressForScroll = (clientX: number, clientY: number) => {
@@ -273,7 +294,7 @@ export default function MemoListPage() {
     if (!press || press.longPress) return false;
     const dx = clientX - press.startX;
     const dy = clientY - press.startY;
-    if (Math.hypot(dx, dy) >= SCROLL_CANCEL_PX) {
+    if (Math.abs(dy) >= SCROLL_CANCEL_PX && Math.abs(dy) > Math.abs(dx) * 1.2) {
       clearPress();
       return true;
     }
@@ -308,19 +329,26 @@ export default function MemoListPage() {
   );
 
   const draggingActive = !!(memoDragState || categoryDragState);
+  const autoScrollActive = draggingActive || pressLongPressActive;
 
   useEffect(() => {
-    if (!draggingActive) return;
+    if (!autoScrollActive) return;
     const scrollRoot = scrollRef.current;
     if (!scrollRoot) return;
 
     const prevOverflow = scrollRoot.style.overflow;
     const prevTouchAction = scrollRoot.style.touchAction;
-    scrollRoot.style.overflow = "hidden";
-    scrollRoot.style.touchAction = "none";
+    if (draggingActive) {
+      scrollRoot.style.overflow = "hidden";
+      scrollRoot.style.touchAction = "none";
+    }
 
-    let lastX = 0;
-    let lastY = memoDragStateRef.current?.pointerY ?? categoryDragStateRef.current?.pointerY ?? 0;
+    let lastX = lastPointerRef.current.x;
+    let lastY =
+      lastPointerRef.current.y ||
+      memoDragStateRef.current?.pointerY ||
+      categoryDragStateRef.current?.pointerY ||
+      0;
     let rafId = 0;
 
     const tick = () => {
@@ -364,6 +392,7 @@ export default function MemoListPage() {
     const onPointerMove = (e: PointerEvent) => {
       lastX = e.clientX;
       lastY = e.clientY;
+      lastPointerRef.current = { x: lastX, y: lastY };
     };
 
     document.addEventListener("pointermove", onPointerMove, { passive: true });
@@ -375,7 +404,7 @@ export default function MemoListPage() {
       scrollRoot.style.overflow = prevOverflow;
       scrollRoot.style.touchAction = prevTouchAction;
     };
-  }, [draggingActive]);
+  }, [autoScrollActive, draggingActive]);
 
   const startPress = (
     target: PressTarget,
@@ -385,9 +414,11 @@ export default function MemoListPage() {
     pointerId: number,
   ) => {
     clearPress();
+    lastPointerRef.current = { x: clientX, y: clientY };
 
     const onDocMove = (e: PointerEvent) => {
       if (e.pointerId !== pointerId || !pressRef.current) return;
+      lastPointerRef.current = { x: e.clientX, y: e.clientY };
       if (!pressRef.current.longPress) {
         tryCancelPressForScroll(e.clientX, e.clientY);
         return;
@@ -418,6 +449,7 @@ export default function MemoListPage() {
     const timer = setTimeout(() => {
       if (!pressRef.current) return;
       pressRef.current.longPress = true;
+      setPressLongPressActive(true);
       try {
         pressRef.current.element.setPointerCapture(pointerId);
         pressRef.current.captured = true;
@@ -463,9 +495,6 @@ export default function MemoListPage() {
         const row =
           press.element.closest("[data-memo-row]") as HTMLElement | null ?? press.element;
         const rowRect = row.getBoundingClientRect();
-        const anchor =
-          row.querySelector("[data-memo-drag-anchor]") as HTMLElement | null ?? row;
-        const anchorRect = anchor.getBoundingClientRect();
         const metricsMap = new Map<string, DragMeasurement[]>();
         for (const category of libRef.current.categories) {
           const pageIds = category.pageIds.filter((id) => libRef.current.pages.some((p) => p.id === id));
@@ -483,8 +512,8 @@ export default function MemoListPage() {
           anchorLeft: rowRect.left,
           width: rowRect.width,
           layoutHeight: rowRect.height,
-          ghostHeight: anchorRect.height,
-          pointerOffsetY: clientY - anchorRect.top,
+          ghostHeight: rowRect.height,
+          pointerOffsetY: clientY - rowRect.top,
           label: page?.title.trim() || t("memoUntitled"),
         });
         return;
@@ -608,8 +637,7 @@ export default function MemoListPage() {
         className={cn(
           "flex items-center gap-2 rounded-2xl bg-background/80 border border-border/30 px-2 py-2",
           isDraggingMemo && "opacity-0 pointer-events-none",
-          (memoLongPressId === page.id || memoDragState?.pageId === page.id) &&
-            "ring-2 ring-accent ring-offset-2 ring-offset-background",
+          (memoLongPressId === page.id || memoDragState?.pageId === page.id) && DRAG_HIGHLIGHT_CLASS,
         )}
         style={{
           transform: shiftY ? `translateY(${shiftY}px)` : undefined,
@@ -728,20 +756,26 @@ export default function MemoListPage() {
       >
         <div
           className={cn(
-            "overflow-hidden transition-all duration-300 ease-out",
-            !listEditing && searchVisible
-              ? "max-h-16 opacity-100 mb-3 pt-1"
-              : "max-h-0 opacity-0 mb-0 pointer-events-none",
+            "grid transition-[grid-template-rows,margin] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            !listEditing && searchVisible ? "grid-rows-[1fr] mb-3" : "grid-rows-[0fr] mb-0",
           )}
         >
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none z-10" />
-            <input
-              readOnly
-              onFocus={() => navigate("/notes/search")}
-              placeholder={t("memoSearchPlaceholder")}
-              className="w-full rounded-2xl border border-border/30 bg-background/35 backdrop-blur-md pl-10 pr-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50 cursor-pointer"
-            />
+          <div className="overflow-hidden min-h-0">
+            <div
+              className={cn(
+                "relative pt-1 transition-opacity duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
+                !listEditing && searchVisible ? "opacity-100" : "opacity-0 pointer-events-none",
+              )}
+              style={{ minHeight: SEARCH_BAR_PX }}
+            >
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none z-10" />
+              <input
+                readOnly
+                onFocus={() => navigate("/notes/search")}
+                placeholder={t("memoSearchPlaceholder")}
+                className="w-full rounded-2xl border border-border/30 bg-background/35 backdrop-blur-md pl-10 pr-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50 cursor-pointer"
+              />
+            </div>
           </div>
         </div>
 
@@ -765,19 +799,26 @@ export default function MemoListPage() {
             const isDraggingCategory = categoryDragState?.categoryId === category.id;
             const isMemoDropTarget =
               !!memoDragState && memoDragState.targetCategoryId === category.id;
+            const categoryHighlighted =
+              categoryLongPressId === category.id ||
+              categoryDragState?.categoryId === category.id ||
+              isMemoDropTarget;
             const shiftY = categoryDragState && !memoDragState ? categoryShiftMap.get(category.id) ?? 0 : 0;
 
             return (
-              <section
+              <div
                 key={category.id}
+                className={cn(
+                  "rounded-3xl transition-shadow duration-150",
+                  categoryHighlighted && DRAG_HIGHLIGHT_CLASS,
+                )}
+              >
+              <section
                 data-category-section
                 data-category-id={category.id}
                 className={cn(
                   "rounded-3xl border border-border/40 shadow-soft overflow-hidden",
                   isDraggingCategory && "opacity-0 pointer-events-none",
-                  (categoryLongPressId === category.id || categoryDragState?.categoryId === category.id) &&
-                    "ring-2 ring-accent ring-offset-2 ring-offset-background",
-                  isMemoDropTarget && "ring-2 ring-accent ring-offset-2 ring-offset-background",
                 )}
                 style={{
                   backgroundColor: cardColor,
@@ -873,33 +914,57 @@ export default function MemoListPage() {
                   </div>
                 )}
               </section>
+              </div>
             );
           })}
         </div>
       </div>
 
       {memoDragState &&
-        createPortal(
-          <div
-            className="fixed z-[80] pointer-events-none rounded-2xl border border-border/50 shadow-float font-semibold text-sm truncate bg-card ring-2 ring-accent"
-            style={{
-              left: memoDragState.anchorLeft,
-              top: memoDragState.pointerY - memoDragState.pointerOffsetY,
-              width: memoDragState.width,
-              height: memoDragState.ghostHeight,
-              opacity: 0.96,
-              boxShadow: "0 8px 24px hsl(var(--foreground) / 0.12)",
-            }}
-          >
-            <span className="block truncate px-4 py-2 font-semibold text-sm">{memoDragState.label}</span>
-          </div>,
-          document.body,
-        )}
+        (() => {
+          const page = pageMap.get(memoDragState.pageId);
+          const preview = page ? htmlToPlainText(page.html) : "";
+          const welcome = page ? isWelcomeMemo(page.id) : false;
+          return createPortal(
+            <div
+              className={cn(
+                "fixed z-[80] pointer-events-none flex items-center gap-2 rounded-2xl border border-border/30 px-2 py-2 bg-background/95",
+                DRAG_HIGHLIGHT_CLASS,
+              )}
+              style={{
+                left: memoDragState.anchorLeft,
+                top: memoDragState.pointerY - memoDragState.pointerOffsetY,
+                width: memoDragState.width,
+                height: memoDragState.ghostHeight,
+                opacity: 0.98,
+                boxShadow: "0 8px 24px hsl(var(--foreground) / 0.12)",
+              }}
+            >
+              <div className="flex-1 min-w-0 px-1">
+                <p className="text-[15px] font-semibold leading-snug truncate">
+                  {memoDragState.label}
+                </p>
+                {!welcome && preview ? (
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{preview}</p>
+                ) : null}
+                {page ? (
+                  <p className="text-[10px] text-muted-foreground/70 mt-1">
+                    {t("memoLastEdited")}: {formatLastEdited(page.updatedAt, locale)}
+                  </p>
+                ) : null}
+              </div>
+            </div>,
+            document.body,
+          );
+        })()}
 
       {categoryDragState &&
         createPortal(
           <div
-            className="fixed z-[80] pointer-events-none rounded-3xl border border-border/50 shadow-float overflow-hidden"
+            className={cn(
+              "fixed z-[80] pointer-events-none rounded-3xl border border-border/50 shadow-float overflow-hidden",
+              DRAG_HIGHLIGHT_CLASS,
+            )}
             style={{
               left: categoryDragState.anchorLeft,
               top: categoryDragState.pointerY - categoryDragState.pointerOffsetY,
