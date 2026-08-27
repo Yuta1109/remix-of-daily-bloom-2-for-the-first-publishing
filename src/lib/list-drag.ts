@@ -1,3 +1,25 @@
+export const AUTO_SCROLL_EDGE_PX = 72;
+export const AUTO_SCROLL_MAX_STEP = 12;
+
+/** Scroll container when pointer is near top/bottom edge during drag. Returns scroll delta. */
+export function autoScrollIfNeeded(scrollRoot: HTMLElement, clientY: number): number {
+  const rect = scrollRoot.getBoundingClientRect();
+  const maxScroll = scrollRoot.scrollHeight - scrollRoot.clientHeight;
+  if (maxScroll <= 0) return 0;
+
+  if (clientY < rect.top + AUTO_SCROLL_EDGE_PX) {
+    const prev = scrollRoot.scrollTop;
+    scrollRoot.scrollTop = Math.max(0, prev - AUTO_SCROLL_MAX_STEP);
+    return scrollRoot.scrollTop - prev;
+  }
+  if (clientY > rect.bottom - AUTO_SCROLL_EDGE_PX) {
+    const prev = scrollRoot.scrollTop;
+    scrollRoot.scrollTop = Math.min(maxScroll, prev + AUTO_SCROLL_MAX_STEP);
+    return scrollRoot.scrollTop - prev;
+  }
+  return 0;
+}
+
 export type DragMeasurement = {
   id: string;
   top: number;

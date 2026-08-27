@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { tickHaptic } from "@/lib/haptics";
 import {
+  autoScrollIfNeeded,
   computeShiftsFromInsertIndex,
   computeStableInsertIndex,
   measureInScrollContainer,
@@ -51,7 +52,8 @@ type CategoryDragState = {
   pointerY: number;
   anchorLeft: number;
   width: number;
-  height: number;
+  layoutHeight: number;
+  ghostHeight: number;
   pointerOffsetY: number;
   label: string;
   cardColor: string;
@@ -67,7 +69,8 @@ type MemoDragState = {
   pointerY: number;
   anchorLeft: number;
   width: number;
-  height: number;
+  layoutHeight: number;
+  ghostHeight: number;
   pointerOffsetY: number;
   label: string;
 };
@@ -146,13 +149,14 @@ export default function MemoListPage() {
   const navigate = useNavigate();
   const [lib, setLib] = useState<MemoLibrary>(() => loadMemoLibrary());
   const [listEditing, setListEditing] = useState(false);
-  const [search, setSearch] = useState("");
-  const [searchVisible, setSearchVisible] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addStep, setAddStep] = useState<AddStep>("menu");
   const [categoryName, setCategoryName] = useState("");
   const [kbHeight, setKbHeight] = useState(0);
   const [contextMenu, setContextMenu] = useState<ContextMenu>(null);
+  const [categoryLongPressId, setCategoryLongPressId] = useState<string | null>(null);
+  const [memoLongPressId, setMemoLongPressId] = useState<string | null>(null);
+  const [searchVisible, setSearchVisible] = useState(true);
   const [renameTarget, setRenameTarget] = useState<
     { kind: "category"; id: string; value: string } | { kind: "memo"; id: string; value: string } | null
   >(null);
@@ -174,21 +178,6 @@ export default function MemoListPage() {
   libRef.current = lib;
   const categoryDragMetricsRef = useRef<DragMeasurement[]>([]);
   const memoDragMetricsRef = useRef<Map<string, DragMeasurement[]>>(new Map());
-
-  const matchedIds = useMemo(() => {
-    const q = search.trim();
-    if (!q) return null;
-    const lower = q.toLowerCase();
-    return new Set(
-      lib.pages
-        .filter((p) => {
-          const title = p.title.toLowerCase();
-          const body = htmlToPlainText(p.html).toLowerCase();
-          return title.includes(lower) || body.includes(lower);
-        })
-        .map((p) => p.id),
-    );
-  }, [lib, search]);
 
   const pageMap = useMemo(() => new Map(lib.pages.map((p) => [p.id, p])), [lib.pages]);
 
@@ -263,6 +252,8 @@ export default function MemoListPage() {
       clearTimeout(pressRef.current.timer);
       pressRef.current = null;
     }
+    setCategoryLongPressId(null);
+    setMemoLongPressId(null);
   };
 
   const memoDragStateRef = useRef(memoDragState);
@@ -292,53 +283,88 @@ export default function MemoListPage() {
     [persist],
   );
 
-  useEffect(() => {
-    if (!memoDragState) return;
-    const dragId = memoDragState.pageId;
-    const onMove = (e: PointerEvent) => {
-      const scrollRoot = scrollRef.current;
-      if (!scrollRoot) return;
-      const relY = pointerYInScrollContainer(e.clientY, scrollRoot);
-      const targetCategoryId =
-        findCategoryIdAtPointer(e.clientX, e.clientY, scrollRoot) ?? memoDragState.targetCategoryId;
-      const metrics = memoDragMetricsRef.current.get(targetCategoryId) ?? [];
-      setMemoDragState((s) => {
-        if (!s) return null;
-        const insertIndex = computeStableInsertIndex(relY, metrics, dragId, s.insertIndex);
-        return { ...s, pointerY: e.clientY, targetCategoryId, insertIndex };
-      });
-    };
-    document.addEventListener("pointermove", onMove);
-    return () => document.removeEventListener("pointermove", onMove);
-  }, [memoDragState?.pageId]);
+  const draggingActive = !!(memoDragState || categoryDragState);
 
   useEffect(() => {
-    if (!categoryDragState) return;
-    const dragId = categoryDragState.categoryId;
-    const onMove = (e: PointerEvent) => {
-      const scrollRoot = scrollRef.current;
-      if (!scrollRoot) return;
-      const relY = pointerYInScrollContainer(e.clientY, scrollRoot);
-      setCategoryDragState((s) => {
-        if (!s) return null;
-        const insertIndex = computeStableInsertIndex(
-          relY,
-          categoryDragMetricsRef.current,
-          dragId,
-          s.insertIndex,
-        );
-        return { ...s, pointerY: e.clientY, insertIndex };
-      });
+    if (!draggingActive) return;
+    const scrollRoot = scrollRef.current;
+    if (!scrollRoot) return;
+
+    const prevOverflow = scrollRoot.style.overflow;
+    const prevTouchAction = scrollRoot.style.touchAction;
+    scrollRoot.style.overflow = "hidden";
+    scrollRoot.style.touchAction = "none";
+
+    let lastX = 0;
+    let lastY = memoDragStateRef.current?.pointerY ?? categoryDragStateRef.current?.pointerY ?? 0;
+    let rafId = 0;
+
+    const tick = () => {
+      const root = scrollRef.current;
+      if (root) {
+        autoScrollIfNeeded(root, lastY);
+        const relY = pointerYInScrollContainer(lastY, root);
+
+        const memo = memoDragStateRef.current;
+        if (memo) {
+          const targetCategoryId = findCategoryIdAtPointer(lastX, lastY, root) ?? memo.targetCategoryId;
+          const metrics = memoDragMetricsRef.current.get(targetCategoryId) ?? [];
+          setMemoDragState((s) => {
+            if (!s) return null;
+            const insertIndex = computeStableInsertIndex(relY, metrics, memo.pageId, s.insertIndex);
+            if (s.pointerY === lastY && s.targetCategoryId === targetCategoryId && s.insertIndex === insertIndex) {
+              return s;
+            }
+            return { ...s, pointerY: lastY, targetCategoryId, insertIndex };
+          });
+        }
+
+        const cat = categoryDragStateRef.current;
+        if (cat) {
+          setCategoryDragState((s) => {
+            if (!s) return null;
+            const insertIndex = computeStableInsertIndex(
+              relY,
+              categoryDragMetricsRef.current,
+              cat.categoryId,
+              s.insertIndex,
+            );
+            if (s.pointerY === lastY && s.insertIndex === insertIndex) return s;
+            return { ...s, pointerY: lastY, insertIndex };
+          });
+        }
+      }
+      rafId = requestAnimationFrame(tick);
     };
-    document.addEventListener("pointermove", onMove);
-    return () => document.removeEventListener("pointermove", onMove);
-  }, [categoryDragState?.categoryId]);
+
+    const onPointerMove = (e: PointerEvent) => {
+      lastX = e.clientX;
+      lastY = e.clientY;
+    };
+
+    document.addEventListener("pointermove", onPointerMove, { passive: true });
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      document.removeEventListener("pointermove", onPointerMove);
+      scrollRoot.style.overflow = prevOverflow;
+      scrollRoot.style.touchAction = prevTouchAction;
+    };
+  }, [draggingActive]);
 
   const startPress = (target: PressTarget, el: HTMLElement, clientX: number, clientY: number) => {
     clearPress();
-    void tickHaptic();
     const timer = setTimeout(() => {
-      if (pressRef.current) pressRef.current.longPress = true;
+      if (!pressRef.current) return;
+      pressRef.current.longPress = true;
+      if (pressRef.current.target.kind === "category") {
+        void tickHaptic();
+        setCategoryLongPressId(pressRef.current.target.categoryId);
+      } else if (pressRef.current.target.kind === "memo") {
+        void tickHaptic();
+        setMemoLongPressId(pressRef.current.target.pageId);
+      }
     }, LONG_PRESS_MS);
     pressRef.current = { target, startX: clientX, startY: clientY, timer, longPress: false, moved: false, element: el };
   };
@@ -351,26 +377,25 @@ export default function MemoListPage() {
     if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
     if (!press.moved) {
       press.moved = true;
-      void tickHaptic();
       const scrollRoot = scrollRef.current;
       if (!scrollRoot) return;
-      const rect = press.element.getBoundingClientRect();
 
       if (press.target.kind === "memo") {
         const page = pageMap.get(press.target.pageId);
         const row =
           press.element.closest("[data-memo-row]") as HTMLElement | null ?? press.element;
         const rowRect = row.getBoundingClientRect();
+        const anchor =
+          row.querySelector("[data-memo-drag-anchor]") as HTMLElement | null ?? row;
+        const anchorRect = anchor.getBoundingClientRect();
         const metricsMap = new Map<string, DragMeasurement[]>();
         for (const category of libRef.current.categories) {
-          const pageIds = category.pageIds.filter((id) => {
-            const page = libRef.current.pages.find((p) => p.id === id);
-            return page && (!matchedIds || matchedIds.has(page.id));
-          });
+          const pageIds = category.pageIds.filter((id) => libRef.current.pages.some((p) => p.id === id));
           metricsMap.set(category.id, measureMemos(scrollRoot, category.id, pageIds));
         }
         memoDragMetricsRef.current = metricsMap;
         const fromIndex = press.target.index;
+        setMemoLongPressId(null);
         setMemoDragState({
           pageId: press.target.pageId,
           fromCategoryId: press.target.categoryId,
@@ -380,26 +405,32 @@ export default function MemoListPage() {
           pointerY: clientY,
           anchorLeft: rowRect.left,
           width: rowRect.width,
-          height: rowRect.height,
-          pointerOffsetY: clientY - rowRect.top,
+          layoutHeight: rowRect.height,
+          ghostHeight: anchorRect.height,
+          pointerOffsetY: clientY - anchorRect.top,
           label: page?.title.trim() || t("memoUntitled"),
         });
         return;
       }
 
+      const rect = press.element.getBoundingClientRect();
       const cat = lib.categories.find((c) => c.id === press.target.categoryId);
       const section = press.element.closest("[data-category-section]") as HTMLElement | null;
+      const header = section?.querySelector("[data-category-header]") as HTMLElement | null;
       const sectionRect = section?.getBoundingClientRect() ?? rect;
+      const headerRect = header?.getBoundingClientRect() ?? sectionRect;
       const orderedIds = lib.categories.map((c) => c.id);
       categoryDragMetricsRef.current = measureCategories(scrollRoot, orderedIds);
       const fromIndex = orderedIds.indexOf(press.target.categoryId);
+      setCategoryLongPressId(null);
       setCategoryDragState({
         categoryId: press.target.categoryId,
         pointerY: clientY,
         anchorLeft: sectionRect.left,
         width: sectionRect.width,
-        height: sectionRect.height,
-        pointerOffsetY: clientY - sectionRect.top,
+        layoutHeight: sectionRect.height,
+        ghostHeight: headerRect.height,
+        pointerOffsetY: clientY - headerRect.top,
         label: cat?.name.trim() || t("memoUntitledCategory"),
         cardColor: cat?.color || MEMO_CATEGORY_COLORS[0],
         insertIndex: Math.max(0, fromIndex),
@@ -410,38 +441,39 @@ export default function MemoListPage() {
   const onPressEnd = (clientX: number, clientY: number) => {
     const press = pressRef.current;
     if (!press) return;
+    const saved = press;
     clearPress();
 
-    if (press.moved && press.longPress) {
-      if (press.target.kind === "memo") {
+    if (saved.moved && saved.longPress) {
+      if (saved.target.kind === "memo") {
         const drag = memoDragStateRef.current;
-        if (drag) finishMemoDrag(press.target, drag);
+        if (drag) finishMemoDrag(saved.target, drag);
         setMemoDragState(null);
         memoDragMetricsRef.current = new Map();
       } else {
         const drag = categoryDragStateRef.current;
-        if (drag) finishCategoryDrag(press.target.categoryId, drag.insertIndex);
+        if (drag) finishCategoryDrag(saved.target.categoryId, drag.insertIndex);
         setCategoryDragState(null);
         categoryDragMetricsRef.current = [];
       }
       return;
     }
 
-    if (press.longPress && !press.moved) {
-      if (press.target.kind === "category") {
-        setContextMenu({ kind: "category", categoryId: press.target.categoryId });
+    if (saved.longPress && !saved.moved) {
+      if (saved.target.kind === "category") {
+        setContextMenu({ kind: "category", categoryId: saved.target.categoryId });
       } else {
         setContextMenu({
           kind: "memo",
-          pageId: press.target.pageId,
-          categoryId: press.target.categoryId,
+          pageId: saved.target.pageId,
+          categoryId: saved.target.categoryId,
         });
       }
       return;
     }
 
-    if (!press.longPress && press.target.kind === "memo" && !listEditing) {
-      openMemo(press.target.pageId);
+    if (!saved.longPress && saved.target.kind === "memo" && !listEditing) {
+      openMemo(saved.target.pageId);
     }
   };
 
@@ -449,20 +481,20 @@ export default function MemoListPage() {
     const el = scrollRef.current;
     if (!el) return;
     const st = el.scrollTop;
-    if (st > lastScrollTop.current && st > 16) setSearchVisible(true);
-    if (st < lastScrollTop.current - 4) setSearchVisible(false);
+    if (st <= 4) {
+      setSearchVisible(true);
+    } else if (st > lastScrollTop.current) {
+      setSearchVisible(false);
+    }
     lastScrollTop.current = st;
   };
 
-  const visibleCategories = lib.categories
-    .map((category) => {
-      const pages = category.pageIds
-        .map((id) => pageMap.get(id))
-        .filter((p): p is MemoPage => !!p)
-        .filter((p) => !matchedIds || matchedIds.has(p.id));
-      return { category, pages };
-    })
-    .filter(({ pages }) => !matchedIds || pages.length > 0);
+  const visibleCategories = lib.categories.map((category) => {
+    const pages = category.pageIds
+      .map((id) => pageMap.get(id))
+      .filter((p): p is MemoPage => !!p);
+    return { category, pages };
+  });
 
   const orderedCategoryIds = visibleCategories.map(({ category }) => category.id);
   const categoryShiftMap = useMemo(
@@ -471,7 +503,7 @@ export default function MemoListPage() {
         ? computeShiftsFromInsertIndex(
             orderedCategoryIds,
             categoryDragState.categoryId,
-            categoryDragState.height,
+            categoryDragState.layoutHeight,
             CATEGORY_LIST_GAP,
             categoryDragState.insertIndex,
           )
@@ -498,8 +530,9 @@ export default function MemoListPage() {
         data-category-id={category.id}
         data-index={index}
         className={cn(
-          "flex items-center gap-2 rounded-2xl bg-background/80 border border-border/30 px-2 py-2",
+          "flex items-center gap-2 rounded-2xl bg-background/80 border border-border/30 px-2 py-2 touch-none",
           isDraggingMemo && "opacity-0 pointer-events-none",
+          memoLongPressId === page.id && !memoDragState && "ring-2 ring-accent ring-offset-2 ring-offset-background",
         )}
         style={{
           transform: shiftY ? `translateY(${shiftY}px)` : undefined,
@@ -549,7 +582,7 @@ export default function MemoListPage() {
             />
           ) : (
             <>
-              <p className="text-[15px] font-semibold leading-snug truncate">
+              <p data-memo-drag-anchor className="text-[15px] font-semibold leading-snug truncate">
                 {page.title.trim() || t("memoUntitled")}
               </p>
               {!welcome && preview ? (
@@ -615,21 +648,21 @@ export default function MemoListPage() {
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="flex-1 min-h-0 overflow-y-auto px-4 pb-4"
+        className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 scrollbar-none"
       >
         <div
           className={cn(
-            "sticky top-0 z-10 -mx-1 px-1 overflow-hidden transition-all duration-300 ease-out bg-background/95 backdrop-blur-sm",
+            "overflow-hidden transition-all duration-300 ease-out",
             searchVisible ? "max-h-16 opacity-100 mb-3 pt-1" : "max-h-0 opacity-0 mb-0 pointer-events-none",
           )}
         >
           <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none z-10" />
             <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              readOnly
+              onFocus={() => navigate("/notes/search")}
               placeholder={t("memoSearchPlaceholder")}
-              className="w-full bg-card rounded-2xl pl-10 pr-4 py-3 text-sm outline-none shadow-soft border border-border/40 placeholder:text-muted-foreground/50"
+              className="w-full rounded-2xl border border-border/30 bg-background/35 backdrop-blur-md pl-10 pr-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50 cursor-pointer"
             />
           </div>
         </div>
@@ -646,7 +679,7 @@ export default function MemoListPage() {
                 ? computeShiftsFromInsertIndex(
                     pageIds,
                     memoDragState.pageId,
-                    memoDragState.height,
+                    memoDragState.layoutHeight,
                     MEMO_LIST_GAP,
                     memoDragState.insertIndex,
                   )
@@ -662,6 +695,7 @@ export default function MemoListPage() {
                 className={cn(
                   "rounded-3xl border border-border/40 shadow-soft overflow-hidden",
                   isDraggingCategory && "opacity-0 pointer-events-none",
+                  categoryLongPressId === category.id && !categoryDragState && "ring-2 ring-accent ring-offset-2 ring-offset-background",
                 )}
                 style={{
                   backgroundColor: cardColor,
@@ -671,6 +705,7 @@ export default function MemoListPage() {
                 }}
               >
                 <div
+                  data-category-header
                   className="flex items-center gap-2 px-4 py-3 touch-none"
                   onPointerDown={(e) => {
                     if (isRenaming || (e.target as HTMLElement).closest("[data-pencil],[data-chevron]")) return;
@@ -756,7 +791,7 @@ export default function MemoListPage() {
                         memoDragState?.pageId === page.id,
                       ),
                     )}
-                    {pages.length === 0 && !matchedIds ? (
+                    {pages.length === 0 ? (
                       <p className="text-xs text-muted-foreground/60 text-center py-3">{t("memoEmptyCategory")}</p>
                     ) : null}
                   </div>
@@ -775,12 +810,12 @@ export default function MemoListPage() {
               left: memoDragState.anchorLeft,
               top: memoDragState.pointerY - memoDragState.pointerOffsetY,
               width: memoDragState.width,
-              height: memoDragState.height,
+              height: memoDragState.ghostHeight,
               opacity: 0.96,
               boxShadow: "0 8px 24px hsl(var(--foreground) / 0.12)",
             }}
           >
-            <span className="block truncate pt-2">{memoDragState.label}</span>
+            <span className="block truncate px-4 py-2 font-semibold text-sm">{memoDragState.label}</span>
           </div>,
           document.body,
         )}
@@ -793,7 +828,7 @@ export default function MemoListPage() {
               left: categoryDragState.anchorLeft,
               top: categoryDragState.pointerY - categoryDragState.pointerOffsetY,
               width: categoryDragState.width,
-              height: categoryDragState.height,
+              height: categoryDragState.ghostHeight,
               backgroundColor: categoryDragState.cardColor,
               opacity: 0.96,
               boxShadow: "0 8px 24px hsl(var(--foreground) / 0.12)",
