@@ -14,7 +14,7 @@ export function AiCameraIcon({ className, iconClassName, variant = "today" }: Pr
     return (
       <span
         className={cn(
-          "relative inline-flex flex-col items-center justify-center leading-none",
+          "relative inline-flex flex-col items-center justify-center leading-none translate-y-[3px]",
           className,
         )}
       >

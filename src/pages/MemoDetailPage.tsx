@@ -60,8 +60,10 @@ export default function MemoDetailPage() {
   const skipHtmlSync = useRef(false);
   const keepKeyboard = useRef(false);
   const calcFromView = useRef(false);
+  const draftHtmlRef = useRef("");
 
   const [page, setPage] = useState<MemoPage | null>(() => getMemoPage(loadMemoLibrary(), memoId) ?? null);
+  const [viewHtml, setViewHtml] = useState(() => getMemoPage(loadMemoLibrary(), memoId)?.html ?? "");
   const [editing, setEditing] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
@@ -86,6 +88,8 @@ export default function MemoDetailPage() {
       return;
     }
     setPage(found);
+    setViewHtml(found.html || "");
+    draftHtmlRef.current = found.html || "";
   }, [memoId, navigate]);
 
   const overlayOpen = calcOpen || pickOpen || ocrBusy || !!ocrFeedback;
@@ -105,15 +109,14 @@ export default function MemoDetailPage() {
   useEffect(() => {
     if (!editing || !page) return;
     const el = editorRef.current;
-    if (!el || skipHtmlSync.current) return;
-    if (el.innerHTML !== (page.html || "")) {
-      skipHtmlSync.current = true;
-      el.innerHTML = page.html || "";
-      queueMicrotask(() => {
-        skipHtmlSync.current = false;
-      });
-    }
-  }, [page?.id, page?.html, editing]);
+    if (!el) return;
+    skipHtmlSync.current = true;
+    const html = draftHtmlRef.current || page.html || "";
+    if (el.innerHTML !== html) el.innerHTML = html;
+    queueMicrotask(() => {
+      skipHtmlSync.current = false;
+    });
+  }, [editing, page?.id]);
 
   useEffect(() => {
     if (!calcOpen) return;
@@ -160,6 +163,7 @@ export default function MemoDetailPage() {
   }, []);
 
   const enterEdit = useCallback((focus: "title" | "body", e?: React.MouseEvent) => {
+    if (page) draftHtmlRef.current = viewHtml || page.html || "";
     pendingFocusRef.current = focus;
     if (focus === "body") {
       const hasContent = page ? htmlToPlainText(page.html).length > 0 : false;
@@ -181,7 +185,7 @@ export default function MemoDetailPage() {
       }
     }
     setEditing(true);
-  }, [page]);
+  }, [page, viewHtml]);
 
   useEffect(() => {
     keepKeyboard.current = editing && !blockKeyboard;
@@ -251,7 +255,9 @@ export default function MemoDetailPage() {
 
   const persistEditor = () => {
     const el = editorRef.current;
-    if (el) persist({ html: el.innerHTML });
+    if (!el) return;
+    draftHtmlRef.current = el.innerHTML;
+    persist({ html: el.innerHTML });
   };
 
   const insertAtCaret = (html: string) => {
@@ -261,15 +267,17 @@ export default function MemoDetailPage() {
     el.focus();
     skipHtmlSync.current = true;
     document.execCommand("insertHTML", false, html);
-    persist({ html: el.innerHTML });
+    draftHtmlRef.current = el.innerHTML;
     queueMicrotask(() => {
       skipHtmlSync.current = false;
     });
   };
 
   const insertAtEnd = (html: string) => {
-    const base = normalizeNoteHtml(editorRef.current?.innerHTML || page?.html || "");
+    const base = normalizeNoteHtml(viewHtml || page?.html || "");
     const next = normalizeNoteHtml(base + html);
+    draftHtmlRef.current = next;
+    setViewHtml(next);
     persist({ html: next });
   };
 
@@ -284,13 +292,10 @@ export default function MemoDetailPage() {
 
   const exitToView = () => {
     const el = editorRef.current;
-    if (el) {
-      skipHtmlSync.current = true;
-      persist({ html: el.innerHTML });
-      queueMicrotask(() => {
-        skipHtmlSync.current = false;
-      });
-    }
+    const html = normalizeNoteHtml(el?.innerHTML || draftHtmlRef.current || "");
+    draftHtmlRef.current = html;
+    setViewHtml(html);
+    persist({ html });
     keepKeyboard.current = false;
     setEditing(false);
   };
@@ -497,11 +502,7 @@ export default function MemoDetailPage() {
               style={{ minHeight: "100%", paddingBottom: editorScrollPad }}
               onInput={() => {
                 if (skipHtmlSync.current) return;
-                skipHtmlSync.current = true;
-                persist({ html: editorRef.current?.innerHTML || "" });
-                queueMicrotask(() => {
-                  skipHtmlSync.current = false;
-                });
+                draftHtmlRef.current = editorRef.current?.innerHTML || "";
               }}
               onKeyUp={refreshFormats}
               onMouseUp={refreshFormats}
@@ -526,8 +527,8 @@ export default function MemoDetailPage() {
               }}
               className="w-full text-left cursor-text pt-3 block"
             >
-              {htmlToPlainText(page.html) ? (
-                <NoteHtmlView html={page.html} />
+              {htmlToPlainText(viewHtml) ? (
+                <NoteHtmlView html={viewHtml} />
               ) : (
                 <p className="text-muted-foreground/40 text-base">{t("memoClickToEdit")}</p>
               )}

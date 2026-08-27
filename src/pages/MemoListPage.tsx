@@ -6,6 +6,7 @@ import { Keyboard } from "@capacitor/keyboard";
 import { ChevronDown, ChevronRight, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { tickHaptic } from "@/lib/haptics";
 import {
   addCategory,
   addMemoToCategory,
@@ -13,6 +14,7 @@ import {
   isWelcomeMemo,
   loadMemoLibrary,
   MEMO_CATEGORY_COLORS,
+  MEMO_CATEGORY_PICKER_COLORS,
   movePageToCategory,
   removeCategory,
   removeMemoPage,
@@ -52,8 +54,93 @@ type DropPreview =
 
 const LONG_PRESS_MS = 420;
 const DRAG_THRESHOLD = 10;
-const MEMO_ROW_SHIFT_PX = 58;
-const CATEGORY_SHIFT_PX = 92;
+
+type MemoDisplayItem =
+  | { kind: "memo"; page: MemoPage; index: number }
+  | { kind: "placeholder" };
+
+type CategoryDisplayItem =
+  | { kind: "category"; category: MemoCategory; pages: MemoPage[]; catIndex: number }
+  | { kind: "placeholder" };
+
+function memoInsertIndex(
+  drag: { categoryId: string; index: number },
+  preview: { categoryId: string; index: number },
+): number {
+  let insertAt = preview.index;
+  if (drag.categoryId === preview.categoryId && drag.index < preview.index) {
+    insertAt -= 1;
+  }
+  return Math.max(0, insertAt);
+}
+
+function buildMemoDisplayList(
+  pages: MemoPage[],
+  categoryId: string,
+  dragGhost: DragGhost | null,
+  dropPreview: DropPreview | null,
+): MemoDisplayItem[] {
+  const drag = dragGhost?.target.kind === "memo" ? dragGhost.target : null;
+  const preview = dropPreview?.kind === "memo" ? dropPreview : null;
+
+  const filtered =
+    drag && drag.categoryId === categoryId ? pages.filter((p) => p.id !== drag.pageId) : pages;
+
+  let insertAt: number | null = null;
+  if (drag && preview && preview.categoryId === categoryId) {
+    insertAt = memoInsertIndex(drag, preview);
+    insertAt = Math.min(insertAt, filtered.length);
+  }
+
+  const items: MemoDisplayItem[] = [];
+  filtered.forEach((page, i) => {
+    if (insertAt === i) items.push({ kind: "placeholder" });
+    items.push({ kind: "memo", page, index: pages.indexOf(page) });
+  });
+  if (insertAt === filtered.length) items.push({ kind: "placeholder" });
+  return items;
+}
+
+function buildCategoryDisplayList(
+  visibleCategories: Array<{ category: MemoCategory; pages: MemoPage[] }>,
+  dragGhost: DragGhost | null,
+  dropPreview: DropPreview | null,
+): CategoryDisplayItem[] {
+  const drag = dragGhost?.target.kind === "category" ? dragGhost.target : null;
+  const preview = dropPreview?.kind === "category" ? dropPreview : null;
+
+  const filtered = drag
+    ? visibleCategories.filter(({ category }) => category.id !== drag.categoryId)
+    : visibleCategories;
+
+  let insertAt: number | null = null;
+  if (drag && preview) {
+    insertAt = preview.index;
+    if (drag.index < preview.index) insertAt -= 1;
+    insertAt = Math.max(0, Math.min(insertAt, filtered.length));
+  }
+
+  const items: CategoryDisplayItem[] = [];
+  filtered.forEach((entry, i) => {
+    if (insertAt === i) items.push({ kind: "placeholder" });
+    const catIndex = visibleCategories.findIndex((v) => v.category.id === entry.category.id);
+    items.push({ kind: "category", ...entry, catIndex });
+  });
+  if (insertAt === filtered.length) items.push({ kind: "placeholder" });
+  return items;
+}
+
+function DragGap({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border-2 border-dashed border-accent/35 bg-accent/5 transition-all duration-200 ease-out",
+        className,
+      )}
+      style={{ minHeight: 52 }}
+    />
+  );
+}
 
 function formatLastEdited(ts: number, locale: string) {
   return new Date(ts).toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
@@ -214,23 +301,23 @@ export default function MemoListPage() {
     (clientX: number, clientY: number, target: PressTarget, preview: DropPreview | null) => {
       if (target.kind === "memo") {
         if (preview?.kind === "memo") {
-          onPageDrop(target, preview.categoryId, preview.index + 1);
+          onPageDrop(target, preview.categoryId, preview.index);
           return;
         }
         const el = document.elementFromPoint(clientX, clientY);
         const row = el?.closest("[data-memo-row]") as HTMLElement | null;
         if (row) {
-          onPageDrop(target, row.dataset.categoryId!, Number(row.dataset.index ?? 0) + 1);
+          onPageDrop(target, row.dataset.categoryId!, Number(row.dataset.index ?? 0));
         }
       } else {
         if (preview?.kind === "category") {
-          onCategoryDrop(target.categoryId, preview.index + 1);
+          onCategoryDrop(target.categoryId, preview.index);
           return;
         }
         const el = document.elementFromPoint(clientX, clientY);
         const section = el?.closest("[data-category-section]") as HTMLElement | null;
         if (section) {
-          onCategoryDrop(target.categoryId, Number(section.dataset.catIndex ?? 0) + 1);
+          onCategoryDrop(target.categoryId, Number(section.dataset.catIndex ?? 0));
         }
       }
     },
@@ -277,6 +364,7 @@ export default function MemoListPage() {
 
   const startPress = (target: PressTarget, el: HTMLElement, clientX: number, clientY: number) => {
     clearPress();
+    void tickHaptic();
     const timer = setTimeout(() => {
       if (pressRef.current) pressRef.current.longPress = true;
     }, LONG_PRESS_MS);
@@ -291,6 +379,7 @@ export default function MemoListPage() {
     if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
     if (!press.moved) {
       press.moved = true;
+      void tickHaptic();
       const rect = press.element.getBoundingClientRect();
       const page = press.target.kind === "memo" ? pageMap.get(press.target.pageId) : null;
       const cat =
@@ -364,49 +453,16 @@ export default function MemoListPage() {
     })
     .filter(({ pages }) => !matchedIds || pages.length > 0);
 
-  const isDraggingMemo = (pageId: string) =>
-    dragGhost?.target.kind === "memo" && dragGhost.target.pageId === pageId;
-  const isDraggingCategory = (categoryId: string) =>
-    dragGhost?.target.kind === "category" && dragGhost.target.categoryId === categoryId;
 
-  const getMemoRowShift = (categoryId: string, index: number, pageId: string) => {
-    if (!dragGhost || dragGhost.target.kind !== "memo" || !dropPreview || dropPreview.kind !== "memo") {
-      return 0;
-    }
-    if (isDraggingMemo(pageId)) return 0;
-    if (dropPreview.categoryId !== categoryId) return 0;
-    const fromIndex =
-      dragGhost.target.kind === "memo" && dragGhost.target.categoryId === categoryId
-        ? dragGhost.target.index
-        : -1;
-    const toIndex = dropPreview.index;
-    if (fromIndex >= 0) {
-      if (fromIndex < toIndex && index > fromIndex && index <= toIndex) return MEMO_ROW_SHIFT_PX;
-      if (fromIndex > toIndex && index >= toIndex && index < fromIndex) return -MEMO_ROW_SHIFT_PX;
-      return 0;
-    }
-    if (index >= toIndex) return MEMO_ROW_SHIFT_PX;
-    return 0;
-  };
-
-  const getCategoryShift = (catIndex: number, categoryId: string) => {
-    if (!dragGhost || dragGhost.target.kind !== "category" || !dropPreview || dropPreview.kind !== "category") {
-      return 0;
-    }
-    if (isDraggingCategory(categoryId)) return 0;
-    const fromIndex = dragGhost.target.index;
-    const toIndex = dropPreview.index;
-    if (fromIndex < toIndex && catIndex > fromIndex && catIndex <= toIndex) return CATEGORY_SHIFT_PX;
-    if (fromIndex > toIndex && catIndex >= toIndex && catIndex < fromIndex) return -CATEGORY_SHIFT_PX;
-    return 0;
-  };
+  const categoryDisplayItems = useMemo(
+    () => buildCategoryDisplayList(visibleCategories, dragGhost, dropPreview),
+    [visibleCategories, dragGhost, dropPreview],
+  );
 
   const renderMemoRow = (page: MemoPage, category: MemoCategory, index: number) => {
     const preview = htmlToPlainText(page.html);
     const isRenaming = renameTarget?.kind === "memo" && renameTarget.id === page.id;
     const welcome = isWelcomeMemo(page.id);
-    const dragging = isDraggingMemo(page.id);
-    const shiftY = getMemoRowShift(category.id, index, page.id);
 
     return (
       <div
@@ -414,11 +470,7 @@ export default function MemoListPage() {
         data-memo-row
         data-category-id={category.id}
         data-index={index}
-        className={cn(
-          "flex items-center gap-2 rounded-2xl bg-background/80 border border-border/30 px-2 py-2 transition-transform duration-200 ease-out",
-          dragging && "opacity-30",
-        )}
-        style={{ transform: shiftY ? `translateY(${shiftY}px)` : undefined }}
+        className="flex items-center gap-2 rounded-2xl bg-background/80 border border-border/30 px-2 py-2 transition-all duration-200 ease-out"
         onPointerDown={(e) => {
           if (isRenaming || (e.target as HTMLElement).closest("[data-pencil],[data-trash]")) return;
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -548,13 +600,22 @@ export default function MemoListPage() {
         </div>
 
         <div className="space-y-4">
-          {visibleCategories.map(({ category, pages }, catIndex) => {
+          {categoryDisplayItems.map((item, displayIndex) => {
+            if (item.kind === "placeholder") {
+              return <DragGap key={`cat-gap-${displayIndex}`} className="rounded-3xl min-h-[4.5rem]" />;
+            }
+
+            const { category, pages, catIndex } = item;
             const isRenaming =
               renameTarget?.kind === "category" && renameTarget.id === category.id;
-            const dragging = isDraggingCategory(category.id);
             const cardColor = category.color || MEMO_CATEGORY_COLORS[0];
             const memoCount = category.pageIds.length;
-            const catShiftY = getCategoryShift(catIndex, category.id);
+            const memoItems = buildMemoDisplayList(pages, category.id, dragGhost, dropPreview);
+            const crossCategoryMemoIncoming =
+              dragGhost?.target.kind === "memo" &&
+              dropPreview?.kind === "memo" &&
+              dropPreview.categoryId === category.id &&
+              dragGhost.target.categoryId !== category.id;
 
             return (
               <section
@@ -562,14 +623,8 @@ export default function MemoListPage() {
                 data-category-section
                 data-category-id={category.id}
                 data-cat-index={catIndex}
-                className={cn(
-                  "rounded-3xl border border-border/40 shadow-soft overflow-hidden transition-transform duration-200 ease-out",
-                  dragging && "opacity-30",
-                )}
-                style={{
-                  backgroundColor: cardColor,
-                  transform: catShiftY ? `translateY(${catShiftY}px)` : undefined,
-                }}
+                className="rounded-3xl border border-border/40 shadow-soft overflow-hidden transition-all duration-200 ease-out"
+                style={{ backgroundColor: cardColor }}
               >
                 <div
                   className="flex items-center gap-2 px-4 py-3 touch-none"
@@ -647,9 +702,20 @@ export default function MemoListPage() {
                   </span>
                 </div>
                 {(!category.collapsed || listEditing) && (
-                  <div className="space-y-2 px-3 pb-3">
-                    {pages.map((page, index) => renderMemoRow(page, category, index))}
-                    {pages.length === 0 && !matchedIds ? (
+                  <div
+                    className={cn(
+                      "space-y-2 px-3 pb-3 transition-all duration-200 ease-out",
+                      crossCategoryMemoIncoming && "pt-0",
+                    )}
+                  >
+                    {memoItems.map((memoItem, memoDisplayIndex) =>
+                      memoItem.kind === "placeholder" ? (
+                        <DragGap key={`memo-gap-${category.id}-${memoDisplayIndex}`} />
+                      ) : (
+                        renderMemoRow(memoItem.page, category, memoItem.index)
+                      ),
+                    )}
+                    {pages.length === 0 && !matchedIds && !crossCategoryMemoIncoming ? (
                       <p className="text-xs text-muted-foreground/60 text-center py-3">{t("memoEmptyCategory")}</p>
                     ) : null}
                   </div>
@@ -809,7 +875,7 @@ export default function MemoListPage() {
                 <div className="px-4 py-3">
                   <p className="text-sm font-semibold mb-3">{t("memoChangeColor")}</p>
                   <div className="flex flex-wrap gap-3 justify-center">
-                    {MEMO_CATEGORY_COLORS.map((color) => (
+                    {MEMO_CATEGORY_PICKER_COLORS.map((color) => (
                       <button
                         key={color}
                         type="button"

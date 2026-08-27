@@ -6,14 +6,20 @@ export type MemoPage = {
 };
 
 export const MEMO_CATEGORY_COLORS = [
-  "#E8F4EC",
-  "#E8F0FA",
-  "#FAF0E6",
-  "#F3E8FA",
-  "#FAE8E8",
-  "#E8FAFA",
-  "#F5F0E8",
+  "#F4FBF6",
+  "#F4F8FD",
+  "#FDF8F1",
+  "#F9F4FD",
+  "#FDF4F4",
+  "#F2FBFB",
 ] as const;
+
+/** Colors shown in the category color picker (excludes the last palette entry). */
+export const MEMO_CATEGORY_PICKER_COLORS = MEMO_CATEGORY_COLORS.slice(0, -1);
+
+export function nextCategoryColor(lib: MemoLibrary): string {
+  return MEMO_CATEGORY_COLORS[lib.categories.length % MEMO_CATEGORY_COLORS.length];
+}
 
 export type MemoCategory = {
   id: string;
@@ -95,13 +101,13 @@ function blankPage(): MemoPage {
   };
 }
 
-function blankCategory(name: string, pageIds: string[] = []): MemoCategory {
+function blankCategory(name: string, pageIds: string[] = [], color?: string): MemoCategory {
   return {
     id: crypto.randomUUID(),
     name,
     pageIds,
     collapsed: false,
-    color: MEMO_CATEGORY_COLORS[0],
+    color: color ?? MEMO_CATEGORY_COLORS[0],
   };
 }
 
@@ -216,7 +222,7 @@ export function upsertMemoPage(lib: MemoLibrary, patch: MemoPage): MemoLibrary {
 
 export function addCategory(lib: MemoLibrary, name: string): { lib: MemoLibrary; categoryId: string; pageId: string } {
   const page = blankPage();
-  const category = blankCategory(name.trim(), [page.id]);
+  const category = blankCategory(name.trim(), [page.id], nextCategoryColor(lib));
   const next = saveMemoLibrary({
     categories: [...lib.categories, category],
     pages: [page, ...lib.pages],
