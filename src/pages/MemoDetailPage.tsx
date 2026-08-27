@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
@@ -64,6 +64,7 @@ export default function MemoDetailPage() {
 
   const [page, setPage] = useState<MemoPage | null>(() => getMemoPage(loadMemoLibrary(), memoId) ?? null);
   const [editing, setEditing] = useState(false);
+  const [viewRevision, setViewRevision] = useState(0);
   const [calcOpen, setCalcOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
@@ -88,6 +89,7 @@ export default function MemoDetailPage() {
     }
     setPage(found);
     draftHtmlRef.current = found.html || "";
+    setViewRevision((v) => v + 1);
   }, [memoId, navigate]);
 
   const overlayOpen = calcOpen || pickOpen || ocrBusy || !!ocrFeedback;
@@ -290,9 +292,23 @@ export default function MemoDetailPage() {
     const el = editorRef.current;
     const html = normalizeNoteHtml(el?.innerHTML || draftHtmlRef.current || "");
     draftHtmlRef.current = html;
-    persist({ html });
+    if (!page) return;
+
+    if (el) {
+      skipHtmlSync.current = true;
+      el.innerHTML = "";
+    }
+
+    const lib = upsertMemoPage(loadMemoLibrary(), { ...page, html });
+    const next = lib.pages.find((p) => p.id === page.id) ?? null;
+    if (!next) return;
+
     keepKeyboard.current = false;
-    setEditing(false);
+    flushSync(() => {
+      setPage(next);
+      setViewRevision((v) => v + 1);
+      setEditing(false);
+    });
   };
 
   const onOcr = async (source: ImageSource) => {
@@ -523,7 +539,7 @@ export default function MemoDetailPage() {
               className="w-full text-left cursor-text pt-3 block"
             >
               {htmlToPlainText(page.html) ? (
-                <NoteHtmlView html={page.html} />
+                <NoteHtmlView key={`view-${viewRevision}`} html={page.html} />
               ) : (
                 <p className="text-muted-foreground/40 text-base">{t("memoClickToEdit")}</p>
               )}
