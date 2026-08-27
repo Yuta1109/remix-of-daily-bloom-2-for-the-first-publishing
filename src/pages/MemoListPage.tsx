@@ -10,6 +10,7 @@ import {
   addCategory,
   addMemoToCategory,
   htmlToPlainText,
+  isWelcomeMemo,
   loadMemoLibrary,
   MEMO_CATEGORY_COLORS,
   movePageToCategory,
@@ -35,6 +36,17 @@ type ContextMenu =
 type PressTarget =
   | { kind: "memo"; pageId: string; categoryId: string; index: number }
   | { kind: "category"; categoryId: string; index: number };
+
+type DragGhost = {
+  target: PressTarget;
+  x: number;
+  y: number;
+  width: number;
+  offsetX: number;
+  offsetY: number;
+  label: string;
+  cardColor?: string;
+};
 
 const LONG_PRESS_MS = 420;
 const DRAG_THRESHOLD = 10;
@@ -62,7 +74,7 @@ export default function MemoListPage() {
   const [renameTarget, setRenameTarget] = useState<
     { kind: "category"; id: string; value: string } | { kind: "memo"; id: string; value: string } | null
   >(null);
-  const [dragging, setDragging] = useState<PressTarget | null>(null);
+  const [dragGhost, setDragGhost] = useState<DragGhost | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastScrollTop = useRef(0);
@@ -73,7 +85,10 @@ export default function MemoListPage() {
     timer: ReturnType<typeof setTimeout>;
     longPress: boolean;
     moved: boolean;
+    element: HTMLElement;
   } | null>(null);
+  const libRef = useRef(lib);
+  libRef.current = lib;
 
   const matchedIds = useMemo(() => {
     const q = search.trim();
@@ -141,10 +156,9 @@ export default function MemoListPage() {
 
   const onCreateCategory = () => {
     const name = categoryName.trim() || t("memoUntitledCategory");
-    const { lib: next, pageId } = addCategory(lib, name);
+    const { lib: next } = addCategory(lib, name);
     persist(next);
     closeAdd();
-    navigate(`/notes/${pageId}`);
   };
 
   const onCreateMemoInCategory = (categoryId: string) => {
@@ -166,33 +180,62 @@ export default function MemoListPage() {
     }
   };
 
-  const onPageDrop = (drag: PressTarget, targetCategoryId: string, targetIndex: number) => {
+  const onPageDrop = useCallback((drag: PressTarget, targetCategoryId: string, targetIndex: number) => {
     if (drag.kind !== "memo") return;
-    const fromCat = lib.categories.find((c) => c.id === drag.categoryId);
+    const current = libRef.current;
+    const fromCat = current.categories.find((c) => c.id === drag.categoryId);
     if (!fromCat) return;
     const fromIndex = fromCat.pageIds.indexOf(drag.pageId);
     let index = targetIndex;
     if (drag.categoryId === targetCategoryId && fromIndex >= 0 && fromIndex < targetIndex) {
       index -= 1;
     }
-    persist(movePageToCategory(lib, drag.pageId, drag.categoryId, targetCategoryId, index));
-  };
+    persist(movePageToCategory(current, drag.pageId, drag.categoryId, targetCategoryId, index));
+  }, [persist]);
 
-  const onCategoryDrop = (dragId: string, targetIndex: number) => {
-    const ids = lib.categories.map((c) => c.id);
+  const onCategoryDrop = useCallback((dragId: string, targetIndex: number) => {
+    const current = libRef.current;
+    const ids = current.categories.map((c) => c.id);
     const from = ids.indexOf(dragId);
     if (from < 0) return;
     ids.splice(from, 1);
     ids.splice(Math.max(0, Math.min(targetIndex, ids.length)), 0, dragId);
-    persist(reorderCategories(lib, ids));
-  };
+    persist(reorderCategories(current, ids));
+  }, [persist]);
 
-  const startPress = (target: PressTarget, clientX: number, clientY: number) => {
+  const finishDrag = useCallback(
+    (clientX: number, clientY: number, target: PressTarget) => {
+      const el = document.elementFromPoint(clientX, clientY);
+      if (target.kind === "memo") {
+        const row = el?.closest("[data-memo-row]") as HTMLElement | null;
+        if (row) {
+          onPageDrop(target, row.dataset.categoryId!, Number(row.dataset.index ?? 0) + 1);
+        }
+      } else {
+        const section = el?.closest("[data-category-section]") as HTMLElement | null;
+        if (section) {
+          onCategoryDrop(target.categoryId, Number(section.dataset.catIndex ?? 0) + 1);
+        }
+      }
+    },
+    [onCategoryDrop, onPageDrop],
+  );
+
+  useEffect(() => {
+    if (!dragGhost) return;
+    const onMove = (e: PointerEvent) => {
+      setDragGhost((g) => (g ? { ...g, x: e.clientX, y: e.clientY } : null));
+    };
+    document.addEventListener("pointermove", onMove);
+    return () => document.removeEventListener("pointermove", onMove);
+  }, [dragGhost]);
+
+  const startPress = (target: PressTarget, el: HTMLElement, clientX: number, clientY: number) => {
     clearPress();
     const timer = setTimeout(() => {
       if (pressRef.current) pressRef.current.longPress = true;
     }, LONG_PRESS_MS);
-    pressRef.current = { target, startX: clientX, startY: clientY, timer, longPress: false, moved: false };
+    pressRef.current = { target, startX: clientX, startY: clientY, timer, longPress: false, moved: false, element: el };
   };
 
   const onPressMove = (clientX: number, clientY: number) => {
@@ -201,8 +244,31 @@ export default function MemoListPage() {
     const dx = clientX - press.startX;
     const dy = clientY - press.startY;
     if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-    press.moved = true;
-    setDragging(press.target);
+    if (!press.moved) {
+      press.moved = true;
+      const rect = press.element.getBoundingClientRect();
+      const page = press.target.kind === "memo" ? pageMap.get(press.target.pageId) : null;
+      const cat =
+        press.target.kind === "category"
+          ? lib.categories.find((c) => c.id === press.target.categoryId)
+          : null;
+      setDragGhost({
+        target: press.target,
+        x: clientX,
+        y: clientY,
+        width: rect.width,
+        offsetX: clientX - rect.left,
+        offsetY: clientY - rect.top,
+        label:
+          press.target.kind === "memo"
+            ? page?.title.trim() || t("memoUntitled")
+            : cat?.name.trim() || t("memoUntitledCategory"),
+        cardColor:
+          press.target.kind === "category"
+            ? cat?.color || MEMO_CATEGORY_COLORS[0]
+            : undefined,
+      });
+    }
   };
 
   const onPressEnd = (clientX: number, clientY: number) => {
@@ -211,19 +277,8 @@ export default function MemoListPage() {
     clearPress();
 
     if (press.moved && press.longPress) {
-      const el = document.elementFromPoint(clientX, clientY);
-      if (press.target.kind === "memo") {
-        const row = el?.closest("[data-memo-row]") as HTMLElement | null;
-        if (row) {
-          onPageDrop(press.target, row.dataset.categoryId!, Number(row.dataset.index ?? 0) + 1);
-        }
-      } else {
-        const section = el?.closest("[data-category-section]") as HTMLElement | null;
-        if (section) {
-          onCategoryDrop(press.target.categoryId, Number(section.dataset.catIndex ?? 0) + 1);
-        }
-      }
-      setDragging(null);
+      finishDrag(clientX, clientY, press.target);
+      setDragGhost(null);
       return;
     }
 
@@ -249,7 +304,7 @@ export default function MemoListPage() {
     const el = scrollRef.current;
     if (!el) return;
     const st = el.scrollTop;
-    if (st > lastScrollTop.current && st > 24) setSearchVisible(true);
+    if (st > lastScrollTop.current && st > 16) setSearchVisible(true);
     if (st < lastScrollTop.current - 4) setSearchVisible(false);
     lastScrollTop.current = st;
   };
@@ -262,12 +317,18 @@ export default function MemoListPage() {
         .filter((p) => !matchedIds || matchedIds.has(p.id));
       return { category, pages };
     })
-    .filter(({ pages }) => pages.length > 0 || !matchedIds);
+    .filter(({ pages }) => !matchedIds || pages.length > 0);
+
+  const isDraggingMemo = (pageId: string) =>
+    dragGhost?.target.kind === "memo" && dragGhost.target.pageId === pageId;
+  const isDraggingCategory = (categoryId: string) =>
+    dragGhost?.target.kind === "category" && dragGhost.target.categoryId === categoryId;
 
   const renderMemoRow = (page: MemoPage, category: MemoCategory, index: number) => {
     const preview = htmlToPlainText(page.html);
     const isRenaming = renameTarget?.kind === "memo" && renameTarget.id === page.id;
-    const isDragging = dragging?.kind === "memo" && dragging.pageId === page.id;
+    const welcome = isWelcomeMemo(page.id);
+    const dragging = isDraggingMemo(page.id);
 
     return (
       <div
@@ -277,28 +338,34 @@ export default function MemoListPage() {
         data-index={index}
         className={cn(
           "flex items-center gap-2 rounded-2xl bg-background/80 border border-border/30 px-2 py-2 transition-opacity",
-          isDragging && "opacity-40",
+          dragging && "opacity-30",
         )}
         onPointerDown={(e) => {
-          if (isRenaming || (e.target as HTMLElement).closest("[data-pencil]")) return;
-          startPress({ kind: "memo", pageId: page.id, categoryId: category.id, index }, e.clientX, e.clientY);
+          if (isRenaming || (e.target as HTMLElement).closest("[data-pencil],[data-trash]")) return;
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          startPress({ kind: "memo", pageId: page.id, categoryId: category.id, index }, e.currentTarget, e.clientX, e.clientY);
         }}
         onPointerMove={(e) => onPressMove(e.clientX, e.clientY)}
-        onPointerUp={(e) => onPressEnd(e.clientX, e.clientY)}
+        onPointerUp={(e) => {
+          (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+          onPressEnd(e.clientX, e.clientY);
+        }}
         onPointerCancel={clearPress}
       >
-        <button
-          type="button"
-          data-pencil
-          onClick={(e) => {
-            e.stopPropagation();
-            setRenameTarget({ kind: "memo", id: page.id, value: page.title });
-          }}
-          className="p-2 rounded-xl text-muted-foreground shrink-0 hover:bg-secondary/60"
-          aria-label={t("memoEditTitle")}
-        >
-          <Pencil className="w-4 h-4" />
-        </button>
+        {listEditing ? (
+          <button
+            type="button"
+            data-pencil
+            onClick={(e) => {
+              e.stopPropagation();
+              setRenameTarget({ kind: "memo", id: page.id, value: page.title });
+            }}
+            className="p-2 rounded-xl text-muted-foreground shrink-0 hover:bg-secondary/60"
+            aria-label={t("memoEditTitle")}
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        ) : null}
         <div className="flex-1 min-w-0">
           {isRenaming ? (
             <input
@@ -319,18 +386,21 @@ export default function MemoListPage() {
               <p className="text-[15px] font-semibold leading-snug truncate">
                 {page.title.trim() || t("memoUntitled")}
               </p>
-              {preview ? (
+              {!welcome && preview ? (
                 <p className="text-xs text-muted-foreground truncate mt-0.5">{preview}</p>
               ) : null}
-              <p className="text-[10px] text-muted-foreground/70 mt-1">
-                {t("memoLastEdited")}: {formatLastEdited(page.updatedAt, locale)}
-              </p>
+              {!welcome ? (
+                <p className="text-[10px] text-muted-foreground/70 mt-1">
+                  {t("memoLastEdited")}: {formatLastEdited(page.updatedAt, locale)}
+                </p>
+              ) : null}
             </>
           )}
         </div>
         {listEditing ? (
           <button
             type="button"
+            data-trash
             onClick={(e) => {
               e.stopPropagation();
               persist(removeMemoPage(lib, page.id));
@@ -354,7 +424,12 @@ export default function MemoListPage() {
           <button
             type="button"
             onClick={() => setListEditing((v) => !v)}
-            className="text-lg font-bold text-accent px-1 py-1"
+            className={cn(
+              "text-lg font-bold px-4 py-2 rounded-2xl transition-colors",
+              listEditing
+                ? "bg-accent text-accent-foreground shadow-soft"
+                : "bg-accent/15 text-accent",
+            )}
           >
             {listEditing ? t("memoSaveList") : t("memoEditList")}
           </button>
@@ -371,10 +446,17 @@ export default function MemoListPage() {
             <Plus className="w-6 h-6" strokeWidth={2.5} />
           </button>
         </div>
+      </div>
+
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="flex-1 min-h-0 overflow-y-auto px-4 pb-4"
+      >
         <div
           className={cn(
-            "overflow-hidden transition-all duration-300 ease-out",
-            searchVisible ? "max-h-14 opacity-100 mt-3" : "max-h-0 opacity-0 mt-0",
+            "sticky top-0 z-10 -mx-1 px-1 overflow-hidden transition-all duration-300 ease-out bg-background/95 backdrop-blur-sm",
+            searchVisible ? "max-h-16 opacity-100 mb-3 pt-1" : "max-h-0 opacity-0 mb-0 pointer-events-none",
           )}
         >
           <div className="relative">
@@ -387,92 +469,129 @@ export default function MemoListPage() {
             />
           </div>
         </div>
-      </div>
 
-      <div
-        ref={scrollRef}
-        onScroll={onScroll}
-        className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-4"
-      >
-        {visibleCategories.map(({ category, pages }, catIndex) => {
-          const isRenaming =
-            renameTarget?.kind === "category" && renameTarget.id === category.id;
-          const isDragging = dragging?.kind === "category" && dragging.categoryId === category.id;
-          const cardColor = category.color || MEMO_CATEGORY_COLORS[0];
+        <div className="space-y-4">
+          {visibleCategories.map(({ category, pages }, catIndex) => {
+            const isRenaming =
+              renameTarget?.kind === "category" && renameTarget.id === category.id;
+            const dragging = isDraggingCategory(category.id);
+            const cardColor = category.color || MEMO_CATEGORY_COLORS[0];
+            const memoCount = category.pageIds.length;
 
-          return (
-            <section
-              key={category.id}
-              data-category-section
-              data-cat-index={catIndex}
-              className={cn(
-                "rounded-3xl border border-border/40 shadow-soft overflow-hidden transition-opacity",
-                isDragging && "opacity-40",
-              )}
-              style={{ backgroundColor: cardColor }}
-            >
-              <div
-                className="flex items-center gap-2 px-4 py-3 touch-none"
-                onPointerDown={(e) => {
-                  if (isRenaming) return;
-                  startPress(
-                    { kind: "category", categoryId: category.id, index: catIndex },
-                    e.clientX,
-                    e.clientY,
-                  );
-                }}
-                onPointerMove={(e) => onPressMove(e.clientX, e.clientY)}
-                onPointerUp={(e) => onPressEnd(e.clientX, e.clientY)}
-                onPointerCancel={clearPress}
-              >
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!listEditing) persist(toggleCategoryCollapsed(lib, category.id));
-                  }}
-                  className="p-1 -ml-1 text-foreground/70"
-                  aria-label={category.collapsed ? "expand" : "collapse"}
-                >
-                  {category.collapsed && !listEditing ? (
-                    <ChevronRight className="w-5 h-5" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5" />
-                  )}
-                </button>
-                {isRenaming ? (
-                  <input
-                    autoFocus
-                    value={renameTarget.value}
-                    onChange={(e) => setRenameTarget({ ...renameTarget, value: e.target.value })}
-                    onBlur={() => {
-                      persist(renameCategory(lib, category.id, renameTarget.value));
-                      setRenameTarget(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") e.currentTarget.blur();
-                    }}
-                    className="flex-1 bg-background/70 rounded-xl px-3 py-1.5 text-base font-bold outline-none"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span className="flex-1 text-base font-bold truncate">
-                    {category.name.trim() || t("memoUntitledCategory")}
-                  </span>
+            return (
+              <section
+                key={category.id}
+                data-category-section
+                data-cat-index={catIndex}
+                className={cn(
+                  "rounded-3xl border border-border/40 shadow-soft overflow-hidden transition-opacity",
+                  dragging && "opacity-30",
                 )}
-                <span className="text-sm font-semibold text-muted-foreground bg-background/60 rounded-full px-2.5 py-0.5 min-w-[1.75rem] text-center">
-                  {pages.length}
-                </span>
-              </div>
-              {(!category.collapsed || listEditing) && (
-                <div className="space-y-2 px-3 pb-3">
-                  {pages.map((page, index) => renderMemoRow(page, category, index))}
+                style={{ backgroundColor: cardColor }}
+              >
+                <div
+                  className="flex items-center gap-2 px-4 py-3 touch-none"
+                  onPointerDown={(e) => {
+                    if (isRenaming || (e.target as HTMLElement).closest("[data-pencil],[data-chevron]")) return;
+                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                    startPress(
+                      { kind: "category", categoryId: category.id, index: catIndex },
+                      e.currentTarget.closest("section") as HTMLElement,
+                      e.clientX,
+                      e.clientY,
+                    );
+                  }}
+                  onPointerMove={(e) => onPressMove(e.clientX, e.clientY)}
+                  onPointerUp={(e) => {
+                    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                    onPressEnd(e.clientX, e.clientY);
+                  }}
+                  onPointerCancel={clearPress}
+                >
+                  {listEditing ? (
+                    <button
+                      type="button"
+                      data-pencil
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRenameTarget({ kind: "category", id: category.id, value: category.name });
+                      }}
+                      className="p-1.5 rounded-xl text-muted-foreground shrink-0 hover:bg-background/50"
+                      aria-label={t("memoEditTitle")}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    data-chevron
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!listEditing) persist(toggleCategoryCollapsed(lib, category.id));
+                    }}
+                    className="p-1 -ml-1 text-foreground/70 shrink-0"
+                    aria-label={category.collapsed ? "expand" : "collapse"}
+                  >
+                    {category.collapsed && !listEditing ? (
+                      <ChevronRight className="w-5 h-5" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5" />
+                    )}
+                  </button>
+                  {isRenaming ? (
+                    <input
+                      autoFocus
+                      value={renameTarget.value}
+                      onChange={(e) => setRenameTarget({ ...renameTarget, value: e.target.value })}
+                      onBlur={() => {
+                        persist(renameCategory(lib, category.id, renameTarget.value));
+                        setRenameTarget(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
+                      className="flex-1 bg-background/70 rounded-xl px-3 py-1.5 text-base font-bold outline-none"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="flex-1 text-base font-bold truncate">
+                      {category.name.trim() || t("memoUntitledCategory")}
+                    </span>
+                  )}
+                  <span className="text-sm font-semibold text-muted-foreground bg-background/60 rounded-full px-2.5 py-0.5 min-w-[1.75rem] text-center shrink-0">
+                    {memoCount}
+                  </span>
                 </div>
-              )}
-            </section>
-          );
-        })}
+                {(!category.collapsed || listEditing) && (
+                  <div className="space-y-2 px-3 pb-3">
+                    {pages.map((page, index) => renderMemoRow(page, category, index))}
+                    {pages.length === 0 && !matchedIds ? (
+                      <p className="text-xs text-muted-foreground/60 text-center py-3">{t("memoEmptyCategory")}</p>
+                    ) : null}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
       </div>
+
+      {dragGhost &&
+        createPortal(
+          <div
+            className="fixed z-[80] pointer-events-none rounded-2xl border border-border/50 shadow-float px-4 py-3 font-semibold text-sm truncate"
+            style={{
+              left: dragGhost.x - dragGhost.offsetX,
+              top: dragGhost.y - dragGhost.offsetY,
+              width: dragGhost.width,
+              backgroundColor: dragGhost.cardColor || "hsl(var(--card))",
+              opacity: 0.95,
+            }}
+          >
+            {dragGhost.label}
+          </div>,
+          document.body,
+        )}
 
       {addOpen &&
         createPortal(
@@ -566,8 +685,8 @@ export default function MemoListPage() {
               aria-label={t("cancel")}
             />
             <div
-              className="absolute left-4 right-4 bottom-8 max-w-md mx-auto bg-background rounded-3xl shadow-float overflow-hidden p-2"
-              style={{ bottom: sheetBottom ?? undefined }}
+              className="absolute left-4 right-4 max-w-md mx-auto bg-background rounded-3xl shadow-float overflow-hidden p-2"
+              style={{ bottom: sheetBottom ?? "max(2rem, env(safe-area-inset-bottom))" }}
             >
               {contextMenu.kind === "category" && !contextMenu.showColors && (
                 <>
@@ -624,7 +743,7 @@ export default function MemoListPage() {
                 <>
                   {(() => {
                     const page = pageMap.get(contextMenu.pageId);
-                    if (!page) return null;
+                    if (!page || isWelcomeMemo(page.id)) return null;
                     return (
                       <p className="px-4 py-2 text-xs text-muted-foreground border-b border-border/40">
                         {t("memoLastEdited")}: {formatLastEdited(page.updatedAt, locale)}

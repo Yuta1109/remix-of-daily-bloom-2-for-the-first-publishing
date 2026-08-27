@@ -29,6 +29,7 @@ import {
   getMemoPage,
   htmlToPlainText,
   loadMemoLibrary,
+  normalizeNoteHtml,
   upsertMemoPage,
   type MemoPage,
 } from "@/lib/notes-store";
@@ -47,7 +48,7 @@ function runFormat(cmd: string, value?: string) {
 }
 
 export default function MemoDetailPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const navigate = useNavigate();
   const { memoId = "" } = useParams();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -92,7 +93,8 @@ export default function MemoDetailPage() {
   const persist = useCallback(
     (patch: Partial<MemoPage>) => {
       if (!page) return;
-      const lib = upsertMemoPage(loadMemoLibrary(), { ...page, ...patch });
+      const html = patch.html !== undefined ? normalizeNoteHtml(patch.html) : page.html;
+      const lib = upsertMemoPage(loadMemoLibrary(), { ...page, ...patch, html });
       const next = lib.pages.find((p) => p.id === page.id) ?? null;
       if (next) setPage(next);
     },
@@ -263,6 +265,7 @@ export default function MemoDetailPage() {
     setPickOpen(false);
     setOcrFeedback(null);
     await prepareForOcr();
+    if (!editing) setEditing(true);
     editorRef.current?.blur();
     setOcrBusy(true);
     let feedback: { message: string; kind: "info" | "warning" } | null = null;
@@ -326,6 +329,13 @@ export default function MemoDetailPage() {
 
   const iconBtn =
     "h-11 w-11 rounded-full flex items-center justify-center text-foreground/80 bg-card shadow-soft border border-border/60 disabled:opacity-40";
+
+  const formatUpdated = (ts: number) =>
+    new Date(ts).toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
 
   return (
     <div className="page-shell">
@@ -394,6 +404,14 @@ export default function MemoDetailPage() {
               </button>
               <button
                 type="button"
+                aria-label={t("memoCalculator")}
+                onClick={() => setCalcOpen(true)}
+                className={iconBtn}
+              >
+                <Calculator className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
                 aria-label={t("memoShare")}
                 onClick={() => void shareMemoPage(page)}
                 className={iconBtn}
@@ -406,7 +424,7 @@ export default function MemoDetailPage() {
       </div>
 
       {!editing && (
-        <div className="shrink-0 px-6 pb-2 flex justify-center">
+        <div className="shrink-0 px-6 pb-1 flex justify-center">
           <button
             type="button"
             onClick={() => enterEdit("title")}
@@ -415,6 +433,12 @@ export default function MemoDetailPage() {
             {page.title.trim() || t("memoUntitled")}
           </button>
         </div>
+      )}
+
+      {!editing && (
+        <p className="shrink-0 px-4 pb-2 text-xs text-muted-foreground text-left">
+          {t("memoLastEdited")}: {formatUpdated(page.updatedAt)}
+        </p>
       )}
 
       <div className="flex-1 min-h-0 px-4" style={{ paddingBottom: editing ? 0 : 8 }}>

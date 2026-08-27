@@ -19,7 +19,7 @@ export function AiCameraIcon({ className, iconClassName, variant = "today" }: Pr
         )}
       >
         <span
-          className="text-[7px] font-bold tracking-tight text-accent-foreground bg-accent rounded px-[3px] py-px shadow-sm -mb-1"
+          className="absolute left-1/2 -translate-x-1/2 -top-2.5 text-[7px] font-bold tracking-tight text-accent-foreground bg-accent rounded px-[3px] py-px shadow-sm"
           aria-hidden
         >
           AI

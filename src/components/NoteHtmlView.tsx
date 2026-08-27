@@ -24,26 +24,48 @@ function LatexBlock({ latex }: { latex: string }) {
 }
 
 export function NoteHtmlView({ html }: { html: string }) {
-  const nodes = useMemo(() => {
-    if (typeof window === "undefined") return [];
+  const hasLatex = html?.includes("ocr-latex-block");
+
+  const latexParts = useMemo(() => {
+    if (!hasLatex || typeof window === "undefined") return null;
     const wrap = document.createElement("div");
     wrap.innerHTML = html || "";
-    return Array.from(wrap.childNodes);
-  }, [html]);
+    return Array.from(wrap.childNodes).map((node, i) => {
+      if (node instanceof HTMLElement && node.classList.contains("ocr-latex-block")) {
+        return (
+          <LatexBlock key={i} latex={node.getAttribute("data-latex") || ""} />
+        );
+      }
+      if (node instanceof HTMLElement) {
+        return (
+          <div
+            key={i}
+            className="note-html-block"
+            dangerouslySetInnerHTML={{ __html: node.outerHTML }}
+          />
+        );
+      }
+      if ((node.textContent || "").trim()) {
+        return <div key={i}>{node.textContent}</div>;
+      }
+      return null;
+    });
+  }, [html, hasLatex]);
 
   if (!html?.trim()) return null;
 
+  if (!hasLatex) {
+    return (
+      <div
+        className="note-html-view w-full text-base leading-relaxed text-foreground text-left"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+
   return (
     <div className="note-html-view w-full text-base leading-relaxed text-foreground text-left">
-      {nodes.map((node, i) => {
-        if (node instanceof HTMLElement && node.classList.contains("ocr-latex-block")) {
-          return <LatexBlock key={i} latex={node.getAttribute("data-latex") || ""} />;
-        }
-        if (node instanceof HTMLElement) {
-          return <div key={i} dangerouslySetInnerHTML={{ __html: node.outerHTML }} />;
-        }
-        return <span key={i}>{node.textContent}</span>;
-      })}
+      {latexParts}
     </div>
   );
 }

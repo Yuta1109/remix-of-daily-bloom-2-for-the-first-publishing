@@ -32,6 +32,43 @@ const LEGACY_KEY = "essences-memos";
 const LEGACY_ACTIVE_KEY = "essences-memos-active";
 const LIBRARY_KEY = "essences-memo-library-v2";
 
+/** Fixed IDs for the onboarding welcome memo (first install only). */
+export const WELCOME_MEMO_ID = "00000000-0000-4000-8000-000000000001";
+export const WELCOME_CATEGORY_ID = "00000000-0000-4000-8000-000000000002";
+
+export function isWelcomeMemo(pageId: string): boolean {
+  return pageId === WELCOME_MEMO_ID;
+}
+
+function welcomeBodyHtml(): string {
+  const lines = [
+    "毎日の仕事や勉強、買い物のリストなど好きな場面でメモを活用してください！",
+    "右上のカメラ機能を利用すれば、AIが画像を解析してとっさにメモを残したいときにここに保存してくれます。",
+    "手書きのノートからパソコンのスクリーンでもなんでもオッケー👌",
+    "なんと数式も書いてくれます！",
+    "電卓機能も使えます",
+    "さっそく使って見ましょう！",
+  ];
+  return lines.map((line) => `<div>${line}</div>`).join("");
+}
+
+function createWelcomeLibrary(): MemoLibrary {
+  const page: MemoPage = {
+    id: WELCOME_MEMO_ID,
+    title: "まずはここをクリック",
+    html: welcomeBodyHtml(),
+    updatedAt: Date.now(),
+  };
+  const category: MemoCategory = {
+    id: WELCOME_CATEGORY_ID,
+    name: "メモへようこそ",
+    pageIds: [page.id],
+    collapsed: false,
+    color: MEMO_CATEGORY_COLORS[0],
+  };
+  return { categories: [category], pages: [page] };
+}
+
 function blankPage(): MemoPage {
   return {
     id: crypto.randomUUID(),
@@ -78,11 +115,7 @@ function migrateLegacy(): MemoLibrary {
 }
 
 function defaultLibrary(): MemoLibrary {
-  const page = blankPage();
-  return {
-    categories: [blankCategory("", [page.id])],
-    pages: [page],
-  };
+  return createWelcomeLibrary();
 }
 
 function loadRaw(): MemoLibrary {
@@ -286,7 +319,6 @@ export function movePageToCategory(
     ids.splice(Math.max(0, Math.min(toIndex, ids.length)), 0, pageId);
     return { ...c, pageIds: ids };
   });
-  categories = categories.filter((c) => c.pageIds.length > 0);
   if (!categories.some((c) => c.pageIds.includes(pageId))) {
     const fallback = categories[0] ?? blankCategory("", [pageId]);
     if (!categories.length) categories = [{ ...fallback, pageIds: [pageId] }];
@@ -304,6 +336,32 @@ export function htmlToPlainText(html: string): string {
   const wrap = document.createElement("div");
   wrap.innerHTML = html || "";
   return (wrap.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+/** Strip duplicate text nodes that contentEditable sometimes inserts before block siblings. */
+export function normalizeNoteHtml(html: string): string {
+  if (!html?.trim() || typeof document === "undefined") return html || "";
+  const wrap = document.createElement("div");
+  wrap.innerHTML = html;
+  Array.from(wrap.childNodes).forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE && !(node.textContent || "").trim()) {
+      node.remove();
+    }
+  });
+  const kids = Array.from(wrap.childNodes);
+  for (let i = 0; i < kids.length - 1; i++) {
+    const a = kids[i];
+    const b = kids[i + 1];
+    if (a.nodeType === Node.TEXT_NODE && b instanceof HTMLElement) {
+      const ta = (a.textContent || "").trim();
+      const tb = (b.textContent || "").trim();
+      if (ta && ta === tb) {
+        a.remove();
+        break;
+      }
+    }
+  }
+  return wrap.innerHTML;
 }
 
 export function searchMemos(lib: MemoLibrary, query: string): MemoPage[] {

@@ -323,7 +323,7 @@ export default function Index() {
         onClick={(e) => e.stopPropagation()}
       >
         <div
-          className="flex items-center gap-2"
+          className="flex items-stretch gap-2"
           data-tutorial="quick-add"
         >
           <input
@@ -333,15 +333,15 @@ export default function Index() {
             enterKeyHint="done"
             onKeyDown={onAddKeyDown}
             placeholder={t("whatNeedsDone")}
-            className="flex-1 bg-card rounded-xl px-4 py-2.5 text-base outline-none shadow-soft placeholder:text-muted-foreground/50"
+            className="flex-1 min-w-0 bg-card rounded-xl px-4 h-11 text-base outline-none shadow-soft placeholder:text-muted-foreground/50"
           />
           <button
             type="button"
             onClick={finishNewTask}
-            className="bg-accent text-accent-foreground rounded-xl px-4 py-2.5 text-sm font-medium flex items-center gap-1 hover:opacity-90 transition-opacity"
+            className="shrink-0 bg-accent text-accent-foreground rounded-xl px-4 h-11 text-sm font-medium flex flex-row items-center justify-center gap-1.5 hover:opacity-90 transition-opacity"
           >
             <Plus className="w-4 h-4" strokeWidth={2.5} />
-            {t("add")}
+            <span>{t("add")}</span>
           </button>
           <button
             type="button"
@@ -351,7 +351,7 @@ export default function Index() {
               setPickOpen(true);
             }}
             disabled={ocrBusy || isTutorialActive()}
-            className="bg-card rounded-xl px-3 py-2.5 shadow-soft text-foreground/80 flex items-center justify-center disabled:pointer-events-none disabled:opacity-40"
+            className="shrink-0 bg-card rounded-xl px-3 h-11 w-11 shadow-soft text-foreground/80 flex items-center justify-center disabled:pointer-events-none disabled:opacity-40"
             aria-label={t("ocrAddImage")}
           >
             <AiCameraIcon variant="today" />
