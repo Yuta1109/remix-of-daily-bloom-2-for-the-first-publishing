@@ -4,24 +4,45 @@ import { cn } from "@/lib/utils";
 type Props = {
   className?: string;
   iconClassName?: string;
+  /** today: larger camera, optically centered in the task bar. memo: tighter AI badge on a larger camera. */
+  variant?: "today" | "memo";
 };
 
 /** Camera icon with a small AI badge above the lens (OCR / image recognition). */
-export function AiCameraIcon({ className, iconClassName }: Props) {
+export function AiCameraIcon({ className, iconClassName, variant = "today" }: Props) {
+  if (variant === "memo") {
+    return (
+      <span
+        className={cn(
+          "relative inline-flex flex-col items-center justify-center leading-none",
+          className,
+        )}
+      >
+        <span
+          className="text-[7px] font-bold tracking-tight text-accent-foreground bg-accent rounded px-[3px] py-px shadow-sm -mb-1"
+          aria-hidden
+        >
+          AI
+        </span>
+        <Camera className={cn("w-6 h-6", iconClassName)} />
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn(
-        "relative inline-flex flex-col items-center justify-center leading-none translate-y-[2px]",
+        "relative inline-flex flex-col items-center justify-center leading-none",
         className,
       )}
     >
       <span
-        className="text-[7px] font-bold tracking-tight text-accent-foreground bg-accent rounded px-[3px] py-px shadow-sm mb-px"
+        className="text-[7px] font-bold tracking-tight text-accent-foreground bg-accent rounded px-[3px] py-px shadow-sm"
         aria-hidden
       >
         AI
       </span>
-      <Camera className={cn("w-4 h-4", iconClassName)} />
+      <Camera className={cn("w-[22px] h-[22px] -mt-px", iconClassName)} />
     </span>
   );
 }

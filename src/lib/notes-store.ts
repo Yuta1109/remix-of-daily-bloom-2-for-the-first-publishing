@@ -5,11 +5,22 @@ export type MemoPage = {
   updatedAt: number;
 };
 
+export const MEMO_CATEGORY_COLORS = [
+  "#E8F4EC",
+  "#E8F0FA",
+  "#FAF0E6",
+  "#F3E8FA",
+  "#FAE8E8",
+  "#E8FAFA",
+  "#F5F0E8",
+] as const;
+
 export type MemoCategory = {
   id: string;
   name: string;
   pageIds: string[];
   collapsed: boolean;
+  color?: string;
 };
 
 export type MemoLibrary = {
@@ -36,6 +47,7 @@ function blankCategory(name: string, pageIds: string[] = []): MemoCategory {
     name,
     pageIds,
     collapsed: false,
+    color: MEMO_CATEGORY_COLORS[0],
   };
 }
 
@@ -96,6 +108,10 @@ function loadRaw(): MemoLibrary {
         ? c.pageIds.filter((id) => pageIds.has(String(id)))
         : [],
       collapsed: !!c.collapsed,
+      color:
+        typeof c.color === "string" && (MEMO_CATEGORY_COLORS as readonly string[]).includes(c.color)
+          ? c.color
+          : MEMO_CATEGORY_COLORS[0],
     }));
     const referenced = new Set(categories.flatMap((c) => c.pageIds));
     const orphans = pages.filter((p) => !referenced.has(p.id));
@@ -216,6 +232,20 @@ export function toggleCategoryCollapsed(lib: MemoLibrary, categoryId: string): M
 export function renameCategory(lib: MemoLibrary, categoryId: string, name: string): MemoLibrary {
   const categories = lib.categories.map((c) => (c.id === categoryId ? { ...c, name: name.trim() } : c));
   return saveMemoLibrary({ ...lib, categories });
+}
+
+export function setCategoryColor(lib: MemoLibrary, categoryId: string, color: string): MemoLibrary {
+  const categories = lib.categories.map((c) =>
+    c.id === categoryId ? { ...c, color } : c,
+  );
+  return saveMemoLibrary({ ...lib, categories });
+}
+
+export function renameMemoPage(lib: MemoLibrary, pageId: string, title: string): MemoLibrary {
+  const pages = lib.pages.map((p) =>
+    p.id === pageId ? { ...p, title: title.trim(), updatedAt: Date.now() } : p,
+  );
+  return saveMemoLibrary({ ...lib, pages });
 }
 
 export function reorderCategories(lib: MemoLibrary, orderedIds: string[]): MemoLibrary {

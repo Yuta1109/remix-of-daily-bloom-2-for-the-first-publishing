@@ -351,10 +351,10 @@ export default function Index() {
               setPickOpen(true);
             }}
             disabled={ocrBusy || isTutorialActive()}
-            className="bg-card rounded-xl px-3 py-2.5 shadow-soft text-foreground/80 disabled:pointer-events-none disabled:opacity-40"
+            className="bg-card rounded-xl px-3 py-2.5 shadow-soft text-foreground/80 flex items-center justify-center disabled:pointer-events-none disabled:opacity-40"
             aria-label={t("ocrAddImage")}
           >
-            <AiCameraIcon iconClassName="w-5 h-5" />
+            <AiCameraIcon variant="today" />
           </button>
         </div>
       </div>

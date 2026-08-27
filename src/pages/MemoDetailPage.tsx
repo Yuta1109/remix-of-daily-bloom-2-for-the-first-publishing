@@ -14,7 +14,7 @@ import {
   ListOrdered,
   Calculator,
   Redo2,
-  Share2,
+  Upload,
   Undo2,
 } from "lucide-react";
 import { AiCameraIcon } from "@/components/AiCameraIcon";
@@ -27,6 +27,7 @@ import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
 import { OcrResultSheet } from "@/components/OcrResultSheet";
 import {
   getMemoPage,
+  htmlToPlainText,
   loadMemoLibrary,
   upsertMemoPage,
   type MemoPage,
@@ -50,8 +51,11 @@ export default function MemoDetailPage() {
   const navigate = useNavigate();
   const { memoId = "" } = useParams();
   const editorRef = useRef<HTMLDivElement>(null);
+  const viewBodyRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const pendingFocusRef = useRef<"title" | "body" | null>(null);
+  const caretPointRef = useRef<{ x: number; y: number } | null>(null);
+  const bodyCaretModeRef = useRef<"start" | "end" | "point">("end");
   const skipHtmlSync = useRef(false);
   const keepKeyboard = useRef(false);
 
@@ -108,24 +112,67 @@ export default function MemoDetailPage() {
     return () => setOverlayChrome(false);
   }, [calcOpen]);
 
-  const focusEditor = useCallback(() => {
+  const focusEditor = useCallback((mode: "start" | "end" | "point" = "end") => {
     const el = editorRef.current;
     if (!el) return;
     el.focus();
     const sel = window.getSelection();
-    if (sel && sel.rangeCount === 0) {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
+    if (!sel) return;
+
+    if (mode === "point" && caretPointRef.current) {
+      const { x, y } = caretPointRef.current;
+      caretPointRef.current = null;
+      const doc = document as Document & {
+        caretRangeFromPoint?: (x: number, y: number) => Range | null;
+        caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+      };
+      const range =
+        doc.caretRangeFromPoint?.(x, y) ??
+        (() => {
+          const pos = doc.caretPositionFromPoint?.(x, y);
+          if (!pos) return null;
+          const r = document.createRange();
+          r.setStart(pos.offsetNode, pos.offset);
+          r.collapse(true);
+          return r;
+        })();
+      if (range && el.contains(range.startContainer)) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return;
+      }
     }
+
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(mode === "start");
+    sel.removeAllRanges();
+    sel.addRange(range);
   }, []);
 
-  const enterEdit = useCallback((focus: "title" | "body") => {
+  const enterEdit = useCallback((focus: "title" | "body", e?: React.MouseEvent) => {
     pendingFocusRef.current = focus;
+    if (focus === "body") {
+      const hasContent = page ? htmlToPlainText(page.html).length > 0 : false;
+      if (!hasContent) {
+        bodyCaretModeRef.current = "start";
+      } else if (e && viewBodyRef.current) {
+        const doc = document as Document & {
+          caretRangeFromPoint?: (x: number, y: number) => Range | null;
+        };
+        const range = doc.caretRangeFromPoint?.(e.clientX, e.clientY);
+        if (range && viewBodyRef.current.contains(range.startContainer)) {
+          caretPointRef.current = { x: e.clientX, y: e.clientY };
+          bodyCaretModeRef.current = "point";
+        } else {
+          bodyCaretModeRef.current = "end";
+        }
+      } else {
+        bodyCaretModeRef.current = "end";
+      }
+    }
     setEditing(true);
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     keepKeyboard.current = editing && !blockKeyboard;
@@ -145,7 +192,8 @@ export default function MemoDetailPage() {
           el.setSelectionRange(len, len);
         }
       } else {
-        focusEditor();
+        focusEditor(bodyCaretModeRef.current);
+        bodyCaretModeRef.current = "end";
       }
     }, 40);
     return () => window.clearTimeout(timer);
@@ -342,7 +390,7 @@ export default function MemoDetailPage() {
                 }}
                 className={iconBtn}
               >
-                <AiCameraIcon iconClassName="w-5 h-5" />
+                <AiCameraIcon variant="memo" />
               </button>
               <button
                 type="button"
@@ -350,7 +398,7 @@ export default function MemoDetailPage() {
                 onClick={() => void shareMemoPage(page)}
                 className={iconBtn}
               >
-                <Share2 className="w-5 h-5" />
+                <Upload className="w-5 h-5" />
               </button>
             </div>
           </div>
@@ -358,11 +406,11 @@ export default function MemoDetailPage() {
       </div>
 
       {!editing && (
-        <div className="shrink-0 px-4 pb-2 flex justify-center">
+        <div className="shrink-0 px-6 pb-2 flex justify-center">
           <button
             type="button"
             onClick={() => enterEdit("title")}
-            className="text-xl font-bold text-center leading-snug max-w-full px-2 py-1 text-foreground"
+            className="text-xl font-bold text-center leading-snug w-full break-words px-2 py-1 text-foreground"
           >
             {page.title.trim() || t("memoUntitled")}
           </button>
@@ -405,13 +453,22 @@ export default function MemoDetailPage() {
               }}
             />
           ) : (
-            <button
-              type="button"
-              onClick={() => enterEdit("body")}
+            <div
+              ref={viewBodyRef}
+              role="button"
+              tabIndex={0}
+              onClick={(e) => enterEdit("body", e)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") enterEdit("body");
+              }}
               className="w-full text-left cursor-text pt-3 block"
             >
-              <NoteHtmlView html={page.html} />
-            </button>
+              {htmlToPlainText(page.html) ? (
+                <NoteHtmlView html={page.html} />
+              ) : (
+                <p className="text-muted-foreground/40 text-base">{t("memoClickToEdit")}</p>
+              )}
+            </div>
           )}
         </div>
       </div>
