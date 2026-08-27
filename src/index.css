@@ -183,6 +183,14 @@ html.overlay-open #root {
   pointer-events: none;
 }
 
+.note-html-view .note-welcome-line {
+  margin-bottom: 1em;
+}
+
+.note-html-view .note-welcome-line:last-child {
+  margin-bottom: 0;
+}
+
 .page-shell {
   height: 100%;
   display: flex;

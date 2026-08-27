@@ -59,6 +59,7 @@ export default function MemoDetailPage() {
   const bodyCaretModeRef = useRef<"start" | "end" | "point">("end");
   const skipHtmlSync = useRef(false);
   const keepKeyboard = useRef(false);
+  const calcFromView = useRef(false);
 
   const [page, setPage] = useState<MemoPage | null>(() => getMemoPage(loadMemoLibrary(), memoId) ?? null);
   const [editing, setEditing] = useState(false);
@@ -105,7 +106,13 @@ export default function MemoDetailPage() {
     if (!editing || !page) return;
     const el = editorRef.current;
     if (!el || skipHtmlSync.current) return;
-    if (el.innerHTML !== (page.html || "")) el.innerHTML = page.html || "";
+    if (el.innerHTML !== (page.html || "")) {
+      skipHtmlSync.current = true;
+      el.innerHTML = page.html || "";
+      queueMicrotask(() => {
+        skipHtmlSync.current = false;
+      });
+    }
   }, [page?.id, page?.html, editing]);
 
   useEffect(() => {
@@ -260,6 +267,34 @@ export default function MemoDetailPage() {
     });
   };
 
+  const insertAtEnd = (html: string) => {
+    const base = normalizeNoteHtml(editorRef.current?.innerHTML || page?.html || "");
+    const next = normalizeNoteHtml(base + html);
+    persist({ html: next });
+  };
+
+  const handleCalcInsert = (value: string) => {
+    if (calcFromView.current) {
+      calcFromView.current = false;
+      insertAtEnd(value);
+      return;
+    }
+    insertAtCaret(value);
+  };
+
+  const exitToView = () => {
+    const el = editorRef.current;
+    if (el) {
+      skipHtmlSync.current = true;
+      persist({ html: el.innerHTML });
+      queueMicrotask(() => {
+        skipHtmlSync.current = false;
+      });
+    }
+    keepKeyboard.current = false;
+    setEditing(false);
+  };
+
   const onOcr = async (source: ImageSource) => {
     if (ocrBusy) return;
     setPickOpen(false);
@@ -361,7 +396,10 @@ export default function MemoDetailPage() {
               <button
                 type="button"
                 aria-label={t("memoCalculator")}
-                onClick={() => setCalcOpen(true)}
+                onClick={() => {
+                  calcFromView.current = false;
+                  setCalcOpen(true);
+                }}
                 className="h-10 w-10 rounded-full flex items-center justify-center text-foreground/80"
               >
                 <Calculator className="w-5 h-5" />
@@ -369,10 +407,7 @@ export default function MemoDetailPage() {
             </div>
             <button
               type="button"
-              onClick={() => {
-                keepKeyboard.current = false;
-                setEditing(false);
-              }}
+              onClick={exitToView}
               className="shrink-0 h-10 px-4 rounded-full bg-accent text-accent-foreground text-sm font-semibold shadow-soft"
             >
               {t("memoView")}
@@ -405,7 +440,10 @@ export default function MemoDetailPage() {
               <button
                 type="button"
                 aria-label={t("memoCalculator")}
-                onClick={() => setCalcOpen(true)}
+                onClick={() => {
+                  calcFromView.current = true;
+                  setCalcOpen(true);
+                }}
                 className={iconBtn}
               >
                 <Calculator className="w-5 h-5" />
@@ -458,6 +496,7 @@ export default function MemoDetailPage() {
               className="note-editor outline-none text-left"
               style={{ minHeight: "100%", paddingBottom: editorScrollPad }}
               onInput={() => {
+                if (skipHtmlSync.current) return;
                 skipHtmlSync.current = true;
                 persist({ html: editorRef.current?.innerHTML || "" });
                 queueMicrotask(() => {
@@ -547,7 +586,14 @@ export default function MemoDetailPage() {
           document.body,
         )}
 
-      <NoteCalculator open={calcOpen} onClose={() => setCalcOpen(false)} onInsert={(value) => insertAtCaret(value)} />
+      <NoteCalculator
+        open={calcOpen}
+        onClose={() => {
+          calcFromView.current = false;
+          setCalcOpen(false);
+        }}
+        onInsert={handleCalcInsert}
+      />
       <ImagePickSheet
         open={pickOpen}
         onPhotos={() => void onOcr("photos")}

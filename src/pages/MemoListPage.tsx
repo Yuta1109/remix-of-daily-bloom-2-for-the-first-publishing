@@ -42,14 +42,18 @@ type DragGhost = {
   x: number;
   y: number;
   width: number;
-  offsetX: number;
-  offsetY: number;
   label: string;
   cardColor?: string;
 };
 
+type DropPreview =
+  | { kind: "memo"; categoryId: string; index: number }
+  | { kind: "category"; index: number };
+
 const LONG_PRESS_MS = 420;
 const DRAG_THRESHOLD = 10;
+const MEMO_ROW_SHIFT_PX = 58;
+const CATEGORY_SHIFT_PX = 92;
 
 function formatLastEdited(ts: number, locale: string) {
   return new Date(ts).toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
@@ -75,6 +79,7 @@ export default function MemoListPage() {
     { kind: "category"; id: string; value: string } | { kind: "memo"; id: string; value: string } | null
   >(null);
   const [dragGhost, setDragGhost] = useState<DragGhost | null>(null);
+  const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastScrollTop = useRef(0);
@@ -89,6 +94,8 @@ export default function MemoListPage() {
   } | null>(null);
   const libRef = useRef(lib);
   libRef.current = lib;
+  const dropPreviewRef = useRef<DropPreview | null>(null);
+  dropPreviewRef.current = dropPreview;
 
   const matchedIds = useMemo(() => {
     const q = search.trim();
@@ -204,14 +211,23 @@ export default function MemoListPage() {
   }, [persist]);
 
   const finishDrag = useCallback(
-    (clientX: number, clientY: number, target: PressTarget) => {
-      const el = document.elementFromPoint(clientX, clientY);
+    (clientX: number, clientY: number, target: PressTarget, preview: DropPreview | null) => {
       if (target.kind === "memo") {
+        if (preview?.kind === "memo") {
+          onPageDrop(target, preview.categoryId, preview.index + 1);
+          return;
+        }
+        const el = document.elementFromPoint(clientX, clientY);
         const row = el?.closest("[data-memo-row]") as HTMLElement | null;
         if (row) {
           onPageDrop(target, row.dataset.categoryId!, Number(row.dataset.index ?? 0) + 1);
         }
       } else {
+        if (preview?.kind === "category") {
+          onCategoryDrop(target.categoryId, preview.index + 1);
+          return;
+        }
+        const el = document.elementFromPoint(clientX, clientY);
         const section = el?.closest("[data-category-section]") as HTMLElement | null;
         if (section) {
           onCategoryDrop(target.categoryId, Number(section.dataset.catIndex ?? 0) + 1);
@@ -221,14 +237,43 @@ export default function MemoListPage() {
     [onCategoryDrop, onPageDrop],
   );
 
+  const updateDropPreview = useCallback((clientX: number, clientY: number, target: PressTarget) => {
+    const el = document.elementFromPoint(clientX, clientY);
+    if (target.kind === "memo") {
+      const row = el?.closest("[data-memo-row]") as HTMLElement | null;
+      if (row) {
+        setDropPreview({
+          kind: "memo",
+          categoryId: row.dataset.categoryId!,
+          index: Number(row.dataset.index ?? 0),
+        });
+        return;
+      }
+      const section = el?.closest("[data-category-section]") as HTMLElement | null;
+      if (section) {
+        setDropPreview({
+          kind: "memo",
+          categoryId: section.dataset.categoryId!,
+          index: 0,
+        });
+      }
+      return;
+    }
+    const section = el?.closest("[data-category-section]") as HTMLElement | null;
+    if (section) {
+      setDropPreview({ kind: "category", index: Number(section.dataset.catIndex ?? 0) });
+    }
+  }, []);
+
   useEffect(() => {
     if (!dragGhost) return;
     const onMove = (e: PointerEvent) => {
       setDragGhost((g) => (g ? { ...g, x: e.clientX, y: e.clientY } : null));
+      updateDropPreview(e.clientX, e.clientY, dragGhost.target);
     };
     document.addEventListener("pointermove", onMove);
     return () => document.removeEventListener("pointermove", onMove);
-  }, [dragGhost]);
+  }, [dragGhost, updateDropPreview]);
 
   const startPress = (target: PressTarget, el: HTMLElement, clientX: number, clientY: number) => {
     clearPress();
@@ -257,8 +302,6 @@ export default function MemoListPage() {
         x: clientX,
         y: clientY,
         width: rect.width,
-        offsetX: clientX - rect.left,
-        offsetY: clientY - rect.top,
         label:
           press.target.kind === "memo"
             ? page?.title.trim() || t("memoUntitled")
@@ -268,6 +311,7 @@ export default function MemoListPage() {
             ? cat?.color || MEMO_CATEGORY_COLORS[0]
             : undefined,
       });
+      updateDropPreview(clientX, clientY, press.target);
     }
   };
 
@@ -277,8 +321,9 @@ export default function MemoListPage() {
     clearPress();
 
     if (press.moved && press.longPress) {
-      finishDrag(clientX, clientY, press.target);
+      finishDrag(clientX, clientY, press.target, dropPreviewRef.current);
       setDragGhost(null);
+      setDropPreview(null);
       return;
     }
 
@@ -324,11 +369,44 @@ export default function MemoListPage() {
   const isDraggingCategory = (categoryId: string) =>
     dragGhost?.target.kind === "category" && dragGhost.target.categoryId === categoryId;
 
+  const getMemoRowShift = (categoryId: string, index: number, pageId: string) => {
+    if (!dragGhost || dragGhost.target.kind !== "memo" || !dropPreview || dropPreview.kind !== "memo") {
+      return 0;
+    }
+    if (isDraggingMemo(pageId)) return 0;
+    if (dropPreview.categoryId !== categoryId) return 0;
+    const fromIndex =
+      dragGhost.target.kind === "memo" && dragGhost.target.categoryId === categoryId
+        ? dragGhost.target.index
+        : -1;
+    const toIndex = dropPreview.index;
+    if (fromIndex >= 0) {
+      if (fromIndex < toIndex && index > fromIndex && index <= toIndex) return MEMO_ROW_SHIFT_PX;
+      if (fromIndex > toIndex && index >= toIndex && index < fromIndex) return -MEMO_ROW_SHIFT_PX;
+      return 0;
+    }
+    if (index >= toIndex) return MEMO_ROW_SHIFT_PX;
+    return 0;
+  };
+
+  const getCategoryShift = (catIndex: number, categoryId: string) => {
+    if (!dragGhost || dragGhost.target.kind !== "category" || !dropPreview || dropPreview.kind !== "category") {
+      return 0;
+    }
+    if (isDraggingCategory(categoryId)) return 0;
+    const fromIndex = dragGhost.target.index;
+    const toIndex = dropPreview.index;
+    if (fromIndex < toIndex && catIndex > fromIndex && catIndex <= toIndex) return CATEGORY_SHIFT_PX;
+    if (fromIndex > toIndex && catIndex >= toIndex && catIndex < fromIndex) return -CATEGORY_SHIFT_PX;
+    return 0;
+  };
+
   const renderMemoRow = (page: MemoPage, category: MemoCategory, index: number) => {
     const preview = htmlToPlainText(page.html);
     const isRenaming = renameTarget?.kind === "memo" && renameTarget.id === page.id;
     const welcome = isWelcomeMemo(page.id);
     const dragging = isDraggingMemo(page.id);
+    const shiftY = getMemoRowShift(category.id, index, page.id);
 
     return (
       <div
@@ -337,9 +415,10 @@ export default function MemoListPage() {
         data-category-id={category.id}
         data-index={index}
         className={cn(
-          "flex items-center gap-2 rounded-2xl bg-background/80 border border-border/30 px-2 py-2 transition-opacity",
+          "flex items-center gap-2 rounded-2xl bg-background/80 border border-border/30 px-2 py-2 transition-transform duration-200 ease-out",
           dragging && "opacity-30",
         )}
+        style={{ transform: shiftY ? `translateY(${shiftY}px)` : undefined }}
         onPointerDown={(e) => {
           if (isRenaming || (e.target as HTMLElement).closest("[data-pencil],[data-trash]")) return;
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -389,11 +468,9 @@ export default function MemoListPage() {
               {!welcome && preview ? (
                 <p className="text-xs text-muted-foreground truncate mt-0.5">{preview}</p>
               ) : null}
-              {!welcome ? (
-                <p className="text-[10px] text-muted-foreground/70 mt-1">
-                  {t("memoLastEdited")}: {formatLastEdited(page.updatedAt, locale)}
-                </p>
-              ) : null}
+              <p className="text-[10px] text-muted-foreground/70 mt-1">
+                {t("memoLastEdited")}: {formatLastEdited(page.updatedAt, locale)}
+              </p>
             </>
           )}
         </div>
@@ -477,17 +554,22 @@ export default function MemoListPage() {
             const dragging = isDraggingCategory(category.id);
             const cardColor = category.color || MEMO_CATEGORY_COLORS[0];
             const memoCount = category.pageIds.length;
+            const catShiftY = getCategoryShift(catIndex, category.id);
 
             return (
               <section
                 key={category.id}
                 data-category-section
+                data-category-id={category.id}
                 data-cat-index={catIndex}
                 className={cn(
-                  "rounded-3xl border border-border/40 shadow-soft overflow-hidden transition-opacity",
+                  "rounded-3xl border border-border/40 shadow-soft overflow-hidden transition-transform duration-200 ease-out",
                   dragging && "opacity-30",
                 )}
-                style={{ backgroundColor: cardColor }}
+                style={{
+                  backgroundColor: cardColor,
+                  transform: catShiftY ? `translateY(${catShiftY}px)` : undefined,
+                }}
               >
                 <div
                   className="flex items-center gap-2 px-4 py-3 touch-none"
@@ -522,22 +604,24 @@ export default function MemoListPage() {
                       <Pencil className="w-4 h-4" />
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    data-chevron
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!listEditing) persist(toggleCategoryCollapsed(lib, category.id));
-                    }}
-                    className="p-1 -ml-1 text-foreground/70 shrink-0"
-                    aria-label={category.collapsed ? "expand" : "collapse"}
-                  >
-                    {category.collapsed && !listEditing ? (
-                      <ChevronRight className="w-5 h-5" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5" />
-                    )}
-                  </button>
+                  {!listEditing ? (
+                    <button
+                      type="button"
+                      data-chevron
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        persist(toggleCategoryCollapsed(lib, category.id));
+                      }}
+                      className="p-1 -ml-1 text-foreground/70 shrink-0"
+                      aria-label={category.collapsed ? "expand" : "collapse"}
+                    >
+                      {category.collapsed ? (
+                        <ChevronRight className="w-5 h-5" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5" />
+                      )}
+                    </button>
+                  ) : null}
                   {isRenaming ? (
                     <input
                       autoFocus
@@ -581,8 +665,9 @@ export default function MemoListPage() {
           <div
             className="fixed z-[80] pointer-events-none rounded-2xl border border-border/50 shadow-float px-4 py-3 font-semibold text-sm truncate"
             style={{
-              left: dragGhost.x - dragGhost.offsetX,
-              top: dragGhost.y - dragGhost.offsetY,
+              left: dragGhost.x,
+              top: dragGhost.y,
+              transform: "translate(-50%, -50%)",
               width: dragGhost.width,
               backgroundColor: dragGhost.cardColor || "hsl(var(--card))",
               opacity: 0.95,

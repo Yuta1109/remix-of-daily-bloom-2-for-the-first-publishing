@@ -46,16 +46,33 @@ function welcomeBodyHtml(): string {
     "右上のカメラ機能を利用すれば、AIが画像を解析してとっさにメモを残したいときにここに保存してくれます。",
     "手書きのノートからパソコンのスクリーンでもなんでもオッケー👌",
     "なんと数式も書いてくれます！",
-    "電卓機能も使えます",
+    "右上から電卓や共有機能も使えます！",
     "さっそく使って見ましょう！",
   ];
-  return lines.map((line) => `<div>${line}</div>`).join("");
+  return lines.map((line) => `<div class="note-welcome-line">${line}</div>`).join("");
+}
+
+function isWelcomeContent(html: string): boolean {
+  return html.includes("毎日の仕事や勉強");
+}
+
+function patchWelcomeMemo(lib: MemoLibrary): MemoLibrary {
+  const pages = lib.pages.map((p) => {
+    if (p.id !== WELCOME_MEMO_ID) return p;
+    if (!isWelcomeContent(p.html) && p.title !== "まずはここをクリック") return p;
+    return {
+      ...p,
+      title: "メモの使い方を紹介します！",
+      html: normalizeNoteHtml(welcomeBodyHtml()),
+    };
+  });
+  return { ...lib, pages };
 }
 
 function createWelcomeLibrary(): MemoLibrary {
   const page: MemoPage = {
     id: WELCOME_MEMO_ID,
-    title: "まずはここをクリック",
+    title: "メモの使い方を紹介します！",
     html: welcomeBodyHtml(),
     updatedAt: Date.now(),
   };
@@ -159,7 +176,7 @@ function loadRaw(): MemoLibrary {
       const page = blankPage();
       return { categories: [blankCategory("", [page.id])], pages: [page] };
     }
-    return { categories, pages };
+    return patchWelcomeMemo({ categories, pages });
   } catch {
     const migrated = migrateLegacy();
     saveRaw(migrated);
@@ -343,11 +360,13 @@ export function normalizeNoteHtml(html: string): string {
   if (!html?.trim() || typeof document === "undefined") return html || "";
   const wrap = document.createElement("div");
   wrap.innerHTML = html;
+
   Array.from(wrap.childNodes).forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE && !(node.textContent || "").trim()) {
       node.remove();
     }
   });
+
   const kids = Array.from(wrap.childNodes);
   for (let i = 0; i < kids.length - 1; i++) {
     const a = kids[i];
@@ -361,6 +380,34 @@ export function normalizeNoteHtml(html: string): string {
       }
     }
   }
+
+  const blocks = Array.from(wrap.childNodes).filter(
+    (n) => !(n.nodeType === Node.TEXT_NODE && !(n.textContent || "").trim()),
+  );
+  if (blocks.length >= 2 && blocks.length % 2 === 0) {
+    const mid = blocks.length / 2;
+    const sig = (list: ChildNode[]) =>
+      list
+        .map((n) => (n instanceof HTMLElement ? n.outerHTML : (n.textContent || "").trim()))
+        .join("\n");
+    if (sig(blocks.slice(0, mid)) === sig(blocks.slice(mid))) {
+      blocks.slice(mid).forEach((n) => n.remove());
+    }
+  }
+
+  let prev: ChildNode | null = null;
+  Array.from(wrap.childNodes).forEach((node) => {
+    if (
+      prev instanceof HTMLElement &&
+      node instanceof HTMLElement &&
+      prev.outerHTML === node.outerHTML
+    ) {
+      node.remove();
+      return;
+    }
+    prev = node;
+  });
+
   return wrap.innerHTML;
 }
 
