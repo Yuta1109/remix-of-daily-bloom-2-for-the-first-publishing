@@ -14,6 +14,23 @@ function nthMonday(year: number, month: number, n: number) {
   return new Date(year, month - 1, 1 + offset + (n - 1) * 7);
 }
 
+/** ハッピーマンデー制度の祝日（n = その月の第 n 月曜日） */
+const HAPPY_MONDAY = {
+  seijin: { month: 1, nth: 2, name: "成人の日" },
+  marine: { month: 7, nth: 3, name: "海の日" },
+  respectAged: { month: 9, nth: 3, name: "敬老の日" },
+  sports: { month: 10, nth: 2, name: "スポーツの日" },
+} as const;
+
+function addHappyMonday(
+  add: (d: Date, name: string) => void,
+  year: number,
+  spec: (typeof HAPPY_MONDAY)[keyof typeof HAPPY_MONDAY],
+) {
+  add(nthMonday(year, spec.month, spec.nth), spec.name);
+}
+
+/** 国立天文台の近似式（1980–2099年向け。官報公表日と一致する想定） */
 function vernalEquinoxDay(year: number) {
   const d = Math.floor(20.8431 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
   return new Date(year, 2, d);
@@ -22,6 +39,30 @@ function vernalEquinoxDay(year: number) {
 function autumnalEquinoxDay(year: number) {
   const d = Math.floor(23.2488 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
   return new Date(year, 8, d);
+}
+
+function addEmperorBirthday(add: (d: Date, name: string) => void, year: number) {
+  if (year >= 2020) {
+    add(new Date(year, 1, 23), "天皇誕生日");
+  } else if (year >= 1989 && year <= 2018) {
+    add(new Date(year, 11, 23), "天皇誕生日");
+  }
+}
+
+function addOneOffHolidays(add: (d: Date, name: string) => void, year: number) {
+  if (year === 2019) {
+    add(new Date(2019, 4, 1), "天皇の即位の日");
+  }
+  if (year === 2020) {
+    add(new Date(2020, 6, 23), "海の日");
+    add(new Date(2020, 6, 24), "スポーツの日");
+    add(new Date(2020, 7, 10), "山の日");
+  }
+  if (year === 2021) {
+    add(new Date(2021, 6, 22), "海の日");
+    add(new Date(2021, 6, 23), "スポーツの日");
+    add(new Date(2021, 7, 8), "山の日");
+  }
 }
 
 function addDays(d: Date, n: number) {
@@ -44,29 +85,29 @@ function holidaysForYear(year: number): Map<string, string> {
   const add = (d: Date, name: string) => map.set(toKey(d), name);
 
   add(new Date(year, 0, 1), "元日");
-  add(nthMonday(year, 1, 2), "成人の日");
+  addHappyMonday(add, year, HAPPY_MONDAY.seijin);
   add(new Date(year, 1, 11), "建国記念の日");
-  add(new Date(year, 1, 23), "天皇誕生日");
+  addEmperorBirthday(add, year);
   add(vernalEquinoxDay(year), "春分の日");
   add(new Date(year, 3, 29), "昭和の日");
   add(new Date(year, 4, 3), "憲法記念日");
   add(new Date(year, 4, 4), "みどりの日");
   add(new Date(year, 4, 5), "こどもの日");
-  add(nthMonday(year, 7, 3), "海の日");
-  add(new Date(year, 7, 11), "山の日");
-  add(nthMonday(year, 9, 2), "敬老の日");
+  if (year !== 2020 && year !== 2021) {
+    addHappyMonday(add, year, HAPPY_MONDAY.marine);
+  }
+  if (year !== 2020 && year !== 2021) {
+    add(new Date(year, 7, 11), "山の日");
+  }
+  addHappyMonday(add, year, HAPPY_MONDAY.respectAged);
   add(autumnalEquinoxDay(year), "秋分の日");
+  if (year >= 2022) {
+    addHappyMonday(add, year, HAPPY_MONDAY.sports);
+  }
   add(new Date(year, 10, 3), "文化の日");
   add(new Date(year, 10, 23), "勤労感謝の日");
 
-  if (year === 2020) {
-    add(new Date(2020, 6, 23), "海の日");
-    add(new Date(2020, 6, 24), "スポーツの日");
-  }
-  if (year === 2021) {
-    add(new Date(2021, 6, 22), "海の日");
-    add(new Date(2021, 6, 23), "スポーツの日");
-  }
+  addOneOffHolidays(add, year);
 
   // 振替休日
   for (const [key, name] of [...map.entries()]) {
