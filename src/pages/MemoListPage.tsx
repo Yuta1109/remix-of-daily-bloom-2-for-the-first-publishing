@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
-import { ChevronDown, ChevronRight, Pencil, Plus, Search, Trash2, Undo2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Pencil, Plus, Redo2, Search, Trash2, Undo2 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { tickHaptic } from "@/lib/haptics";
@@ -190,6 +190,10 @@ export default function MemoListPage() {
   const [categoryName, setCategoryName] = useState("");
   const [kbHeight, setKbHeight] = useState(0);
   const [contextMenu, setContextMenu] = useState<ContextMenu>(null);
+  const [pendingCategoryColor, setPendingCategoryColor] = useState<string | null>(null);
+  const [editHistoryState, setEditHistoryState] = useState<{ entries: MemoLibrary[]; index: number } | null>(
+    null,
+  );
   const [categoryLongPressId, setCategoryLongPressId] = useState<string | null>(null);
   const [memoLongPressId, setMemoLongPressId] = useState<string | null>(null);
   const [searchVisible, setSearchVisible] = useState(true);
@@ -221,34 +225,67 @@ export default function MemoListPage() {
   libRef.current = lib;
   const categoryDragMetricsRef = useRef<DragMeasurement[]>([]);
   const memoDragMetricsRef = useRef<Map<string, DragMeasurement[]>>(new Map());
-  const editSnapshotRef = useRef<MemoLibrary | null>(null);
+  const skipEditHistoryRef = useRef(false);
+  const listEditingRef = useRef(listEditing);
+  listEditingRef.current = listEditing;
+
+  const cloneLibrary = (value: MemoLibrary) => JSON.parse(JSON.stringify(value)) as MemoLibrary;
 
   const pageMap = useMemo(() => new Map(lib.pages.map((p) => [p.id, p])), [lib.pages]);
 
   const persist = useCallback((next: MemoLibrary) => {
+    saveMemoLibrary(next);
     setLib(next);
+    if (!listEditingRef.current || skipEditHistoryRef.current) return;
+    const snapshot = cloneLibrary(next);
+    setEditHistoryState((prev) => {
+      if (!prev) return prev;
+      const current = prev.entries[prev.index];
+      if (current && JSON.stringify(current) === JSON.stringify(snapshot)) return prev;
+      const entries = [...prev.entries.slice(0, prev.index + 1), snapshot];
+      return { entries, index: entries.length - 1 };
+    });
   }, []);
 
   const enterListEditing = () => {
-    editSnapshotRef.current = JSON.parse(JSON.stringify(lib)) as MemoLibrary;
+    const snap = cloneLibrary(lib);
+    setEditHistoryState({ entries: [snap], index: 0 });
     setListEditing(true);
   };
 
   const exitListEditing = () => {
-    editSnapshotRef.current = null;
+    setEditHistoryState(null);
     setListEditing(false);
     setRenameTarget(null);
     setContextMenu(null);
+    setPendingCategoryColor(null);
   };
 
-  const revertListEditing = () => {
-    const snap = editSnapshotRef.current;
-    if (snap) {
+  const restoreEditHistoryAt = (index: number) => {
+    setEditHistoryState((prev) => {
+      if (!prev || index < 0 || index >= prev.entries.length) return prev;
+      const snap = cloneLibrary(prev.entries[index]);
+      skipEditHistoryRef.current = true;
       saveMemoLibrary(snap);
       setLib(snap);
-    }
-    exitListEditing();
+      skipEditHistoryRef.current = false;
+      return { entries: prev.entries, index };
+    });
   };
+
+  const undoListEdit = () => {
+    if (!editHistoryState || editHistoryState.index <= 0) return;
+    restoreEditHistoryAt(editHistoryState.index - 1);
+  };
+
+  const redoListEdit = () => {
+    if (!editHistoryState || editHistoryState.index >= editHistoryState.entries.length - 1) return;
+    restoreEditHistoryAt(editHistoryState.index + 1);
+  };
+
+  const canUndoListEdit = !!editHistoryState && editHistoryState.index > 0;
+  const canRedoListEdit =
+    !!editHistoryState && editHistoryState.index < editHistoryState.entries.length - 1;
 
   useEffect(() => {
     if (!addOpen) {
@@ -813,14 +850,32 @@ export default function MemoListPage() {
           </button>
           <h1 className="text-xl font-bold text-center truncate">{t("memoListTitle")}</h1>
           {listEditing ? (
-            <button
-              type="button"
-              onClick={revertListEditing}
-              className="justify-self-end p-2 rounded-full bg-accent/10 text-accent"
-              aria-label={t("memoRevertListEdits")}
-            >
-              <Undo2 className="w-6 h-6" strokeWidth={2.5} />
-            </button>
+            <div className="justify-self-end flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={undoListEdit}
+                disabled={!canUndoListEdit}
+                className={cn(
+                  "p-2 rounded-full",
+                  canUndoListEdit ? "bg-accent/10 text-accent" : "text-muted-foreground/35",
+                )}
+                aria-label={t("memoUndo")}
+              >
+                <Undo2 className="w-5 h-5" strokeWidth={2.25} />
+              </button>
+              <button
+                type="button"
+                onClick={redoListEdit}
+                disabled={!canRedoListEdit}
+                className={cn(
+                  "p-2 rounded-full",
+                  canRedoListEdit ? "bg-accent/10 text-accent" : "text-muted-foreground/35",
+                )}
+                aria-label={t("memoRedo")}
+              >
+                <Redo2 className="w-5 h-5" strokeWidth={2.25} />
+              </button>
+            </div>
           ) : (
             <button
               type="button"
@@ -1167,7 +1222,10 @@ export default function MemoListPage() {
             <button
               type="button"
               className="absolute inset-0 bg-black/30"
-              onClick={() => setContextMenu(null)}
+              onClick={() => {
+                setContextMenu(null);
+                setPendingCategoryColor(null);
+              }}
               aria-label={t("cancel")}
             />
             <div
@@ -1176,6 +1234,19 @@ export default function MemoListPage() {
             >
               {contextMenu.kind === "category" && !contextMenu.showColors && (
                 <>
+                  <button
+                    type="button"
+                    className="w-full text-left px-4 py-3.5 rounded-2xl text-base font-medium hover:bg-secondary/60"
+                    onClick={() => {
+                      const categoryId = contextMenu.categoryId;
+                      setContextMenu(null);
+                      const { lib: next, page } = addMemoToCategory(lib, categoryId);
+                      persist(next);
+                      navigate(`/notes/${page.id}`);
+                    }}
+                  >
+                    {t("memoAddNewMemo")}
+                  </button>
                   <button
                     type="button"
                     className="w-full text-left px-4 py-3.5 rounded-2xl text-base font-medium hover:bg-secondary/60"
@@ -1190,7 +1261,11 @@ export default function MemoListPage() {
                   <button
                     type="button"
                     className="w-full text-left px-4 py-3.5 rounded-2xl text-base font-medium hover:bg-secondary/60"
-                    onClick={() => setContextMenu({ ...contextMenu, showColors: true })}
+                    onClick={() => {
+                      const cat = lib.categories.find((c) => c.id === contextMenu.categoryId);
+                      setPendingCategoryColor(cat?.color || MEMO_CATEGORY_COLORS[0]);
+                      setContextMenu({ ...contextMenu, showColors: true });
+                    }}
                   >
                     {t("memoChangeColor")}
                   </button>
@@ -1208,11 +1283,27 @@ export default function MemoListPage() {
               )}
               {contextMenu.kind === "category" && contextMenu.showColors && (
                 <div className="px-4 py-3">
-                  <p className="text-sm font-semibold mb-3">{t("memoChangeColor")}</p>
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="text-sm font-semibold">{t("memoChangeColor")}</p>
+                    <button
+                      type="button"
+                      className="p-2 rounded-full bg-accent/10 text-accent shrink-0"
+                      aria-label={t("memoSaveList")}
+                      onClick={() => {
+                        const cat = lib.categories.find((c) => c.id === contextMenu.categoryId);
+                        const savedColor = pendingCategoryColor ?? cat?.color ?? MEMO_CATEGORY_COLORS[0];
+                        persist(setCategoryColor(lib, contextMenu.categoryId, savedColor));
+                        setContextMenu(null);
+                        setPendingCategoryColor(null);
+                      }}
+                    >
+                      <Check className="w-5 h-5" strokeWidth={2.5} />
+                    </button>
+                  </div>
                   <div className="flex flex-wrap gap-3 justify-center">
                     {(() => {
                       const cat = lib.categories.find((c) => c.id === contextMenu.categoryId);
-                      const currentColor = cat?.color || MEMO_CATEGORY_COLORS[0];
+                      const currentColor = pendingCategoryColor ?? cat?.color ?? MEMO_CATEGORY_COLORS[0];
                       return categoryPickerColors(currentColor).map((color) => {
                         const selected = color === currentColor;
                         return (
@@ -1227,10 +1318,7 @@ export default function MemoListPage() {
                             )}
                             style={{ backgroundColor: color }}
                             aria-pressed={selected}
-                            onClick={() => {
-                              persist(setCategoryColor(lib, contextMenu.categoryId, color));
-                              setContextMenu(null);
-                            }}
+                            onClick={() => setPendingCategoryColor(color)}
                           />
                         );
                       });

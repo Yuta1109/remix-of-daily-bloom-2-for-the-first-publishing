@@ -229,14 +229,13 @@ export function upsertMemoPage(lib: MemoLibrary, patch: MemoPage): MemoLibrary {
   return saveMemoLibrary({ ...lib, pages });
 }
 
-export function addCategory(lib: MemoLibrary, name: string): { lib: MemoLibrary; categoryId: string; pageId: string } {
-  const page = blankPage();
-  const category = blankCategory(name.trim(), [page.id], nextCategoryColor(lib));
+export function addCategory(lib: MemoLibrary, name: string): { lib: MemoLibrary; categoryId: string } {
+  const category = blankCategory(name.trim(), [], nextCategoryColor(lib));
   const next = saveMemoLibrary({
     categories: [...lib.categories, category],
-    pages: [page, ...lib.pages],
+    pages: lib.pages,
   });
-  return { lib: next, categoryId: category.id, pageId: page.id };
+  return { lib: next, categoryId: category.id };
 }
 
 export function addMemoToCategory(
