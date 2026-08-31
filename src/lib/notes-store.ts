@@ -255,9 +255,10 @@ export function addMemoToCategory(
 }
 
 export function removeMemoPage(lib: MemoLibrary, pageId: string): MemoLibrary {
-  const categories = lib.categories
-    .map((c) => ({ ...c, pageIds: c.pageIds.filter((id) => id !== pageId) }))
-    .filter((c) => c.pageIds.length > 0);
+  const categories = lib.categories.map((c) => ({
+    ...c,
+    pageIds: c.pageIds.filter((id) => id !== pageId),
+  }));
   let pages = lib.pages.filter((p) => p.id !== pageId);
   if (pages.length === 0) {
     const page = blankPage();

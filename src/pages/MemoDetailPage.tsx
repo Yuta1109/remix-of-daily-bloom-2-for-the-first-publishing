@@ -61,6 +61,7 @@ export default function MemoDetailPage() {
   const keepKeyboard = useRef(false);
   const calcFromView = useRef(false);
   const draftHtmlRef = useRef("");
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [page, setPage] = useState<MemoPage | null>(() => getMemoPage(loadMemoLibrary(), memoId) ?? null);
   const [editing, setEditing] = useState(false);
@@ -90,6 +91,13 @@ export default function MemoDetailPage() {
     setPage(found);
     draftHtmlRef.current = found.html || "";
     setViewRevision((v) => v + 1);
+    if (!htmlToPlainText(found.html || "").trim()) {
+      pendingFocusRef.current = "body";
+      bodyCaretModeRef.current = "start";
+      setEditing(true);
+    } else {
+      setEditing(false);
+    }
   }, [memoId, navigate]);
 
   const overlayOpen = calcOpen || pickOpen || ocrBusy || !!ocrFeedback;
@@ -105,6 +113,22 @@ export default function MemoDetailPage() {
     },
     [page],
   );
+
+  const flushDraft = useCallback(() => {
+    if (!page) return;
+    const el = editorRef.current;
+    const html = normalizeNoteHtml(el?.innerHTML ?? draftHtmlRef.current ?? page.html ?? "");
+    draftHtmlRef.current = html;
+    if (html !== page.html) {
+      persist({ html });
+    }
+  }, [page, persist]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [memoId]);
 
   useEffect(() => {
     if (!editing || !page) return;
@@ -267,6 +291,7 @@ export default function MemoDetailPage() {
     skipHtmlSync.current = true;
     document.execCommand("insertHTML", false, html);
     draftHtmlRef.current = el.innerHTML;
+    persist({ html: draftHtmlRef.current });
     queueMicrotask(() => {
       skipHtmlSync.current = false;
     });
@@ -288,10 +313,14 @@ export default function MemoDetailPage() {
     insertAtCaret(value);
   };
 
+  const goBackToList = () => {
+    if (editing) flushDraft();
+    navigate("/notes");
+  };
+
   const exitToView = () => {
+    flushDraft();
     const el = editorRef.current;
-    const html = normalizeNoteHtml(el?.innerHTML || draftHtmlRef.current || "");
-    draftHtmlRef.current = html;
     if (!page) return;
 
     if (el) {
@@ -299,13 +328,8 @@ export default function MemoDetailPage() {
       el.innerHTML = "";
     }
 
-    const lib = upsertMemoPage(loadMemoLibrary(), { ...page, html });
-    const next = lib.pages.find((p) => p.id === page.id) ?? null;
-    if (!next) return;
-
     keepKeyboard.current = false;
     flushSync(() => {
-      setPage(next);
       setViewRevision((v) => v + 1);
       setEditing(false);
     });
@@ -360,6 +384,9 @@ export default function MemoDetailPage() {
         editorRef.current?.focus();
         refreshFormats();
         syncDraftFromEditor();
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        const html = normalizeNoteHtml(draftHtmlRef.current);
+        persist({ html });
       }}
       className={cn(
         "h-11 min-w-11 px-2 rounded-xl flex items-center justify-center",
@@ -395,7 +422,7 @@ export default function MemoDetailPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate("/notes")}
+              onClick={goBackToList}
               className={iconBtn}
               aria-label={t("memoBackToList")}
             >
@@ -405,7 +432,7 @@ export default function MemoDetailPage() {
               ref={titleInputRef}
               value={page.title}
               onChange={(e) => persist({ title: e.target.value })}
-              placeholder={t("memoTitlePlaceholder")}
+              placeholder={t("memoNoTitle")}
               className="flex-1 min-w-0 bg-secondary/70 rounded-full px-4 py-2.5 text-base font-semibold outline-none placeholder:text-muted-foreground/50"
             />
             <div className="shrink-0 flex items-center gap-1 bg-card rounded-full shadow-soft border border-border/70 px-1 py-1">
@@ -433,7 +460,7 @@ export default function MemoDetailPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate("/notes")}
+              onClick={goBackToList}
               className={iconBtn}
               aria-label={t("memoBackToList")}
             >
@@ -482,9 +509,12 @@ export default function MemoDetailPage() {
           <button
             type="button"
             onClick={() => enterEdit("title")}
-            className="text-xl font-bold text-center leading-snug w-full break-words px-2 py-1 text-foreground"
+            className={cn(
+              "text-xl font-bold text-center leading-snug w-full break-words px-2 py-1",
+              page.title.trim() ? "text-foreground" : "text-muted-foreground/50",
+            )}
           >
-            {page.title.trim() || t("memoUntitled")}
+            {page.title.trim() || t("memoNoTitle")}
           </button>
         </div>
       )}
@@ -514,6 +544,11 @@ export default function MemoDetailPage() {
               onInput={() => {
                 if (skipHtmlSync.current) return;
                 draftHtmlRef.current = editorRef.current?.innerHTML || "";
+                if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+                saveTimerRef.current = window.setTimeout(() => {
+                  const html = normalizeNoteHtml(draftHtmlRef.current);
+                  persist({ html });
+                }, 400);
               }}
               onKeyUp={refreshFormats}
               onMouseUp={refreshFormats}

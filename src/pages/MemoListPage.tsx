@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
-import { ChevronDown, ChevronRight, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Search, Trash2, Undo2 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { tickHaptic } from "@/lib/haptics";
@@ -23,6 +23,7 @@ import {
   loadMemoLibrary,
   MEMO_CATEGORY_COLORS,
   categoryPickerColors,
+  saveMemoLibrary,
   movePageToCategory,
   removeCategory,
   removeMemoPage,
@@ -220,12 +221,34 @@ export default function MemoListPage() {
   libRef.current = lib;
   const categoryDragMetricsRef = useRef<DragMeasurement[]>([]);
   const memoDragMetricsRef = useRef<Map<string, DragMeasurement[]>>(new Map());
+  const editSnapshotRef = useRef<MemoLibrary | null>(null);
 
   const pageMap = useMemo(() => new Map(lib.pages.map((p) => [p.id, p])), [lib.pages]);
 
   const persist = useCallback((next: MemoLibrary) => {
     setLib(next);
   }, []);
+
+  const enterListEditing = () => {
+    editSnapshotRef.current = JSON.parse(JSON.stringify(lib)) as MemoLibrary;
+    setListEditing(true);
+  };
+
+  const exitListEditing = () => {
+    editSnapshotRef.current = null;
+    setListEditing(false);
+    setRenameTarget(null);
+    setContextMenu(null);
+  };
+
+  const revertListEditing = () => {
+    const snap = editSnapshotRef.current;
+    if (snap) {
+      saveMemoLibrary(snap);
+      setLib(snap);
+    }
+    exitListEditing();
+  };
 
   useEffect(() => {
     if (!addOpen) {
@@ -563,7 +586,7 @@ export default function MemoListPage() {
           layoutHeight: rowRect.height,
           ghostHeight: rowRect.height,
           pointerOffsetY: clientY - rowRect.top,
-          label: page?.title.trim() || t("memoUntitled"),
+          label: page?.title.trim() || htmlToPlainText(page?.html ?? "").slice(0, 40) || "",
         });
         return;
       }
@@ -738,9 +761,11 @@ export default function MemoListPage() {
             />
           ) : (
             <>
-              <p data-memo-drag-anchor className="text-[15px] font-semibold leading-snug truncate">
-                {page.title.trim() || t("memoUntitled")}
-              </p>
+              {page.title.trim() ? (
+                <p data-memo-drag-anchor className="text-[15px] font-semibold leading-snug truncate">
+                  {page.title}
+                </p>
+              ) : null}
               {!welcome && preview ? (
                 <p className="text-xs text-muted-foreground truncate mt-0.5">{preview}</p>
               ) : null}
@@ -776,7 +801,7 @@ export default function MemoListPage() {
         <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2 min-h-[3rem]">
           <button
             type="button"
-            onClick={() => setListEditing((v) => !v)}
+            onClick={() => (listEditing ? exitListEditing() : enterListEditing())}
             className={cn(
               "text-lg font-bold px-4 py-2 rounded-2xl transition-colors",
               listEditing
@@ -787,17 +812,28 @@ export default function MemoListPage() {
             {listEditing ? t("memoSaveList") : t("memoEditList")}
           </button>
           <h1 className="text-xl font-bold text-center truncate">{t("memoListTitle")}</h1>
-          <button
-            type="button"
-            onClick={() => {
-              setAddOpen(true);
-              setAddStep("menu");
-            }}
-            className="justify-self-end p-2 rounded-full bg-accent/10 text-accent"
-            aria-label={t("memoAdd")}
-          >
-            <Plus className="w-6 h-6" strokeWidth={2.5} />
-          </button>
+          {listEditing ? (
+            <button
+              type="button"
+              onClick={revertListEditing}
+              className="justify-self-end p-2 rounded-full bg-accent/10 text-accent"
+              aria-label={t("memoRevertListEdits")}
+            >
+              <Undo2 className="w-6 h-6" strokeWidth={2.5} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setAddOpen(true);
+                setAddStep("menu");
+              }}
+              className="justify-self-end p-2 rounded-full bg-accent/10 text-accent"
+              aria-label={t("memoAdd")}
+            >
+              <Plus className="w-6 h-6" strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -831,7 +867,7 @@ export default function MemoListPage() {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className={cn("space-y-4", listEditing && "pt-3")}>
           {visibleCategories.map(({ category, pages }) => {
             const isRenaming =
               renameTarget?.kind === "category" && renameTarget.id === category.id;
@@ -942,9 +978,24 @@ export default function MemoListPage() {
                       {category.name.trim() || t("memoUntitledCategory")}
                     </span>
                   )}
-                  <span className="text-sm font-semibold text-muted-foreground bg-background/60 rounded-full px-2.5 py-0.5 min-w-[1.75rem] text-center shrink-0">
-                    {memoCount}
-                  </span>
+                  {listEditing ? (
+                    <button
+                      type="button"
+                      data-trash
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        persist(removeCategory(lib, category.id));
+                      }}
+                      className="p-1.5 rounded-xl text-muted-foreground shrink-0 hover:bg-background/50"
+                      aria-label={t("memoDeleteCategory")}
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    <span className="text-sm font-semibold text-muted-foreground bg-background/60 rounded-full px-2.5 py-0.5 min-w-[1.75rem] text-center shrink-0">
+                      {memoCount}
+                    </span>
+                  )}
                 </div>
                 {(!category.collapsed || listEditing) && (
                   <div className="space-y-2 px-3 pb-3">
@@ -990,9 +1041,11 @@ export default function MemoListPage() {
               }}
             >
               <div className="flex-1 min-w-0 px-1">
-                <p className="text-[15px] font-semibold leading-snug truncate">
-                  {memoDragState.label}
-                </p>
+                {memoDragState.label ? (
+                  <p className="text-[15px] font-semibold leading-snug truncate">
+                    {memoDragState.label}
+                  </p>
+                ) : null}
                 {!welcome && preview ? (
                   <p className="text-xs text-muted-foreground truncate mt-0.5">{preview}</p>
                 ) : null}
