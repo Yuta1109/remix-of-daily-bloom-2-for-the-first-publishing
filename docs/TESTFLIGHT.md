@@ -89,7 +89,7 @@ Also:
 
 - [ ] Branch / commit you want to ship is on GitHub (Cursor will not push)
 - [ ] `storage.rules` is included in that commit if it was previously untracked
-- [ ] `CURRENT_PROJECT_VERSION` in `ios/App/App.xcodeproj/project.pbxproj` is **not** already used on App Store Connect for marketing version 1.1 (today: **33**). Duplicate TestFlight build numbers are a **BLOCKER** — increment before dispatch if 33 already exists
+- [ ] `CURRENT_PROJECT_VERSION` in `ios/App/App.xcodeproj/project.pbxproj` is **not** already used on App Store Connect for marketing version 1.2 (today: **1**). Duplicate TestFlight build numbers are a **BLOCKER** — increment before dispatch if 1 already exists for 1.2
 - [ ] iOS OAuth client in Firebase / Google Cloud is for bundle `com.confast.essences`
 
 ### Dispatch iOS Release

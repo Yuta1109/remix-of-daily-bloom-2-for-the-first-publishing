@@ -9,7 +9,7 @@ import {
 } from "./firebase-client";
 import { ocrDebugLog } from "./ocr-debug-log";
 
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 
 export async function buildOcrDiagnosticHeader(): Promise<string> {
   const cfg = getFirebaseConfigStatus();

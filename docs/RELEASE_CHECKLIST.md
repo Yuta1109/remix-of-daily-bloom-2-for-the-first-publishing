@@ -38,9 +38,9 @@ Re-run the full code gate only if application code changes.
 | Firebase project | `todolist-app-project-4fd37` (`.firebaserc` default; `firebase.json` has no projectId) |
 | iOS bundle ID | `com.confast.essences` (`capacitor.config.ts`, App pbxproj Debug+Release) |
 | Widget bundle ID | `com.confast.essences.widget` (wired in CI by `setup_widget.rb`) |
-| package.json version | `1.1.0` |
-| CFBundleShortVersionString | `$(MARKETING_VERSION)` → **1.1** in App pbxproj |
-| CFBundleVersion | `$(CURRENT_PROJECT_VERSION)` → **33** in App pbxproj |
+| package.json version | `1.2.0` |
+| CFBundleShortVersionString | `$(MARKETING_VERSION)` → **1.2** in App pbxproj |
+| CFBundleVersion | `$(CURRENT_PROJECT_VERSION)` → **1** in App pbxproj |
 | Node (CI) | **22** (`actions/setup-node`); not pinned in `package.json` `engines` |
 | npm install strategy | CI: **`npm ci`** (requires `package-lock.json`). Local README: `npm install` |
 | cap sync | After web build + plist write; then SPM fix, `apply-google-signin-ios.mjs`, widget ruby |
@@ -50,13 +50,13 @@ Re-run the full code gate only if application code changes.
 | App Store Connect upload | `xcrun altool --upload-app` in `ios-release.yml` |
 
 **Build number:** CI does **not** auto-increment `CURRENT_PROJECT_VERSION`.
-Uploading the same **1.1 (33)** twice is a TestFlight **BLOCKER**. If 33 already
-exists on App Store Connect, increment App `CURRENT_PROJECT_VERSION` before the
+Uploading the same **1.2 (1)** twice is a TestFlight **BLOCKER**. If 1 already
+exists on App Store Connect for 1.2, increment App `CURRENT_PROJECT_VERSION` before the
 next dispatch. Do not change the scheme otherwise.
 
 `setup_widget.rb` still seeds widget `MARKETING_VERSION` 1.0 / `CURRENT_PROJECT_VERSION` 1
 when wiring the extension. App Store uniqueness for this IPA is the **App** target
-(1.1 / 33). Treat widget mismatch as a watch item, not a version-scheme change.
+(1.2 / 1). Treat widget mismatch as a watch item, not a version-scheme change.
 
 Windows **cannot** verify that a macOS runner archive actually succeeded.
 
