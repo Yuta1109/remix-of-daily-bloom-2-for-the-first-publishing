@@ -1,14 +1,6 @@
 import { Capacitor } from "@capacitor/core";
-import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
+import { signInAnonymously, type Auth } from "firebase/auth";
 import {
-  getAuth,
-  initializeAuth,
-  indexedDBLocalPersistence,
-  signInAnonymously,
-  type Auth,
-} from "firebase/auth";
-import {
-  getFirestore,
   doc,
   setDoc,
   getDoc,
@@ -19,6 +11,13 @@ import {
   where,
   type Firestore,
 } from "firebase/firestore";
+import type { FirebaseApp } from "firebase/app";
+import { ensureFirebaseJs } from "./firebase/firebase-app";
+import {
+  FIREBASE_PROJECT_ID,
+  readFirebaseWebConfig,
+  type FirebaseWebConfig,
+} from "./firebase/firebase-config";
 import {
   LiveActivities,
   isLiveActivitySupported,
@@ -40,16 +39,9 @@ import { laDebugLog } from "./la-debug-log";
  * app never talks to Firestore — Usage stays at zero.
  */
 
-const PROJECT_ID = "todolist-app-project-4fd37";
+const PROJECT_ID = FIREBASE_PROJECT_ID;
 
-export type FirebaseWebConfig = {
-  apiKey: string;
-  authDomain: string;
-  projectId: string;
-  storageBucket?: string;
-  messagingSenderId: string;
-  appId: string;
-};
+export type { FirebaseWebConfig };
 
 export type LiveActivityRemoteStatus = {
   supported: boolean;
@@ -134,33 +126,7 @@ export type RemoteLaDiagnostics = {
 };
 
 function readWebConfig(): FirebaseWebConfig | null {
-  const raw = import.meta.env.VITE_FIREBASE_WEB_CONFIG as string | undefined;
-  if (raw?.trim()) {
-    try {
-      const parsed = JSON.parse(raw) as FirebaseWebConfig;
-      if (parsed?.apiKey && parsed?.projectId && parsed?.appId && parsed?.messagingSenderId) {
-        return {
-          ...parsed,
-          authDomain: parsed.authDomain || `${parsed.projectId}.firebaseapp.com`,
-        };
-      }
-      console.warn("[la-remote] VITE_FIREBASE_WEB_CONFIG missing required keys");
-    } catch {
-      console.warn("[la-remote] Invalid VITE_FIREBASE_WEB_CONFIG JSON");
-    }
-  }
-  const apiKey = import.meta.env.VITE_FIREBASE_API_KEY as string | undefined;
-  const appId = import.meta.env.VITE_FIREBASE_APP_ID as string | undefined;
-  const messagingSenderId = import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string | undefined;
-  if (!apiKey || !appId || !messagingSenderId) return null;
-  return {
-    apiKey,
-    authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) || `${PROJECT_ID}.firebaseapp.com`,
-    projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) || PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string | undefined,
-    messagingSenderId,
-    appId,
-  };
+  return readFirebaseWebConfig();
 }
 
 let app: FirebaseApp | null = null;
@@ -458,17 +424,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-function getOrInitAuth(firebaseApp: FirebaseApp): Auth {
-  try {
-    // WKWebView: default getAuth() persistence can hang; indexedDB is reliable.
-    return initializeAuth(firebaseApp, {
-      persistence: indexedDBLocalPersistence,
-    });
-  } catch {
-    return getAuth(firebaseApp);
-  }
-}
-
 async function ensureFirebase(): Promise<boolean> {
   if (initPromise) return initPromise;
   initPromise = (async () => {
@@ -480,9 +435,11 @@ async function ensureFirebase(): Promise<boolean> {
       console.info("[la-remote]", lastError);
       return false;
     }
-    app = getApps().length ? getApps()[0]! : initializeApp(config);
-    auth = getOrInitAuth(app);
-    db = getFirestore(app);
+    const ctx = ensureFirebaseJs();
+    if (!ctx) return false;
+    app = ctx.app;
+    auth = ctx.auth;
+    db = ctx.db;
     await withTimeout(
       (async () => {
         if (auth!.currentUser) {

@@ -1,7 +1,10 @@
 /**
- * App accent (theme) color — persists in localStorage and updates CSS variables.
- * Soft tints use Tailwind opacity on `accent` (e.g. bg-accent/10); --streak follows hue.
+ * App accent (theme) color — V3 UserSettings.accentColor is canonical.
+ * Sidecar `essences-theme-accent` is read-only fallback.
  */
+
+import { loadEssencesData } from "@/lib/v3/storage";
+import { updateSettings } from "@/lib/v3/repository";
 
 const STORAGE_KEY = "essences-theme-accent";
 
@@ -56,6 +59,12 @@ function isAccentId(v: string | null | undefined): v is ThemeAccentId {
 
 export function getThemeAccentId(): ThemeAccentId {
   try {
+    const fromV3 = loadEssencesData().settings.accentColor;
+    if (isAccentId(fromV3)) return fromV3;
+  } catch {
+    /* ignore */
+  }
+  try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (isAccentId(raw)) return raw;
   } catch {
@@ -80,12 +89,12 @@ export function applyThemeAccent(id: ThemeAccentId): void {
 }
 
 export function setThemeAccentId(id: ThemeAccentId): void {
+  applyThemeAccent(id);
   try {
-    localStorage.setItem(STORAGE_KEY, id);
+    updateSettings({ accentColor: id });
   } catch {
     /* ignore */
   }
-  applyThemeAccent(id);
 }
 
 /** Call once at app boot before first paint when possible. */

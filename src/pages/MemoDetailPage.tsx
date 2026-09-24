@@ -9,11 +9,13 @@ import {
   AlignRight,
   ArrowLeft,
   Bold,
+  ImagePlus,
   Underline,
   List,
   ListOrdered,
   Calculator,
   Redo2,
+  Trash2,
   Upload,
   Undo2,
 } from "lucide-react";
@@ -21,23 +23,20 @@ import { AiCameraIcon } from "@/components/AiCameraIcon";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { extractTextFromPickedImage, ocrToastKey, textToNoteHtml, type ImageSource } from "@/lib/ocr";
+import { pickLocalImageAttachment, noteImageSrc } from "@/lib/note-image";
 import { ocrDebugLog } from "@/lib/ocr-debug-log";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
 import { OcrResultSheet } from "@/components/OcrResultSheet";
-import {
-  getMemoPage,
-  htmlToPlainText,
-  loadMemoLibrary,
-  normalizeNoteHtml,
-  upsertMemoPage,
-  type MemoPage,
-} from "@/lib/notes-store";
+import { htmlToPlainText, normalizeNoteHtml } from "@/lib/notes-store";
 import { shareMemoPage } from "@/lib/share-memo";
 import { NoteHtmlView } from "@/components/NoteHtmlView";
 import { NoteCalculator } from "@/components/NoteCalculator";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { hideKeyboard, prepareForOcr } from "@/lib/keyboard-avoidance";
+import { NOTES_HOME_PATH, resolveNoteParam } from "@/lib/v3/notes-view";
+import { deleteNote, updateNote } from "@/lib/v3/repository";
+import type { NotePage } from "@/lib/v3/types";
 
 type Align = "left" | "center" | "right";
 
@@ -50,7 +49,7 @@ function runFormat(cmd: string, value?: string) {
 export default function MemoDetailPage() {
   const { t, locale } = useI18n();
   const navigate = useNavigate();
-  const { memoId = "" } = useParams();
+  const { noteId = "" } = useParams();
   const editorRef = useRef<HTMLDivElement>(null);
   const viewBodyRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -61,13 +60,14 @@ export default function MemoDetailPage() {
   const keepKeyboard = useRef(false);
   const calcFromView = useRef(false);
   const draftHtmlRef = useRef("");
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
 
-  const [page, setPage] = useState<MemoPage | null>(() => getMemoPage(loadMemoLibrary(), memoId) ?? null);
+  const [page, setPage] = useState<NotePage | null>(() => resolveNoteParam(noteId) ?? null);
   const [editing, setEditing] = useState(false);
   const [viewRevision, setViewRevision] = useState(0);
   const [calcOpen, setCalcOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
+  const [pickMode, setPickMode] = useState<"ocr" | "attach">("ocr");
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrFeedback, setOcrFeedback] = useState<{
     message: string;
@@ -83,9 +83,9 @@ export default function MemoDetailPage() {
   });
 
   useEffect(() => {
-    const found = getMemoPage(loadMemoLibrary(), memoId);
+    const found = resolveNoteParam(noteId);
     if (!found) {
-      navigate("/notes", { replace: true });
+      navigate(NOTES_HOME_PATH, { replace: true });
       return;
     }
     setPage(found);
@@ -98,18 +98,17 @@ export default function MemoDetailPage() {
     } else {
       setEditing(false);
     }
-  }, [memoId, navigate]);
+  }, [noteId, navigate]);
 
   const overlayOpen = calcOpen || pickOpen || ocrBusy || !!ocrFeedback;
   const blockKeyboard = overlayOpen;
 
   const persist = useCallback(
-    (patch: Partial<MemoPage>) => {
+    (patch: Partial<Pick<NotePage, "title" | "html" | "image">>) => {
       if (!page) return;
       const html = patch.html !== undefined ? normalizeNoteHtml(patch.html) : page.html;
-      const lib = upsertMemoPage(loadMemoLibrary(), { ...page, ...patch, html });
-      const next = lib.pages.find((p) => p.id === page.id) ?? null;
-      if (next) setPage(next);
+      const next = updateNote(page.id, { ...patch, html });
+      setPage(next);
     },
     [page],
   );
@@ -128,7 +127,7 @@ export default function MemoDetailPage() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [memoId]);
+  }, [noteId]);
 
   useEffect(() => {
     if (!editing || !page) return;
@@ -315,7 +314,7 @@ export default function MemoDetailPage() {
 
   const goBackToList = () => {
     if (editing) flushDraft();
-    navigate("/notes");
+    navigate(NOTES_HOME_PATH);
   };
 
   const exitToView = () => {
@@ -348,7 +347,7 @@ export default function MemoDetailPage() {
       const result = await extractTextFromPickedImage("note", source);
       if (!result.ok) {
         const key = ocrToastKey(
-          result.error,
+          "error" in result ? result.error : undefined,
           "configReason" in result ? result.configReason : undefined,
         );
         if (key) feedback = { message: t(key), kind: "info" };
@@ -369,6 +368,12 @@ export default function MemoDetailPage() {
       ocrDebugLog("ocr", `feedback kind=${feedback.kind} msg=${feedback.message.slice(0, 80)}`, "info");
       setOcrFeedback(feedback);
     }
+  };
+
+  const onAttach = async (source: ImageSource) => {
+    setPickOpen(false);
+    const image = await pickLocalImageAttachment(source);
+    if (image) persist({ image });
   };
 
   if (!page) return null;
@@ -408,7 +413,7 @@ export default function MemoDetailPage() {
   const iconBtn =
     "h-11 w-11 rounded-full flex items-center justify-center text-foreground/80 bg-card shadow-soft border border-border/60 disabled:opacity-40";
 
-  const formatUpdated = (ts: number) =>
+  const formatUpdated = (ts: string) =>
     new Date(ts).toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
       year: "numeric",
       month: "short",
@@ -416,7 +421,7 @@ export default function MemoDetailPage() {
     });
 
   return (
-    <div className="page-shell">
+    <div className="page-shell" data-testid="note-detail">
       <div className="shrink-0 px-3 pt-1 pb-2">
         {editing ? (
           <div className="flex items-center gap-2">
@@ -431,6 +436,7 @@ export default function MemoDetailPage() {
             <input
               ref={titleInputRef}
               value={page.title}
+              data-testid="note-title-input"
               onChange={(e) => persist({ title: e.target.value })}
               placeholder={t("memoNoTitle")}
               className="flex-1 min-w-0 bg-secondary/70 rounded-full px-4 py-2.5 text-base font-semibold outline-none placeholder:text-muted-foreground/50"
@@ -474,11 +480,23 @@ export default function MemoDetailPage() {
                 disabled={ocrBusy}
                 onClick={() => {
                   void prepareForOcr();
+                  setPickMode("ocr");
                   setPickOpen(true);
                 }}
                 className={iconBtn}
               >
                 <AiCameraIcon variant="memo" />
+              </button>
+              <button
+                type="button"
+                aria-label={t("notesAttachImage")}
+                onClick={() => {
+                  setPickMode("attach");
+                  setPickOpen(true);
+                }}
+                className={iconBtn}
+              >
+                <ImagePlus className="w-5 h-5" />
               </button>
               <button
                 type="button"
@@ -498,6 +516,18 @@ export default function MemoDetailPage() {
                 className={iconBtn}
               >
                 <Upload className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                aria-label={t("notesDelete")}
+                data-testid="note-delete"
+                onClick={() => {
+                  deleteNote(page.id);
+                  navigate(NOTES_HOME_PATH, { replace: true });
+                }}
+                className={iconBtn}
+              >
+                <Trash2 className="w-5 h-5" />
               </button>
             </div>
           </div>
@@ -525,6 +555,24 @@ export default function MemoDetailPage() {
         </p>
       )}
 
+      {!editing && page.image && noteImageSrc(page.image) ? (
+        <div className="shrink-0 px-4 pb-2">
+          <img
+            src={noteImageSrc(page.image) ?? ""}
+            alt=""
+            data-testid="note-attached-image"
+            className="max-h-48 w-full rounded-lg object-cover"
+          />
+          <button
+            type="button"
+            className="mt-1 text-[13px] text-muted-foreground min-h-11"
+            onClick={() => persist({ image: undefined })}
+          >
+            {t("notesRemoveImage")}
+          </button>
+        </div>
+      ) : null}
+
       <div className="flex-1 min-h-0 px-4" style={{ paddingBottom: editing ? 0 : 8 }}>
         <div
           className={cn(
@@ -540,6 +588,7 @@ export default function MemoDetailPage() {
               data-placeholder={t("memoBodyPlaceholder")}
               data-kb-ignore=""
               className="note-editor outline-none text-left"
+              data-testid="note-editor"
               style={{ minHeight: "100%", paddingBottom: editorScrollPad }}
               onInput={() => {
                 if (skipHtmlSync.current) return;
@@ -643,8 +692,8 @@ export default function MemoDetailPage() {
       />
       <ImagePickSheet
         open={pickOpen}
-        onPhotos={() => void onOcr("photos")}
-        onCamera={() => void onOcr("camera")}
+        onPhotos={() => void (pickMode === "ocr" ? onOcr("photos") : onAttach("photos"))}
+        onCamera={() => void (pickMode === "ocr" ? onOcr("camera") : onAttach("camera"))}
         onCancel={() => setPickOpen(false)}
       />
       <OcrBusyOverlay open={ocrBusy} />

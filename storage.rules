@@ -1,0 +1,26 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Match Firestore: anonymous-only sessions cannot read/write user files.
+    function isGoogleUser() {
+      return isSignedIn()
+        && 'google.com' in request.auth.token.firebase.identities;
+    }
+
+    function ownsUserTree(userId) {
+      return isOwner(userId) && isGoogleUser();
+    }
+
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if ownsUserTree(userId);
+    }
+  }
+}

@@ -2,6 +2,8 @@ name: iOS Simulator Build
 
 # Validates that the app + Live Activity widget compile for iOS, without any
 # Apple Developer account or code signing. Runs on every push to main.
+# Native Google Sign-In / OAuth is not proven here — use TestFlight
+# (docs/TESTFLIGHT.md) after ios-release.yml.
 # (Public repos: free Actions minutes; re-run after private-minute limit hits.)
 on:
   workflow_dispatch:
@@ -14,6 +16,9 @@ on:
       - "capacitor.config.ts"
       - "package.json"
       - "package-lock.json"
+      - "firebase.json"
+      - "firestore.rules"
+      - "storage.rules"
       - ".github/workflows/ios-simulator-build.yml"
 
 jobs:
@@ -74,6 +79,9 @@ jobs:
 
       - name: Fix SPM Package.swift paths / guard app identity collision
         run: node scripts/ensure-spm-firebase-app-link.mjs
+
+      - name: Inject Google Sign-In URL scheme from GoogleService-Info.plist
+        run: node scripts/apply-google-signin-ios.mjs
 
       - name: Wire Live Activity widget extension
         working-directory: ios/App

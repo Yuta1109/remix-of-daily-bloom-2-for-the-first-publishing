@@ -11,6 +11,7 @@ import {
   type CalendarEvent,
 } from "./events-store";
 import { formatEventSchedule } from "./event-display";
+import { getSettings, updateSettings } from "@/lib/v3/repository";
 
 const MAX_SCHEDULED = 60;
 const HORIZON_DAYS = 120;
@@ -22,8 +23,16 @@ export function isNative(): boolean {
   return Capacitor.isNativePlatform();
 }
 
-/** User-level preference (separate from OS permission). Defaults to true. */
+/** User-level preference. Canonical source is V3 UserSettings.notifications.enabled. */
 export function getNotificationsUserEnabled(): boolean {
+  try {
+    return getSettings().notifications.enabled;
+  } catch {
+    return sidecarNotificationsEnabled();
+  }
+}
+
+function sidecarNotificationsEnabled(): boolean {
   try {
     return localStorage.getItem(NOTIF_PREF_KEY) !== "false";
   } catch {
@@ -33,9 +42,13 @@ export function getNotificationsUserEnabled(): boolean {
 
 export function setNotificationsUserEnabled(enabled: boolean): void {
   try {
-    localStorage.setItem(NOTIF_PREF_KEY, enabled ? "true" : "false");
+    updateSettings({ notifications: { ...getSettings().notifications, enabled } });
   } catch {
-    /* ignore */
+    try {
+      localStorage.setItem(NOTIF_PREF_KEY, enabled ? "true" : "false");
+    } catch {
+      /* ignore */
+    }
   }
 }
 

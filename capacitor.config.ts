@@ -1,6 +1,7 @@
+/// <reference types="@capacitor-firebase/authentication" />
 import type { CapacitorConfig } from "@capacitor/cli";
 
-const config: CapacitorConfig = {
+const config = {
   appId: "com.confast.essences",
   appName: "Essences",
   webDir: "dist",
@@ -16,6 +17,7 @@ const config: CapacitorConfig = {
     // collision under ios/App/CapApp-SPM. @capacitor/app is vendored into
     // CapApp-SPM by scripts/ensure-spm-firebase-app-link.mjs instead.
     includePlugins: [
+      "@capacitor-firebase/authentication",
       "@capacitor-firebase/messaging",
       "@capacitor/camera",
       "@capacitor/haptics",
@@ -26,6 +28,16 @@ const config: CapacitorConfig = {
       "@capacitor/status-bar",
       "capacitor-native-settings",
     ],
+  },
+  // Capacitor 8.4+ SPM option — avoids a package identity collision for Auth.
+  experimental: {
+    ios: {
+      spm: {
+        packageOptions: {
+          "@capacitor-firebase/authentication": { symlink: true },
+        },
+      },
+    },
   },
   plugins: {
     SplashScreen: {
@@ -48,7 +60,11 @@ const config: CapacitorConfig = {
       // Live Activity pushes are silent to the banner; empty keeps alerts quiet.
       presentationOptions: [],
     },
+    FirebaseAuthentication: {
+      skipNativeAuth: true,
+      providers: ["google.com"],
+    },
   },
-};
+} as CapacitorConfig;
 
 export default config;

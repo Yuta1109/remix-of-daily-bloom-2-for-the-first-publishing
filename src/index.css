@@ -210,6 +210,31 @@ html.overlay-open #root {
   background-color: hsl(var(--background));
 }
 
+/* ── App Shell (Phase 2) ──────────────────────────────────────────────────
+   Used only by the new Progress / Plan / User pages. Existing pages keep
+   their own `.page-shell` / `.page-scroll` top padding untouched, so there is
+   never a double safe-area addition. */
+.app-shell-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: hsl(var(--background));
+}
+
+.app-shell-header {
+  flex-shrink: 0;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+}
+
+.app-shell-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--bottom-nav-offset);
+}
+
 /* Hide native scrollbars — InsetScrollArea draws a shortened custom thumb. */
 .scrollbar-none::-webkit-scrollbar {
   display: none;
@@ -318,5 +343,10 @@ html.overlay-open #root {
 }
 .week-swipe-hand {
   animation: week-swipe-nudge 0.9s ease-in-out infinite;
+}
+
+/* Stamp drag: block tab-bar taps so a drop cannot switch tabs. */
+html[data-stamp-dragging="1"] nav[aria-label] {
+  pointer-events: none;
 }
 

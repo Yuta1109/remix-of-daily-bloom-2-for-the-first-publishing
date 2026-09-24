@@ -18,6 +18,8 @@ const LOCK_THRESHOLD_PX = 10;
 interface Props {
   weekKey: string;
   disabled?: boolean;
+  /** Ignore swipe without blocking hit-testing (stamp drop). */
+  lockSwipe?: boolean;
   onWeekStep: (delta: -1 | 1) => void;
   children: (index: -1 | 0 | 1, dims: { width: number; faded: boolean }) => ReactNode;
 }
@@ -26,7 +28,7 @@ interface Props {
  * Horizontal week roulette (mirrors MonthWheel haptics / snap feel).
  * Direction lock avoids fighting vertical scroll inside the active week panel.
  */
-export function WeekWheel({ weekKey, disabled, onWeekStep, children }: Props) {
+export function WeekWheel({ weekKey, disabled, lockSwipe, onWeekStep, children }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewportW, setViewportW] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -52,7 +54,7 @@ export function WeekWheel({ weekKey, disabled, onWeekStep, children }: Props) {
   const itemW = Math.max(0, viewportW - PEEK_PX * 2);
   const stride = itemW + GAP_PX;
   strideRef.current = stride;
-  disabledRef.current = !!disabled;
+  disabledRef.current = !!disabled || !!lockSwipe;
   onWeekStepRef.current = onWeekStep;
 
   useLayoutEffect(() => {

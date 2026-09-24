@@ -1,3 +1,26 @@
+/**
+ * Calendar event compatibility adapter.
+ *
+ * Canonical source: V3 `CalendarEventItem` in `essences-app-data-v3`.
+ * This module keeps the `CalendarEvent` shape used by EventSheet, recurrence,
+ * reminders, notifications, and Live Activity.
+ *
+ * Sync direction:
+ *   UI / EventSheet → upsertEvent / saveEvents → V3 events map
+ *   loadEvents → V3 events map → CalendarEvent[]
+ *
+ * `calendar-events` localStorage is READ-ONLY leftover import. New writes go
+ * to V3 only. Recurrence math in this file is unchanged.
+ */
+import { nowTimestamp } from "@/lib/v3/local-date";
+import { loadEssencesData, updateEssencesData } from "@/lib/v3/storage";
+import type {
+  CalendarEventItem,
+  EventLiveActivityLead,
+  EventRecurrenceFreq,
+  EventReminderOffset,
+} from "@/lib/v3/types";
+
 export type RepeatFreq =
   | "none"
   | "daily"
@@ -148,7 +171,156 @@ export function effectiveLiveActivityLeadMinutes(l?: LiveActivityLead): number {
   return Math.min(liveActivityLeadMinutes(l), LIVE_ACTIVITY_MAX_ACTIVE_MINUTES);
 }
 
-const KEY = "calendar-events";
+const LEGACY_KEY = "calendar-events";
+const LEFTOVER_IMPORT_MARKER = "essences-calendar-adapter-imported-v1";
+
+let leftoverImportAttempted = false;
+
+export function resetCalendarAdapterForTests(): void {
+  leftoverImportAttempted = false;
+}
+
+function clockOf(localDateTime: string | undefined, fallback = "00:00"): string {
+  if (!localDateTime || localDateTime.length < 16) return fallback;
+  return localDateTime.slice(11, 16);
+}
+
+function dateOf(localDateTime: string | undefined, fallback: string): string {
+  if (!localDateTime || localDateTime.length < 10) return fallback;
+  return localDateTime.slice(0, 10);
+}
+
+export function v3ItemToCalendarEvent(item: CalendarEventItem): CalendarEvent {
+  const date = dateOf(item.startAt, "");
+  const endDateRaw = item.endAt ? dateOf(item.endAt, date) : undefined;
+  return {
+    id: item.id,
+    title: item.title,
+    date,
+    endDate: endDateRaw && endDateRaw !== date ? endDateRaw : undefined,
+    allDay: item.allDay,
+    startTime: item.allDay ? undefined : clockOf(item.startAt),
+    endTime: item.allDay || !item.endAt ? undefined : clockOf(item.endAt),
+    color: item.color,
+    reminders: item.reminders as ReminderOffset[] | undefined,
+    repeat: (item.recurrence?.freq ?? "none") as RepeatFreq,
+    location: item.location,
+    notes: item.note,
+    liveActivity: item.liveActivity,
+    liveActivityLead: item.liveActivityLead as LiveActivityLead | undefined,
+    excludeDates: item.excludeDates,
+    repeatEndDate: item.repeatEndDate,
+    recurrenceMasterId: item.recurrenceMasterId,
+    recurrenceDate: item.recurrenceDate,
+  };
+}
+
+export function calendarEventToV3Item(
+  event: CalendarEvent,
+  existing?: CalendarEventItem,
+): CalendarEventItem {
+  const allDay = event.allDay ?? !event.startTime;
+  const startClock = allDay ? "00:00" : event.startTime || "00:00";
+  const endDate = event.endDate || event.date;
+  const endClock = allDay ? "00:00" : event.endTime || startClock;
+  const hasEnd =
+    (!allDay && !!event.endTime) || (!!event.endDate && event.endDate !== event.date);
+  const repeat = (event.repeat ?? existing?.recurrence?.freq ?? "none") as EventRecurrenceFreq;
+  const now = nowTimestamp();
+  const reminders = getReminders(event) as EventReminderOffset[];
+  return {
+    id: event.id,
+    title: event.title,
+    note: event.notes,
+    startAt: `${event.date}T${startClock}`,
+    endAt: hasEnd ? `${endDate}T${endClock}` : undefined,
+    allDay,
+    icon: existing?.icon,
+    color: event.color ?? existing?.color,
+    recurrence: repeat !== "none" ? { freq: repeat } : undefined,
+    recurrenceMasterId: event.recurrenceMasterId,
+    recurrenceDate: event.recurrenceDate,
+    excludeDates: event.excludeDates,
+    repeatEndDate: event.repeatEndDate,
+    reminders: reminders.length ? reminders : undefined,
+    liveActivity: event.liveActivity,
+    liveActivityLead: event.liveActivityLead as EventLiveActivityLead | undefined,
+    location: event.location,
+    status: existing?.status && existing.status !== "archived" ? existing.status : "scheduled",
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    createdFrom: existing?.createdFrom ?? "calendar",
+  };
+}
+
+function importLeftoverCalendarEvents(): void {
+  if (leftoverImportAttempted) return;
+  leftoverImportAttempted = true;
+  try {
+    if (localStorage.getItem(LEFTOVER_IMPORT_MARKER) === "1") return;
+    const raw = localStorage.getItem(LEGACY_KEY);
+    if (!raw) {
+      localStorage.setItem(LEFTOVER_IMPORT_MARKER, "1");
+      return;
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.setItem(LEFTOVER_IMPORT_MARKER, "1");
+      return;
+    }
+    updateEssencesData((data) => {
+      for (const entry of parsed) {
+        if (!entry || typeof entry !== "object") continue;
+        const legacy = entry as CalendarEvent;
+        if (!legacy.id) continue;
+        if (data.events[legacy.id]) continue;
+        if (data.events[`legacy-event:${legacy.id}`]) continue;
+        data.events[legacy.id] = calendarEventToV3Item(legacy);
+      }
+    });
+    localStorage.setItem(LEFTOVER_IMPORT_MARKER, "1");
+  } catch {
+    leftoverImportAttempted = false;
+  }
+}
+
+export function loadEvents(): CalendarEvent[] {
+  importLeftoverCalendarEvents();
+  return Object.values(loadEssencesData().events)
+    .filter((event) => event.status !== "archived")
+    .map(v3ItemToCalendarEvent);
+}
+
+export function saveEvents(events: CalendarEvent[]) {
+  importLeftoverCalendarEvents();
+  updateEssencesData((data) => {
+    const next: Record<string, CalendarEventItem> = {};
+    for (const event of events) {
+      next[event.id] = calendarEventToV3Item(event, data.events[event.id]);
+    }
+    data.events = next;
+  });
+}
+
+export function getEvent(id: string): CalendarEvent | undefined {
+  return loadEvents().find((e) => e.id === id);
+}
+
+export function upsertEvent(event: CalendarEvent) {
+  importLeftoverCalendarEvents();
+  updateEssencesData((data) => {
+    data.events[event.id] = calendarEventToV3Item(event, data.events[event.id]);
+  });
+  return loadEvents();
+}
+
+export function deleteEvent(id: string) {
+  importLeftoverCalendarEvents();
+  updateEssencesData((data) => {
+    delete data.events[id];
+  });
+  return loadEvents();
+}
 
 export const EVENT_COLORS: { key: string; label: string; hsl: string }[] = [
   { key: "blue", label: "Blue", hsl: "212 90% 55%" },
@@ -163,40 +335,6 @@ export const EVENT_COLORS: { key: string; label: string; hsl: string }[] = [
 
 export function colorHslFor(key?: string): string {
   return EVENT_COLORS.find((c) => c.key === key)?.hsl ?? "212 90% 55%";
-}
-
-export function loadEvents(): CalendarEvent[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-export function saveEvents(events: CalendarEvent[]) {
-  localStorage.setItem(KEY, JSON.stringify(events));
-}
-
-export function getEvent(id: string): CalendarEvent | undefined {
-  return loadEvents().find((e) => e.id === id);
-}
-
-export function upsertEvent(event: CalendarEvent) {
-  const events = loadEvents();
-  const idx = events.findIndex((e) => e.id === event.id);
-  if (idx >= 0) events[idx] = event;
-  else events.push(event);
-  saveEvents(events);
-  return events;
-}
-
-export function deleteEvent(id: string) {
-  const next = loadEvents().filter((e) => e.id !== id);
-  saveEvents(next);
-  return next;
 }
 
 export function parseYMD(s: string): Date {

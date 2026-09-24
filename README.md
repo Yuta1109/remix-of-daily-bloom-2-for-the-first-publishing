@@ -72,14 +72,65 @@ Locally you can use `.env.local` (see `.env.example`).
 **Critical:** Without this baked into the Vite bundle, the app never writes to
 Firestore (Usage stays at zero) and kill-state Live Activities cannot be scheduled.
 
+### TestFlight (Google Sign-In + cloud sync)
+
+There is no local Mac in the current Windows development setup. Native Google
+Sign-In, OAuth redirect, and image restore are verified on a **TestFlight**
+device after **iOS Release**. Follow [docs/TESTFLIGHT.md](docs/TESTFLIGHT.md)
+(Smoke Test A–K, then scenarios 1–16) and [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+
+Do not commit `GoogleService-Info.plist`. Keep using secret `GOOGLE_SERVICE_INFO_PLIST`
+(not `GOOGLE_SERVICE_INFO_PLIST_BASE64`).
+
+Local operational check (no secrets printed):
+
+```bash
+npm run preflight
+```
+
+#### GitHub Actions secrets (canonical names)
+
+Names below are the only ones the iOS workflows read. Do not invent extra secret
+names. Never commit values.
+
+| Secret name | Purpose | iOS Release | iOS Simulator |
+| --- | --- | --- | --- |
+| `GOOGLE_SERVICE_INFO_PLIST` | Base64 of `GoogleService-Info.plist` | Required | Optional (skip) |
+| `FIREBASE_WEB_CONFIG` | Optional one-line Firebase web config JSON | Optional | Optional |
+| `APP_STORE_CONNECT_KEY_ID` | App Store Connect API key ID | Required | unused |
+| `APP_STORE_CONNECT_ISSUER_ID` | App Store Connect API issuer ID | Required | unused |
+| `APP_STORE_CONNECT_PRIVATE_KEY` | AuthKey `.p8` contents | Required | unused |
+| `APPLE_TEAM_ID` | 10-character Apple Developer Team ID | Required | unused |
+
+#### Dispatch iOS Release
+
+1. GitHub
+2. Actions
+3. **iOS Release** (`iOS Release (App Store / TestFlight)`)
+4. Run workflow
+
+`ios-release.yml` is `workflow_dispatch` only. **iOS Simulator Build** is a
+separate unsigned compile check — do not use it for TestFlight.
+
+#### Firebase rules (you run this; not Cursor)
+
+```powershell
+npx firebase login
+npx firebase use todolist-app-project-4fd37
+npx firebase deploy --only firestore:rules,storage
+```
+
 ### Firebase Console checklist (your side)
 
-1. **Authentication** → Sign-in method → enable **Anonymous**.
+1. **Authentication** → Sign-in method → enable **Anonymous** and **Google**.
 2. **Firestore** → Create database (production mode is fine; we deploy `firestore.rules`).
-3. Upgrade to **Blaze** if you have not (needed for Cloud Functions + Cloud Tasks).
-4. APNs Auth Key already uploaded under Cloud Messaging — **verify Key ID + Team ID** for `com.confast.essences`. If kill-state updates fail with `messaging/third-party-auth-error`, re-upload the `.p8` (see `docs/LA_REMOTE_UPDATE_DIAGNOSTICS.md`).
-5. Deploy backend (from a machine with Firebase CLI logged in).
-6. After first deploy of the task function, fix IAM if enqueue logs show `PERMISSION DENIED` (steps below).
+3. **Storage** → Create a default bucket if needed, then deploy `storage.rules`
+   (`npx firebase deploy --only storage`). User files live under `users/{uid}/...`.
+4. Upgrade to **Blaze** if you have not (needed for Cloud Functions + Cloud Tasks).
+5. APNs Auth Key already uploaded under Cloud Messaging — **verify Key ID + Team ID** for `com.confast.essences`. If kill-state updates fail with `messaging/third-party-auth-error`, re-upload the `.p8` (see `docs/LA_REMOTE_UPDATE_DIAGNOSTICS.md`).
+6. Deploy backend (from a machine with Firebase CLI logged in).
+7. After first deploy of the task function, fix IAM if enqueue logs show `PERMISSION DENIED` (steps below).
+8. Do **not** turn on App Check enforcement in this phase (Authentication, Firestore rules, Storage rules, and App Check are separate).
 
 PowerShell (Norton / corporate SSL workaround included):
 
@@ -88,7 +139,7 @@ cd C:\Users\yutaa\remix-of-daily-bloom-2-for-the-first-publishing
 cd functions; npm install; cd ..
 npx firebase login
 $env:NODE_OPTIONS = "--use-system-ca --require=./no-keepalive.cjs"
-npx firebase deploy --only functions,firestore --project todolist-app-project-4fd37
+npx firebase deploy --only functions,firestore,storage --project todolist-app-project-4fd37
 ```
 
 After Console → Functions should show:

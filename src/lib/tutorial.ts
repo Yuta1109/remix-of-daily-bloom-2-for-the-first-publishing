@@ -1,6 +1,7 @@
 /** First-run product tutorial (after notification permission). */
 
-import { getDateKey, saveDayData } from "./store";
+import { todayLocalDate } from "./v3/local-date";
+import { archiveTask, getListedTasksForDate } from "./v3/repository";
 
 const DONE_KEY = "essences-tutorial-done";
 const STEP_KEY = "essences-tutorial-step";
@@ -14,10 +15,9 @@ export type TutorialStepId =
   | "taskSelect"
   | "taskControls"
   | "taskCheck"
-  | "stats"
+  | "todoLayout"
   | "navCalendar"
-  | "monthGoals"
-  | "monthGoalsClose"
+  | "planMonthly"
   | "calendarSwipe"
   | "calendarToday"
   | "calendarFab"
@@ -49,16 +49,17 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     titleKey: "tutorialWelcomeTitle",
     bodyKey: "tutorialWelcomeBody",
     advance: "action",
-    route: "/",
+    // Today lives at /todo now that / is the Progress landing tab.
+    route: "/todo",
     preferBubble: "center",
   },
   {
     id: "quickAdd",
     bodyKey: "tutorialQuickAdd",
-    target: "quick-add",
+    target: "todo-add",
     advance: "event",
     event: "task-added",
-    route: "/",
+    route: "/todo",
     preferBubble: "above",
   },
   {
@@ -67,7 +68,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: "task-item",
     advance: "event",
     event: "task-selected",
-    route: "/",
+    route: "/todo",
     preferBubble: "below",
   },
   {
@@ -75,7 +76,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     bodyKey: "tutorialTaskControls",
     target: "task-item",
     advance: "tap",
-    route: "/",
+    route: "/todo",
     preferBubble: "below",
   },
   {
@@ -86,15 +87,15 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: "task-item",
     advance: "event",
     event: "task-toggled",
-    route: "/",
+    route: "/todo",
     preferBubble: "below",
   },
   {
-    id: "stats",
-    bodyKey: "tutorialStats",
-    target: "today-stats",
+    id: "todoLayout",
+    bodyKey: "tutorialTodoLayout",
+    target: "todo-layout",
     advance: "tap",
-    route: "/",
+    route: "/todo",
     preferBubble: "below",
   },
   {
@@ -106,20 +107,11 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     preferBubble: "above",
   },
   {
-    id: "monthGoals",
-    bodyKey: "tutorialMonthGoals",
-    target: "month-goals",
+    id: "planMonthly",
+    bodyKey: "tutorialPlanMonthly",
+    target: "plan-level-monthly",
     advance: "tap",
-    route: "/calendar",
-    preferBubble: "below",
-  },
-  {
-    id: "monthGoalsClose",
-    bodyKey: "tutorialMonthGoalsClose",
-    target: "month-goals",
-    advance: "event",
-    event: "goals-minimized",
-    route: "/calendar",
+    route: "/plan",
     preferBubble: "below",
   },
   {
@@ -152,10 +144,11 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "navSettings",
     bodyKey: "tutorialNavSettings",
-    target: "nav-settings",
-    advance: "event",
-    event: "nav-settings",
-    preferBubble: "above",
+    // Settings moved behind the profile button (User is not a tab), so this
+    // step navigates directly instead of waiting for a tab-bar tap.
+    route: "/user",
+    advance: "tap",
+    preferBubble: "center",
   },
   {
     id: "reusableTasks",
@@ -163,7 +156,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: "reusable-tasks",
     advance: "tap",
     route: "/settings",
-    // Section is now first on Settings — keep the bubble under the card.
+    // Planning section keeps data-tutorial="reusable-tasks".
     preferBubble: "below",
   },
   {
@@ -178,7 +171,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     titleKey: "tutorialDoneTitle",
     bodyKey: "tutorialDoneBody",
     advance: "tap",
-    route: "/",
+    route: "/todo",
     preferBubble: "center",
   },
 ];
@@ -253,8 +246,10 @@ export function saveTutorialStepIndex(index: number): void {
 /** Wipe Today tasks created during an unfinished tutorial (survives force-quit). */
 export function clearTutorialScratchData(): void {
   try {
-    const today = getDateKey(new Date());
-    saveDayData(today, { tasks: [], reflection: "" });
+    const today = todayLocalDate();
+    for (const task of getListedTasksForDate(today)) {
+      archiveTask(task.id);
+    }
   } catch {
     /* ignore */
   }

@@ -1,3 +1,9 @@
+/**
+ * LEGACY memo list page (essences-memo-library-v2).
+ *
+ * Not routed from App.tsx. Compatibility / reference only — do not wire new
+ * UI here. Canonical Notes are V3 pages under /note.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";

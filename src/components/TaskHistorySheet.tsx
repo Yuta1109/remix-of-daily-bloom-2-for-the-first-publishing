@@ -4,14 +4,31 @@ import { Plus } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import {
   getCompletionRate,
-  getDaysWithTasksInRange,
   getHistoryMonthKeys,
   getWeeksInMonth,
   weekIndexForDate,
   type Task,
 } from "@/lib/store";
+import { getPastDaysWithListedTasks } from "@/lib/v3/repository";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { cn } from "@/lib/utils";
+import type { TaskItem as V3Task } from "@/lib/v3/types";
+
+interface Props {
+  open: boolean;
+  todayKey: string;
+  onOpenChange: (open: boolean) => void;
+  onBringTasks: (texts: string[]) => void;
+}
+
+function toRow(task: V3Task): Task {
+  return {
+    id: task.id,
+    text: task.title,
+    completed: task.status === "completed",
+    date: task.date,
+  };
+}
 
 interface Props {
   open: boolean;
@@ -62,13 +79,17 @@ export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }:
   const weeks = useMemo(() => getWeeksInMonth(monthKey), [monthKey]);
   const selectedWeek = weeks.find((w) => w.week === week) ?? weeks[0];
 
-  const days = useMemo(
-    () =>
-      open && selectedWeek
-        ? getDaysWithTasksInRange(selectedWeek.startKey, selectedWeek.endKey, todayKey)
-        : [],
-    [open, selectedWeek, todayKey],
-  );
+  const days = useMemo(() => {
+    if (!open || !selectedWeek) return [];
+    const months = getHistoryMonthKeys(todayKey);
+    const oldest = `${months[months.length - 1]}-01`;
+    return getPastDaysWithListedTasks(todayKey, oldest)
+      .filter((day) => day.date >= selectedWeek.startKey && day.date <= selectedWeek.endKey)
+      .map((day) => ({
+        date: day.date,
+        data: { tasks: day.tasks.map(toRow), reflection: "" },
+      }));
+  }, [open, selectedWeek, todayKey]);
 
   useEffect(() => {
     if (!open) return;

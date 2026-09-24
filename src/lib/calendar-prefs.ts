@@ -23,7 +23,15 @@ export function saveCalendarViewMode(mode: CalendarViewMode) {
   }
 }
 
+import { getSettings, updateSettings } from "@/lib/v3/repository";
+
 export function loadWeekStartsOn(): WeekStartsOn {
+  try {
+    const value = getSettings().weekStartsOn;
+    if (value === 0 || value === 1) return value;
+  } catch {
+    /* fall through */
+  }
   try {
     return localStorage.getItem(WEEK_START_KEY) === "1" ? 1 : 0;
   } catch {
@@ -33,7 +41,7 @@ export function loadWeekStartsOn(): WeekStartsOn {
 
 export function saveWeekStartsOn(value: WeekStartsOn) {
   try {
-    localStorage.setItem(WEEK_START_KEY, String(value));
+    updateSettings({ weekStartsOn: value });
   } catch {
     /* ignore */
   }

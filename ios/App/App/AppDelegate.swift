@@ -1,6 +1,7 @@
 import UIKit
 import UserNotifications
 import Capacitor
+import FirebaseAuth
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -53,6 +54,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        // Required when combining @capacitor-firebase/authentication with messaging.
+        // Google Sign-In native callbacks still go through ApplicationDelegateProxy.
+        if Auth.auth().canHandle(url) {
+            return true
+        }
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 

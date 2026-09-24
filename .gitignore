@@ -28,6 +28,7 @@ dist-ssr
 # Firebase / secrets (never commit)
 ios/App/App/GoogleService-Info.plist
 GoogleService-Info.plist
+google-service-info-base64.txt
 .env
 .env.*
 !.env.example

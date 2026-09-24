@@ -1,61 +1,20 @@
-import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import {
-  getAuth,
-  initializeAuth,
-  indexedDBLocalPersistence,
-  browserLocalPersistence,
-  inMemoryPersistence,
-  signInAnonymously,
-  type Auth,
-} from "firebase/auth";
+import { signInAnonymously, type Auth } from "firebase/auth";
 import { getFunctions, httpsCallable, type Functions } from "firebase/functions";
 import { ocrDebugLog } from "./ocr-debug-log";
+import { ensureFirebaseJs } from "./firebase/firebase-app";
+import {
+  FIREBASE_FUNCTIONS_REGION,
+  getFirebaseConfigStatus,
+  readFirebaseWebConfig,
+} from "./firebase/firebase-config";
 
-const PROJECT_ID = "todolist-app-project-4fd37";
-const REGION = "asia-northeast1";
+export { getFirebaseConfigStatus };
+
+const REGION = FIREBASE_FUNCTIONS_REGION;
 /** Keep below Function timeout (120s) with a small buffer; 55s was far too short. */
 const CALLABLE_TIMEOUT_MS = 110_000;
 const AUTH_TIMEOUT_MS = 12_000;
 
-type FirebaseWebConfig = {
-  apiKey: string;
-  authDomain: string;
-  projectId: string;
-  storageBucket?: string;
-  messagingSenderId: string;
-  appId: string;
-};
-
-function readWebConfig(): FirebaseWebConfig | null {
-  const raw = import.meta.env.VITE_FIREBASE_WEB_CONFIG as string | undefined;
-  if (raw?.trim()) {
-    try {
-      const parsed = JSON.parse(raw) as FirebaseWebConfig;
-      if (parsed?.apiKey && parsed?.projectId && parsed?.appId && parsed?.messagingSenderId) {
-        return {
-          ...parsed,
-          authDomain: parsed.authDomain || `${parsed.projectId}.firebaseapp.com`,
-        };
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  const apiKey = import.meta.env.VITE_FIREBASE_API_KEY as string | undefined;
-  const appId = import.meta.env.VITE_FIREBASE_APP_ID as string | undefined;
-  const messagingSenderId = import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string | undefined;
-  if (!apiKey || !appId || !messagingSenderId) return null;
-  return {
-    apiKey,
-    authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) || `${PROJECT_ID}.firebaseapp.com`,
-    projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) || PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string | undefined,
-    messagingSenderId,
-    appId,
-  };
-}
-
-let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let functions: Functions | null = null;
 let ready: Promise<boolean> | null = null;
@@ -76,30 +35,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-function getOrInitAuth(firebaseApp: FirebaseApp): Auth {
-  const persistences = [indexedDBLocalPersistence, browserLocalPersistence, inMemoryPersistence];
-  for (const persistence of persistences) {
-    try {
-      return initializeAuth(firebaseApp, { persistence });
-    } catch {
-      /* already initialized or this persistence is unavailable */
-    }
-  }
-  return getAuth(firebaseApp);
-}
-
-export function getFirebaseConfigStatus() {
-  const config = readWebConfig();
-  return {
-    present: !!config,
-    projectId: config?.projectId ?? null,
-    hasApiKey: !!config?.apiKey,
-    apiKeyPrefix: config?.apiKey?.slice(0, 8) ?? null,
-    appId: config?.appId ?? null,
-    messagingSenderId: config?.messagingSenderId ?? null,
-  };
-}
-
 export function getCallableAuthSnapshot() {
   return {
     ready: !!auth?.currentUser,
@@ -111,7 +46,7 @@ export function getCallableAuthSnapshot() {
 export async function ensureCallableApp(): Promise<boolean> {
   if (ready) return ready;
   ready = (async () => {
-    const config = readWebConfig();
+    const config = readFirebaseWebConfig();
     if (!config) {
       ocrDebugLog("firebase", "readWebConfig returned null", "error");
       return false;
@@ -121,15 +56,16 @@ export async function ensureCallableApp(): Promise<boolean> {
       `config ok projectId=${config.projectId} appId=${config.appId?.slice(0, 12)}…`,
       "ok",
     );
-    app = getApps().length ? getApps()[0]! : initializeApp(config);
-    auth = getOrInitAuth(app);
+    const ctx = ensureFirebaseJs();
+    if (!ctx) return false;
+    auth = ctx.auth;
     if (!auth.currentUser) {
       ocrDebugLog("firebase", "signInAnonymously…", "info");
       await withTimeout(signInAnonymously(auth), AUTH_TIMEOUT_MS, "ocr-auth-timeout");
     }
     const uid = auth.currentUser?.uid;
     ocrDebugLog("firebase", uid ? `auth uid=${uid.slice(0, 8)}…` : "auth missing uid", uid ? "ok" : "error");
-    functions = getFunctions(app, REGION);
+    functions = getFunctions(ctx.app, REGION);
     return !!uid;
   })().catch((err) => {
     ocrDebugLog("firebase", `init failed: ${String((err as Error)?.message || err)}`, "error");

@@ -1,3 +1,11 @@
+/**
+ * Legacy reusable-task helpers.
+ *
+ * READ ONLY for catch-up / tests. New writes go through V3 `TaskTemplate`
+ * (`createTaskTemplate` / `updateTaskTemplate` / `deleteTaskTemplate`).
+ * Settings must not call `saveReusable` / `addReusable`.
+ */
+
 export interface ReusableTask {
   id: string;
   text: string;
@@ -17,6 +25,7 @@ export function loadReusable(): ReusableTask[] {
 }
 
 export function saveReusable(items: ReusableTask[]) {
+  // LEGACY / DO NOT WRITE from new UI. Catch-up and tests only.
   localStorage.setItem(KEY, JSON.stringify(items));
 }
 

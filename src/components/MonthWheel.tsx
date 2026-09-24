@@ -19,6 +19,11 @@ interface Props {
   /** Stable key for the currently selected month (e.g. "2026-7"). */
   monthKey: string;
   disabled?: boolean;
+  /**
+   * Ignore swipe without `pointer-events: none`, so stamp drop can still
+   * hit `[data-calendar-date]` cells via `elementsFromPoint`.
+   */
+  lockSwipe?: boolean;
   onMonthStep: (delta: -1 | 1) => void;
   /** Fired when the user starts dragging the month wheel. */
   onInteractionStart?: () => void;
@@ -34,6 +39,7 @@ interface Props {
 export function MonthWheel({
   monthKey,
   disabled,
+  lockSwipe,
   onMonthStep,
   onInteractionStart,
   children,
@@ -64,7 +70,7 @@ export function MonthWheel({
   const itemH = Math.max(0, viewportH - PEEK_PX * 2);
   const stride = itemH + GAP_PX;
   strideRef.current = stride;
-  disabledRef.current = !!disabled;
+  disabledRef.current = !!disabled || !!lockSwipe;
   onMonthStepRef.current = onMonthStep;
 
   useLayoutEffect(() => {

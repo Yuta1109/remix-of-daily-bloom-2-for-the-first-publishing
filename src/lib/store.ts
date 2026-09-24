@@ -1,3 +1,10 @@
+/**
+ * Legacy ToDo day store (`mindful-todo-data`).
+ *
+ * COMPATIBILITY ONLY. New ToDo reads/writes V3 TaskItems.
+ * `saveDayData` must not be called from current UI — kept for migration
+ * catch-up and date-math helpers used by TaskHistorySheet.
+ */
 export interface Task {
   id: string;
   text: string;
@@ -22,6 +29,7 @@ function loadData(): Record<string, DayData> {
 }
 
 function saveData(data: Record<string, DayData>) {
+  // LEGACY / DO NOT WRITE from new UI. Migration catch-up only.
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 

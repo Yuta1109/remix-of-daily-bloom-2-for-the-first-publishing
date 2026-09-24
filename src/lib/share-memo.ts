@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
-import { htmlToPlainText, type MemoPage } from "./notes-store";
+import { htmlToPlainText } from "./notes-store";
 
-export async function shareMemoPage(page: MemoPage): Promise<boolean> {
+export async function shareMemoPage(page: { title: string; html: string }): Promise<boolean> {
   const title = page.title.trim() || "メモ";
   const body = htmlToPlainText(page.html);
   const text = body ? `${title}\n\n${body}` : title;

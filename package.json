@@ -10,8 +10,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run && node --test functions/quota-logic.test.js",
+    "preflight": "node scripts/release-preflight.mjs",
+    "test:rules": "node scripts/run-rules-emulator-tests.mjs",
     "test:watch": "vitest",
-    "cap:sync": "npm run build && npx cap sync ios && node scripts/ensure-spm-firebase-app-link.mjs && node scripts/run-setup-widget.mjs",
+    "cap:sync": "npm run build && npx cap sync ios && node scripts/ensure-spm-firebase-app-link.mjs && node scripts/apply-google-signin-ios.mjs && node scripts/run-setup-widget.mjs",
     "cap:ios": "npm run cap:sync && npx cap open ios",
     "deploy": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-functions.ps1",
     "deploy:functions": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-functions.ps1",
@@ -21,6 +23,7 @@
   },
   "dependencies": {
     "@capacitor-firebase/app": "^8.3.0",
+    "@capacitor-firebase/authentication": "^8.3.0",
     "@capacitor-firebase/messaging": "^8.3.0",
     "@capacitor/app": "^8.1.0",
     "@capacitor/camera": "^8.2.3",
@@ -88,6 +91,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@playwright/test": "^1.57.0",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",

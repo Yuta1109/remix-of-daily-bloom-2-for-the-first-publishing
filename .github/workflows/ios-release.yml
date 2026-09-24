@@ -2,6 +2,9 @@ name: iOS Release (App Store / TestFlight)
 
 # Builds a signed .ipa and uploads it to TestFlight.
 #
+# Native Google Sign-In, OAuth redirect, and Storage image restore are verified
+# on device after this workflow — not on Windows. See docs/TESTFLIGHT.md.
+#
 # Requires these repository secrets (Settings -> Secrets and variables -> Actions):
 #   APP_STORE_CONNECT_KEY_ID       App Store Connect API key ID
 #   APP_STORE_CONNECT_ISSUER_ID    App Store Connect API issuer ID
@@ -90,6 +93,9 @@ jobs:
 
       - name: Fix SPM Package.swift paths / guard app identity collision
         run: node scripts/ensure-spm-firebase-app-link.mjs
+
+      - name: Inject Google Sign-In URL scheme from GoogleService-Info.plist
+        run: node scripts/apply-google-signin-ios.mjs
 
       - name: Wire Live Activity widget extension
         working-directory: ios/App

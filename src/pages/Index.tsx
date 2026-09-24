@@ -1,36 +1,72 @@
-import { useState, useEffect, useCallback, type KeyboardEvent } from "react";
-import { Plus, Flame, Target, Calendar, History } from "lucide-react";
-import { AiCameraIcon } from "@/components/AiCameraIcon";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { TaskItem } from "@/components/TaskItem";
-import {
-  getDayData,
-  saveDayData,
-  getDateKey,
-  getStreak,
-  getCompletionRate,
-  getAllData,
-} from "@/lib/store";
-import { loadReusable, type ReusableTask } from "@/lib/reusable-tasks";
-import { useI18n } from "@/lib/i18n";
-import { InsetScrollArea } from "@/components/InsetScrollArea";
-import { hideKeyboard, prepareForOcr, scrollInputAboveKeyboard } from "@/lib/keyboard-avoidance";
-import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
-import type { DayData, Task } from "@/lib/store";
+import { UserButton } from "@/components/UserButton";
+import { DailyTaskSheet, type DailyTaskSheetRequest } from "@/components/plan/DailyTaskSheet";
+import { TodoAddMenu, type TodoAddKind } from "@/components/todo/TodoAddMenu";
+import { TodoRoutineRow } from "@/components/todo/TodoRoutineRow";
+import { TodoSectionHeader } from "@/components/todo/TodoSectionHeader";
+import { TodoTaskRow } from "@/components/todo/TodoTaskRow";
+import { RoutineSheet, type RoutineSheetRequest } from "@/components/todo/RoutineSheet";
+import { RepeatSeriesSheet, type RepeatSeriesSheetRequest } from "@/components/todo/RepeatSeriesSheet";
 import { TaskHistorySheet } from "@/components/TaskHistorySheet";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
 import { OcrResultSheet } from "@/components/OcrResultSheet";
+import { useI18n } from "@/lib/i18n";
+import { hideKeyboard, prepareForOcr } from "@/lib/keyboard-avoidance";
 import { extractTextFromPickedImage, ocrToastKey, type ImageSource } from "@/lib/ocr";
 import { ocrDebugLog } from "@/lib/ocr-debug-log";
+import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
+import { addDays, formatLocalDate, todayLocalDate } from "@/lib/v3/local-date";
+import { ensureLegacyCatchup } from "@/lib/v3/storage";
+import {
+  completeTask,
+  createTask,
+  createTaskFromTemplate,
+  ensureSeriesOccurrencesForRange,
+  getListedTasksForDate,
+  getOpenTasksForDate,
+  getRoutines,
+  getRoutinesForDate,
+  getRoutineCompletions,
+  getTaskCompletionRate,
+  getTaskTemplates,
+  getUpcomingListedTasks,
+  isRoutineCompletedOn,
+  setRoutineCompletion,
+} from "@/lib/v3/repository";
+import {
+  TODO_UPCOMING_EXPANDED_DAYS,
+  upcomingHorizonDays,
+  splitListedTasks,
+} from "@/lib/v3/todo-view";
+import type { RoutineCompletion, RoutineItem, TaskItem, TaskTemplate } from "@/lib/v3/types";
 
+/**
+ * ToDo — the execution screen ("what to do now").
+ *
+ * RoutineItem  → habit, ToDo only, completions in RoutineCompletion
+ * TaskItem     → one-time instance, shared with Plan Daily and Calendar
+ * TaskSeries   → Repeat Log; occurrences materialize as TaskItems
+ */
 export default function Index() {
-  const { t, formatDate } = useI18n();
-  const today = getDateKey(new Date());
-  const [dayData, setDayData] = useState<DayData>({ tasks: [], reflection: "" });
-  const [newTask, setNewTask] = useState("");
-  const [reusable, setReusable] = useState<ReusableTask[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { t, locale } = useI18n();
+  const today = todayLocalDate();
+
+  const [activeRoutines, setActiveRoutines] = useState<RoutineItem[]>([]);
+  const [todayRoutines, setTodayRoutines] = useState<RoutineItem[]>([]);
+  const [completions, setCompletions] = useState<RoutineCompletion[]>([]);
+  const [openTasks, setOpenTasks] = useState<TaskItem[]>([]);
+  const [completedTasks, setCompletedTasks] = useState<TaskItem[]>([]);
+  const [upcoming, setUpcoming] = useState<{ date: string; tasks: TaskItem[] }[]>([]);
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [upcomingExpanded, setUpcomingExpanded] = useState(false);
+  const [completedOpen, setCompletedOpen] = useState(false);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [taskSheet, setTaskSheet] = useState<DailyTaskSheetRequest | null>(null);
+  const [routineSheet, setRoutineSheet] = useState<RoutineSheetRequest | null>(null);
+  const [repeatSheet, setRepeatSheet] = useState<RepeatSeriesSheetRequest | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
@@ -38,99 +74,96 @@ export default function Index() {
     message: string;
     kind: "info" | "warning";
   } | null>(null);
-  const streak = getStreak();
-  const completion = getCompletionRate(dayData);
-  const totalActiveDays = Object.values(getAllData()).filter((d) => d.tasks.length > 0).length;
+
+  const reload = useCallback(() => {
+    ensureLegacyCatchup();
+    const horizon = upcomingHorizonDays(upcomingExpanded);
+    ensureSeriesOccurrencesForRange(today, addDays(today, TODO_UPCOMING_EXPANDED_DAYS));
+    setActiveRoutines(getRoutines());
+    setTodayRoutines(getRoutinesForDate(today));
+    setCompletions(getRoutineCompletions({ date: today }));
+    const { open, completed } = splitListedTasks(getListedTasksForDate(today));
+    setOpenTasks(open);
+    setCompletedTasks(completed);
+    setUpcoming(getUpcomingListedTasks(today, horizon));
+    setTemplates(getTaskTemplates());
+  }, [today, upcomingExpanded]);
 
   useEffect(() => {
-    setDayData(getDayData(today));
-    setReusable(loadReusable());
-  }, [today]);
+    reload();
+  }, [reload]);
 
   useEffect(() => {
-    const reload = () => {
-      setDayData(getDayData(today));
-      setSelectedId(null);
-    };
-    window.addEventListener("essences-tutorial-data-cleared", reload);
-    return () => window.removeEventListener("essences-tutorial-data-cleared", reload);
-  }, [today]);
+    const onCleared = () => reload();
+    window.addEventListener("essences-tutorial-data-cleared", onCleared);
+    return () => window.removeEventListener("essences-tutorial-data-cleared", onCleared);
+  }, [reload]);
 
   useEffect(() => {
     if (pickOpen || ocrBusy) void hideKeyboard();
   }, [pickOpen, ocrBusy]);
 
-  const persist = useCallback(
-    (updated: DayData) => {
-      setDayData(updated);
-      saveDayData(today, updated);
-    },
-    [today]
-  );
-
-  const selectTask = (id: string) => {
-    setSelectedId(id);
-    if (isTutorialActive()) emitTutorial("task-selected", { id });
-  };
+  const openTitles = [
+    ...openTasks.map((item) => item.title),
+    ...getOpenTasksForDate(today).map((item) => item.title),
+  ];
 
   const addTaskWithText = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return false;
-    if (dayData.tasks.some((t) => t.text === trimmed && !t.completed)) {
+    if (openTitles.includes(trimmed)) {
       toast(t("alreadyInToday"));
       return false;
     }
-    const task: Task = { id: crypto.randomUUID(), text: trimmed, completed: false, date: today };
-    persist({ ...dayData, tasks: [...dayData.tasks, task] });
-    if (isTutorialActive()) emitTutorial("task-added", { id: task.id });
+    const created = createTask({ title: trimmed, date: today, createdFrom: "todo" });
+    reload();
+    if (isTutorialActive()) emitTutorial("task-added", { id: created.id });
     return true;
   };
 
+  const addTaskFromTemplate = (template: TaskTemplate) => {
+    if (openTitles.includes(template.title)) {
+      toast(t("alreadyInToday"));
+      return;
+    }
+    const created = createTaskFromTemplate(template.id, today);
+    reload();
+    if (isTutorialActive()) emitTutorial("task-added", { id: created.id });
+  };
+
   const bringHistoryTasks = (texts: string[]) => {
-    const seen = new Set(
-      dayData.tasks.filter((item) => !item.completed).map((item) => item.text),
-    );
-    const nextTasks = [...dayData.tasks];
+    const seen = new Set(openTasks.map((item) => item.title));
+    let added = 0;
     for (const text of texts) {
       const trimmed = text.trim();
       if (!trimmed || seen.has(trimmed)) continue;
       seen.add(trimmed);
-      nextTasks.push({
-        id: crypto.randomUUID(),
-        text: trimmed,
-        completed: false,
-        date: today,
-      });
+      createTask({ title: trimmed, date: today, createdFrom: "todo" });
+      added += 1;
     }
-    if (nextTasks.length === dayData.tasks.length) {
+    if (added === 0) {
       toast(t("alreadyInToday"));
       return;
     }
-    persist({ ...dayData, tasks: nextTasks });
+    reload();
     setHistoryOpen(false);
   };
 
   const addOcrTasks = (texts: string[]) => {
-    const seen = new Set(
-      dayData.tasks.filter((item) => !item.completed).map((item) => item.text),
-    );
-    const nextTasks = [...dayData.tasks];
+    const seen = new Set(openTasks.map((item) => item.title));
+    let added = 0;
     for (const text of texts) {
       const trimmed = text.trim();
       if (!trimmed || seen.has(trimmed)) continue;
       seen.add(trimmed);
-      nextTasks.push({
-        id: crypto.randomUUID(),
-        text: trimmed,
-        completed: false,
-        date: today,
-      });
+      createTask({ title: trimmed, date: today, createdFrom: "todo" });
+      added += 1;
     }
-    if (nextTasks.length === dayData.tasks.length) {
+    if (added === 0) {
       toast(t("alreadyInToday"));
       return;
     }
-    persist({ ...dayData, tasks: nextTasks });
+    reload();
   };
 
   const onOcr = async (source: ImageSource) => {
@@ -142,7 +175,7 @@ export default function Index() {
     let feedback: { message: string; kind: "info" | "warning" } | null = null;
     try {
       const result = await extractTextFromPickedImage("tasks", source);
-      if (!result.ok) {
+      if (!result.ok && "error" in result) {
         const key = ocrToastKey(
           result.error,
           "configReason" in result ? result.configReason : undefined,
@@ -167,197 +200,243 @@ export default function Index() {
     }
   };
 
-  const finishNewTask = () => {
-    if (!newTask.trim()) return;
-    addTaskWithText(newTask);
-    setNewTask("");
-    void hideKeyboard();
-  };
-
-  const onAddKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    finishNewTask();
-  };
-
-  const toggleTask = (id: string) => {
-    const task = dayData.tasks.find((t) => t.id === id);
-    const updated = {
-      ...dayData,
-      tasks: dayData.tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
-    };
-    persist(updated);
-    if (task && !task.completed && getCompletionRate(updated) === 100 && !isTutorialActive()) {
+  const toggleTask = (task: TaskItem) => {
+    const nextCompleted = task.status !== "completed";
+    completeTask(task.id, nextCompleted);
+    if (nextCompleted && getTaskCompletionRate(today) === 100 && !isTutorialActive()) {
       toast(t("allTasksComplete"));
     }
+    reload();
+    if (isTutorialActive()) emitTutorial("task-toggled", { id: task.id });
   };
 
-  const deleteTask = (id: string) => {
-    persist({ ...dayData, tasks: dayData.tasks.filter((t) => t.id !== id) });
-    if (selectedId === id) setSelectedId(null);
+  const openTask = (task: TaskItem) => {
+    setTaskSheet({ mode: "edit", taskId: task.id });
+    if (isTutorialActive()) emitTutorial("task-selected", { id: task.id });
   };
 
-  const editTask = (id: string, text: string) => {
-    persist({
-      ...dayData,
-      tasks: dayData.tasks.map((t) => (t.id === id ? { ...t, text } : t)),
-    });
+  const toggleRoutine = (routine: RoutineItem) => {
+    const done = isRoutineCompletedOn(routine.id, today);
+    setRoutineCompletion(routine.id, today, !done);
+    reload();
   };
 
-  const now = new Date();
+  const onPickAdd = (kind: TodoAddKind) => {
+    if (kind === "task") setTaskSheet({ mode: "create", date: today, createdFrom: "todo" });
+    if (kind === "routine") setRoutineSheet({ mode: "create" });
+    if (kind === "repeat") setRepeatSheet({ mode: "create" });
+  };
+
+  const listedCount = openTasks.length + completedTasks.length;
+  const completionLabel =
+    listedCount === 0 ? undefined : `${completedTasks.length}/${listedCount}`;
+  const routineDone = todayRoutines.filter((r) =>
+    completions.some((c) => c.routineId === r.id && c.completed),
+  ).length;
 
   return (
-    <div
-      className="page-shell px-3"
-      onClick={() => {
-        // During the tour, keep selection so the accent highlight stays visible.
-        if (!isTutorialActive()) setSelectedId(null);
-      }}
-    >
-      <div className="shrink-0 pb-2" onClick={(e) => e.stopPropagation()}>
-        <div
-          className="bg-card rounded-3xl p-4 shadow-card animate-fade-in-up"
-          data-tutorial="today-stats"
-        >
-          <div className="mb-3 relative pr-10">
-            <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-              {formatDate(now, { weekday: "long" })}
-            </p>
-            <h1 className="text-2xl font-bold tracking-tight mt-0.5">
-              {formatDate(now, { month: "long", day: "numeric" })}
-            </h1>
-            {!isTutorialActive() && (
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
-                className="absolute top-0 right-0 p-2 rounded-xl text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
-                aria-label={t("taskHistory")}
-              >
-                <History className="w-5 h-5" strokeWidth={2} />
-              </button>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-secondary/60 rounded-2xl p-3 text-center">
-              <div className="flex items-center justify-center text-streak mb-0.5">
-                <Flame className="w-4 h-4" />
-              </div>
-              <p className="text-xl font-bold">{streak}</p>
-              <p className="text-[10px] text-muted-foreground font-medium">{t("streak")}</p>
-            </div>
-            <div className="bg-secondary/60 rounded-2xl p-3 text-center">
-              <div className="flex items-center justify-center text-accent mb-0.5">
-                <Target className="w-4 h-4" />
-              </div>
-              <p className="text-xl font-bold">{completion}%</p>
-              <p className="text-[10px] text-muted-foreground font-medium">{t("todayLabel")}</p>
-            </div>
-            <div className="bg-secondary/60 rounded-2xl p-3 text-center">
-              <div className="flex items-center justify-center text-success mb-0.5">
-                <Calendar className="w-4 h-4" />
-              </div>
-              <p className="text-xl font-bold">{totalActiveDays}</p>
-              <p className="text-[10px] text-muted-foreground font-medium">{t("days")}</p>
-            </div>
-          </div>
+    <div className="app-shell-page">
+      <div className="app-shell-header px-4 pb-2">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-[28px] font-bold tracking-tight leading-tight">
+            {t("todoPageTitle")}
+          </h1>
+          <UserButton />
         </div>
+      </div>
 
-        {reusable.length > 0 && (
-          <div className="mt-3 animate-fade-in-up" style={{ animationDelay: "0.05s" }}>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2 px-1">
-              {t("quickAdd")}
-            </p>
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-              {reusable.map((r) => (
+      <div className="app-shell-scroll px-4" data-tutorial="todo-layout">
+        {activeRoutines.length > 0 ? (
+          <section aria-labelledby="todo-routine-heading">
+            <TodoSectionHeader
+              id="todo-routine-heading"
+              title={t("todoSectionRoutine")}
+              accessory={
+                todayRoutines.length
+                  ? t("todoRoutineSummary")
+                      .replace("{done}", String(routineDone))
+                      .replace("{total}", String(todayRoutines.length))
+                  : undefined
+              }
+            />
+            {todayRoutines.length ? (
+              todayRoutines.map((routine) => (
+                <TodoRoutineRow
+                  key={routine.id}
+                  routine={routine}
+                  completed={completions.some((c) => c.routineId === routine.id && c.completed)}
+                  onToggle={() => toggleRoutine(routine)}
+                  onEdit={() => setRoutineSheet({ mode: "edit", routineId: routine.id })}
+                />
+              ))
+            ) : (
+              <p className="px-1 py-2 text-sm text-muted-foreground">{t("todoRoutineNoneToday")}</p>
+            )}
+            <button
+              type="button"
+              onClick={() => setRoutineSheet({ mode: "create" })}
+              className="mt-1 px-1 py-2 text-[15px] font-medium text-accent"
+            >
+              + {t("todoAddRoutineCta")}
+            </button>
+          </section>
+        ) : null}
+
+        <section aria-labelledby="todo-tasks-heading">
+          <TodoSectionHeader
+            id="todo-tasks-heading"
+            title={t("todoSectionTasks")}
+            accessory={completionLabel}
+          />
+
+          {templates.length > 0 ? (
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+              {templates.map((template) => (
                 <button
-                  key={r.id}
-                  onClick={() => addTaskWithText(r.text)}
-                  className="flex-shrink-0 flex items-center gap-1 bg-secondary/60 hover:bg-secondary text-sm px-3 py-1.5 rounded-full transition-colors"
+                  key={template.id}
+                  type="button"
+                  onClick={() => addTaskFromTemplate(template)}
+                  className="flex-shrink-0 text-sm px-3 py-1.5 rounded-full bg-secondary/60"
                 >
-                  <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-                  {r.text}
+                  {template.title}
                 </button>
               ))}
             </div>
-          </div>
-        )}
+          ) : null}
 
-        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mt-3 mb-0.5 px-1">
-          {t("todaysTasks")}
-        </p>
-      </div>
-
-      <div className="flex-1 min-h-0" onClick={(e) => e.stopPropagation()}>
-        <div
-          className="h-full bg-card rounded-2xl shadow-soft flex flex-col overflow-hidden"
-          data-tutorial="task-list"
-        >
-          <InsetScrollArea contentClassName="px-3 py-3" inset={16}>
-            {dayData.tasks.length > 0 ? (
-              <div className="space-y-2">
-                {dayData.tasks.map((task) => (
-                  <TaskItem
-                    key={task.id}
-                    task={task}
-                    selected={selectedId === task.id}
-                    onSelect={selectTask}
-                    onToggle={toggleTask}
-                    onDelete={deleteTask}
-                    onEdit={editTask}
-                  />
-                ))}
-              </div>
+          <div data-tutorial="task-list">
+            {openTasks.length ? (
+              openTasks.map((task) => (
+                <TodoTaskRow
+                  key={task.id}
+                  task={task}
+                  onToggle={() => toggleTask(task)}
+                  onPress={() => openTask(task)}
+                />
+              ))
             ) : (
-              <div className="text-center py-10 text-muted-foreground">
-                <p className="text-base font-medium mb-1">{t("startYourDay")}</p>
-                <p className="text-sm opacity-60">{t("tapPlusHint")}</p>
-              </div>
+              <p className="px-1 py-6 text-sm text-muted-foreground">{t("todoTasksEmpty")}</p>
             )}
-          </InsetScrollArea>
-        </div>
-      </div>
+          </div>
 
-      {/* Fixed add row (like Settings reusable tasks), clear of the tab bar. */}
-      <div
-        className="shrink-0 pt-2.5 pb-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="flex items-stretch gap-2"
-          data-tutorial="quick-add"
-        >
-          <input
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
-            enterKeyHint="done"
-            onKeyDown={onAddKeyDown}
-            placeholder={t("whatNeedsDone")}
-            className="flex-1 min-w-0 bg-card rounded-xl px-4 h-11 text-base outline-none shadow-soft placeholder:text-muted-foreground/50"
-          />
-          <button
-            type="button"
-            onClick={finishNewTask}
-            className="shrink-0 bg-accent text-accent-foreground rounded-xl px-4 h-11 text-sm font-medium flex flex-row items-center justify-center gap-1.5 hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-4 h-4" strokeWidth={2.5} />
-            <span>{t("add")}</span>
-          </button>
           <button
             type="button"
             onClick={() => {
-              if (isTutorialActive()) return;
-              void prepareForOcr();
-              setPickOpen(true);
+              if (isTutorialActive()) {
+                setTaskSheet({ mode: "create", date: today, createdFrom: "todo" });
+                return;
+              }
+              setAddOpen(true);
             }}
-            disabled={ocrBusy || isTutorialActive()}
-            className="shrink-0 bg-card rounded-xl px-3 h-11 w-11 shadow-soft text-foreground/80 flex items-center justify-center disabled:pointer-events-none disabled:opacity-40"
-            aria-label={t("ocrAddImage")}
+            className="mt-1 mb-1 px-1 py-2 text-[15px] font-medium text-accent"
+            data-tutorial="todo-add"
           >
-            <AiCameraIcon variant="today" />
+            + {t("todoAdd")}
           </button>
-        </div>
+        </section>
+
+        <section aria-labelledby="todo-upcoming-heading">
+          <TodoSectionHeader id="todo-upcoming-heading" title={t("todoSectionUpcoming")} />
+          {upcoming.length ? (
+            upcoming.map((group) => (
+              <div key={group.date} className="mb-3">
+                <p className="px-1 pt-1 pb-0.5 text-[13px] font-semibold text-muted-foreground">
+                  {formatLocalDate(group.date, locale, { month: "short", day: "numeric" })}
+                </p>
+                {group.tasks.map((task) => (
+                  <TodoTaskRow
+                    key={task.id}
+                    task={task}
+                    onToggle={() => toggleTask(task)}
+                    onPress={() => openTask(task)}
+                  />
+                ))}
+              </div>
+            ))
+          ) : (
+            <p className="px-1 py-2 text-sm text-muted-foreground">{t("todoUpcomingEmpty")}</p>
+          )}
+          <button
+            type="button"
+            onClick={() => setUpcomingExpanded((value) => !value)}
+            className="px-1 py-2 text-[15px] font-medium text-accent"
+          >
+            {upcomingExpanded ? t("todoShowLessUpcoming") : t("todoSeeAllUpcoming")}
+          </button>
+        </section>
+
+        <section aria-labelledby="todo-completed-heading">
+          <TodoSectionHeader
+            id="todo-completed-heading"
+            title={t("todoSectionCompleted")}
+            accessory={t("todoCompletedCount").replace("{n}", String(completedTasks.length))}
+            onClick={() => setCompletedOpen((value) => !value)}
+            expanded={completedOpen}
+          />
+          {completedOpen
+            ? completedTasks.map((task) => (
+                <TodoTaskRow
+                  key={task.id}
+                  task={task}
+                  onToggle={() => toggleTask(task)}
+                  onPress={() => openTask(task)}
+                />
+              ))
+            : null}
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            className="px-1 py-2 text-[13px] font-medium text-muted-foreground"
+          >
+            {t("todoPastHistory")}
+          </button>
+        </section>
+
+        <div className="h-20" aria-hidden="true" />
       </div>
+
+      <TodoAddMenu
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onPick={onPickAdd}
+        onScan={
+          isTutorialActive()
+            ? undefined
+            : () => {
+                void prepareForOcr();
+                setPickOpen(true);
+              }
+        }
+      />
+
+      <DailyTaskSheet
+        request={taskSheet}
+        onOpenChange={(open) => {
+          if (!open) setTaskSheet(null);
+        }}
+        onSaved={(task) => {
+          reload();
+          if (isTutorialActive()) emitTutorial("task-added", { id: task.id });
+        }}
+        onChanged={reload}
+        onEditSeries={(seriesId) => setRepeatSheet({ mode: "edit", seriesId })}
+      />
+      <RoutineSheet
+        request={routineSheet}
+        onOpenChange={(open) => {
+          if (!open) setRoutineSheet(null);
+        }}
+        onSaved={() => reload()}
+        onChanged={reload}
+      />
+      <RepeatSeriesSheet
+        request={repeatSheet}
+        onOpenChange={(open) => {
+          if (!open) setRepeatSheet(null);
+        }}
+        onSaved={() => reload()}
+        onChanged={reload}
+      />
       <TaskHistorySheet
         open={historyOpen}
         todayKey={today}

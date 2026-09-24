@@ -1,3 +1,9 @@
+/**
+ * Legacy memo library (essences-memo-library-v2 / essences-memos).
+ *
+ * COMPATIBILITY ONLY — read for migration / archive. Do not write from new UI.
+ * Canonical notes live in V3 (`essences-app-data-v3`) via repository.ts.
+ */
 export type MemoPage = {
   id: string;
   title: string;
@@ -166,7 +172,7 @@ function loadRaw(): MemoLibrary {
     }
     const pages = parsed.pages.map((p) => sanitizePage(p));
     const pageIds = new Set(pages.map((p) => p.id));
-    const categories = parsed.categories.map((c) => ({
+    const categories: MemoCategory[] = parsed.categories.map((c) => ({
       id: String(c.id || crypto.randomUUID()),
       name: typeof c.name === "string" ? c.name : "",
       pageIds: Array.isArray(c.pageIds)
@@ -214,6 +220,7 @@ export function loadMemoLibrary(): MemoLibrary {
 }
 
 export function saveMemoLibrary(lib: MemoLibrary): MemoLibrary {
+  // LEGACY / DO NOT WRITE from new UI. MemoListPage is unrouted compatibility only.
   saveRaw(lib);
   return lib;
 }
