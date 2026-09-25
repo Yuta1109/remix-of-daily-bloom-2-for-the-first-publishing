@@ -41,6 +41,7 @@ import { hasChallengePointAward, pointBalanceFrom } from "./points";
 import {
   completeReflection,
   deriveReflectionStatus,
+  keepCarryDate,
   reflectionPeriod,
   scheduleAfterPeriod,
   skipReflection,
@@ -221,6 +222,7 @@ export function getPlanItems(filter?: {
       if (typeof filter?.parentPlanId === "string" && p.parentPlanId !== filter.parentPlanId) {
         return false;
       }
+      if (p.inPostponeBox) return false;
       return true;
     })
     .sort((a, b) => a.order - b.order);
@@ -252,6 +254,7 @@ function isDuplicateChildPlan(
   return Object.values(plans).some(
     (p) =>
       p.status !== "archived" &&
+      !p.inPostponeBox &&
       p.parentPlanId === input.parentPlanId &&
       p.level === input.level &&
       p.title.trim() === title &&
@@ -405,6 +408,7 @@ export function getPlanItemsForPeriod(
         return false;
       }
       if (!p.periodStart) return false;
+      if (p.inPostponeBox) return false;
       const end = p.periodEnd ?? p.periodStart;
       return p.periodStart <= periodEnd && end >= periodStart;
     })
@@ -444,7 +448,7 @@ export function getPlanProgress(parentPlanId: string): { total: number; complete
 export function getTasksForDate(date: LocalDate): TaskItem[] {
   const { tasks } = loadEssencesData();
   return Object.values(tasks)
-    .filter((t) => t.date === date && t.status !== "archived")
+    .filter((t) => t.date === date && t.status !== "archived" && !t.inPostponeBox)
     .sort((a, b) => a.order - b.order);
 }
 
@@ -544,6 +548,7 @@ export function getTasksInRange(
   const out = new Map<LocalDate, TaskItem[]>();
   for (const task of Object.values(loadEssencesData().tasks)) {
     if (task.status === "archived") continue;
+    if (task.inPostponeBox) continue;
     if (task.date < from || task.date > to) continue;
     const bucket = out.get(task.date) ?? [];
     bucket.push(task);
@@ -553,13 +558,75 @@ export function getTasksInRange(
   return out;
 }
 
+/** Tasks and plans sitting in the undated Postpone Box. */
+export function getPostponeBoxItems(): { tasks: TaskItem[]; plans: PlanItem[] } {
+  const data = loadEssencesData();
+  return {
+    tasks: Object.values(data.tasks)
+      .filter((t) => t.inPostponeBox && t.status !== "archived")
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)),
+    plans: Object.values(data.plans)
+      .filter((p) => p.inPostponeBox && p.status !== "archived")
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)),
+  };
+}
+
+export function assignPostponeBoxTask(id: string, date: LocalDate): TaskItem {
+  const { result } = updateEssencesData((data) => {
+    const task = data.tasks[id];
+    if (!task) throw new RepositoryError(`unknown task ${id}`, "task-not-found");
+    if (!isValidLocalDate(date)) {
+      throw new RepositoryError(`invalid local date ${date}`, "task-invalid-date");
+    }
+    const existing = findDuplicateTask(data, task, date);
+    if (existing) {
+      throw new RepositoryError(`task already exists on ${date}`, "task-duplicate-date");
+    }
+    const sameDay = Object.values(data.tasks).filter((t) => t.date === date && !t.inPostponeBox);
+    data.tasks[id] = {
+      ...task,
+      date,
+      inPostponeBox: false,
+      order: nextOrder(sameDay),
+      updatedAt: nowTimestamp(),
+    };
+    return data.tasks[id];
+  });
+  return result;
+}
+
+export function assignPostponeBoxPlan(
+  id: string,
+  dest: { periodStart?: LocalDate; periodEnd?: LocalDate; futureTarget?: FutureTarget },
+): PlanItem {
+  const { result } = updateEssencesData((data) => {
+    const plan = data.plans[id];
+    if (!plan) throw new RepositoryError(`unknown plan ${id}`, "plan-not-found");
+    const now = nowTimestamp();
+    let next: PlanItem = { ...plan, inPostponeBox: false, updatedAt: now };
+    if (dest.futureTarget) {
+      next = { ...next, futureTarget: dest.futureTarget };
+    } else if (dest.periodStart) {
+      const periodEnd =
+        dest.periodEnd ??
+        (plan.level === "monthly"
+          ? endOfMonth(dest.periodStart)
+          : endOfWeek(dest.periodStart, data.settings.weekStartsOn));
+      next = { ...next, periodStart: dest.periodStart, periodEnd };
+    }
+    data.plans[id] = next;
+    return next;
+  });
+  return result;
+}
+
 export function getTask(id: string): TaskItem | undefined {
   return loadEssencesData().tasks[id];
 }
 
 export function getTasksForPlan(parentPlanId: string): TaskItem[] {
   return Object.values(loadEssencesData().tasks)
-    .filter((t) => t.parentPlanId === parentPlanId)
+    .filter((t) => t.parentPlanId === parentPlanId && !t.inPostponeBox)
     .sort((a, b) => (a.date === b.date ? a.order - b.order : a.date < b.date ? -1 : 1));
 }
 
@@ -576,6 +643,7 @@ export interface CreateTaskInput {
   seriesId?: string;
   occurrenceDate?: LocalDate;
   createdFrom?: TaskItem["createdFrom"];
+  inPostponeBox?: boolean;
 }
 
 export function createTask(input: CreateTaskInput): TaskItem {
@@ -614,7 +682,7 @@ function createTaskIn(data: EssencesDataV3, input: CreateTaskInput): TaskItem {
       `task-parent-${check.reason}`,
     );
   }
-  if (input.parentPlanId) {
+  if (input.parentPlanId && !input.inPostponeBox) {
     const duplicate = findDuplicateTask(
       data,
       {
@@ -649,6 +717,7 @@ function createTaskIn(data: EssencesDataV3, input: CreateTaskInput): TaskItem {
     createdAt: now,
     updatedAt: now,
     createdFrom: input.createdFrom ?? "todo",
+    inPostponeBox: input.inPostponeBox,
   };
   data.tasks[task.id] = task;
   pushActivity(data, { type: "task_created", entityType: "task", entityId: task.id });
@@ -1191,7 +1260,7 @@ function subjectsForSessionIn(
   if (session.type === "daily") {
     return {
       tasks: Object.values(data.tasks)
-        .filter((t) => t.date === from && isListedTaskStatus(t.status))
+        .filter((t) => t.date === from && isListedTaskStatus(t.status) && !t.inPostponeBox)
         .sort(sortTasks),
       plans: [],
     };
@@ -1201,7 +1270,7 @@ function subjectsForSessionIn(
     return {
       tasks: [],
       plans: Object.values(data.plans)
-        .filter((p) => p.level === "future" && isListedPlanStatus(p.status))
+        .filter((p) => p.level === "future" && isListedPlanStatus(p.status) && !p.inPostponeBox)
         .sort(sortPlans),
     };
   }
@@ -1211,7 +1280,9 @@ function subjectsForSessionIn(
     tasks: [],
     plans: Object.values(data.plans)
       .filter((p) => {
-        if (p.level !== level || !isListedPlanStatus(p.status) || !p.periodStart) return false;
+        if (p.level !== level || !isListedPlanStatus(p.status) || !p.periodStart || p.inPostponeBox) {
+          return false;
+        }
         const end = p.periodEnd ?? p.periodStart;
         return p.periodStart <= to && end >= from;
       })
@@ -1226,7 +1297,13 @@ function relatedTasksForPlans(data: EssencesDataV3, plans: PlanItem[]): TaskItem
     for (const child of childPlansOf(data.plans, plan.id)) ids.add(child.id);
   }
   return Object.values(data.tasks)
-    .filter((t) => t.parentPlanId && ids.has(t.parentPlanId) && isListedTaskStatus(t.status))
+    .filter(
+      (t) =>
+        t.parentPlanId &&
+        ids.has(t.parentPlanId) &&
+        isListedTaskStatus(t.status) &&
+        !t.inPostponeBox,
+    )
     .sort((a, b) => (a.date === b.date ? a.order - b.order : a.date < b.date ? -1 : 1));
 }
 
@@ -1449,6 +1526,102 @@ export interface CreateReflectionDecisionInput {
   periodEnd?: LocalDate;
   futureTarget?: FutureTarget;
   collectionId?: string;
+  /** Postpone without a date — send the subject to the Postpone Box. */
+  toBox?: boolean;
+}
+
+function moveOpenTaskToDate(
+  data: EssencesDataV3,
+  task: TaskItem,
+  toDate: LocalDate,
+  now: Timestamp,
+): void {
+  const existing = findDuplicateTask(data, task, toDate);
+  if (existing) {
+    data.tasks[task.id] = { ...task, status: "stopped", updatedAt: now };
+    return;
+  }
+  const sameDay = Object.values(data.tasks).filter((t) => t.date === toDate && !t.inPostponeBox);
+  data.tasks[task.id] = {
+    ...task,
+    date: toDate,
+    inPostponeBox: false,
+    order: nextOrder(sameDay),
+    updatedAt: now,
+  };
+}
+
+function putTaskInPostponeBox(data: EssencesDataV3, task: TaskItem, now: Timestamp): void {
+  if (task.status === "completed") {
+    createTaskIn(data, {
+      title: task.title,
+      date: task.date,
+      note: task.note,
+      icon: task.icon,
+      color: task.color,
+      parentPlanId: task.parentPlanId,
+      createdFrom: "reflection",
+      inPostponeBox: true,
+    });
+    return;
+  }
+  data.tasks[task.id] = { ...task, inPostponeBox: true, updatedAt: now };
+}
+
+function applyKeepToOpenTask(
+  data: EssencesDataV3,
+  session: ReflectionSession,
+  task: TaskItem,
+  decision: ReflectionDecision,
+  now: Timestamp,
+): void {
+  if (task.status !== "open") return;
+  const toDate = keepCarryDate(session);
+  if (task.date === toDate) return;
+  decision.toDate = toDate;
+  moveOpenTaskToDate(data, task, toDate, now);
+}
+
+function applyKeepToActivePlan(
+  data: EssencesDataV3,
+  session: ReflectionSession,
+  plan: PlanItem,
+  decision: ReflectionDecision,
+  now: Timestamp,
+): void {
+  if (plan.status !== "active") return;
+  const toDate = keepCarryDate(session);
+  if (plan.level === "future") {
+    if (!plan.futureTarget || plan.futureTarget.type === "someday") return;
+    const futureTarget: FutureTarget =
+      plan.futureTarget.type === "date"
+        ? { type: "date", value: toDate }
+        : { type: "month", value: toDate.slice(0, 7) };
+    const delta = postponeDeltaDays(plan, { futureTarget });
+    if (postponeShiftsDescendants(plan, { futureTarget })) {
+      shiftPlanSubtree(data, plan.id, delta, now);
+    }
+    data.plans[plan.id] = { ...data.plans[plan.id], futureTarget, updatedAt: now };
+    decision.toDate = toDate;
+    return;
+  }
+  if (!plan.periodStart) return;
+  if (plan.periodStart === toDate) return;
+  const nextEnd =
+    plan.level === "monthly"
+      ? endOfMonth(toDate)
+      : endOfWeek(toDate, data.settings.weekStartsOn);
+  const delta = postponeDeltaDays(plan, { periodStart: toDate });
+  if (postponeShiftsDescendants(plan, { periodStart: toDate })) {
+    shiftPlanSubtree(data, plan.id, delta, now);
+  }
+  data.plans[plan.id] = {
+    ...data.plans[plan.id],
+    periodStart: toDate,
+    periodEnd: nextEnd,
+    updatedAt: now,
+  };
+  decision.toDate = toDate;
 }
 
 /**
@@ -1482,6 +1655,7 @@ export function createReflectionDecision(
       decision: input.decision,
       collectionId: input.collectionId,
       decidedAt: now,
+      toBox: input.toBox ? true : undefined,
     };
 
     if (input.subjectType === "task") {
@@ -1489,35 +1663,35 @@ export function createReflectionDecision(
       if (!task) throw new RepositoryError(`unknown task ${input.subjectId}`, "task-not-found");
       decision.fromDate = previous?.fromDate ?? task.date;
 
-      if (input.decision === "postpone") {
-        const toDate = input.toDate;
-        if (!toDate || !isValidLocalDate(toDate)) {
-          throw new RepositoryError("postpone requires a valid toDate", "decision-missing-date");
-        }
-        decision.toDate = toDate;
-        const existing = findDuplicateTask(data, task, toDate);
-        if (existing) {
-          if (task.status === "open") {
-            data.tasks[task.id] = { ...task, status: "stopped", updatedAt: now };
-          }
-        } else if (task.status === "completed") {
-          createTaskIn(data, {
-            title: task.title,
-            date: toDate,
-            note: task.note,
-            icon: task.icon,
-            color: task.color,
-            parentPlanId: task.parentPlanId,
-            createdFrom: "reflection",
-          });
+      if (input.decision === "keep") {
+        applyKeepToOpenTask(data, session, task, decision, now);
+      } else if (input.decision === "postpone") {
+        if (input.toBox) {
+          putTaskInPostponeBox(data, task, now);
         } else {
-          const sameDay = Object.values(data.tasks).filter((t) => t.date === toDate);
-          data.tasks[task.id] = {
-            ...task,
-            date: toDate,
-            order: nextOrder(sameDay),
-            updatedAt: now,
-          };
+          const toDate = input.toDate;
+          if (!toDate || !isValidLocalDate(toDate)) {
+            throw new RepositoryError("postpone requires a valid toDate", "decision-missing-date");
+          }
+          decision.toDate = toDate;
+          const existing = findDuplicateTask(data, task, toDate);
+          if (existing) {
+            if (task.status === "open") {
+              data.tasks[task.id] = { ...task, status: "stopped", updatedAt: now };
+            }
+          } else if (task.status === "completed") {
+            createTaskIn(data, {
+              title: task.title,
+              date: toDate,
+              note: task.note,
+              icon: task.icon,
+              color: task.color,
+              parentPlanId: task.parentPlanId,
+              createdFrom: "reflection",
+            });
+          } else {
+            moveOpenTaskToDate(data, task, toDate, now);
+          }
         }
       } else if (input.decision === "stop") {
         if (task.status !== "completed") {
@@ -1530,8 +1704,12 @@ export function createReflectionDecision(
       decision.fromLevel = plan.level;
       decision.toLevel = input.toLevel ?? plan.level;
 
-      if (input.decision === "postpone") {
-        if (plan.level === "future") {
+      if (input.decision === "keep") {
+        applyKeepToActivePlan(data, session, plan, decision, now);
+      } else if (input.decision === "postpone") {
+        if (input.toBox) {
+          data.plans[plan.id] = { ...plan, inPostponeBox: true, updatedAt: now };
+        } else if (plan.level === "future") {
           const futureTarget = input.futureTarget;
           if (!futureTarget) {
             throw new RepositoryError(

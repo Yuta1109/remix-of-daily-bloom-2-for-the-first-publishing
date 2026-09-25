@@ -542,9 +542,9 @@ describe("activity log", () => {
 });
 
 describe("daily challenges", () => {
-  it("assigns about ten challenges per day, idempotently", () => {
+  it("assigns six challenges per day, idempotently", () => {
     const first = ensureDailyChallenges("2026-09-21");
-    expect(first.length).toBe(10);
+    expect(first.length).toBe(6);
     const second = ensureDailyChallenges("2026-09-21");
     expect(second).toHaveLength(first.length);
   });

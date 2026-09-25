@@ -23,6 +23,28 @@ import type { Collection, CollectionEntry, NotePage, QuickMemo } from "./types";
 
 export const NOTES_HOME_PATH = "/note";
 export const NOTES_SEARCH_PATH = "/note/search";
+export const NOTES_HOME_QUICK_MEMO_LIMIT = 4;
+export const NOTES_HOME_NOTE_LIMIT = 4;
+export const NOTES_HOME_COLLECTION_LIMIT = 10;
+
+export function notesQuickListPath(): string {
+  return "/note/list/quick";
+}
+export function notesNoteListPath(): string {
+  return "/note/list/notes";
+}
+export function notesCollectionListPath(): string {
+  return "/note/list/collections";
+}
+export function notesQuickSearchPath(): string {
+  return "/note/search/quick";
+}
+export function notesNoteSearchPath(): string {
+  return "/note/search/notes";
+}
+export function notesCollectionSearchPath(): string {
+  return "/note/search/collections";
+}
 
 export function noteDetailPath(id: string): string {
   return `/note/n/${encodeURIComponent(id)}`;
@@ -77,6 +99,31 @@ export type NotesSearchHit = {
   title: string;
   preview: string;
 };
+
+export function searchQuickMemos(query: string): QuickMemo[] {
+  const q = query.trim().toLowerCase();
+  const memos = listedQuickMemos();
+  if (!q) return memos;
+  return memos.filter((memo) => memo.text.toLowerCase().includes(q));
+}
+
+export function searchNotePages(query: string): NotePage[] {
+  const q = query.trim().toLowerCase();
+  const notes = listedNotes();
+  if (!q) return notes;
+  return notes.filter((note) => {
+    const title = note.title.toLowerCase();
+    const preview = htmlToPlainText(note.html).toLowerCase();
+    return title.includes(q) || preview.includes(q);
+  });
+}
+
+export function searchCollections(query: string): Collection[] {
+  const q = query.trim().toLowerCase();
+  const collections = listedCollections();
+  if (!q) return collections;
+  return collections.filter((collection) => collection.name.toLowerCase().includes(q));
+}
 
 export function searchNotesCatalog(query: string): NotesSearchHit[] {
   const q = query.trim().toLowerCase();

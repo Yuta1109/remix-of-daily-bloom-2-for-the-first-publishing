@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
+import { ConfirmMessage } from "@/components/notes/ConfirmMessage";
 import { DailyTaskSheet, type DailyTaskSheetRequest } from "@/components/plan/DailyTaskSheet";
 import { PlanItemSheet, type PlanSheetRequest } from "@/components/plan/PlanItemSheet";
 import { QuickMemoEventConvertSheet } from "@/components/notes/QuickMemoEventConvertSheet";
@@ -41,6 +42,7 @@ export default function QuickMemoPage() {
   const [taskRequest, setTaskRequest] = useState<DailyTaskSheetRequest | null>(null);
   const [planRequest, setPlanRequest] = useState<PlanSheetRequest | null>(null);
   const [eventOpen, setEventOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [planLevelOpen, setPlanLevelOpen] = useState(false);
   const memo = getQuickMemo(id);
   const weeklyOn = getSettings().weeklyPlanningEnabled;
@@ -127,10 +129,7 @@ export default function QuickMemoPage() {
             type="button"
             aria-label={t("notesDelete")}
             data-testid="quick-memo-delete"
-            onClick={() => {
-              deleteQuickMemo(id);
-              navigate(NOTES_HOME_PATH, { replace: true });
-            }}
+            onClick={() => setConfirmDelete(true)}
             className="inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/70"
           >
             <Trash2 className="w-5 h-5" />
@@ -150,7 +149,7 @@ export default function QuickMemoPage() {
         />
         {memo.image && noteImageSrc(memo.image) ? (
           <div className="mb-3">
-            <img src={noteImageSrc(memo.image)} alt="" className="max-h-48 rounded-lg object-cover" />
+            <img src={noteImageSrc(memo.image)} alt="" className="max-h-48 max-w-full object-contain" />
             <button
               type="button"
               className="mt-1 text-[13px] text-muted-foreground min-h-11"
@@ -280,6 +279,18 @@ export default function QuickMemoPage() {
           </div>
         </div>
       )}
+      <ConfirmMessage
+        open={confirmDelete}
+        testId="quick-memo-delete-confirm"
+        message={t("notesDeleteQuickMemoConfirm")}
+        confirmLabel={t("notesDelete")}
+        cancelLabel={t("notesCancel")}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          deleteQuickMemo(id);
+          navigate(NOTES_HOME_PATH, { replace: true });
+        }}
+      />
     </div>
   );
 }

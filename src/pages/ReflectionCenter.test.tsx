@@ -32,7 +32,7 @@ describe("Reflection Plan entry and center", () => {
     expect(screen.queryByRole("tab", { name: "Reflection" })).toBeNull();
   });
 
-  it("lists Daily / Weekly / Monthly / Future plus Needs Attention", () => {
+  it("lists Daily / Weekly / Monthly / Future plus due or overdue reflections", () => {
     renderAt(<ReflectionCenter />, "/plan/reflection");
     expect(screen.getByRole("heading", { name: "Reflection" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Daily" })).toHaveAttribute("aria-selected", "true");
@@ -40,7 +40,7 @@ describe("Reflection Plan entry and center", () => {
     expect(screen.getByRole("tab", { name: "Weekly" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Monthly" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Future" })).toBeTruthy();
-    expect(screen.getByText("Needs Attention")).toBeTruthy();
+    expect(screen.getByText("Due or overdue reflections")).toBeTruthy();
     expect(screen.getByText("Schedule")).toBeTruthy();
   });
 

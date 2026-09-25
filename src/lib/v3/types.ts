@@ -59,6 +59,12 @@ export interface PlanItem {
   completedAt?: Timestamp;
 
   createdFrom: CreatedFromPlan;
+
+  /**
+   * When true, the plan sits in the Postpone Box instead of Future / Monthly /
+   * Weekly lists. Period / futureTarget is preserved for later assignment.
+   */
+  inPostponeBox?: boolean;
 }
 
 /* ------------------------------------------------------------------ Tasks */
@@ -111,6 +117,12 @@ export interface TaskItem {
   completedAt?: Timestamp;
 
   createdFrom: CreatedFromTask;
+
+  /**
+   * When true, the task sits in the Postpone Box instead of ToDo / Calendar /
+   * Daily lists. Original `date` is preserved for later assignment.
+   */
+  inPostponeBox?: boolean;
 }
 
 /* ----------------------------------------------------------- Task series */
@@ -355,6 +367,9 @@ export interface ReflectionDecision {
   toDate?: LocalDate;
 
   collectionId?: string;
+
+  /** Set when Postpone sends the subject to the undated Postpone Box. */
+  toBox?: boolean;
 
   decidedAt: Timestamp;
 }
@@ -683,6 +698,9 @@ export interface UserSettings {
 
   /** 0 = Sunday, 1 = Monday. Mirrors the legacy calendar preference. */
   weekStartsOn: 0 | 1;
+
+  /** When false, TaskTemplate chips are hidden on the ToDo page. Default true. */
+  showTaskTemplatesOnTodo: boolean;
 }
 
 /* ----------------------------------------------------------------- Root */

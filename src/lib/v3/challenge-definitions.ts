@@ -15,7 +15,7 @@ import type { ActivityType } from "./types";
 export const NORMAL_CHALLENGE_POINTS = 5;
 
 /** Challenges per day selected from the eligible pool. */
-export const DAILY_CHALLENGE_COUNT = 10;
+export const DAILY_CHALLENGE_COUNT = 6;
 
 export type ChallengeKind = "daily" | "special";
 

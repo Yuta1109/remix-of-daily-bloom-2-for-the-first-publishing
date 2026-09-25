@@ -66,6 +66,14 @@ describe("Phase 11 Settings", () => {
     expect(screen.queryByText("Delete account")).toBeNull();
   });
 
+  it("shows a switch for reusable tasks on ToDo", () => {
+    renderSettings();
+    const toggle = screen.getByTestId("settings-show-templates-todo");
+    expect(getSettings().showTaskTemplatesOnTodo).toBe(true);
+    fireEvent.click(toggle);
+    expect(getSettings().showTaskTemplatesOnTodo).toBe(false);
+  });
+
   it("4. Settings creates a V3 TaskTemplate and does not write reusable-tasks", () => {
     renderSettings();
     fireEvent.change(screen.getAllByPlaceholderText("Add a reusable task")[0], {

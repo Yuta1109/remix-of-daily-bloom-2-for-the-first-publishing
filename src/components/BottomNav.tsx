@@ -88,7 +88,7 @@ export function BottomNav() {
         // Restrained Liquid-Glass-style control: translucent + blurred, not a
         // saturated card. Matches the search-bar treatment already used in
         // MemoListPage / MemoSearchPage rather than inventing a new material.
-        "bg-background/80 backdrop-blur-xl border-t border-border/60",
+        "liquid-glass border-t border-border/40",
       )}
     >
       <div

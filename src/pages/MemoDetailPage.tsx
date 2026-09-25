@@ -26,6 +26,7 @@ import { extractTextFromPickedImage, ocrToastKey, textToNoteHtml, type ImageSour
 import { pickLocalImageAttachment, noteImageSrc } from "@/lib/note-image";
 import { ocrDebugLog } from "@/lib/ocr-debug-log";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
+import { ConfirmMessage } from "@/components/notes/ConfirmMessage";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
 import { OcrResultSheet } from "@/components/OcrResultSheet";
 import { htmlToPlainText, normalizeNoteHtml } from "@/lib/notes-store";
@@ -67,6 +68,7 @@ export default function MemoDetailPage() {
   const [viewRevision, setViewRevision] = useState(0);
   const [calcOpen, setCalcOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [pickMode, setPickMode] = useState<"ocr" | "attach">("ocr");
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrFeedback, setOcrFeedback] = useState<{
@@ -521,10 +523,7 @@ export default function MemoDetailPage() {
                 type="button"
                 aria-label={t("notesDelete")}
                 data-testid="note-delete"
-                onClick={() => {
-                  deleteNote(page.id);
-                  navigate(NOTES_HOME_PATH, { replace: true });
-                }}
+                onClick={() => setConfirmDelete(true)}
                 className={iconBtn}
               >
                 <Trash2 className="w-5 h-5" />
@@ -561,7 +560,7 @@ export default function MemoDetailPage() {
             src={noteImageSrc(page.image) ?? ""}
             alt=""
             data-testid="note-attached-image"
-            className="max-h-48 w-full rounded-lg object-cover"
+            className="max-h-48 max-w-full object-contain"
           />
           <button
             type="button"
@@ -704,6 +703,19 @@ export default function MemoDetailPage() {
         onClose={() => {
           setOcrFeedback(null);
           if (editing) window.setTimeout(() => focusEditor(), 80);
+        }}
+      />
+      <ConfirmMessage
+        open={confirmDelete}
+        testId="note-delete-confirm"
+        message={t("notesDeleteNoteConfirm")}
+        confirmLabel={t("notesDelete")}
+        cancelLabel={t("notesCancel")}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          if (!page) return;
+          deleteNote(page.id);
+          navigate(NOTES_HOME_PATH, { replace: true });
         }}
       />
     </div>

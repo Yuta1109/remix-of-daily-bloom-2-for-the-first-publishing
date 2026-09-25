@@ -6,7 +6,6 @@ import {
   Cloud,
   Coins,
   Crown,
-  LogIn,
   LogOut,
   RefreshCw,
   Settings as SettingsIcon,
@@ -15,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { goPageBack } from "@/lib/page-back";
 import { useAuth } from "@/lib/firebase/AuthProvider";
 import { useCloudSync } from "@/lib/firebase/SyncProvider";
 import { syncStatusI18nKey, type CloudSyncStatus } from "@/lib/firebase/sync-status";
@@ -28,6 +28,17 @@ interface RowProps {
   disabled?: boolean;
   onClick?: () => void;
   testId?: string;
+}
+
+function GoogleMark() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" aria-hidden="true" data-testid="google-mark">
+      <path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6.2c-.3 1.4-1.1 2.6-2.3 3.4v2.8h3.7c2.2-2 3.4-5 3.4-8.3z" />
+      <path fill="#34A853" d="M12 24c3.2 0 5.8-1 7.7-2.8l-3.7-2.8c-1 .7-2.4 1.2-4 1.2-3.1 0-5.7-2.1-6.6-4.9H1.6v3.1C3.5 21.5 7.4 24 12 24z" />
+      <path fill="#FBBC05" d="M5.4 14.7c-.2-.7-.4-1.4-.4-2.2s.1-1.5.4-2.2V7.2H1.6C.6 9.1 0 11 0 12.5s.6 3.4 1.6 5.3l3.8-3.1z" />
+      <path fill="#EA4335" d="M12 4.8c1.7 0 3.3.6 4.5 1.8l3.4-3.4C17.8 1.2 15.2 0 12 0 7.4 0 3.5 2.5 1.6 6.2l3.8 3.1C6.3 6.9 8.9 4.8 12 4.8z" />
+    </svg>
+  );
 }
 
 function Row({ icon: Icon, label, value, disabled, onClick, testId }: RowProps) {
@@ -109,9 +120,9 @@ export default function User() {
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => navigate(-1)}
+            onClick={() => goPageBack(navigate, "/progress")}
             aria-label={t("back")}
-            className="p-2 rounded-full text-foreground/70 hover:bg-secondary/70 hover:text-foreground transition-colors"
+            className="liquid-glass p-2 rounded-full text-foreground/70"
           >
             <ChevronLeft className="w-5 h-5" aria-hidden="true" />
           </button>
@@ -163,13 +174,16 @@ export default function User() {
               </div>
             )}
             {!signedIn && (
-              <Row
-                icon={LogIn}
-                label={t("userGoogleSignIn")}
+              <button
+                type="button"
+                data-testid="user-google-sign-in"
                 disabled={status === "signing_in" || !configPresent}
                 onClick={() => void signInWithGoogle()}
-                testId="user-google-sign-in"
-              />
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-left disabled:opacity-50"
+              >
+                <GoogleMark />
+                <span className="text-base flex-1">{t("userGoogleSignIn")}</span>
+              </button>
             )}
             {signedIn && (
               <Row

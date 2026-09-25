@@ -1,4 +1,5 @@
 import { PlanIconGlyph } from "@/components/plan/plan-icon-registry";
+import { TaskCompletionControl } from "@/components/TaskCompletionControl";
 import { getThemeAccentOption, type ThemeAccentId } from "@/lib/theme-accent";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -9,13 +10,13 @@ interface Props {
   parentTitle?: string;
   onPress: () => void;
   onToggleComplete: () => void;
+  disabled?: boolean;
 }
 
 /**
- * Daily Log row: a Bullet-Journal-style marker for completion, then a
- * subtle icon tint and title. Not a saturated task card.
+ * Daily Log row. Completion is the shared color circle on the right.
  */
-export function DailyTaskRow({ task, parentTitle, onPress, onToggleComplete }: Props) {
+export function DailyTaskRow({ task, parentTitle, onPress, onToggleComplete, disabled = false }: Props) {
   const { t } = useI18n();
   const accent = getThemeAccentOption(task.color as ThemeAccentId);
   const completed = task.status === "completed";
@@ -29,23 +30,10 @@ export function DailyTaskRow({ task, parentTitle, onPress, onToggleComplete }: P
     <div className="flex items-start gap-2 px-3 py-2.5">
       <button
         type="button"
-        onClick={onToggleComplete}
-        aria-label={completed ? t("planCompleted") : t("planComplete")}
-        aria-pressed={completed}
-        className="w-8 h-8 shrink-0 flex items-center justify-center text-muted-foreground"
+        onClick={onPress}
+        disabled={disabled}
+        className="flex-1 min-w-0 flex items-start gap-3 text-left disabled:opacity-60"
       >
-        <span
-          className={cn(
-            "text-base leading-none",
-            completed ? "text-accent" : "text-foreground/70",
-          )}
-          aria-hidden="true"
-        >
-          {completed ? "✓" : "•"}
-        </span>
-      </button>
-
-      <button type="button" onClick={onPress} className="flex-1 min-w-0 flex items-start gap-3 text-left">
         <span
           className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5"
           style={{
@@ -74,6 +62,13 @@ export function DailyTaskRow({ task, parentTitle, onPress, onToggleComplete }: P
           )}
         </span>
       </button>
+      <TaskCompletionControl
+        completed={completed}
+        color={`hsl(${accent.accent})`}
+        label={completed ? t("planCompleted") : t("planComplete")}
+        onToggle={onToggleComplete}
+        disabled={disabled}
+      />
     </div>
   );
 }

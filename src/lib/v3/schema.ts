@@ -53,6 +53,7 @@ export function defaultSettings(): UserSettings {
       reflectionReminders: true,
     },
     weekStartsOn: 0,
+    showTaskTemplatesOnTodo: true,
   };
 }
 

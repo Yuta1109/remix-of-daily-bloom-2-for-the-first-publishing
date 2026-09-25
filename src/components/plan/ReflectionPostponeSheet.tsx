@@ -8,7 +8,8 @@ import type { FutureTarget, ReflectionType } from "@/lib/v3/types";
 
 export type PostponeResult =
   | { kind: "date"; date: LocalDate }
-  | { kind: "future"; target: FutureTarget };
+  | { kind: "future"; target: FutureTarget }
+  | { kind: "box" };
 
 interface Props {
   open: boolean;
@@ -55,6 +56,10 @@ export function ReflectionPostponeSheet({
             </DrawerPrimitive.Title>
           </div>
           <div className="px-4 pb-6 space-y-2 overflow-y-auto">
+            <Choice
+              label={t("postponeToBox")}
+              onClick={() => onConfirm({ kind: "box" })}
+            />
             {type === "daily" ? (
               <>
                 <Choice

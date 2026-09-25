@@ -46,6 +46,35 @@ async function pickNativeUri(source: ImageSource): Promise<string | null> {
   return uri || null;
 }
 
+/** Cap the longest edge so add/delete/add does not keep a full camera bitmap. */
+async function limitImageEdge(blob: Blob, maxEdge = 1600): Promise<Blob> {
+  if (typeof createImageBitmap !== "function" || blob.size < 900_000) return blob;
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    if (scale >= 1) {
+      bitmap.close?.();
+      return blob;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close?.();
+      return blob;
+    }
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const next = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((out) => resolve(out), "image/jpeg", 0.92);
+    });
+    return next ?? blob;
+  } catch {
+    return blob;
+  }
+}
+
 export async function pickLocalImageAttachment(
   source: ImageSource,
 ): Promise<ImageAttachment | null> {
@@ -60,7 +89,9 @@ export async function pickLocalImageAttachment(
         const res = await fetch(uri);
         const blob = await res.blob();
         contentType = blob.type || undefined;
-        localUri = await persistPickedImageBlob(id, blob);
+        const sized = await limitImageEdge(blob);
+        contentType = sized.type || contentType;
+        localUri = await persistPickedImageBlob(id, sized);
       } catch {
         localUri = uri;
       }
@@ -69,7 +100,9 @@ export async function pickLocalImageAttachment(
       if (!file) return null;
       if (file.type.startsWith("image/") === false && file.type !== "") return null;
       contentType = file.type || undefined;
-      localUri = await persistPickedImageBlob(id, file);
+      const sized = await limitImageEdge(file);
+      contentType = sized.type || contentType;
+      localUri = await persistPickedImageBlob(id, sized);
     }
   } catch (err) {
     const msg = String((err as { message?: string })?.message || err);

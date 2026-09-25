@@ -231,8 +231,44 @@ html.overlay-open #root {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: clip;
   -webkit-overflow-scrolling: touch;
   padding-bottom: var(--bottom-nav-offset);
+}
+
+.notes-section-block {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.75rem 0.35rem;
+  border-radius: 1rem;
+  background: hsl(var(--card));
+  box-shadow: var(--shadow-soft);
+}
+
+.liquid-glass {
+  background: hsl(var(--background) / 0.72);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid hsl(var(--border) / 0.45);
+}
+
+.sheet-form,
+[data-vaul-drawer] {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: clip;
+  touch-action: pan-y;
+}
+.sheet-form input,
+.sheet-form textarea,
+.sheet-form select,
+[data-vaul-drawer] input,
+[data-vaul-drawer] textarea,
+[data-vaul-drawer] select {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Hide native scrollbars — InsetScrollArea draws a shortened custom thumb. */
@@ -273,6 +309,29 @@ html.overlay-open #root {
   .shadow-soft  { box-shadow: var(--shadow-soft); }
   .shadow-card  { box-shadow: var(--shadow-card); }
   .shadow-float { box-shadow: var(--shadow-float); }
+}
+
+@keyframes essences-marquee {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(var(--marquee-shift, -40%)); }
+}
+
+.essences-marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.essences-marquee > span {
+  display: inline-block;
+  padding-right: 1.25em;
+  animation: essences-marquee 5.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .essences-marquee > span {
+    animation: none;
+  }
 }
 
 @keyframes check-pop {

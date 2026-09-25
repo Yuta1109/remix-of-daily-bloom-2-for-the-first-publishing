@@ -24,7 +24,7 @@ export function UserButton({ className }: Props) {
       onClick={() => navigate("/user")}
       aria-label={t("userButtonLabel")}
       className={cn(
-        "inline-flex items-center justify-center w-9 h-9 rounded-full",
+        "liquid-glass inline-flex items-center justify-center w-9 h-9 rounded-full",
         "text-foreground/70 hover:text-foreground hover:bg-secondary/70",
         "transition-colors motion-reduce:transition-none",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background",

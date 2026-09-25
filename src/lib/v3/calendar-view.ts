@@ -17,8 +17,8 @@ import {
 import type { LocalDate } from "@/lib/v3/local-date";
 import type { TaskItem } from "@/lib/v3/types";
 
-/** Month cells show at most this many compact markers per kind. */
-export const CALENDAR_CELL_MARKER_LIMIT = 3;
+/** Month cells show at most this many compact task squares. */
+export const CALENDAR_CELL_MARKER_LIMIT = 4;
 
 export function calendarTasksForDate(date: LocalDate): TaskItem[] {
   return getListedTasksForDate(date);
@@ -63,10 +63,23 @@ export function isCalendarDayEmpty(
   return tasks.length === 0 && events.length === 0;
 }
 
+export type CalendarEventSpan = "single" | "start" | "middle" | "end";
+
+export function calendarEventSpan(event: CalendarEvent, date: LocalDate): CalendarEventSpan {
+  const start = event.date;
+  const end = event.endDate && event.endDate >= start ? event.endDate : start;
+  if (start === end) return "single";
+  if (date === start) return "start";
+  if (date === end) return "end";
+  return "middle";
+}
+
 export type CalendarCellMarkers = {
+  shownTasks: TaskItem[];
   taskColors: string[];
   taskCompleted: boolean[];
   taskCount: number;
+  shownEvents: CalendarEvent[];
   eventCount: number;
   shownEventCount: number;
   allTasksComplete: boolean;
@@ -78,11 +91,13 @@ export function calendarCellMarkers(
 ): CalendarCellMarkers {
   const shownTasks = tasks.slice(0, CALENDAR_CELL_MARKER_LIMIT);
   return {
+    shownTasks,
     taskColors: shownTasks.map((t) => t.color),
     taskCompleted: shownTasks.map((t) => t.status === "completed"),
     taskCount: tasks.length,
+    shownEvents: events,
     eventCount: events.length,
-    shownEventCount: Math.min(events.length, CALENDAR_CELL_MARKER_LIMIT),
+    shownEventCount: events.length,
     allTasksComplete: tasks.length > 0 && tasks.every((t) => t.status === "completed"),
   };
 }
@@ -95,6 +110,24 @@ export function monthGridLeadingBlanks(
 ): number {
   const firstWeekday = new Date(year, month0, 1).getDay();
   return (firstWeekday - weekStartsOn + 7) % 7;
+}
+
+export function calendarDateTapResult(
+  selected: LocalDate | null,
+  tapped: LocalDate,
+): "select" | "open" {
+  return selected === tapped ? "open" : "select";
+}
+
+export function calendarSelectionHidesDecorations(
+  selected: string | undefined,
+  date: string,
+): boolean {
+  return selected === date;
+}
+
+export function calendarWeekAllowsStamps(view: "month" | "week"): boolean {
+  return view === "month";
 }
 
 export function shiftCalendarMonth(

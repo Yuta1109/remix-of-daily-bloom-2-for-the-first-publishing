@@ -84,6 +84,18 @@ export default function ReflectionCatchUpReview() {
     subjectId: string,
     result: PostponeResult,
   ) => {
+    if (result.kind === "box") {
+      createReflectionDecision({
+        reflectionSessionId: sessionId,
+        subjectType,
+        subjectId,
+        decision: "postpone",
+        toBox: true,
+      });
+      setPostponeFor(null);
+      refresh();
+      return;
+    }
     if (subjectType === "task" && result.kind === "date") {
       const existing = getEquivalentTaskOn(subjectId, result.date);
       if (existing) {

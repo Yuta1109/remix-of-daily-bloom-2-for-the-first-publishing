@@ -148,6 +148,8 @@ describe("Phase 9 Notes V3 UI", () => {
     const note = createNote({ title: "消す", html: "<div>x</div>" });
     renderNotes(`/note/n/${encodeURIComponent(note.id)}`);
     fireEvent.click(screen.getByTestId("note-delete"));
+    expect(getNote(note.id)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("note-delete-confirm-confirm"));
     expect(getNote(note.id)).toBeUndefined();
   });
 
@@ -172,6 +174,8 @@ describe("Phase 9 Notes V3 UI", () => {
     const memo = createQuickMemo({ text: "gone" });
     renderNotes(`/note/q/${encodeURIComponent(memo.id)}`);
     fireEvent.click(screen.getByTestId("quick-memo-delete"));
+    expect(getQuickMemo(memo.id)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("quick-memo-delete-confirm-confirm"));
     expect(getQuickMemo(memo.id)).toBeUndefined();
   });
 

@@ -1,12 +1,12 @@
-import { ChevronRight, Clock, MapPin, Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
+import { useState } from "react";
 import { DailyTaskRow } from "@/components/plan/DailyTaskRow";
 import { DayWallpaperLayer } from "@/components/calendar/DayWallpaperLayer";
-import { formatEventScheduleOnDate } from "@/lib/event-display";
 import { colorHslFor, type CalendarEvent } from "@/lib/events-store";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
-import { completeTask } from "@/lib/v3/repository";
+import { completeTask, getTaskCompletionRate } from "@/lib/v3/repository";
 import { wallpaperDefinition } from "@/lib/v3/stamp-catalog";
-import type { LocalDate } from "@/lib/v3/local-date";
+import { todayLocalDate, type LocalDate } from "@/lib/v3/local-date";
 import type { TaskItem } from "@/lib/v3/types";
 
 export interface CalendarDayContentProps {
@@ -21,6 +21,8 @@ export interface CalendarDayContentProps {
   onAddEvent: () => void;
   onOpenWallpaper: () => void;
 }
+
+const PREVIEW = 3;
 
 /**
  * Shared Tasks / Events body for the day sheet and week list.
@@ -38,13 +40,20 @@ export function CalendarDayContent({
   onAddEvent,
   onOpenWallpaper,
 }: CalendarDayContentProps) {
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
+  const past = date < todayLocalDate();
   const empty = tasks.length === 0 && events.length === 0;
   const wallpaperLabel = wallpaperId
     ? t((wallpaperDefinition(wallpaperId)?.labelKey ?? "calendarWallpaper") as TranslationKeys)
     : t("wallpaperNone");
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [showAllTasks, setShowAllTasks] = useState(false);
+  const visibleEvents = showAllEvents ? events : events.slice(0, PREVIEW);
+  const visibleTasks = showAllTasks ? tasks : tasks.slice(0, PREVIEW);
+  const rate = getTaskCompletionRate(date);
 
   const toggleTask = (task: TaskItem) => {
+    if (past) return;
     completeTask(task.id, task.status !== "completed");
     onTasksChanged();
   };
@@ -61,77 +70,111 @@ export function CalendarDayContent({
         <div className="text-center py-8 text-muted-foreground">
           <p className="text-sm font-medium">{t("calendarNothingScheduled")}</p>
         </div>
-      ) : (
-        <>
-          <section aria-label={t("calendarTasksSection")}>
-            <h3 className="px-1 mb-1.5 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
-              {t("calendarTasksSection")}
-            </h3>
-            {tasks.length === 0 ? (
-              <p className="px-1 text-sm text-muted-foreground">{t("calendarNoTasksOnDay")}</p>
-            ) : (
-              <div className="rounded-xl bg-secondary/40 divide-y divide-border/50 overflow-hidden">
-                {tasks.map((task) => (
-                  <div key={task.id} role="group" aria-label={`${t("calendarTaskKind")}: ${task.title}`}>
-                    <DailyTaskRow
-                      task={task}
-                      onPress={() => onEditTask(task.id)}
-                      onToggleComplete={() => toggleTask(task)}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+      ) : null}
 
-          <section aria-label={t("calendarEventsSection")}>
-            <h3 className="px-1 mb-1.5 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
-              {t("calendarEventsSection")}
-            </h3>
-            {events.length === 0 ? (
-              <p className="px-1 text-sm text-muted-foreground">{t("noEventsOnDay")}</p>
-            ) : (
-              <div className="space-y-2">
-                {events.map((ev) => (
-                  <button
-                    key={ev.id}
-                    type="button"
-                    aria-label={`${t("calendarEventKind")}: ${ev.title}`}
-                    onClick={() => onEditEvent(ev.id, date)}
-                    className="w-full text-left flex items-start gap-3 bg-secondary/40 hover:bg-secondary rounded-xl px-4 py-3 transition-colors"
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0 mt-1.5"
-                      style={{ backgroundColor: `hsl(${colorHslFor(ev.color)})` }}
-                      aria-hidden="true"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold truncate">{ev.title}</div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                        <Clock className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
-                        <span className="tabular-nums">
-                          {formatEventScheduleOnDate(ev, date, locale, { emoji: false })}
-                        </span>
-                        {ev.location && (
-                          <>
-                            <MapPin className="w-3 h-3 flex-shrink-0 ml-1" aria-hidden="true" />
-                            <span className="truncate">{ev.location}</span>
-                          </>
-                        )}
-                      </div>
-                      {ev.notes && (
-                        <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                          {ev.notes}
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                ))}
+      <section aria-label={t("calendarEventsSection")}>
+        <h3 className="px-1 mb-1.5 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
+          {t("calendarEventsSection")}
+        </h3>
+        {events.length === 0 ? (
+          <p className="px-1 text-sm text-muted-foreground">{t("noEventsOnDay")}</p>
+        ) : (
+          <div className="space-y-2">
+            {visibleEvents.map((ev) => (
+              <button
+                key={ev.id}
+                type="button"
+                aria-label={`${t("calendarEventKind")}: ${ev.title}`}
+                disabled={past}
+                onClick={() => {
+                  if (past) return;
+                  onEditEvent(ev.id, date);
+                }}
+                className="w-full text-left flex items-start gap-3 bg-secondary/40 hover:bg-secondary rounded-xl px-4 py-3 transition-colors disabled:opacity-60"
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0 mt-1.5"
+                  style={{ backgroundColor: `hsl(${colorHslFor(ev.color)})` }}
+                  aria-hidden="true"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">{ev.title}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+        {events.length > PREVIEW ? (
+          <button
+            type="button"
+            data-testid="calendar-show-more-events"
+            onClick={() => setShowAllEvents((v) => !v)}
+            className="mt-2 px-1 text-sm font-medium text-accent"
+          >
+            {showAllEvents ? t("calendarShowLess") : t("calendarShowMore")}
+          </button>
+        ) : null}
+        {!past ? (
+          <button
+            type="button"
+            onClick={onAddEvent}
+            className="mt-2 flex items-center justify-center gap-1.5 w-full rounded-xl px-4 py-3 text-sm font-semibold bg-secondary text-foreground hover:bg-secondary/80"
+          >
+            <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
+            {t("calendarAddEvent")}
+          </button>
+        ) : null}
+      </section>
+
+      <section aria-label={t("calendarTasksSection")}>
+        <h3 className="px-1 mb-1.5 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
+          {t("calendarTasksSection")}
+        </h3>
+        {past && tasks.length > 0 ? (
+          <p className="px-1 mb-2 text-xs text-muted-foreground" data-testid="calendar-past-completion">
+            {t("calendarPastCompletion").replace("{n}", String(rate))}
+          </p>
+        ) : null}
+        {tasks.length === 0 ? (
+          <p className="px-1 text-sm text-muted-foreground">{t("calendarNoTasksOnDay")}</p>
+        ) : (
+          <div className="rounded-xl bg-secondary/40 divide-y divide-border/50 overflow-hidden">
+            {visibleTasks.map((task) => (
+              <div key={task.id} role="group" aria-label={`${t("calendarTaskKind")}: ${task.title}`}>
+                <DailyTaskRow
+                  task={task}
+                  disabled={past}
+                  onPress={() => {
+                    if (past) return;
+                    onEditTask(task.id);
+                  }}
+                  onToggleComplete={() => toggleTask(task)}
+                />
               </div>
-            )}
-          </section>
-        </>
-      )}
+            ))}
+          </div>
+        )}
+        {tasks.length > PREVIEW ? (
+          <button
+            type="button"
+            data-testid="calendar-show-more-tasks"
+            onClick={() => setShowAllTasks((v) => !v)}
+            className="mt-2 px-1 text-sm font-medium text-accent"
+          >
+            {showAllTasks ? t("calendarShowLess") : t("calendarShowMore")}
+          </button>
+        ) : null}
+        {!past ? (
+          <button
+            type="button"
+            onClick={onAddTask}
+            className="mt-2 flex items-center justify-center gap-1.5 w-full rounded-xl px-4 py-3 text-sm font-semibold bg-accent text-accent-foreground hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
+            {t("calendarAddTask")}
+          </button>
+        ) : null}
+      </section>
 
       <section aria-label={t("calendarAppearance")}>
         <h3 className="px-1 mb-1.5 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
@@ -153,28 +196,9 @@ export function CalendarDayContent({
             <span className="block text-sm font-medium">{t("calendarWallpaper")}</span>
             <span className="block text-xs text-muted-foreground truncate">{wallpaperLabel}</span>
           </span>
-          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" aria-hidden="true" />
+          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
         </button>
       </section>
-
-      <div className="flex flex-col gap-2 pt-1">
-        <button
-          type="button"
-          onClick={onAddTask}
-          className="flex items-center justify-center gap-1.5 w-full rounded-xl px-4 py-3 text-sm font-semibold bg-accent text-accent-foreground hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
-          {t("calendarAddTask")}
-        </button>
-        <button
-          type="button"
-          onClick={onAddEvent}
-          className="flex items-center justify-center gap-1.5 w-full rounded-xl px-4 py-3 text-sm font-semibold bg-secondary text-foreground hover:bg-secondary/80 transition-colors"
-        >
-          <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
-          {t("calendarAddEvent")}
-        </button>
-      </div>
     </div>
   );
 }

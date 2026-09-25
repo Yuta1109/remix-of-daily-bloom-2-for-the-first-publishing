@@ -1,5 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { goPageBack } from "@/lib/page-back";
 import { useI18n } from "@/lib/i18n";
 import { SwipeBackPage } from "@/components/SwipeBackPage";
 import Settings from "@/pages/Settings";
@@ -15,11 +16,11 @@ export default function Privacy() {
   return (
     <SwipeBackPage
       underlay={<Settings staticPreview />}
-      onBack={() => navigate("/settings")}
+      onBack={() => goPageBack(navigate, "/user")}
       className="px-5"
     >
       <button
-        onClick={() => navigate("/settings")}
+        onClick={() => goPageBack(navigate, "/user")}
         className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 hover:text-foreground transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />

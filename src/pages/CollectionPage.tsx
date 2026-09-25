@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { NotesNameSheet } from "@/components/notes/NotesNameSheet";
+import { ConfirmMessage } from "@/components/notes/ConfirmMessage";
 import { useI18n } from "@/lib/i18n";
 import { tickHaptic } from "@/lib/haptics";
 import {
@@ -14,9 +15,11 @@ import {
 import {
   NOTES_HOME_PATH,
   collectionEntryViews,
+  listedNotes,
   noteDetailPath,
 } from "@/lib/v3/notes-view";
 import {
+  addNoteToCollection,
   archiveCollection,
   createNote,
   getCollection,
@@ -34,6 +37,8 @@ export default function CollectionPage() {
   const id = decodeURIComponent(collectionId);
   const [, setTick] = useState(0);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [addExisting, setAddExisting] = useState(false);
   const collection = getCollection(id);
   const entries = collectionEntryViews(id);
   const entryIdsKey = entries.map((e) => e.entry.id).join("\0");
@@ -155,10 +160,7 @@ export default function CollectionPage() {
             type="button"
             aria-label={t("notesArchiveCollection")}
             data-testid="collection-archive"
-            onClick={() => {
-              archiveCollection(id);
-              navigate(NOTES_HOME_PATH, { replace: true });
-            }}
+            onClick={() => setConfirmArchive(true)}
             className="inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/70"
           >
             <Trash2 className="w-5 h-5" />
@@ -172,6 +174,35 @@ export default function CollectionPage() {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
+        <button
+          type="button"
+          data-testid="collection-add-existing-note"
+          className="mb-3 text-sm text-accent min-h-11"
+          onClick={() => setAddExisting(true)}
+        >
+          {t("notesAddExistingNote")}
+        </button>
+        {addExisting && (
+          <ul className="mb-3 rounded-2xl bg-card divide-y divide-border/60" data-testid="collection-existing-notes">
+            {listedNotes()
+              .filter((note) => !entries.some((e) => e.entry.noteId === note.id))
+              .map((note) => (
+                <li key={note.id}>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-3 min-h-11"
+                    onClick={() => {
+                      addNoteToCollection(id, note.id);
+                      setTick((n) => n + 1);
+                      setAddExisting(false);
+                    }}
+                  >
+                    {note.title.trim() || t("notesUntitled")}
+                  </button>
+                </li>
+              ))}
+          </ul>
+        )}
         {orderedIds.length === 0 ? (
           <p className="px-1 py-6 text-sm text-muted-foreground">{t("notesCollectionEmpty")}</p>
         ) : (
@@ -226,6 +257,18 @@ export default function CollectionPage() {
         onSubmit={(name) => {
           renameCollection(id, name);
           setTick((n) => n + 1);
+        }}
+      />
+      <ConfirmMessage
+        open={confirmArchive}
+        testId="collection-delete-confirm"
+        message={t("notesArchiveCollectionConfirm")}
+        confirmLabel={t("notesArchiveCollection")}
+        cancelLabel={t("notesCancel")}
+        onCancel={() => setConfirmArchive(false)}
+        onConfirm={() => {
+          archiveCollection(id);
+          navigate(NOTES_HOME_PATH, { replace: true });
         }}
       />
     </div>

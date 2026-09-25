@@ -37,7 +37,16 @@ export function QuickMemoSheet({
   useEffect(() => {
     if (!open) return;
     setOverlayChrome(true);
-    return () => setOverlayChrome(false);
+    const apply = () => {
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty("--vvh", `${Math.round(h)}px`);
+    };
+    apply();
+    window.visualViewport?.addEventListener("resize", apply);
+    return () => {
+      setOverlayChrome(false);
+      window.visualViewport?.removeEventListener("resize", apply);
+    };
   }, [open]);
 
   const submit = () => {
@@ -59,8 +68,13 @@ export function QuickMemoSheet({
         <DrawerPrimitive.Portal>
           <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20" />
           <DrawerPrimitive.Content
-            className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background outline-none px-4 pt-3"
-            style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}
+            data-kb-shell="translate"
+            data-testid="quick-memo-sheet"
+            className="sheet-form fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background outline-none px-4 pt-3"
+            style={{
+              paddingBottom: "max(16px, env(safe-area-inset-bottom))",
+              maxHeight: "calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px))",
+            }}
             aria-describedby={undefined}
           >
             <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-muted shrink-0" />
@@ -78,7 +92,7 @@ export function QuickMemoSheet({
             />
             {image && noteImageSrc(image) ? (
               <div className="mb-2">
-                <img src={noteImageSrc(image)} alt="" className="max-h-32 rounded-lg object-cover" />
+                <img src={noteImageSrc(image)} alt="" className="max-h-32 max-w-full object-contain" />
                 <button
                   type="button"
                   className="mt-1 text-[13px] text-muted-foreground"

@@ -113,18 +113,29 @@ export function dayScoreInputsFromRecords(
  * 0–100. execution ≤40, planning ≤25, reflection ≤25, consistency ≤10.
  * Weights follow V3 activity types; empty days are 0.
  */
+export function dayScoreParts(inputs: DayScoreInputs): {
+  execution: number;
+  planning: number;
+  reflection: number;
+  consistency: number;
+} {
+  return {
+    execution: Math.min(
+      SCORE_EXECUTION_CAP,
+      inputs.taskCompleted * 12 + inputs.routineCompleted * 10,
+    ),
+    planning: Math.min(
+      SCORE_PLANNING_CAP,
+      inputs.planUpdated * 10 + inputs.breakdownCreated * 12 + inputs.futureTaskScheduled * 8,
+    ),
+    reflection: Math.min(SCORE_REFLECTION_CAP, inputs.reflectionCompleted * 20),
+    consistency: inputs.active ? SCORE_CONSISTENCY_CAP : 0,
+  };
+}
+
 export function computeDayScore(inputs: DayScoreInputs): number {
-  const execution = Math.min(
-    SCORE_EXECUTION_CAP,
-    inputs.taskCompleted * 12 + inputs.routineCompleted * 10,
-  );
-  const planning = Math.min(
-    SCORE_PLANNING_CAP,
-    inputs.planUpdated * 10 + inputs.breakdownCreated * 12 + inputs.futureTaskScheduled * 8,
-  );
-  const reflection = Math.min(SCORE_REFLECTION_CAP, inputs.reflectionCompleted * 20);
-  const consistency = inputs.active ? SCORE_CONSISTENCY_CAP : 0;
-  return execution + planning + reflection + consistency;
+  const parts = dayScoreParts(inputs);
+  return parts.execution + parts.planning + parts.reflection + parts.consistency;
 }
 
 export function dayScoreFromData(data: EssencesDataV3, date: LocalDate): number {
@@ -215,6 +226,17 @@ export function pickAnalyticsComment(input: {
   return "onTrack";
 }
 
+export interface AnalyticsCommentParams {
+  activityLast3Days: number;
+  activityThisWeek: number;
+  reflectionsThisWeek: number;
+  planningThisWeek: number;
+  taskCompletedThisWeek: number;
+  routineCompletedThisWeek: number;
+  todayScore: number;
+  weekScore: number;
+}
+
 export interface AnalyticsSnapshot {
   todayScore: number;
   yesterdayScore: number;
@@ -225,6 +247,22 @@ export interface AnalyticsSnapshot {
   reflectionCount: number;
   activityCount: number;
   commentId: AnalyticsCommentId;
+  commentParams: AnalyticsCommentParams;
+}
+
+export function formatAnalyticsComment(
+  key: string,
+  params: AnalyticsCommentParams,
+): string {
+  return key
+    .replace("{activity3}", String(params.activityLast3Days))
+    .replace("{activity}", String(params.activityThisWeek))
+    .replace("{reflections}", String(params.reflectionsThisWeek))
+    .replace("{planning}", String(params.planningThisWeek))
+    .replace("{tasks}", String(params.taskCompletedThisWeek))
+    .replace("{routines}", String(params.routineCompletedThisWeek))
+    .replace("{today}", String(params.todayScore))
+    .replace("{week}", String(params.weekScore));
 }
 
 export function buildAnalytics(
@@ -246,11 +284,36 @@ export function buildAnalytics(
       r.localDate >= week.start &&
       r.localDate <= week.end,
   ).length;
+  const planningThisWeek = countTypesInRange(records, week.start, week.end, PLANNING_TYPES);
+  const taskCompletedThisWeek = countActivityInRange(
+    records,
+    week.start,
+    week.end,
+    "task_completed",
+  );
+  const routineCompletedThisWeek = countActivityInRange(
+    records,
+    week.start,
+    week.end,
+    "routine_completed",
+  );
+  const todayScore = dayScoreFromData(data, today);
+  const weekScore = averageDayScore(data, week.start, week.end);
+  const commentParams: AnalyticsCommentParams = {
+    activityLast3Days,
+    activityThisWeek,
+    reflectionsThisWeek,
+    planningThisWeek,
+    taskCompletedThisWeek,
+    routineCompletedThisWeek,
+    todayScore,
+    weekScore,
+  };
 
   return {
-    todayScore: dayScoreFromData(data, today),
+    todayScore,
     yesterdayScore: dayScoreFromData(data, yesterday),
-    weekScore: averageDayScore(data, week.start, week.end),
+    weekScore,
     monthScore: averageDayScore(data, month.start, month.end),
     weekRange: week,
     monthRange: month,
@@ -259,21 +322,12 @@ export function buildAnalytics(
     commentId: pickAnalyticsComment({
       activityLast3Days,
       reflectionsThisWeek,
-      planningThisWeek: countTypesInRange(records, week.start, week.end, PLANNING_TYPES),
-      taskCompletedThisWeek: countActivityInRange(
-        records,
-        week.start,
-        week.end,
-        "task_completed",
-      ),
-      routineCompletedThisWeek: countActivityInRange(
-        records,
-        week.start,
-        week.end,
-        "routine_completed",
-      ),
+      planningThisWeek,
+      taskCompletedThisWeek,
+      routineCompletedThisWeek,
       activityThisWeek,
     }),
+    commentParams,
   };
 }
 

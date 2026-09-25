@@ -41,9 +41,15 @@ export interface SpecialChallengeView {
   descriptionKey: string;
 }
 
+export const PROGRESS_TOP_INCOMPLETE = 3;
+
 export interface ProgressSnapshot {
   date: LocalDate;
   daily: DailyChallengeView[];
+  incomplete: DailyChallengeView[];
+  completed: DailyChallengeView[];
+  topIncomplete: DailyChallengeView[];
+  remainingCount: number;
   special: SpecialChallengeView;
   analytics: AnalyticsSnapshot;
   streak: number;
@@ -85,9 +91,17 @@ export function loadProgressSnapshot(date: LocalDate = todayLocalDate()): Progre
   const settings = getSettings();
   const data = loadEssencesData();
   const analytics = buildAnalytics(data, date, settings.weekStartsOn);
+  const daily = assignments.map(toDailyView);
+  const incomplete = daily.filter((row) => !row.completed);
+  const completed = daily.filter((row) => row.completed);
+  const topIncomplete = incomplete.slice(0, PROGRESS_TOP_INCOMPLETE);
   return {
     date,
-    daily: assignments.map(toDailyView),
+    daily,
+    incomplete,
+    completed,
+    topIncomplete,
+    remainingCount: Math.max(0, daily.length - topIncomplete.length),
     special: specialChallengeView(getUserProfile().specialChallengeState),
     analytics,
     streak: getTaskStreak(date),

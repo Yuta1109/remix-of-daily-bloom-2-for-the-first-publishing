@@ -1,4 +1,4 @@
-import { useState, useEffect, type KeyboardEvent } from "react";
+import { useState, useEffect, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   Globe,
@@ -14,7 +14,6 @@ import {
   Cloud,
   CalendarRange,
   Database,
-  CircleUserRound,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useI18n, type Locale, type TranslationKeys } from "@/lib/i18n";
@@ -55,11 +54,11 @@ import {
   setThemeAccentId,
   type ThemeAccentId,
 } from "@/lib/theme-accent";
-import { useAuth } from "@/lib/firebase/AuthProvider";
+import { goPageBack } from "@/lib/page-back";
 import { useCloudSync } from "@/lib/firebase/SyncProvider";
 import { syncStatusI18nKey } from "@/lib/firebase/sync-status";
 
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 const PREVIEW_LIMIT = 4;
 
 interface Props {
@@ -75,11 +74,24 @@ function SectionLabel({ labelKey }: { labelKey: TranslationKeys }) {
   );
 }
 
+function SettingsGlyph({
+  children,
+  tone,
+}: {
+  children: ReactNode;
+  tone: string;
+}) {
+  return (
+    <span className={cn("inline-flex items-center justify-center w-9 h-9 rounded-xl shrink-0", tone)}>
+      {children}
+    </span>
+  );
+}
+
 export default function Settings({ staticPreview = false }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const { locale, setLocale, t, formatDateStr } = useI18n();
-  const { status } = useAuth();
   const { sync } = useCloudSync();
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [newText, setNewText] = useState("");
@@ -224,8 +236,6 @@ export default function Settings({ staticPreview = false }: Props) {
   const preview = templates.slice(0, PREVIEW_LIMIT);
   const overflow = Math.max(0, templates.length - PREVIEW_LIMIT);
   const schedule = settings.reflectionSchedule;
-  const signedIn = status === "signed_in";
-
   return (
     <div
       className={cn("app-shell-page", staticPreview && "pointer-events-none select-none")}
@@ -234,9 +244,9 @@ export default function Settings({ staticPreview = false }: Props) {
       {!staticPreview && (
         <div className="app-shell-header px-2 pb-2">
           <div className="flex items-center gap-1">
-            <button
+      <button
               type="button"
-              onClick={() => navigate(-1)}
+        onClick={() => goPageBack(navigate, "/progress")}
               aria-label={t("back")}
               className="p-2 rounded-full text-foreground/70 hover:bg-secondary/70"
             >
@@ -252,18 +262,17 @@ export default function Settings({ staticPreview = false }: Props) {
 
         <section>
           <SectionLabel labelKey="settingsSectionAccount" />
-          <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/60">
+          <div className="bg-card rounded-2xl shadow-soft">
             <button
               type="button"
               onClick={() => navigate("/user")}
               className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
-              data-testid="settings-open-account"
+              data-testid="settings-open-user"
             >
-              <CircleUserRound className="w-4 h-4 text-muted-foreground shrink-0" />
-              <span className="flex-1 text-base">{t("settingsAccountManage")}</span>
-              <span className="text-sm text-muted-foreground">
-                {signedIn ? t("userAuthSignedIn") : t("userAuthSignedOut")}
-              </span>
+              <SettingsGlyph tone="bg-rose-100 text-rose-700">
+                <Cloud className="w-5 h-5" />
+              </SettingsGlyph>
+              <span className="flex-1 text-base">{t("settingsCloudOpenUser")}</span>
               <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
             </button>
           </div>
@@ -273,7 +282,7 @@ export default function Settings({ staticPreview = false }: Props) {
           <SectionLabel labelKey="settingsSectionCloud" />
           <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/60">
             <div className="flex items-center gap-3 px-4 py-3.5">
-              <Cloud className="w-4 h-4 text-muted-foreground shrink-0" />
+              <SettingsGlyph tone="bg-sky-100 text-sky-700"><Cloud className="w-5 h-5" /></SettingsGlyph>
               <span className="flex-1 text-base">{t("userCloudStatusRow")}</span>
               <span data-testid="settings-sync-status" className="text-sm text-muted-foreground">
                 {t(syncStatusI18nKey(sync.status))}
@@ -295,7 +304,7 @@ export default function Settings({ staticPreview = false }: Props) {
           <SectionLabel labelKey="settingsSectionPlanning" />
           <div className="bg-card rounded-2xl shadow-soft mb-3">
             <div className="flex items-center gap-3 px-4 py-3.5">
-              <CalendarRange className="w-4 h-4 text-muted-foreground shrink-0" />
+              <SettingsGlyph tone="bg-indigo-100 text-indigo-700"><CalendarRange className="w-5 h-5" /></SettingsGlyph>
               <div className="flex-1 min-w-0">
                 <p className="text-base">{t("settingsWeeklyPlanning")}</p>
                 <p className="text-xs text-muted-foreground">{t("settingsWeeklyPlanningDesc")}</p>
@@ -317,6 +326,20 @@ export default function Settings({ staticPreview = false }: Props) {
               <p className="text-sm font-semibold">{t("reusableTasks")}</p>
             </div>
             <p className="text-xs text-muted-foreground mb-4">{t("reusableTasksDesc")}</p>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="min-w-0">
+                <p className="text-sm">{t("settingsShowTemplatesOnTodo")}</p>
+                <p className="text-xs text-muted-foreground">{t("settingsShowTemplatesOnTodoDesc")}</p>
+              </div>
+              <Switch
+                checked={settings.showTaskTemplatesOnTodo}
+                data-testid="settings-show-templates-todo"
+                onCheckedChange={(on) => {
+                  updateSettings({ showTaskTemplatesOnTodo: on });
+                  refreshSettings();
+                }}
+              />
+            </div>
             <div className="space-y-2 mb-3">
               {preview.map((r) => (
                 <div
@@ -406,7 +429,7 @@ export default function Settings({ staticPreview = false }: Props) {
                   )}
                 >
                   {t("reflectionDailyMorning")}
-                </button>
+      </button>
               </div>
               <input
                 type="time"
@@ -457,8 +480,11 @@ export default function Settings({ staticPreview = false }: Props) {
             </div>
             {(["monthly", "future"] as const).map((kind) => (
               <div key={kind}>
-                <p className="text-sm font-medium mb-2">
+                <p className="text-sm font-medium mb-1">
                   {kind === "monthly" ? t("settingsReflectionMonthly") : t("settingsReflectionFuture")}
+                </p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  {kind === "monthly" ? t("settingsReflectionMonthlyDesc") : t("settingsReflectionFutureDesc")}
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -499,7 +525,7 @@ export default function Settings({ staticPreview = false }: Props) {
             <SectionLabel labelKey="settingsSectionNotifications" />
             <div className="bg-card rounded-2xl p-5 shadow-soft mb-3">
               <div className="flex items-center gap-2 mb-1">
-                <Bell className="w-4 h-4 text-accent" />
+                <SettingsGlyph tone="bg-emerald-100 text-emerald-700"><Bell className="w-5 h-5" /></SettingsGlyph>
                 <p className="text-sm font-semibold">{t("notifications")}</p>
               </div>
               {perm === "granted" ? (
@@ -566,7 +592,7 @@ export default function Settings({ staticPreview = false }: Props) {
           <SectionLabel labelKey="settingsSectionAppearance" />
           <div className="bg-card rounded-2xl p-5 shadow-soft mb-3">
             <div className="flex items-center gap-2 mb-1">
-              <Palette className="w-4 h-4 text-accent" />
+              <SettingsGlyph tone="bg-amber-100 text-amber-700"><Palette className="w-5 h-5" /></SettingsGlyph>
               <p className="text-sm font-semibold">{t("themeColor")}</p>
             </div>
             <p className="text-xs text-muted-foreground mb-4">{t("themeColorDesc")}</p>
@@ -601,32 +627,32 @@ export default function Settings({ staticPreview = false }: Props) {
             </div>
           </div>
           <div className="bg-card rounded-2xl p-5 shadow-soft mb-3">
-            <div className="flex items-center gap-2 mb-1">
-              <Globe className="w-4 h-4 text-accent" />
-              <p className="text-sm font-semibold">{t("language")}</p>
-            </div>
-            <p className="text-xs text-muted-foreground mb-4">{t("selectLanguage")}</p>
-            <div className="space-y-2">
-              {languages.map((lang) => (
-                <button
-                  key={lang.key}
+          <div className="flex items-center gap-2 mb-1">
+            <Globe className="w-4 h-4 text-accent" />
+            <p className="text-sm font-semibold">{t("language")}</p>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">{t("selectLanguage")}</p>
+          <div className="space-y-2">
+            {languages.map((lang) => (
+              <button
+                key={lang.key}
                   onClick={() => {
                     setLocale(lang.key);
                     refreshSettings();
                   }}
-                  className={cn(
+                className={cn(
                     "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium",
-                    locale === lang.key
-                      ? "bg-accent/10 text-accent ring-1 ring-accent/30"
+                  locale === lang.key
+                    ? "bg-accent/10 text-accent ring-1 ring-accent/30"
                       : "bg-secondary/60 text-foreground hover:bg-secondary",
-                  )}
-                >
-                  <span className="text-lg">{lang.flag}</span>
-                  <span>{lang.label}</span>
-                </button>
-              ))}
-            </div>
+                )}
+              >
+                <span className="text-lg">{lang.flag}</span>
+                <span>{lang.label}</span>
+              </button>
+            ))}
           </div>
+        </div>
           <div className="bg-card rounded-2xl p-5 shadow-soft">
             <p className="text-sm font-semibold mb-3">{t("settingsWeekStart")}</p>
             <div className="flex gap-2">
@@ -673,7 +699,7 @@ export default function Settings({ staticPreview = false }: Props) {
               </div>
             </div>
             <div className="flex items-start gap-3">
-              <Database className="w-4 h-4 text-accent mt-0.5 shrink-0" />
+              <SettingsGlyph tone="bg-slate-200 text-slate-700"><Database className="w-5 h-5" /></SettingsGlyph>
               <div>
                 <p className="text-sm font-semibold">{t("settingsDataDeviceTitle")}</p>
                 <p className="text-xs text-muted-foreground mt-1">{t("settingsDataDeviceBody")}</p>
@@ -685,9 +711,9 @@ export default function Settings({ staticPreview = false }: Props) {
 
         <section>
           <SectionLabel labelKey="settingsSectionAbout" />
-          <div className="bg-card rounded-2xl p-5 shadow-soft">
+        <div className="bg-card rounded-2xl p-5 shadow-soft">
             <div className="flex items-center gap-2 mb-4">
-              <Shield className="w-4 h-4 text-accent" />
+              <SettingsGlyph tone="bg-violet-100 text-violet-700"><Shield className="w-5 h-5" /></SettingsGlyph>
               <p className="text-sm font-semibold">{t("about")}</p>
             </div>
             <button
@@ -724,41 +750,41 @@ export default function Settings({ staticPreview = false }: Props) {
                   <p className="text-sm text-muted-foreground text-center py-8">{t("addReusable")}</p>
                 ) : (
                   templates.map((r) => (
-                    <div
-                      key={r.id}
-                      className="flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-2.5"
-                    >
+              <div
+                key={r.id}
+                className="flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-2.5"
+              >
                       <span className="text-sm">{r.title}</span>
-                      <button
-                        onClick={() => handleRemove(r.id)}
-                        className="text-muted-foreground hover:text-destructive p-1"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
+                <button
+                  onClick={() => handleRemove(r.id)}
+                  className="text-muted-foreground hover:text-destructive p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
                   ))
                 )}
-              </div>
+          </div>
               <div className="shrink-0 border-t border-border/50 px-4 py-3 flex items-center gap-2">
-                <input
+            <input
                   value={modalText}
                   onChange={(e) => setModalText(e.target.value)}
                   onFocus={(e) => scrollInputAboveKeyboard(e.currentTarget)}
                   enterKeyHint="done"
                   onKeyDown={(e) => onReusableEnter(e, "modal")}
-                  placeholder={t("addReusable")}
+              placeholder={t("addReusable")}
                   className="flex-1 bg-secondary/60 rounded-xl px-4 py-2.5 text-base outline-none"
-                />
-                <button
+            />
+            <button
                   type="button"
                   onClick={handleModalAdd}
                   className="bg-accent text-accent-foreground rounded-xl px-4 py-2.5 text-sm font-medium flex items-center gap-1"
-                >
-                  <Plus className="w-4 h-4" strokeWidth={2.5} />
-                  {t("add")}
-                </button>
-              </div>
-            </div>
+            >
+              <Plus className="w-4 h-4" strokeWidth={2.5} />
+              {t("add")}
+            </button>
+          </div>
+        </div>
           </div>,
           document.body,
         )}

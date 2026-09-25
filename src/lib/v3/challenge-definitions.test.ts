@@ -90,7 +90,7 @@ describe("reflection challenge cadence", () => {
 });
 
 describe("daily selection", () => {
-  it("1. picks ten challenges when the eligible pool is large enough", () => {
+  it("1. picks six challenges when the eligible pool is large enough", () => {
     const selected = selectChallengesForDate("2026-09-21");
     expect(selected).toHaveLength(DAILY_CHALLENGE_COUNT);
   });

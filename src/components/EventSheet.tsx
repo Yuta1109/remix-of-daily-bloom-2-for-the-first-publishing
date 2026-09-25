@@ -1114,7 +1114,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
   if (variant === "modal") {
     if (!open) return null;
     return createPortal(
-      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div
+        className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+        style={{ paddingBottom: "var(--bottom-nav-offset)" }}
+      >
         <div
           className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
           onClick={() => {
@@ -1125,7 +1128,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         />
         <div
           className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
-          style={{ maxHeight: "88dvh" }}
+          style={{ maxHeight: "min(88dvh, calc(100dvh - var(--bottom-nav-offset) - 24px))" }}
         >
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
           <FormBody {...formBodyProps} />
@@ -1153,10 +1156,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
       dismissible={!sheetBlocking}
     >
       <DrawerPrimitive.Portal>
-        <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
+        <DrawerPrimitive.Overlay className="fixed inset-0 z-[70] bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
           className={cn(
-            "fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background",
+            "fixed inset-x-0 bottom-0 z-[70] flex flex-col rounded-t-2xl border bg-background",
             "min-h-0 overflow-hidden outline-none",
           )}
           style={{ maxHeight: "88dvh" }}

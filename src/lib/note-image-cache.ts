@@ -57,6 +57,9 @@ export async function getNoteImageBlob(imageId: string): Promise<Blob | null> {
 
 export async function deleteNoteImageBlob(imageId: string): Promise<void> {
   memoryBlobs.delete(imageId);
+  const url = objectUrls.get(imageId);
+  forgetObjectUrl(url);
+  objectUrls.delete(imageId);
   try {
     const db = await openDb();
     await new Promise<void>((resolve, reject) => {

@@ -1,5 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { useEdgeSwipeBack } from "@/hooks/use-edge-swipe-back";
+import { goPageBack } from "@/lib/page-back";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BottomNav } from "@/components/BottomNav";
@@ -10,11 +12,15 @@ import { MemoArchiveNotice } from "@/components/MemoArchiveNotice";
 import { ensureLegacyCatchup } from "@/lib/v3/storage";
 import { ensureLegacyMemoArchive } from "@/lib/v3/legacy-memo-archive";
 import Progress from "./pages/Progress";
+import ProgressAnalytics from "./pages/ProgressAnalytics";
+import ProgressPoints from "./pages/ProgressPoints";
 import Plan from "./pages/Plan";
+import PostponeBox from "./pages/PostponeBox";
 import ReflectionCenter from "./pages/ReflectionCenter";
 import ReflectionCatchUpReview from "./pages/ReflectionCatchUpReview";
 import ReflectionReview from "./pages/ReflectionReview";
 import Index from "./pages/Index";
+import RoutineList from "./pages/RoutineList";
 import Calendar from "./pages/Calendar";
 import Notes from "./pages/Notes";
 import User from "./pages/User";
@@ -39,11 +45,26 @@ ensureLegacyMemoArchive();
  * Routes that present their own full-screen chrome (back button, no tab bar).
  * Mirrors how `/privacy` already hid the tab bar before this Phase.
  */
-const HIDE_NAV_ROUTES = ["/privacy", "/settings", "/user"];
+const HIDE_NAV_ROUTES = [
+  "/privacy",
+  "/settings",
+  "/user",
+  "/progress/analytics",
+  "/progress/points",
+  "/plan/postpone-box",
+  "/todo/routines",
+];
+
+const TAB_ROOTS = new Set(["/", "/progress", "/plan", "/todo", "/calendar", "/note"]);
 
 function AppRoutes() {
   const location = useLocation();
+  const navigate = useNavigate();
   const hideNav = HIDE_NAV_ROUTES.includes(location.pathname);
+  useEdgeSwipeBack(
+    () => goPageBack(navigate, "/progress"),
+    !TAB_ROOTS.has(location.pathname) && location.pathname !== "/privacy",
+  );
 
   return (
     <>
@@ -52,11 +73,15 @@ function AppRoutes() {
             existing implementation is otherwise untouched — see Index.tsx. */}
         <Route path="/" element={<Progress />} />
         <Route path="/progress" element={<Progress />} />
+        <Route path="/progress/analytics" element={<ProgressAnalytics />} />
+        <Route path="/progress/points" element={<ProgressPoints />} />
         <Route path="/plan" element={<Plan />} />
+        <Route path="/plan/postpone-box" element={<PostponeBox />} />
         <Route path="/plan/reflection" element={<ReflectionCenter />} />
         <Route path="/plan/reflection/catch-up/:type" element={<ReflectionCatchUpReview />} />
         <Route path="/plan/reflection/:sessionId" element={<ReflectionReview />} />
         <Route path="/todo" element={<Index />} />
+        <Route path="/todo/routines" element={<RoutineList />} />
         <Route path="/calendar" element={<Calendar />} />
         {/* New canonical Note tab path, plus the legacy /notes prefix so
             existing deep links (search, memo detail) keep resolving. */}

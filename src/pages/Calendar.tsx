@@ -58,7 +58,11 @@ import {
 } from "@/lib/v3/local-date";
 import {
   calendarCellMarkers,
+  calendarDateTapResult,
+  calendarEventSpan,
+  calendarSelectionHidesDecorations,
   calendarTasksForDate,
+  calendarWeekAllowsStamps,
   calendarTasksInRange,
   ensureCalendarVisibleOccurrences,
   monthGridLeadingBlanks,
@@ -180,7 +184,7 @@ function MonthGrid({
   return (
     <div
       className={cn(
-        "bg-card rounded-2xl shadow-card overflow-hidden w-full h-full flex flex-col month-grid-fade",
+        "bg-card rounded-2xl shadow-card overflow-x-hidden overflow-y-auto w-full h-full flex flex-col month-grid-fade",
         faded ? "opacity-40 pointer-events-none" : "opacity-100",
         className,
       )}
@@ -192,7 +196,7 @@ function MonthGrid({
             <div
               key={i}
               className={cn(
-                "text-center text-[11px] font-semibold py-2 uppercase tracking-wide",
+                "text-center text-[11px] font-semibold py-1 uppercase tracking-wide",
                 weekday === 0 && "text-red-500",
                 weekday === 6 && "text-blue-500",
                 weekday !== 0 && weekday !== 6 && "text-muted-foreground",
@@ -202,21 +206,22 @@ function MonthGrid({
             </div>
           );
         })}
-      </div>
-      <div className="grid grid-cols-7 auto-rows-fr flex-1 min-h-0">
+        </div>
+      <div className="grid grid-cols-7 auto-rows-fr flex-1 min-h-[28rem]">
         {Array.from({ length: firstDayOffset }).map((_, i) => (
-          <div
-            key={`empty-${i}`}
+            <div
+              key={`empty-${i}`}
             className="min-h-0 border-b border-r border-border/40"
-          />
-        ))}
-        {days.map((date, idx) => {
+            />
+          ))}
+          {days.map((date, idx) => {
           const dayNum = parseInt(date.split("-")[2], 10);
           const col = (firstDayOffset + idx) % 7;
           const weekday = (weekStartsOn + col) % 7;
           const isToday = date === today;
           const isSelected = date === selectedDate;
-          const dayEvents = monthEvents.get(date) ?? [];
+          const hideDecorations = calendarSelectionHidesDecorations(selectedDate, date);
+            const dayEvents = monthEvents.get(date) ?? [];
           const dayTasks = tasksByDate.get(date) ?? [];
           const markers = calendarCellMarkers(dayTasks, dayEvents);
           const dateLabel = formatDateStr(date, {
@@ -242,7 +247,7 @@ function MonthGrid({
           const wallpaperId = wallpapersByDate.get(date);
           const isDrop = dropDate === date;
 
-          return (
+            return (
             <div
               key={date}
               data-calendar-date={date}
@@ -253,7 +258,7 @@ function MonthGrid({
                 isDrop && "ring-1 ring-inset ring-accent bg-accent/15",
               )}
             >
-              <DayWallpaperLayer wallpaperId={wallpaperId} />
+              <DayWallpaperLayer wallpaperId={hideDecorations ? undefined : wallpaperId} />
               <button
                 type="button"
                 disabled={!interactive || faded}
@@ -262,61 +267,42 @@ function MonthGrid({
                 aria-current={isToday ? "date" : undefined}
                 aria-pressed={isSelected}
                 className={cn(
-                  "relative z-10 w-full h-full min-h-0 p-1 text-left flex flex-col gap-0.5 transition-colors",
+                  "relative z-10 w-full h-full min-h-0 p-0.5 text-left flex flex-col gap-0.5 transition-colors",
                   interactive && !faded && "hover:bg-secondary/30 active:bg-secondary/50",
                 )}
               >
               <div className="flex items-center justify-center gap-0.5">
-                <span
-                  className={cn(
+                  <span
+                    className={cn(
                     "inline-flex items-center justify-center text-[11px] font-semibold w-6 h-6 rounded-full",
                     isToday && "text-accent ring-1 ring-accent/55",
                     !isToday && weekday === 0 && "text-red-500",
                     !isToday && weekday === 6 && "text-blue-500",
                     !isToday && weekday !== 0 && weekday !== 6 && "text-foreground",
-                  )}
-                >
-                  {dayNum}
+                    )}
+                  >
+                    {dayNum}
                 </span>
                 {locale === "ja" && getJapaneseHolidayName(date) ? (
                   <span className="text-[9px] font-bold text-red-600 bg-red-500/15 px-1 py-px rounded leading-none">
                     祝
                   </span>
                 ) : null}
-              </div>
-              <div className="flex-1 flex flex-col items-center justify-start gap-[3px] pt-0.5 min-h-0 overflow-hidden">
-                {markers.taskColors.length > 0 && (
+                </div>
+              <div className="flex-1 flex flex-col items-stretch justify-start gap-[2px] pt-0.5 min-h-0 overflow-hidden">
+                {markers.shownTasks.length > 0 && (
                   <div className="flex items-center justify-center gap-[2px]">
-                    {markers.taskColors.map((color, i) => {
-                      const accent = getThemeAccentOption(color as ThemeAccentId);
+                    {markers.shownTasks.map((task, i) => {
+                      const accent = getThemeAccentOption(task.color as ThemeAccentId);
                       return (
                         <span
-                          key={`t-${date}-${i}`}
-                          className="w-[5px] h-[5px] rounded-[1px]"
+                          key={`t-${task.id}`}
+                          className="w-[8px] h-[8px] rounded-[1px] border-[1.5px] box-border"
                           style={{
-                            backgroundColor: `hsl(${accent.accent} / ${markers.taskCompleted[i] ? 0.35 : 0.85})`,
-                          }}
-                          aria-hidden="true"
-                        />
-                      );
-                    })}
-                    {markers.allTasksComplete ? (
-                      <span className="text-[8px] leading-none text-accent" aria-hidden="true">
-                        ✓
-                      </span>
-                    ) : null}
-                  </div>
-                )}
-                {markers.shownEventCount > 0 && (
-                  <div className="flex items-center justify-center gap-[2px]">
-                    {Array.from({ length: markers.shownEventCount }).map((_, i) => {
-                      const ev = dayEvents[i];
-                      return (
-                        <span
-                          key={`e-${date}-${i}`}
-                          className="w-[5px] h-[5px] rounded-full"
-                          style={{
-                            backgroundColor: `hsl(${colorHslFor(ev?.color)})`,
+                            borderColor: `hsl(${accent.accent})`,
+                            backgroundColor: markers.taskCompleted[i]
+                              ? `hsl(${accent.accent} / 0.4)`
+                              : "transparent",
                           }}
                           aria-hidden="true"
                         />
@@ -324,8 +310,50 @@ function MonthGrid({
                     })}
                   </div>
                 )}
-              </div>
+                {isSelected
+                  ? markers.shownTasks.map((task) => {
+                      const accent = getThemeAccentOption(task.color as ThemeAccentId);
+                      return (
+                        <div
+                          key={`tt-${task.id}`}
+                          className="essences-marquee w-full text-[8px] leading-tight"
+                          style={{ color: `hsl(${accent.accent})` }}
+                        >
+                          <span>{task.title}</span>
+                        </div>
+                      );
+                    })
+                  : null}
+                {dayEvents.map((ev) => {
+                  const span = calendarEventSpan(ev, date);
+                  const showTitle = span === "single" || span === "start" || isSelected;
+                  return (
+                    <div
+                      key={`e-${ev.id}`}
+                      className={cn(
+                        "h-[13px] text-[8px] leading-[13px] px-[2px] -mx-px overflow-hidden text-white",
+                        (span === "single" || span === "start") && "rounded-l-[3px]",
+                        (span === "single" || span === "end") && "rounded-r-[3px]",
+                      )}
+                      style={{ backgroundColor: `hsl(${colorHslFor(ev.color)} / 0.9)` }}
+                    >
+                      {showTitle ? (
+                        isSelected ? (
+                          <div className="essences-marquee">
+                            <span>{ev.title}</span>
+                          </div>
+                        ) : (
+                          <span className="block truncate">{ev.title}</span>
+                        )
+                      ) : (
+                        <span className="opacity-0">.</span>
+                      )}
+                    </div>
+                  );
+                })}
+                </div>
               </button>
+              {hideDecorations ? null : (
               <CalendarStampLayer
                 stamps={dayStamps}
                 selectedId={selectedStampId}
@@ -333,10 +361,11 @@ function MonthGrid({
                 onSelect={onStampSelect}
                 onMovePointerDown={onStampMovePointerDown}
               />
+              )}
             </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
     </div>
   );
 }
@@ -351,6 +380,8 @@ export default function CalendarPage() {
 
   const [daySheetOpen, setDaySheetOpen] = useState(false);
   const [daySheetDate, setDaySheetDate] = useState<string>(todayLocalDate());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetTarget, setSheetTarget] = useState<EventSheetTarget | null>(null);
@@ -454,8 +485,18 @@ export default function CalendarPage() {
   const handleDayTap = (date: string) => {
     if (blockDayTaps || isTutorialBlockingCalendarDays()) return;
     setSelectedStampId(null);
+    if (stampTrayOpen) {
+      setSelectedDate(date);
+      setDaySheetDate(date);
+      return;
+    }
+    if (calendarDateTapResult(selectedDate, date) === "open") {
+      setDaySheetDate(date);
+      setDaySheetOpen(true);
+      return;
+    }
+    setSelectedDate(date);
     setDaySheetDate(date);
-    setDaySheetOpen(true);
   };
 
   const openNewEvent = (date: string, reopenDay: boolean) => {
@@ -615,6 +656,8 @@ export default function CalendarPage() {
       if (!weekNavSwipeHintSeen()) setWeekNavHintOpen(true);
       setWeekAnchor(viewDate);
       setWeekDayKey(todayLocalDate());
+      setStampTrayOpen(false);
+      setSelectedStampId(null);
     } else {
       setWeekNavHintOpen(false);
     }
@@ -759,7 +802,7 @@ export default function CalendarPage() {
                 </div>
               </>
             )}
-          </div>
+      </div>
 
           <div className="flex items-center gap-1.5 shrink-0 mr-1">
             <button
@@ -776,12 +819,14 @@ export default function CalendarPage() {
             >
               {t("today")}
             </button>
+            {calView !== "week" && calendarWeekAllowsStamps(calView) ? (
             <button
               type="button"
               aria-label={t("calendarStamps")}
               aria-pressed={stampTrayOpen}
               onClick={() => {
                 setSelectedStampId(null);
+                setDaySheetOpen(false);
                 setStampTrayOpen((v) => !v);
               }}
               className={cn(
@@ -793,6 +838,7 @@ export default function CalendarPage() {
             >
               <Sticker className="w-5 h-5" strokeWidth={1.8} aria-hidden="true" />
             </button>
+            ) : null}
             <UserButton />
           </div>
         </div>
@@ -843,7 +889,7 @@ export default function CalendarPage() {
             >
               <Plus className="w-4 h-4" aria-hidden="true" />
             </button>
-            <button
+              <button
               type="button"
               aria-label={t("calendarStampDelete")}
               className="w-8 h-8 rounded-lg bg-secondary/70 flex items-center justify-center text-red-600 ml-auto"
@@ -861,7 +907,8 @@ export default function CalendarPage() {
         <div
           className={cn(
             "relative flex-1 min-h-0",
-            calView === "week" ? "px-2" : "px-3",
+            calView === "week" ? "px-2" : "px-1.5",
+            stampTrayOpen && calView === "month" && "overflow-auto",
           )}
           style={{
             paddingBottom: stampTrayOpen
@@ -949,11 +996,7 @@ export default function CalendarPage() {
                           const wd = d.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
                             weekday: "short",
                           });
-                          const cellTasks = tasksByDate.get(key) ?? calendarTasksForDate(key);
-                          const cellEvents = eventsForDate(key, events);
-                          const markers = calendarCellMarkers(cellTasks, cellEvents);
                           const cellWallpaper = wallpapersByDate.get(key);
-                          const cellStamps = stampsByDate.get(key) ?? [];
                           return (
                             <div
                               key={key}
@@ -963,15 +1006,23 @@ export default function CalendarPage() {
                                 dropDate === key && "ring-1 ring-accent bg-accent/10",
                               )}
                             >
-                              <DayWallpaperLayer wallpaperId={cellWallpaper} className="rounded-xl" />
+                              {selectedDate === key ? null : (
+                                <DayWallpaperLayer wallpaperId={cellWallpaper} className="rounded-xl" />
+                              )}
                             <button
                               type="button"
                               disabled={!interactive}
                               onClick={() => {
-                                setWeekDayKey(key);
-                                if (!blockDayTaps && !isTutorialBlockingCalendarDays()) {
+                                if (blockDayTaps || isTutorialBlockingCalendarDays()) return;
+                                if (calendarDateTapResult(selectedDate, key) === "open") {
+                                  setWeekDayKey(key);
                                   setDaySheetDate(key);
+                                  setDaySheetOpen(true);
+                                  return;
                                 }
+                                setWeekDayKey(key);
+                                setSelectedDate(key);
+                                setDaySheetDate(key);
                               }}
                               aria-label={[
                                 formatDate(d, {
@@ -989,7 +1040,7 @@ export default function CalendarPage() {
                               className="relative z-10 flex flex-col items-center gap-0.5 py-1 min-h-[44px] w-full"
                             >
                               <span className="text-[10px] text-muted-foreground">{wd}</span>
-                              <span
+                <span
                                 className={cn(
                                   "w-8 h-8 rounded-full text-sm font-semibold inline-flex items-center justify-center",
                                   selected && "bg-accent text-accent-foreground",
@@ -1003,26 +1054,11 @@ export default function CalendarPage() {
                                   祝
                                 </span>
                               ) : null}
-                              <span className="flex items-center gap-[2px] h-2.5">
-                                {markers.taskCount > 0 ? (
-                                  <span className="w-[4px] h-[4px] rounded-[1px] bg-foreground/45" aria-hidden="true" />
-                                ) : null}
-                                {markers.eventCount > 0 ? (
-                                  <span className="w-[4px] h-[4px] rounded-full bg-foreground/45" aria-hidden="true" />
-                                ) : null}
-                              </span>
                             </button>
-                            <CalendarStampLayer
-                              stamps={cellStamps}
-                              selectedId={selectedStampId ?? undefined}
-                              interactive={interactive}
-                              onSelect={onStampSelect}
-                              onMovePointerDown={onStampMovePointerDown}
-                            />
                             </div>
                           );
                         })}
-                      </div>
+                  </div>
                       <WeekEventList
                         date={listKey}
                         tasks={dayTasks}
@@ -1056,8 +1092,21 @@ export default function CalendarPage() {
                 }}
               </WeekWheel>
               {weekNavHintOpen ? <WeekNavSwipeHint /> : null}
-            </div>
-          ) : (
+          </div>
+        ) : (
+            <div
+              className="h-full"
+              style={
+                stampTrayOpen
+                  ? {
+                      transform: "scale(1.28)",
+                      transformOrigin: "top center",
+                      width: "100%",
+                      height: "128%",
+                    }
+                  : undefined
+              }
+            >
             <MonthWheel
               monthKey={monthKeyOf(viewDate)}
               disabled={overlayOpen}
@@ -1080,28 +1129,66 @@ export default function CalendarPage() {
                     weekdayHeaders={weekdayHeaders}
                     weekStartsOn={weekStartsOn}
                     locale={locale}
-                    selectedDate={daySheetOpen ? daySheetDate : undefined}
+                    selectedDate={selectedDate ?? undefined}
                     dropDate={dropDate}
                     selectedStampId={selectedStampId ?? undefined}
                     onStampSelect={onStampSelect}
-                    onStampMovePointerDown={onStampMovePointerDown}
+                    onMovePointerDown={onStampMovePointerDown}
                   />
                 );
               }}
             </MonthWheel>
+            </div>
           )}
         </div>
       </div>
 
-      {!stampTrayOpen && !dragGhost ? (
+      {calView !== "week" && !stampTrayOpen && !dragGhost ? (
       <FabButton
         disabled={blockDayTaps}
         onClick={() => {
           if (blockDayTaps || isTutorialBlockingCalendarDays()) return;
-          openNewEvent(calView === "week" ? weekDayKey : todayLocalDate(), false);
+          setAddMenuOpen(true);
         }}
-        aria-label={t("addEvent")}
+        aria-label={t("calendarAddChooseTitle")}
       />
+      ) : null}
+
+      {addMenuOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/20"
+            aria-label={t("cancel")}
+            onClick={() => setAddMenuOpen(false)}
+          />
+          <div
+            className="relative z-10 w-full rounded-t-2xl border bg-background px-4 pt-3"
+            style={{ paddingBottom: "calc(var(--bottom-nav-offset) + 16px)" }}
+          >
+            <p className="text-base font-semibold mb-2">{t("calendarAddChooseTitle")}</p>
+            <button
+              type="button"
+              className="w-full min-h-11 rounded-xl bg-secondary/50 px-4 py-3 text-left text-sm font-medium mb-2"
+              onClick={() => {
+                setAddMenuOpen(false);
+                openNewTask(selectedDate ?? todayLocalDate(), false);
+              }}
+            >
+              {t("calendarAddTask")}
+            </button>
+            <button
+              type="button"
+              className="w-full min-h-11 rounded-xl bg-secondary/50 px-4 py-3 text-left text-sm font-medium"
+              onClick={() => {
+                setAddMenuOpen(false);
+                openNewEvent(selectedDate ?? todayLocalDate(), false);
+              }}
+            >
+              {t("calendarAddEvent")}
+            </button>
+          </div>
+        </div>
       ) : null}
 
       <StampTray

@@ -217,3 +217,26 @@ export function scheduleAfterPeriod(
 export function reflectionSessionKey(type: ReflectionType, targetPeriodStart: LocalDate): string {
   return `${type}:${targetPeriodStart}`;
 }
+
+/**
+ * Next period start for Keep.
+ *
+ * Uses the reflection session's reviewed window — never `today` and never the
+ * subject's original date by itself. Daily Keep lands on the day after the
+ * reviewed day; weekly/monthly/future Keep land on the start of the next period.
+ */
+export function keepCarryDate(session: Pick<ReflectionSession, "type" | "targetPeriodStart" | "targetPeriodEnd">): LocalDate {
+  const start = session.targetPeriodStart;
+  const end = session.targetPeriodEnd ?? start;
+  switch (session.type) {
+    case "daily":
+      return addDays(end, 1);
+    case "weekly":
+      return addDays(end, 1);
+    case "monthly":
+    case "future":
+      return addMonths(startOfMonth(start), 1);
+    default:
+      return addDays(end, 1);
+  }
+}

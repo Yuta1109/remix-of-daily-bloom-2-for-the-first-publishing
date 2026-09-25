@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { Clock } from "lucide-react";
 import { UserButton } from "@/components/UserButton";
 import { DailyTaskSheet, type DailyTaskSheetRequest } from "@/components/plan/DailyTaskSheet";
 import { TodoAddMenu, type TodoAddKind } from "@/components/todo/TodoAddMenu";
@@ -26,19 +28,18 @@ import {
   ensureSeriesOccurrencesForRange,
   getListedTasksForDate,
   getOpenTasksForDate,
-  getRoutines,
   getRoutinesForDate,
   getRoutineCompletions,
   getTaskCompletionRate,
   getTaskTemplates,
   getUpcomingListedTasks,
+  getSettings,
   isRoutineCompletedOn,
   setRoutineCompletion,
 } from "@/lib/v3/repository";
 import {
   TODO_UPCOMING_EXPANDED_DAYS,
   upcomingHorizonDays,
-  splitListedTasks,
 } from "@/lib/v3/todo-view";
 import type { RoutineCompletion, RoutineItem, TaskItem, TaskTemplate } from "@/lib/v3/types";
 
@@ -51,17 +52,15 @@ import type { RoutineCompletion, RoutineItem, TaskItem, TaskTemplate } from "@/l
  */
 export default function Index() {
   const { t, locale } = useI18n();
+  const navigate = useNavigate();
   const today = todayLocalDate();
 
-  const [activeRoutines, setActiveRoutines] = useState<RoutineItem[]>([]);
   const [todayRoutines, setTodayRoutines] = useState<RoutineItem[]>([]);
   const [completions, setCompletions] = useState<RoutineCompletion[]>([]);
-  const [openTasks, setOpenTasks] = useState<TaskItem[]>([]);
-  const [completedTasks, setCompletedTasks] = useState<TaskItem[]>([]);
+  const [listedTasks, setListedTasks] = useState<TaskItem[]>([]);
   const [upcoming, setUpcoming] = useState<{ date: string; tasks: TaskItem[] }[]>([]);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [upcomingExpanded, setUpcomingExpanded] = useState(false);
-  const [completedOpen, setCompletedOpen] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
   const [taskSheet, setTaskSheet] = useState<DailyTaskSheetRequest | null>(null);
@@ -79,14 +78,11 @@ export default function Index() {
     ensureLegacyCatchup();
     const horizon = upcomingHorizonDays(upcomingExpanded);
     ensureSeriesOccurrencesForRange(today, addDays(today, TODO_UPCOMING_EXPANDED_DAYS));
-    setActiveRoutines(getRoutines());
     setTodayRoutines(getRoutinesForDate(today));
     setCompletions(getRoutineCompletions({ date: today }));
-    const { open, completed } = splitListedTasks(getListedTasksForDate(today));
-    setOpenTasks(open);
-    setCompletedTasks(completed);
+    setListedTasks(getListedTasksForDate(today));
     setUpcoming(getUpcomingListedTasks(today, horizon));
-    setTemplates(getTaskTemplates());
+    setTemplates(getSettings().showTaskTemplatesOnTodo ? getTaskTemplates() : []);
   }, [today, upcomingExpanded]);
 
   useEffect(() => {
@@ -104,7 +100,7 @@ export default function Index() {
   }, [pickOpen, ocrBusy]);
 
   const openTitles = [
-    ...openTasks.map((item) => item.title),
+    ...listedTasks.filter((item) => item.status !== "completed").map((item) => item.title),
     ...getOpenTasksForDate(today).map((item) => item.title),
   ];
 
@@ -132,7 +128,9 @@ export default function Index() {
   };
 
   const bringHistoryTasks = (texts: string[]) => {
-    const seen = new Set(openTasks.map((item) => item.title));
+    const seen = new Set(
+      listedTasks.filter((item) => item.status !== "completed").map((item) => item.title),
+    );
     let added = 0;
     for (const text of texts) {
       const trimmed = text.trim();
@@ -150,7 +148,9 @@ export default function Index() {
   };
 
   const addOcrTasks = (texts: string[]) => {
-    const seen = new Set(openTasks.map((item) => item.title));
+    const seen = new Set(
+      listedTasks.filter((item) => item.status !== "completed").map((item) => item.title),
+    );
     let added = 0;
     for (const text of texts) {
       const trimmed = text.trim();
@@ -227,9 +227,10 @@ export default function Index() {
     if (kind === "repeat") setRepeatSheet({ mode: "create" });
   };
 
-  const listedCount = openTasks.length + completedTasks.length;
+  const listedCount = listedTasks.length;
+  const completedCount = listedTasks.filter((task) => task.status === "completed").length;
   const completionLabel =
-    listedCount === 0 ? undefined : `${completedTasks.length}/${listedCount}`;
+    listedCount === 0 ? undefined : `${completedCount}/${listedCount}`;
   const routineDone = todayRoutines.filter((r) =>
     completions.some((c) => c.routineId === r.id && c.completed),
   ).length;
@@ -241,48 +242,66 @@ export default function Index() {
           <h1 className="text-[28px] font-bold tracking-tight leading-tight">
             {t("todoPageTitle")}
           </h1>
-          <UserButton />
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              aria-label={t("todoTaskHistoryAria")}
+              data-testid="todo-history"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/70 hover:text-foreground hover:bg-secondary/70"
+            >
+              <Clock className="w-5 h-5" strokeWidth={1.75} aria-hidden="true" />
+            </button>
+            <UserButton />
+          </div>
         </div>
       </div>
 
-      <div className="app-shell-scroll px-4" data-tutorial="todo-layout">
-        {activeRoutines.length > 0 ? (
-          <section aria-labelledby="todo-routine-heading">
-            <TodoSectionHeader
-              id="todo-routine-heading"
-              title={t("todoSectionRoutine")}
-              accessory={
-                todayRoutines.length
-                  ? t("todoRoutineSummary")
-                      .replace("{done}", String(routineDone))
-                      .replace("{total}", String(todayRoutines.length))
-                  : undefined
-              }
-            />
-            {todayRoutines.length ? (
-              todayRoutines.map((routine) => (
-                <TodoRoutineRow
-                  key={routine.id}
-                  routine={routine}
-                  completed={completions.some((c) => c.routineId === routine.id && c.completed)}
-                  onToggle={() => toggleRoutine(routine)}
-                  onEdit={() => setRoutineSheet({ mode: "edit", routineId: routine.id })}
-                />
-              ))
-            ) : (
-              <p className="px-1 py-2 text-sm text-muted-foreground">{t("todoRoutineNoneToday")}</p>
-            )}
-            <button
-              type="button"
-              onClick={() => setRoutineSheet({ mode: "create" })}
-              className="mt-1 px-1 py-2 text-[15px] font-medium text-accent"
-            >
-              + {t("todoAddRoutineCta")}
-            </button>
-          </section>
-        ) : null}
+      <div className="app-shell-scroll px-4 space-y-3" data-tutorial="todo-layout">
+        <section
+          aria-labelledby="todo-routine-heading"
+          className="rounded-2xl bg-card shadow-soft px-3 pb-3"
+          data-testid="todo-routine-section"
+        >
+          <TodoSectionHeader
+            id="todo-routine-heading"
+            title={t("todoSectionRoutine")}
+            accessory={
+              todayRoutines.length
+                ? t("todoRoutineSummary")
+                    .replace("{done}", String(routineDone))
+                    .replace("{total}", String(todayRoutines.length))
+                : undefined
+            }
+          />
+          {todayRoutines.length ? (
+            todayRoutines.map((routine) => (
+              <TodoRoutineRow
+                key={routine.id}
+                routine={routine}
+                completed={completions.some((c) => c.routineId === routine.id && c.completed)}
+                onToggle={() => toggleRoutine(routine)}
+                onEdit={() => setRoutineSheet({ mode: "edit", routineId: routine.id })}
+              />
+            ))
+          ) : (
+            <p className="px-1 py-2 text-sm text-muted-foreground">{t("todoRoutineNoneToday")}</p>
+          )}
+          <button
+            type="button"
+            onClick={() => navigate("/todo/routines")}
+            className="mt-1 px-1 py-2 text-[15px] font-medium text-accent"
+            data-testid="todo-routine-list-edit"
+          >
+            {t("todoRoutineListEdit")}
+          </button>
+        </section>
 
-        <section aria-labelledby="todo-tasks-heading">
+        <section
+          aria-labelledby="todo-tasks-heading"
+          className="rounded-2xl bg-card shadow-soft px-3 pb-3"
+          data-testid="todo-task-section"
+        >
           <TodoSectionHeader
             id="todo-tasks-heading"
             title={t("todoSectionTasks")}
@@ -305,8 +324,8 @@ export default function Index() {
           ) : null}
 
           <div data-tutorial="task-list">
-            {openTasks.length ? (
-              openTasks.map((task) => (
+            {listedTasks.length ? (
+              listedTasks.map((task) => (
                 <TodoTaskRow
                   key={task.id}
                   task={task}
@@ -335,7 +354,11 @@ export default function Index() {
           </button>
         </section>
 
-        <section aria-labelledby="todo-upcoming-heading">
+        <section
+          aria-labelledby="todo-upcoming-heading"
+          className="rounded-2xl bg-card shadow-soft px-3 pb-3"
+          data-testid="todo-upcoming-section"
+        >
           <TodoSectionHeader id="todo-upcoming-heading" title={t("todoSectionUpcoming")} />
           {upcoming.length ? (
             upcoming.map((group) => (
@@ -362,33 +385,6 @@ export default function Index() {
             className="px-1 py-2 text-[15px] font-medium text-accent"
           >
             {upcomingExpanded ? t("todoShowLessUpcoming") : t("todoSeeAllUpcoming")}
-          </button>
-        </section>
-
-        <section aria-labelledby="todo-completed-heading">
-          <TodoSectionHeader
-            id="todo-completed-heading"
-            title={t("todoSectionCompleted")}
-            accessory={t("todoCompletedCount").replace("{n}", String(completedTasks.length))}
-            onClick={() => setCompletedOpen((value) => !value)}
-            expanded={completedOpen}
-          />
-          {completedOpen
-            ? completedTasks.map((task) => (
-                <TodoTaskRow
-                  key={task.id}
-                  task={task}
-                  onToggle={() => toggleTask(task)}
-                  onPress={() => openTask(task)}
-                />
-              ))
-            : null}
-          <button
-            type="button"
-            onClick={() => setHistoryOpen(true)}
-            className="px-1 py-2 text-[13px] font-medium text-muted-foreground"
-          >
-            {t("todoPastHistory")}
           </button>
         </section>
 

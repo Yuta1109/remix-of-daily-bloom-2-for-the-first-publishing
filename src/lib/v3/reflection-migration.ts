@@ -64,6 +64,7 @@ export function shiftPlanSubtree(
     for (const task of Object.values(data.tasks)) {
       if (!task.parentPlanId || !idSet.has(task.parentPlanId)) continue;
       if (task.status !== "open") continue;
+      if (task.inPostponeBox) continue;
       data.tasks[task.id] = {
         ...task,
         date: addDays(task.date, deltaDays),
@@ -137,6 +138,7 @@ export function findEquivalentTaskIn(
     (t) =>
       t.id !== task.id &&
       t.date === date &&
+      !t.inPostponeBox &&
       t.status !== "archived" &&
       t.status !== "stopped" &&
       (t.seriesId && task.seriesId

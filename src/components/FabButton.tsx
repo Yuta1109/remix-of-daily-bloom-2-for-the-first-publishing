@@ -31,7 +31,7 @@ export function FabButton({
       aria-disabled={disabled || undefined}
       aria-label={ariaLabel}
       className={cn(
-        "fixed z-40 w-14 h-14 rounded-full bg-accent text-accent-foreground shadow-float",
+        "liquid-glass fixed z-40 w-14 h-14 rounded-full bg-accent/90 text-accent-foreground shadow-float",
         "flex items-center justify-center transition-all hover:scale-110 active:scale-95",
         "bottom-[calc(var(--bottom-nav-offset)+10px)] right-5",
         disabled && "opacity-40 pointer-events-none",

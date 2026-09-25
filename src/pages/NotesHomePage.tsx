@@ -14,7 +14,15 @@ import {
   listedNotes,
   listedQuickMemos,
   noteDetailPath,
-  NOTES_SEARCH_PATH,
+  NOTES_HOME_COLLECTION_LIMIT,
+  NOTES_HOME_NOTE_LIMIT,
+  NOTES_HOME_QUICK_MEMO_LIMIT,
+  notesCollectionListPath,
+  notesCollectionSearchPath,
+  notesNoteListPath,
+  notesNoteSearchPath,
+  notesQuickListPath,
+  notesQuickSearchPath,
   PAST_MEMOS_COLLECTION_ID,
   quickMemoPath,
 } from "@/lib/v3/notes-view";
@@ -55,8 +63,8 @@ export default function NotesHomePage() {
               type="button"
               aria-label={t("notesSearchTitle")}
               data-testid="notes-search-open"
-              onClick={() => navigate(NOTES_SEARCH_PATH)}
-              className="inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/70"
+              onClick={() => navigate(notesNoteSearchPath())}
+              className="liquid-glass inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/80"
             >
               <Search className="w-5 h-5" />
             </button>
@@ -65,7 +73,7 @@ export default function NotesHomePage() {
               aria-label={t("notesAddMenuTitle")}
               data-testid="notes-add-open"
               onClick={() => setAddOpen(true)}
-              className="inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/70"
+              className="liquid-glass inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/80"
             >
               <Plus className="w-5 h-5" />
             </button>
@@ -75,13 +83,13 @@ export default function NotesHomePage() {
       </div>
 
       <div className="app-shell-scroll px-4">
-        <section aria-labelledby="notes-quick-heading" data-testid="notes-section-quick-memo">
+        <section aria-labelledby="notes-quick-heading" data-testid="notes-section-quick-memo" className="notes-section-block">
           <TodoSectionHeader id="notes-quick-heading" title={t("notesSectionQuickMemo")} />
           {quickMemos.length === 0 ? (
             <p className="px-1 py-3 text-sm text-muted-foreground">{t("notesQuickMemoEmpty")}</p>
           ) : (
             <ul className="divide-y divide-border/60">
-              {quickMemos.map((memo) => (
+              {quickMemos.slice(0, NOTES_HOME_QUICK_MEMO_LIMIT).map((memo) => (
                 <li key={memo.id}>
                   <button
                     type="button"
@@ -97,15 +105,23 @@ export default function NotesHomePage() {
               ))}
             </ul>
           )}
+          <div className="flex gap-3 px-1 pt-2">
+            <button type="button" data-testid="notes-see-all-quick" className="text-sm text-accent min-h-11" onClick={() => navigate(notesQuickListPath())}>
+              {t("notesSeeAll")}
+            </button>
+            <button type="button" data-testid="notes-search-quick" className="text-sm text-accent min-h-11" onClick={() => navigate(notesQuickSearchPath())}>
+              {t("notesSearchTitle")}
+            </button>
+          </div>
         </section>
 
-        <section aria-labelledby="notes-note-heading" data-testid="notes-section-note">
+        <section aria-labelledby="notes-note-heading" data-testid="notes-section-note" className="notes-section-block">
           <TodoSectionHeader id="notes-note-heading" title={t("notesSectionNote")} />
           {notes.length === 0 ? (
             <p className="px-1 py-3 text-sm text-muted-foreground">{t("notesNoteEmpty")}</p>
           ) : (
             <ul className="divide-y divide-border/60">
-              {notes.map((note) => (
+              {notes.slice(0, NOTES_HOME_NOTE_LIMIT).map((note) => (
                 <li key={note.id}>
                   <button
                     type="button"
@@ -126,15 +142,23 @@ export default function NotesHomePage() {
               ))}
             </ul>
           )}
+          <div className="flex gap-3 px-1 pt-2">
+            <button type="button" data-testid="notes-see-all-notes" className="text-sm text-accent min-h-11" onClick={() => navigate(notesNoteListPath())}>
+              {t("notesSeeAll")}
+            </button>
+            <button type="button" data-testid="notes-search-notes" className="text-sm text-accent min-h-11" onClick={() => navigate(notesNoteSearchPath())}>
+              {t("notesSearchTitle")}
+            </button>
+          </div>
         </section>
 
-        <section aria-labelledby="notes-collections-heading" data-testid="notes-section-collections">
+        <section aria-labelledby="notes-collections-heading" data-testid="notes-section-collections" className="notes-section-block">
           <TodoSectionHeader id="notes-collections-heading" title={t("notesSectionCollections")} />
           {collections.length === 0 ? (
             <p className="px-1 py-3 text-sm text-muted-foreground">{t("notesCollectionsEmpty")}</p>
           ) : (
             <ul className="divide-y divide-border/60">
-              {collections.map((collection) => (
+              {collections.slice(0, NOTES_HOME_COLLECTION_LIMIT).map((collection) => (
                 <li key={collection.id}>
                   <button
                     type="button"
@@ -152,6 +176,14 @@ export default function NotesHomePage() {
               ))}
             </ul>
           )}
+          <div className="flex gap-3 px-1 pt-2">
+            <button type="button" data-testid="notes-see-all-collections" className="text-sm text-accent min-h-11" onClick={() => navigate(notesCollectionListPath())}>
+              {t("notesSeeAll")}
+            </button>
+            <button type="button" data-testid="notes-search-collections" className="text-sm text-accent min-h-11" onClick={() => navigate(notesCollectionSearchPath())}>
+              {t("notesSearchTitle")}
+            </button>
+          </div>
         </section>
         <div className="h-16" aria-hidden="true" />
       </div>

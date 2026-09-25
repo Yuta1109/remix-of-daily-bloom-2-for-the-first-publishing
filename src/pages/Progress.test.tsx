@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { I18nProvider } from "@/lib/i18n";
 import Progress from "@/pages/Progress";
@@ -40,10 +40,13 @@ describe("Progress page", () => {
     completeTask(task.id);
     renderProgress();
     const created = document.querySelector('[data-challenge-id="challenge.task_created"]');
-    expect(created).toBeTruthy();
-    expect(created?.getAttribute("data-completed")).toBe("true");
-    expect(created?.querySelector("button")).toBeNull();
-    expect(screen.getByLabelText(/Create a task, Completed/)).toBeTruthy();
+    expect(created).toBeNull();
+    fireEvent.click(screen.getByTestId("daily-challenge-section"));
+    const createdOpen = document.querySelector('[data-challenge-id="challenge.task_created"]');
+    expect(createdOpen).toBeTruthy();
+    expect(createdOpen?.getAttribute("data-completed")).toBe("true");
+    expect(createdOpen?.querySelector("button")).toBeNull();
+    expect(screen.getByLabelText(/Create a task, Clear/)).toBeTruthy();
     expect(screen.getAllByText("+5 pts").length).toBeGreaterThan(0);
   });
 

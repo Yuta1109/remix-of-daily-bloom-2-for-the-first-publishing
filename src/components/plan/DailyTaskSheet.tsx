@@ -7,6 +7,8 @@ import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { isTutorialActive } from "@/lib/tutorial";
 import { PlanIconPicker } from "@/components/plan/PlanIconPicker";
 import { PlanColorPicker } from "@/components/plan/PlanColorPicker";
+import { TaskCompletionControl } from "@/components/TaskCompletionControl";
+import { getThemeAccentOption, type ThemeAccentId } from "@/lib/theme-accent";
 import { DEFAULT_COLOR, DEFAULT_TASK_ICON } from "@/lib/v3/schema";
 import {
   RepositoryError,
@@ -511,23 +513,17 @@ export function DailyTaskSheet({
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={toggleComplete}
-                  className={cn(
-                    "flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                    isCompleted
-                      ? "bg-accent/15 text-accent"
-                      : "bg-secondary/60 text-foreground/80 hover:bg-secondary",
-                  )}
-                >
-                  {isCompleted ? t("planCompleted") : t("planComplete")}
-                </button>
-                <button
-                  type="button"
                   onClick={() => setConfirmDelete(true)}
                   className="flex-1 rounded-xl px-3 py-2.5 text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/15"
                 >
                   {t("planTaskDelete")}
                 </button>
+                <TaskCompletionControl
+                  completed={isCompleted}
+                  color={`hsl(${getThemeAccentOption(colorId as ThemeAccentId).accent})`}
+                  label={isCompleted ? t("planCompleted") : t("planComplete")}
+                  onToggle={toggleComplete}
+                />
               </div>
             )}
           </div>

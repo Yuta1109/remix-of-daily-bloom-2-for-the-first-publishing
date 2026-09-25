@@ -21,7 +21,7 @@ export function PlanFab({ onClick, "aria-label": ariaLabel }: Props) {
       onClick={onClick}
       aria-label={ariaLabel}
       className={cn(
-        "fixed z-40 w-14 h-14 rounded-full bg-accent text-accent-foreground shadow-float",
+        "liquid-glass fixed z-40 w-14 h-14 rounded-full bg-accent/90 text-accent-foreground shadow-float",
         "flex items-center justify-center transition-transform motion-reduce:transition-none",
         "hover:scale-105 active:scale-95",
         "bottom-[calc(var(--bottom-nav-offset)+10px)] right-5",

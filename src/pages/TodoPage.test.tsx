@@ -65,23 +65,20 @@ describe("Phase 6 ToDo UI", () => {
     expect(screen.getByText("Email professor")).toBeTruthy();
   });
 
-  it("34. Completed is collapsed by default", () => {
+  it("34. Completed task stays in the Task section", () => {
     const today = todayLocalDate();
     const task = createTask({ title: "Read introduction", date: today, createdFrom: "todo" });
     completeTask(task.id);
     renderTodo();
-    expect(screen.getByRole("heading", { name: "Completed" })).toBeTruthy();
-    expect(screen.getByText("1 tasks")).toBeTruthy();
-    expect(screen.queryByText("Read introduction")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Completed/ }));
-    expect(screen.getByText("Read introduction")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Completed" })).toBeNull();
+    expect(screen.getByTestId("todo-task-section").textContent).toContain("Read introduction");
   });
 
-  it("uses the App Shell header with UserButton and no History control", () => {
+  it("uses the App Shell header with UserButton and a history control", () => {
     renderTodo();
     expect(screen.getByRole("heading", { name: "ToDo" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Account" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Task history" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Task history" })).toBeTruthy();
     expect(screen.queryByText("Streak")).toBeNull();
   });
 });
