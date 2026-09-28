@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Clock } from "lucide-react";
 import { UserButton } from "@/components/UserButton";
+import { GlassControl } from "@/components/GlassControl";
 import { DailyTaskSheet, type DailyTaskSheetRequest } from "@/components/plan/DailyTaskSheet";
 import { TodoAddMenu, type TodoAddKind } from "@/components/todo/TodoAddMenu";
 import { TodoRoutineRow } from "@/components/todo/TodoRoutineRow";
@@ -242,16 +243,14 @@ export default function Index() {
           <h1 className="text-[28px] font-bold tracking-tight leading-tight">
             {t("todoPageTitle")}
           </h1>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
+          <div className="flex items-center gap-2">
+            <GlassControl
               onClick={() => setHistoryOpen(true)}
               aria-label={t("todoTaskHistoryAria")}
               data-testid="todo-history"
-              className="inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/70 hover:text-foreground hover:bg-secondary/70"
             >
               <Clock className="w-5 h-5" strokeWidth={1.75} aria-hidden="true" />
-            </button>
+            </GlassControl>
             <UserButton />
           </div>
         </div>
@@ -325,14 +324,39 @@ export default function Index() {
 
           <div data-tutorial="task-list">
             {listedTasks.length ? (
-              listedTasks.map((task) => (
-                <TodoTaskRow
-                  key={task.id}
-                  task={task}
-                  onToggle={() => toggleTask(task)}
-                  onPress={() => openTask(task)}
-                />
-              ))
+              listedTasks
+                .filter((task) => !task.parentTaskId || !listedTasks.some((parent) => parent.id === task.parentTaskId))
+                .map((task) => (
+                  <div key={task.id}>
+                    <TodoTaskRow
+                      task={task}
+                      onToggle={() => toggleTask(task)}
+                      onPress={() => openTask(task)}
+                      onAddChild={
+                        task.parentTaskId
+                          ? undefined
+                          : () =>
+                              setTaskSheet({
+                                mode: "create",
+                                date: task.date,
+                                parentTaskId: task.id,
+                                createdFrom: "todo",
+                              })
+                      }
+                    />
+                    {listedTasks
+                      .filter((child) => child.parentTaskId === task.id)
+                      .map((child) => (
+                        <TodoTaskRow
+                          key={child.id}
+                          task={child}
+                          nested
+                          onToggle={() => toggleTask(child)}
+                          onPress={() => openTask(child)}
+                        />
+                      ))}
+                  </div>
+                ))
             ) : (
               <p className="px-1 py-6 text-sm text-muted-foreground">{t("todoTasksEmpty")}</p>
             )}
@@ -366,14 +390,39 @@ export default function Index() {
                 <p className="px-1 pt-1 pb-0.5 text-[13px] font-semibold text-muted-foreground">
                   {formatLocalDate(group.date, locale, { month: "short", day: "numeric" })}
                 </p>
-                {group.tasks.map((task) => (
-                  <TodoTaskRow
-                    key={task.id}
-                    task={task}
-                    onToggle={() => toggleTask(task)}
-                    onPress={() => openTask(task)}
-                  />
-                ))}
+                {group.tasks
+                  .filter((task) => !task.parentTaskId || !group.tasks.some((parent) => parent.id === task.parentTaskId))
+                  .map((task) => (
+                    <div key={task.id}>
+                      <TodoTaskRow
+                        task={task}
+                        onToggle={() => toggleTask(task)}
+                        onPress={() => openTask(task)}
+                        onAddChild={
+                          task.parentTaskId
+                            ? undefined
+                            : () =>
+                                setTaskSheet({
+                                  mode: "create",
+                                  date: task.date,
+                                  parentTaskId: task.id,
+                                  createdFrom: "todo",
+                                })
+                        }
+                      />
+                      {group.tasks
+                        .filter((child) => child.parentTaskId === task.id)
+                        .map((child) => (
+                          <TodoTaskRow
+                            key={child.id}
+                            task={child}
+                            nested
+                            onToggle={() => toggleTask(child)}
+                            onPress={() => openTask(child)}
+                          />
+                        ))}
+                    </div>
+                  ))}
               </div>
             ))
           ) : (

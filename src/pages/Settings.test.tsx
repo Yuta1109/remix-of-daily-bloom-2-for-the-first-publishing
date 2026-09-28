@@ -52,15 +52,18 @@ describe("Phase 11 Settings", () => {
     expect(getSettings().reflectionSchedule.daily.scheduleOffsetDays).toBe(1);
     fireEvent.change(screen.getByTestId("settings-reflection-weekday"), { target: { value: "3" } });
     expect(getSettings().reflectionSchedule.weekly.weekday).toBe(3);
-    fireEvent.change(screen.getByTestId("settings-reflection-monthly-day"), { target: { value: "15" } });
-    expect(getSettings().reflectionSchedule.monthly.dayOfMonth).toBe(15);
+    fireEvent.click(screen.getByTestId("settings-reflection-month-start"));
+    expect(getSettings().reflectionSchedule.monthly.periodEdge).toBe("start");
+    fireEvent.change(screen.getByTestId("settings-reflection-future-month"), { target: { value: "3" } });
     fireEvent.change(screen.getByTestId("settings-reflection-future-day"), { target: { value: "20" } });
+    expect(getSettings().reflectionSchedule.future.monthOfYear).toBe(3);
     expect(getSettings().reflectionSchedule.future.dayOfMonth).toBe(20);
   });
 
   it("3. signed-out settings still load grouped sections", () => {
     renderSettings();
-    expect(screen.getByText("Account")).toBeTruthy();
+    expect(screen.queryByText("Account")).toBeNull();
+    expect(screen.getByText("Reflection schedule")).toBeTruthy();
     expect(screen.getByText("Cloud / Sync")).toBeTruthy();
     expect(screen.getByTestId("settings-sync-status").textContent).toMatch(/Local only/i);
     expect(screen.queryByText("Delete account")).toBeNull();

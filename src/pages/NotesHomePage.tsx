@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plus, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { UserButton } from "@/components/UserButton";
+import { GlassControl } from "@/components/GlassControl";
 import { NotesAddMenu } from "@/components/notes/NotesAddMenu";
 import { NotesNameSheet } from "@/components/notes/NotesNameSheet";
 import { QuickMemoSheet } from "@/components/notes/QuickMemoSheet";
@@ -58,25 +59,14 @@ export default function NotesHomePage() {
       <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-[28px] font-bold tracking-tight leading-tight">{t("notesPageTitle")}</h1>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
+          <div className="flex items-center gap-2">
+            <GlassControl
               aria-label={t("notesSearchTitle")}
               data-testid="notes-search-open"
               onClick={() => navigate(notesNoteSearchPath())}
-              className="liquid-glass inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/80"
             >
               <Search className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              aria-label={t("notesAddMenuTitle")}
-              data-testid="notes-add-open"
-              onClick={() => setAddOpen(true)}
-              className="liquid-glass inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/80"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
+            </GlassControl>
             <UserButton />
           </div>
         </div>
@@ -188,6 +178,16 @@ export default function NotesHomePage() {
         <div className="h-16" aria-hidden="true" />
       </div>
 
+      <GlassControl
+        variant="prominent"
+        size="prominent"
+        aria-label={t("notesAddMenuTitle")}
+        data-testid="notes-add-open"
+        onClick={() => setAddOpen(true)}
+        className="fixed z-40 bottom-[calc(var(--bottom-nav-offset)+10px)] right-5"
+      >
+        <Plus className="w-6 h-6" strokeWidth={2.5} />
+      </GlassControl>
       <NotesAddMenu
         open={addOpen}
         onOpenChange={setAddOpen}

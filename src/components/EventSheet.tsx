@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Drawer as DrawerPrimitive } from "vaul";
+import { GlassControl } from "@/components/GlassControl";
 import {
   Trash2,
   Bell,
@@ -261,27 +262,22 @@ function FormBody({
     >
       {/* Fixed header — does not scroll */}
       <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0 border-b border-border/40">
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          {t("cancel")}
-        </button>
+        <GlassControl onClick={onClose} aria-label={t("cancel")}>
+          <X className="w-5 h-5" aria-hidden="true" />
+        </GlassControl>
         <h2 className="text-base font-semibold">
           {isNew ? t("newEvent") : t("editEvent")}
         </h2>
-        <button
-          type="button"
+        <GlassControl
           onClick={() => {
             void hideKeyboard();
             onSave();
           }}
           disabled={!form.title.trim()}
-          className="text-sm font-semibold text-accent disabled:opacity-40"
+          aria-label={t("save")}
         >
-          {t("save")}
-        </button>
+          <Check className="w-5 h-5" aria-hidden="true" />
+        </GlassControl>
       </div>
 
       {/* Native overflow scroll (pre–scrollbar-inset experiments; scrolling worked here). */}
@@ -1032,7 +1028,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         className="absolute inset-0 bg-black/40"
         onClick={() => setRepeatDeleteOpen(false)}
       />
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-card shadow-float overflow-hidden pointer-events-auto">
+      <div className="liquid-glass liquid-glass-surface relative z-10 w-full max-w-md overflow-hidden pointer-events-auto">
         <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-2">
           <div className="min-w-0">
             <p className="text-sm font-semibold leading-snug">{t(deleteTitleTk)}</p>
@@ -1040,37 +1036,20 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
               {t("deleteRepeatSheetHint")}
             </p>
           </div>
-          <button
-            type="button"
-            aria-label={t("cancel")}
-            onClick={() => setRepeatDeleteOpen(false)}
-            className="shrink-0 rounded-full p-1.5 text-muted-foreground hover:bg-secondary"
-          >
+          <GlassControl aria-label={t("cancel")} onClick={() => setRepeatDeleteOpen(false)}>
             <X className="w-4 h-4" />
-          </button>
+          </GlassControl>
         </div>
-        <div className="px-3 pb-3 space-y-2">
-          <button
-            type="button"
-            onClick={confirmDeleteOnlyThis}
-            className="w-full rounded-xl bg-secondary/80 px-4 py-3.5 text-sm font-semibold text-foreground hover:bg-secondary"
-          >
+        <div className="px-3 pb-3 flex flex-col gap-2">
+          <GlassControl size="label" className="w-full" onClick={confirmDeleteOnlyThis}>
             {t("deleteRepeatOnlyThis")}
-          </button>
-          <button
-            type="button"
-            onClick={confirmDeleteThisAndFuture}
-            className="w-full rounded-xl bg-destructive/10 px-4 py-3.5 text-sm font-semibold text-destructive hover:bg-destructive/15"
-          >
+          </GlassControl>
+          <GlassControl size="label" className="w-full font-semibold" onClick={confirmDeleteThisAndFuture}>
             {t("deleteRepeatThisAndFuture")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setRepeatDeleteOpen(false)}
-            className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
-          >
+          </GlassControl>
+          <GlassControl size="label" className="w-full" onClick={() => setRepeatDeleteOpen(false)}>
             {t("cancel")}
-          </button>
+          </GlassControl>
         </div>
       </div>
     </div>
@@ -1086,25 +1065,17 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         className="absolute inset-0 bg-black/40"
         onClick={() => confirmPrompt.resolve(false)}
       />
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-card shadow-float overflow-hidden pointer-events-auto">
+      <div className="liquid-glass liquid-glass-surface relative z-10 w-full max-w-md overflow-hidden pointer-events-auto">
         <div className="px-4 pt-4 pb-2">
           <p className="text-sm font-semibold leading-snug">{confirmPrompt.message}</p>
         </div>
-        <div className="px-3 pb-3 space-y-2">
-          <button
-            type="button"
-            onClick={() => confirmPrompt.resolve(true)}
-            className="w-full rounded-xl bg-secondary/80 px-4 py-3.5 text-sm font-semibold text-foreground hover:bg-secondary"
-          >
-            {confirmPrompt.confirmLabel || t("yes")}
-          </button>
-          <button
-            type="button"
-            onClick={() => confirmPrompt.resolve(false)}
-            className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
-          >
+        <div className="px-3 pb-3 flex gap-2">
+          <GlassControl size="label" className="flex-1" onClick={() => confirmPrompt.resolve(false)}>
             {confirmPrompt.cancelLabel || t("cancel")}
-          </button>
+          </GlassControl>
+          <GlassControl size="label" className="flex-1 font-semibold" onClick={() => confirmPrompt.resolve(true)}>
+            {confirmPrompt.confirmLabel || t("yes")}
+          </GlassControl>
         </div>
       </div>
     </div>
@@ -1116,7 +1087,10 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
     return createPortal(
       <div
         className="fixed inset-0 z-[70] flex items-center justify-center px-4"
-        style={{ paddingBottom: "var(--bottom-nav-offset)" }}
+        style={{
+          paddingTop: "env(safe-area-inset-top, 0px)",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}
       >
         <div
           className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
@@ -1127,8 +1101,8 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
           }}
         />
         <div
-          className="relative bg-background rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
-          style={{ maxHeight: "min(88dvh, calc(100dvh - var(--bottom-nav-offset) - 24px))" }}
+          className="bg-card relative rounded-3xl w-full max-w-md min-h-0 flex flex-col overflow-hidden shadow-float z-10"
+          style={{ maxHeight: "min(78dvh, calc(100dvh - var(--bottom-nav-offset) - env(safe-area-inset-top, 0px) - 24px))" }}
         >
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
           <FormBody {...formBodyProps} />

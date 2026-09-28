@@ -175,8 +175,10 @@ export function nextWeekdayOnOrAfter(date: LocalDate, weekday: Weekday): LocalDa
 
 /**
  * Preferred review instant for a target period. Daily may fire the same
- * evening or the next morning (`scheduleOffsetDays`). Weekly / monthly fire
- * after the period ends. Future fires on the 1st of its cadence month.
+ * day (`scheduleOffsetDays` 0) or the next morning. Weekly fires on the
+ * chosen weekday after the week ends. Monthly fires at the month's end or
+ * at the start of the next month. Future fires on the configured month/day
+ * of that year.
  *
  * These times are preferences, not hard deadlines.
  */
@@ -195,16 +197,17 @@ export function scheduleAfterPeriod(
       scheduleDate = nextWeekdayOnOrAfter(addDays(periodEnd, 1), (rule.weekday ?? 0) as Weekday);
       break;
     case "monthly": {
-      const nextMonth = addMonths(startOfMonth(periodStart), 1);
-      const day = rule.dayOfMonth ?? 1;
-      const last = Number(endOfMonth(nextMonth).slice(8));
-      scheduleDate = `${nextMonth.slice(0, 7)}-${String(Math.max(1, Math.min(day, last))).padStart(2, "0")}`;
+      scheduleDate =
+        rule.periodEdge === "start" ? addMonths(startOfMonth(periodStart), 1) : endOfMonth(periodStart);
       break;
     }
     case "future": {
-      const day = rule.dayOfMonth ?? 1;
-      const last = Number(endOfMonth(periodStart).slice(8));
-      scheduleDate = `${periodStart.slice(0, 7)}-${String(Math.max(1, Math.min(day, last))).padStart(2, "0")}`;
+      const year = periodStart.slice(0, 4);
+      const month = Math.max(1, Math.min(12, rule.monthOfYear ?? 12));
+      const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+      const last = Number(endOfMonth(monthStart).slice(8));
+      const day = Math.max(1, Math.min(rule.dayOfMonth ?? 31, last));
+      scheduleDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       break;
     }
     default:

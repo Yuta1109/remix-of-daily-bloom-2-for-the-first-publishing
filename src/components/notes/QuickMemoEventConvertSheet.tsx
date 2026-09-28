@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Drawer as DrawerPrimitive } from "vaul";
 import { X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { GlassControl } from "@/components/GlassControl";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { convertQuickMemoToEvent, getQuickMemo, RepositoryError } from "@/lib/v3/repository";
 import { todayLocalDate, type LocalDate } from "@/lib/v3/local-date";
@@ -102,9 +103,9 @@ export function QuickMemoEventConvertSheet({ request, onOpenChange, onSaved }: P
             <DrawerPrimitive.Title className="text-base font-semibold">
               {t("notesConvertToEvent")}
             </DrawerPrimitive.Title>
-            <button type="button" onClick={close} className="p-2 text-muted-foreground" aria-label={t("notesBack")}>
+            <GlassControl onClick={close} aria-label={t("notesBack")}>
               <X className="w-5 h-5" />
-            </button>
+            </GlassControl>
           </div>
           <div className="px-4 pb-6 space-y-3 overflow-y-auto">
             <input
@@ -162,14 +163,15 @@ export function QuickMemoEventConvertSheet({ request, onOpenChange, onSaved }: P
                 </label>
               </div>
             )}
-            <button
-              type="button"
+            <GlassControl
+              size="label"
+              variant="prominent"
               data-testid="quick-memo-event-save"
               onClick={handleSave}
-              className="w-full min-h-11 rounded-xl bg-accent text-accent-foreground text-sm font-medium"
+              className="w-full text-sm font-medium"
             >
               {t("notesConvertSave")}
-            </button>
+            </GlassControl>
           </div>
         </DrawerPrimitive.Content>
       </DrawerPrimitive.Portal>

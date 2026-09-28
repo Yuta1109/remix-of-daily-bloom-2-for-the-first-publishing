@@ -86,25 +86,25 @@ export function CalendarDaySheet({
               events={events}
               onEditTask={(id) => {
                 onOpenChange(false);
-                setTimeout(() => onEditTask(id), 180);
+                onEditTask(id);
               }}
               onTasksChanged={onTasksChanged}
               onEditEvent={(id, occurrenceDate) => {
                 onOpenChange(false);
-                setTimeout(() => onEditEvent(id, occurrenceDate), 180);
+                onEditEvent(id, occurrenceDate);
               }}
               onAddTask={() => {
                 onOpenChange(false);
-                setTimeout(() => onAddTask(), 180);
+                onAddTask();
               }}
               onAddEvent={() => {
                 onOpenChange(false);
-                setTimeout(() => onAddEvent(), 180);
+                onAddEvent();
               }}
               wallpaperId={wallpaperId}
               onOpenWallpaper={() => {
                 onOpenChange(false);
-                setTimeout(() => onOpenWallpaper(), 180);
+                onOpenWallpaper();
               }}
             />
             <div className="h-4" />

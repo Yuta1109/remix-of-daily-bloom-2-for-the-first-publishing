@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, Lock } from "lucide-react";
 import { UserButton } from "@/components/UserButton";
+import { getAuthState, subscribeAuthState } from "@/lib/firebase/firebase-auth";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { formatAnalyticsComment } from "@/lib/v3/analytics";
 import { loadProgressSnapshot, type DailyChallengeView } from "@/lib/v3/progress";
@@ -17,6 +18,15 @@ export default function Progress() {
   const navigate = useNavigate();
   const snapshot = loadProgressSnapshot(todayLocalDate());
   const [challengesOpen, setChallengesOpen] = useState(false);
+  const [displayName, setDisplayName] = useState<string | null>(
+    () => getAuthState().user?.displayName ?? null,
+  );
+  useEffect(() => subscribeAuthState((state) => {
+    setDisplayName(state.status === "signed_in" ? state.user?.displayName ?? null : null);
+  }), []);
+  const greeting = displayName
+    ? t("progressHelloNamed").replace("{name}", displayName)
+    : t("progressHello");
   const comment = formatAnalyticsComment(
     t(snapshot.commentKey as TranslationKeys),
     snapshot.analytics.commentParams,
@@ -40,6 +50,16 @@ export default function Progress() {
       </div>
 
       <div className="app-shell-scroll px-4 space-y-3 pb-8">
+        <section data-testid="progress-today-summary" className="rounded-2xl bg-card shadow-soft px-4 py-3">
+          <p className="text-base font-semibold" data-testid="progress-greeting">{greeting}</p>
+          <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+            <SummaryStat testId="today-task-rate" label={t("progressTodayTaskRate")} value={`${snapshot.today.taskCompletionRate}%`} />
+            <SummaryStat testId="today-challenge-rate" label={t("progressTodayChallengeRate")} value={`${snapshot.today.challengeCompletionRate}%`} />
+            <SummaryStat testId="today-points" label={t("progressTodayPoints")} value={`${snapshot.today.pointsEarned}`} />
+            <SummaryStat testId="today-planned" label={t("progressTodayPlanned")} value={`${snapshot.today.plannedCount}`} />
+          </dl>
+        </section>
+
         <section>
           <button
             type="button"
@@ -167,6 +187,15 @@ export default function Progress() {
           </button>
         </section>
       </div>
+    </div>
+  );
+}
+
+function SummaryStat({ testId, label, value }: { testId: string; label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="font-semibold tabular-nums" data-testid={testId}>{value}</dd>
     </div>
   );
 }

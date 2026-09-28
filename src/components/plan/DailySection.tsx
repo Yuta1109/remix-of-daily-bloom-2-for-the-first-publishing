@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { ListChecks } from "lucide-react";
-import { useI18n, type TranslationKeys } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n";
 import { PlanFab } from "@/components/plan/PlanFab";
-import { PeriodNav } from "@/components/plan/PeriodNav";
+import { DailyPeriodButton, PeriodFacts } from "@/components/plan/PeriodControls";
 import { DailyTaskRow } from "@/components/plan/DailyTaskRow";
 import { DailyTaskSheet, type DailyTaskSheetRequest } from "@/components/plan/DailyTaskSheet";
 import {
@@ -11,35 +11,20 @@ import {
   getTasksForDate,
 } from "@/lib/v3/repository";
 import { isListedTaskStatus } from "@/lib/v3/plan-rules";
-import { addDays, todayLocalDate, type LocalDate } from "@/lib/v3/local-date";
+import { todayLocalDate, type LocalDate } from "@/lib/v3/local-date";
+import { useSessionView } from "@/hooks/use-session-view";
+import { PLANNING_VIEW } from "@/lib/session-nav";
 
-function relativeLabel(
-  date: LocalDate,
-  today: LocalDate,
-  t: (key: TranslationKeys) => string,
-  formatDateStr: (iso: string, options?: Intl.DateTimeFormatOptions) => string,
-): string {
-  if (date === today) return t("todayLabel");
-  if (date === addDays(today, 1)) return t("planTomorrow");
-  if (date === addDays(today, -1)) return t("planYesterday");
-  return formatDateStr(date, { weekday: "long" });
+function isPastDate(date: LocalDate, today: LocalDate): boolean {
+  return date < today;
 }
 
 export function DailySection() {
-  const { t, formatDateStr } = useI18n();
+  const { t } = useI18n();
   const today = todayLocalDate();
-  const [date, setDate] = useState<LocalDate>(today);
+  const [date, setDate] = useSessionView<LocalDate>("planning", PLANNING_VIEW.dailyDate, today);
   const [refreshTick, setRefreshTick] = useState(0);
   const [sheetRequest, setSheetRequest] = useState<DailyTaskSheetRequest | null>(null);
-
-  const dateLabel = useMemo(
-    () => formatDateStr(date, { month: "long", day: "numeric", year: "numeric" }),
-    [date, formatDateStr],
-  );
-  const rel = useMemo(
-    () => relativeLabel(date, today, t, formatDateStr),
-    [date, today, t, formatDateStr],
-  );
 
   const tasks = useMemo(
     () => getTasksForDate(date).filter((task) => isListedTaskStatus(task.status)),
@@ -52,25 +37,8 @@ export function DailySection() {
 
   return (
     <>
-      <div className="mb-3">
-        <PeriodNav
-          label={dateLabel}
-          onPrev={() => setDate((d) => addDays(d, -1))}
-          onNext={() => setDate((d) => addDays(d, 1))}
-        />
-        <div className="flex items-center justify-between px-0.5 mt-1">
-          <p className="text-sm text-muted-foreground">{rel}</p>
-          {date !== today && (
-            <button
-              type="button"
-              onClick={() => setDate(todayLocalDate())}
-              className="text-sm font-medium text-accent px-1 py-0.5 rounded-md hover:bg-accent/10"
-            >
-              {t("todayLabel")}
-            </button>
-          )}
-        </div>
-      </div>
+      <DailyPeriodButton date={date} onChange={setDate} />
+      <PeriodFacts type="daily" anchorDate={date} from={date} to={date} />
 
       {tasks.length === 0 ? (
         <EmptyState onAdd={openCreate} />
@@ -80,20 +48,50 @@ export function DailySection() {
             {t("planDailySectionTitle")}
           </h3>
           <div className="bg-card rounded-2xl shadow-soft divide-y divide-border/60">
-            {tasks.map((task) => (
-              <DailyTaskRow
-                key={task.id}
-                task={task}
-                parentTitle={
-                  task.parentPlanId ? getPlanItem(task.parentPlanId)?.title : undefined
-                }
-                onPress={() => setSheetRequest({ mode: "edit", taskId: task.id })}
-                onToggleComplete={() => {
-                  completeTask(task.id, task.status !== "completed");
-                  refresh();
-                }}
-              />
-            ))}
+            {tasks
+              .filter((task) => !task.parentTaskId || !tasks.some((parent) => parent.id === task.parentTaskId))
+              .map((task) => (
+                <div key={task.id}>
+                  <DailyTaskRow
+                    task={task}
+                    parentTitle={task.parentPlanId ? getPlanItem(task.parentPlanId)?.title : undefined}
+                    onPress={() => setSheetRequest({ mode: "edit", taskId: task.id })}
+                    onAddChild={
+                      task.parentTaskId || isPastDate(date, today)
+                        ? undefined
+                        : () =>
+                            setSheetRequest({
+                              mode: "create",
+                              date: task.date,
+                              parentTaskId: task.id,
+                              createdFrom: "plan",
+                            })
+                    }
+                    onToggleComplete={() => {
+                      if (isPastDate(date, today)) return;
+                      completeTask(task.id, task.status !== "completed");
+                      refresh();
+                    }}
+                    completionDisabled={isPastDate(date, today)}
+                  />
+                  {tasks
+                    .filter((child) => child.parentTaskId === task.id)
+                    .map((child) => (
+                      <DailyTaskRow
+                        key={child.id}
+                        task={child}
+                        nested
+                        onPress={() => setSheetRequest({ mode: "edit", taskId: child.id })}
+                        onToggleComplete={() => {
+                          if (isPastDate(date, today)) return;
+                          completeTask(child.id, child.status !== "completed");
+                          refresh();
+                        }}
+                        completionDisabled={isPastDate(date, today)}
+                      />
+                    ))}
+                </div>
+              ))}
           </div>
         </div>
       )}

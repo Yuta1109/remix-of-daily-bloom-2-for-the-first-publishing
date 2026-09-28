@@ -4,10 +4,13 @@ import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { PlanFab } from "@/components/plan/PlanFab";
 import { PlanRow } from "@/components/plan/PlanRow";
 import { PlanItemSheet, type PlanSheetRequest } from "@/components/plan/PlanItemSheet";
+import { PeriodFacts, YearPeriodButton } from "@/components/plan/PeriodControls";
 import { getPlanItems, getPlanProgress } from "@/lib/v3/repository";
 import { isListedPlanStatus } from "@/lib/v3/plan-rules";
 import { localMonthEnd, localMonthStart, todayLocalDate, toLocalMonth } from "@/lib/v3/local-date";
 import type { PlanItem } from "@/lib/v3/types";
+import { useSessionView } from "@/hooks/use-session-view";
+import { PLANNING_VIEW } from "@/lib/session-nav";
 
 const SOMEDAY_KEY = "someday";
 
@@ -37,6 +40,11 @@ function formatMonthHeading(monthKey: string, locale: "en" | "ja"): string {
 export function FutureSection() {
   const { t, locale } = useI18n();
   const [refreshTick, setRefreshTick] = useState(0);
+  const [year, setYear] = useSessionView(
+    "planning",
+    PLANNING_VIEW.futureYear,
+    Number(todayLocalDate().slice(0, 4)),
+  );
   const [sheetRequest, setSheetRequest] = useState<PlanSheetRequest | null>(null);
 
   const items = useMemo(
@@ -58,16 +66,23 @@ export function FutureSection() {
       .filter((k) => k !== SOMEDAY_KEY)
       .sort();
     if (map.has(SOMEDAY_KEY)) keys.push(SOMEDAY_KEY);
-    return keys.map((key) => ({ key, items: map.get(key) as PlanItem[] }));
-  }, [items]);
+    return keys
+      .filter((key) => key === SOMEDAY_KEY || key.startsWith(`${year}-`))
+      .map((key) => ({ key, items: map.get(key) as PlanItem[] }));
+  }, [items, year]);
 
   const refresh = () => setRefreshTick((v) => v + 1);
 
   const childCountLabel = (item: PlanItem, tt: (key: TranslationKeys) => string) =>
     `${getPlanProgress(item.id).total} ${tt("planMilestones")}`;
 
+  const yearStart = `${year}-01-01`;
+  const reflectionAnchor = year === Number(todayLocalDate().slice(0, 4)) ? todayLocalDate() : yearStart;
+
   return (
     <>
+      <YearPeriodButton year={year} onChange={setYear} />
+      <PeriodFacts type="future" anchorDate={reflectionAnchor} from={yearStart} to={`${year}-12-31`} />
       {items.length === 0 ? (
         <EmptyState onAdd={() => setSheetRequest({ mode: "create", level: "future" })} />
       ) : (

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { I18nProvider } from "@/lib/i18n";
 import { BottomNav } from "@/components/BottomNav";
+import { rememberSessionLocation } from "@/lib/session-nav";
 import { emptyData } from "@/lib/v3/schema";
 import { resetEssencesDataCache, saveEssencesData } from "@/lib/v3/storage";
 
@@ -23,6 +24,11 @@ function renderNavAt(initialPath: string) {
   );
 }
 
+function LocationReadout() {
+  const location = useLocation();
+  return <div data-testid="loc">{location.pathname}</div>;
+}
+
 function currentTab() {
   return screen.getByRole("button", { current: "page" });
 }
@@ -41,7 +47,7 @@ describe("BottomNav", () => {
     expect(buttons).toHaveLength(5);
     expect(buttons.map((b) => b.textContent)).toEqual([
       "Progress",
-      "Plan",
+      "Planning",
       "ToDo",
       "Calendar",
       "Note",
@@ -60,7 +66,7 @@ describe("BottomNav", () => {
 
   it("marks Plan active at /plan", () => {
     renderNavAt("/plan");
-    expect(currentTab().textContent).toBe("Plan");
+    expect(currentTab().textContent).toBe("Planning");
   });
 
   it("marks ToDo active at /todo", () => {
@@ -90,12 +96,12 @@ describe("BottomNav", () => {
 
   it("marks Plan active on /plan/reflection", () => {
     renderNavAt("/plan/reflection");
-    expect(currentTab().textContent).toBe("Plan");
+    expect(currentTab().textContent).toBe("Planning");
   });
 
   it("marks Plan active on a Reflection review route", () => {
     renderNavAt("/plan/reflection/session-1");
-    expect(currentTab().textContent).toBe("Plan");
+    expect(currentTab().textContent).toBe("Planning");
   });
 
   it("navigates when a tab is pressed", () => {
@@ -110,6 +116,29 @@ describe("BottomNav", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
     expect(currentTab().textContent).toBe("Calendar");
+  });
+
+  it("returns Planning to the last planning route in this session", () => {
+    rememberSessionLocation("planning", "/plan/home");
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/calendar"]}>
+          <Routes>
+            <Route
+              path="*"
+              element={
+                <>
+                  <LocationReadout />
+                  <BottomNav />
+                </>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Planning" }));
+    expect(screen.getByTestId("loc")).toHaveTextContent("/plan/home");
   });
 
   it("exposes an accessible label for the navigation landmark", () => {

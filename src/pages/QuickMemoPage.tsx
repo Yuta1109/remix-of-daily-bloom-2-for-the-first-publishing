@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
+import { ImagePreview } from "@/components/notes/ImagePreview";
 import { ConfirmMessage } from "@/components/notes/ConfirmMessage";
 import { DailyTaskSheet, type DailyTaskSheetRequest } from "@/components/plan/DailyTaskSheet";
 import { PlanItemSheet, type PlanSheetRequest } from "@/components/plan/PlanItemSheet";
@@ -10,6 +11,10 @@ import { useI18n } from "@/lib/i18n";
 import { pickLocalImageAttachment, noteImageSrc } from "@/lib/note-image";
 import type { ImageSource } from "@/lib/ocr";
 import { NOTES_HOME_PATH, noteDetailPath } from "@/lib/v3/notes-view";
+import { SwipeBackPage } from "@/components/SwipeBackPage";
+import { GlassControl } from "@/components/GlassControl";
+import { goPageBack } from "@/lib/page-back";
+import NotesHomePage from "@/pages/NotesHomePage";
 import {
   convertQuickMemoToNote,
   deleteQuickMemo,
@@ -43,6 +48,7 @@ export default function QuickMemoPage() {
   const [planRequest, setPlanRequest] = useState<PlanSheetRequest | null>(null);
   const [eventOpen, setEventOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [planLevelOpen, setPlanLevelOpen] = useState(false);
   const memo = getQuickMemo(id);
   const weeklyOn = getSettings().weeklyPlanningEnabled;
@@ -112,28 +118,20 @@ export default function QuickMemoPage() {
     });
   };
 
+  const back = () => goPageBack(navigate, NOTES_HOME_PATH);
+
   return (
+    <SwipeBackPage followFinger underlay={<NotesHomePage />} onBack={back}>
     <div className="app-shell-page" data-testid="quick-memo-page">
       <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-label={t("notesBack")}
-            onClick={() => navigate(NOTES_HOME_PATH)}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-full"
-          >
+          <GlassControl aria-label={t("notesBack")} onClick={back}>
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </GlassControl>
           <h1 className="flex-1 text-lg font-semibold">{t("notesSectionQuickMemo")}</h1>
-          <button
-            type="button"
-            aria-label={t("notesDelete")}
-            data-testid="quick-memo-delete"
-            onClick={() => setConfirmDelete(true)}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/70"
-          >
+          <GlassControl aria-label={t("notesDelete")} data-testid="quick-memo-delete" onClick={() => setConfirmDelete(true)}>
             <Trash2 className="w-5 h-5" />
-          </button>
+          </GlassControl>
         </div>
       </div>
       <div className="app-shell-scroll px-4">
@@ -149,7 +147,9 @@ export default function QuickMemoPage() {
         />
         {memo.image && noteImageSrc(memo.image) ? (
           <div className="mb-3">
-            <img src={noteImageSrc(memo.image)} alt="" className="max-h-48 max-w-full object-contain" />
+            <button type="button" data-testid="quick-memo-image" className="block max-w-full" onClick={() => setPreviewSrc(noteImageSrc(memo.image) ?? null)}>
+              <img src={noteImageSrc(memo.image)} alt="" className="max-h-48 max-w-full object-contain" />
+            </button>
             <button
               type="button"
               className="mt-1 text-[13px] text-muted-foreground min-h-11"
@@ -219,8 +219,12 @@ export default function QuickMemoPage() {
           </button>
         </div>
       </div>
+      {previewSrc ? (
+        <ImagePreview src={previewSrc} closeLabel={t("notesImagePreviewClose")} onClose={() => setPreviewSrc(null)} />
+      ) : null}
       <ImagePickSheet
         open={pickOpen}
+        help={t("notesAttachImageHelp")}
         onPhotos={() => void onPick("photos")}
         onCamera={() => void onPick("camera")}
         onCancel={() => setPickOpen(false)}
@@ -292,5 +296,6 @@ export default function QuickMemoPage() {
         }}
       />
     </div>
+    </SwipeBackPage>
   );
 }

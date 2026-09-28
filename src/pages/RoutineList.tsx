@@ -1,6 +1,10 @@
 import { useState } from "react";
-import { ChevronLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { SwipeBackPage } from "@/components/SwipeBackPage";
+import { GlassControl } from "@/components/GlassControl";
+import { goPageBack } from "@/lib/page-back";
+import Index from "@/pages/Index";
 import { PlanIconGlyph } from "@/components/plan/plan-icon-registry";
 import { RoutineSheet, type RoutineSheetRequest } from "@/components/todo/RoutineSheet";
 import { getThemeAccentOption, type ThemeAccentId } from "@/lib/theme-accent";
@@ -32,17 +36,15 @@ export default function RoutineList() {
   const [sheet, setSheet] = useState<RoutineSheetRequest | null>(null);
   const routines = getRoutines(true);
 
+  const back = () => goPageBack(navigate, "/todo");
+
   return (
+    <SwipeBackPage followFinger underlay={<Index />} onBack={back}>
     <div className="app-shell-page">
       <div className="app-shell-header px-4 pb-2">
-        <button
-          type="button"
-          onClick={() => navigate("/todo")}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground mb-2"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          {t("back")}
-        </button>
+        <GlassControl aria-label={t("back")} data-testid="routine-list-back" onClick={back} className="mb-2">
+          <ArrowLeft className="w-5 h-5" />
+        </GlassControl>
         <h1 className="text-[28px] font-bold tracking-tight">{t("todoRoutineListTitle")}</h1>
       </div>
       <div className="app-shell-scroll px-4 pb-8">
@@ -71,6 +73,7 @@ export default function RoutineList() {
         onChanged={() => setTick((n) => n + 1)}
       />
     </div>
+    </SwipeBackPage>
   );
 }
 

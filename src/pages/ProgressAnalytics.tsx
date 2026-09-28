@@ -1,6 +1,10 @@
-import { ChevronLeft, Flame, MessageCircleHeart, ScrollText } from "lucide-react";
+import { ArrowLeft, Flame, MessageCircleHeart, ScrollText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { SwipeBackPage } from "@/components/SwipeBackPage";
+import { GlassControl } from "@/components/GlassControl";
+import { goPageBack } from "@/lib/page-back";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
+import Progress from "@/pages/Progress";
 import { dayScoreInputsFromRecords, dayScoreParts, formatAnalyticsComment } from "@/lib/v3/analytics";
 import { loadProgressSnapshot } from "@/lib/v3/progress";
 import { todayLocalDate } from "@/lib/v3/local-date";
@@ -31,17 +35,21 @@ export default function ProgressAnalytics() {
     { label: t("progressScoreConsistency"), value: parts.consistency },
   ];
 
+  const back = () => goPageBack(navigate, "/progress");
+
   return (
+    <SwipeBackPage followFinger underlay={<Progress />} onBack={back}>
     <div className="app-shell-page">
       <div className="app-shell-header px-4 pb-2">
-        <button
-          type="button"
-          onClick={() => navigate("/progress")}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground mb-2"
+        <GlassControl
+          variant="regular"
+          aria-label={t("back")}
+          data-testid="progress-detail-back"
+          onClick={back}
+          className="mb-2"
         >
-          <ChevronLeft className="w-4 h-4" />
-          {t("back")}
-        </button>
+          <ArrowLeft className="w-5 h-5" />
+        </GlassControl>
         <h1 className="text-[28px] font-bold tracking-tight">{t("progressAnalyticsDetailTitle")}</h1>
       </div>
       <div className="app-shell-scroll px-4 pb-8">
@@ -61,5 +69,6 @@ export default function ProgressAnalytics() {
         </div>
       </div>
     </div>
+    </SwipeBackPage>
   );
 }

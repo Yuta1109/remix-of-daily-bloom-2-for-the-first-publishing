@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { goPageBack } from "@/lib/page-back";
 import { useI18n } from "@/lib/i18n";
 import { SwipeBackPage } from "@/components/SwipeBackPage";
+import { GlassControl } from "@/components/GlassControl";
 import Settings from "@/pages/Settings";
 
 const CONTACT_EMAIL = "essences.app.support@gmail.com";
@@ -15,17 +16,19 @@ export default function Privacy() {
 
   return (
     <SwipeBackPage
+      followFinger
       underlay={<Settings staticPreview />}
-      onBack={() => goPageBack(navigate, "/user")}
+      onBack={() => goPageBack(navigate, "/settings")}
       className="px-5"
     >
-      <button
-        onClick={() => goPageBack(navigate, "/user")}
-        className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4 hover:text-foreground transition-colors"
+      <GlassControl
+        onClick={() => goPageBack(navigate, "/settings")}
+        aria-label={t("back")}
+        data-testid="privacy-back"
+        className="mb-4"
       >
-        <ArrowLeft className="w-4 h-4" />
-        {t("back")}
-      </button>
+        <ArrowLeft className="w-5 h-5" />
+      </GlassControl>
 
       <article className="prose prose-sm max-w-none space-y-4 animate-fade-in-up pb-8">
         <h1 className="text-2xl font-bold tracking-tight">{t("privacyPolicy")}</h1>

@@ -1,4 +1,5 @@
 import { ChevronRight, Plus } from "lucide-react";
+import { GlassControl } from "@/components/GlassControl";
 import { useState } from "react";
 import { DailyTaskRow } from "@/components/plan/DailyTaskRow";
 import { DayWallpaperLayer } from "@/components/calendar/DayWallpaperLayer";
@@ -73,9 +74,16 @@ export function CalendarDayContent({
       ) : null}
 
       <section aria-label={t("calendarEventsSection")}>
-        <h3 className="px-1 mb-1.5 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
-          {t("calendarEventsSection")}
-        </h3>
+        <div className="flex items-center justify-between gap-2 px-1 mb-1.5">
+          <h3 className="text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
+            {t("calendarEventsSection")}
+          </h3>
+          {!past ? (
+            <GlassControl aria-label={t("calendarAddEvent")} data-testid="calendar-add-event" onClick={onAddEvent}>
+              <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
+            </GlassControl>
+          ) : null}
+        </div>
         {events.length === 0 ? (
           <p className="px-1 text-sm text-muted-foreground">{t("noEventsOnDay")}</p>
         ) : (
@@ -114,22 +122,19 @@ export function CalendarDayContent({
             {showAllEvents ? t("calendarShowLess") : t("calendarShowMore")}
           </button>
         ) : null}
-        {!past ? (
-          <button
-            type="button"
-            onClick={onAddEvent}
-            className="mt-2 flex items-center justify-center gap-1.5 w-full rounded-xl px-4 py-3 text-sm font-semibold bg-secondary text-foreground hover:bg-secondary/80"
-          >
-            <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
-            {t("calendarAddEvent")}
-          </button>
-        ) : null}
       </section>
 
       <section aria-label={t("calendarTasksSection")}>
-        <h3 className="px-1 mb-1.5 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
-          {t("calendarTasksSection")}
-        </h3>
+        <div className="flex items-center justify-between gap-2 px-1 mb-1.5">
+          <h3 className="text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
+            {t("calendarTasksSection")}
+          </h3>
+          {!past ? (
+            <GlassControl aria-label={t("calendarAddTask")} data-testid="calendar-add-task" onClick={onAddTask}>
+              <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
+            </GlassControl>
+          ) : null}
+        </div>
         {past && tasks.length > 0 ? (
           <p className="px-1 mb-2 text-xs text-muted-foreground" data-testid="calendar-past-completion">
             {t("calendarPastCompletion").replace("{n}", String(rate))}
@@ -162,16 +167,6 @@ export function CalendarDayContent({
             className="mt-2 px-1 text-sm font-medium text-accent"
           >
             {showAllTasks ? t("calendarShowLess") : t("calendarShowMore")}
-          </button>
-        ) : null}
-        {!past ? (
-          <button
-            type="button"
-            onClick={onAddTask}
-            className="mt-2 flex items-center justify-center gap-1.5 w-full rounded-xl px-4 py-3 text-sm font-semibold bg-accent text-accent-foreground hover:opacity-90"
-          >
-            <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
-            {t("calendarAddTask")}
           </button>
         ) : null}
       </section>

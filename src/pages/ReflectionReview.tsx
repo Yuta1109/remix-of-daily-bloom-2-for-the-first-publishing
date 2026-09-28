@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Drawer as DrawerPrimitive } from "vaul";
 import { useNavigate, useParams } from "react-router-dom";
-import { ReflectionDecisionBar } from "@/components/plan/ReflectionDecisionBar";
+import { GlassControl } from "@/components/GlassControl";
+import { PlanningShell } from "@/components/plan/PlanningHeader";
 import {
   ReflectionPostponeSheet,
   type PostponeResult,
@@ -12,18 +13,23 @@ import { PlanIconGlyph } from "@/components/plan/plan-icon-registry";
 import { useI18n } from "@/lib/i18n";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { eventsInRange, loadEvents, type CalendarEvent } from "@/lib/events-store";
+import { addDays, todayLocalDate } from "@/lib/v3/local-date";
 import {
   createReflectionDecision,
   completeReflectionSession,
+  getChildTasks,
   getEquivalentTaskOn,
   getPlanItem,
   getReflection,
+  getReflectionAward,
   getReflectionContext,
   getReflectionDecisions,
   migratePlanToCollection,
   startReflectionSession,
 } from "@/lib/v3/repository";
+import { reflectionActivityFromData, type ReflectionActivity } from "@/lib/v3/reflection-activity";
 import { postponeShiftsDescendants } from "@/lib/v3/reflection-migration";
+import { loadEssencesData } from "@/lib/v3/storage";
 import type { ReflectionDecision } from "@/lib/v3/types";
 
 export default function ReflectionReview() {
@@ -41,6 +47,9 @@ export default function ReflectionReview() {
     date: string;
   } | null>(null);
   const [showRelated, setShowRelated] = useState(false);
+  const [choiceFor, setChoiceFor] = useState<{ subjectType: "task" | "plan"; subjectId: string } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [somedayNotice, setSomedayNotice] = useState<string | null>(null);
 
@@ -80,6 +89,18 @@ export default function ReflectionReview() {
   const decidedCount = [...(ctx?.tasks ?? []), ...(ctx?.plans ?? [])].filter((s) =>
     bySubject.has(s.id),
   ).length;
+  const activity: ReflectionActivity | null = session
+    ? reflectionActivityFromData(
+        loadEssencesData(),
+        session.targetPeriodStart,
+        session.targetPeriodEnd ?? session.targetPeriodStart,
+        session.id,
+      )
+    : null;
+  const award = session?.status === "completed" ? getReflectionAward(session.id) : undefined;
+  const keepCount = decisions.filter((d) => d.decision === "keep").length;
+  const postponeCount = decisions.filter((d) => d.decision === "postpone").length;
+  const stopCount = decisions.filter((d) => d.decision === "stop").length;
 
   const events: CalendarEvent[] = useMemo(() => {
     if (!session) return [];
@@ -154,7 +175,8 @@ export default function ReflectionReview() {
   const complete = () => {
     try {
       completeReflectionSession(sessionId);
-      navigate("/plan/reflection");
+      setError(null);
+      refresh();
     } catch {
       setError(t("reflectionDecidedCount").replace("{done}", String(decidedCount)).replace("{total}", String(subjectsTotal)));
     }
@@ -184,60 +206,121 @@ export default function ReflectionReview() {
           : "reflectionTypeFuture",
   )} · ${period}`;
 
+  const today = todayLocalDate();
+  const activityTitle =
+    session.type === "daily" && session.targetPeriodStart === today
+      ? t("reflectionActivityToday")
+      : session.type === "daily" && session.targetPeriodStart === addDays(today, -1)
+        ? t("reflectionActivityYesterday")
+        : session.type === "daily"
+          ? t("reflectionActivityDay").replace("{date}", period)
+          : session.type === "weekly"
+            ? t("reflectionActivityWeek")
+            : session.type === "monthly"
+              ? t("reflectionActivityMonth")
+              : t("reflectionActivityPeriod");
+  const wide = session.type !== "daily";
+  const completed = session.status === "completed";
+
   return (
-    <div className="app-shell-page">
-      <div className="app-shell-header px-2 pb-2">
-        <div className="flex items-center gap-1">
+    <PlanningShell current="reflection">
+      <button
+        type="button"
+        onClick={() => navigate("/plan/reflection")}
+        className="mb-3 text-sm font-medium text-accent"
+      >
+        {t("back")}
+      </button>
+      <p className="text-xs text-muted-foreground mb-4">{title}</p>
+      {activity ? (
+        <section className="mb-6" data-testid="reflection-activity">
+          <h2 className="text-base font-semibold mb-3">{activityTitle}</h2>
+          <ScoreRing score={activity.score} label={t("reflectionScoreLabel")} />
+          <dl className="mt-4 space-y-2 text-sm">
+            <Metric
+              label={wide ? t("reflectionAvgChallenge") : t("reflectionChallengeRate")}
+              value={activity.challengeRate == null ? "0%" : `${activity.challengeRate}%`}
+            />
+            <Metric
+              label={wide ? t("reflectionAvgTodo") : t("reflectionTodoRate")}
+              value={`${activity.todoRate}%`}
+            />
+          </dl>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-4 mb-2">
+            {t("reflectionOtherActivity")}
+          </h3>
+          <dl className="space-y-2 text-sm">
+            <Metric label={t("reflectionStreak")} value={t("reflectionStreakDays").replace("{n}", String(activity.streak))} />
+            <Metric label={t("reflectionDoneCount")} value={String(activity.reflectionsCompleted)} />
+            <Metric label={t("reflectionPointsEarned")} value={String(activity.pointsEarned)} />
+          </dl>
+        </section>
+      ) : null}
+
+      {completed ? (
+        <section className="mb-6" data-testid="reflection-result">
+          <p className="text-sm font-medium">
+            {t("reflectionKeep")} {keepCount}
+          </p>
+          <p className="text-sm font-medium">
+            {t("reflectionPostpone")} {postponeCount}
+          </p>
+          <p className="text-sm font-medium mb-4">
+            {t("reflectionStop")} {stopCount}
+          </p>
           <button
             type="button"
-            onClick={() => navigate("/plan/reflection")}
-            aria-label={t("back")}
-            className="p-2 rounded-full text-foreground/70 hover:bg-secondary/70"
+            data-testid="reflection-start-replan"
+            onClick={() => navigate("/plan/replan")}
+            className="w-full min-h-12 rounded-2xl bg-accent text-accent-foreground text-base font-bold"
           >
-            <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+            {t("reflectionStartReplan")}
           </button>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">
-              {t("reflectionTitle")} · {title}
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              {ctx.tasks.length
-                ? t("reflectionReviewingTasks").replace("{n}", String(ctx.tasks.length))
-                : t("reflectionReviewingPlans").replace("{n}", String(ctx.plans.length))}
-            </p>
-          </div>
-        </div>
-      </div>
+        </section>
+      ) : null}
 
-      <div className="app-shell-scroll px-4">
-        {somedayNotice ? (
-          <p className="text-sm text-muted-foreground mb-3">{somedayNotice}</p>
-        ) : null}
-        {ctx.tasks.length === 0 && ctx.plans.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-8 text-center">{t("reflectionNoSubjects")}</p>
-        ) : null}
+      <h2 className="text-base font-semibold mb-3">{t("reflectionLetsReflect")}</h2>
+      {somedayNotice ? (
+        <p className="text-sm text-muted-foreground mb-3">{somedayNotice}</p>
+      ) : null}
+      {ctx.tasks.length === 0 && ctx.plans.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-4 text-center">{t("reflectionNoSubjects")}</p>
+      ) : null}
 
         {ctx.tasks.map((task) => (
+          <div key={task.id}>
           <SubjectCard
-            key={task.id}
             title={task.title}
             icon={task.icon}
             statusLabel={
               task.status === "completed" ? t("reflectionCompletedLabel") : t("reflectionOpenLabel")
             }
             decision={bySubject.get(task.id)}
-            onKeep={() => {
-              createReflectionDecision({
-                reflectionSessionId: sessionId,
-                subjectType: "task",
-                subjectId: task.id,
-                decision: "keep",
-              });
-              refresh();
-            }}
-            onPostpone={() => setPostponeFor({ subjectType: "task", subjectId: task.id })}
-            onStop={() => setStopFor({ subjectType: "task", subjectId: task.id })}
+            decisionLabel={
+              bySubject.get(task.id)
+                ? t(
+                    bySubject.get(task.id)!.decision === "keep"
+                      ? "reflectionKeep"
+                      : bySubject.get(task.id)!.decision === "postpone"
+                        ? "reflectionPostpone"
+                        : "reflectionStop",
+                  )
+                : undefined
+            }
+            onOpen={() => setChoiceFor({ subjectType: "task", subjectId: task.id })}
           />
+          {getChildTasks(task.id).length > 0 ? (
+            <div className="mb-3 pl-8" data-testid="reflection-child-actions">
+              {getChildTasks(task.id).map((child) => (
+                <p key={child.id} className="text-xs text-muted-foreground">
+                  {child.title}
+                  {" · "}
+                  {child.status === "completed" ? t("reflectionCompletedLabel") : t("reflectionOpenLabel")}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          </div>
         ))}
 
         {ctx.plans.map((plan) => (
@@ -247,17 +330,18 @@ export default function ReflectionReview() {
             icon={plan.icon}
             statusLabel={plan.status === "completed" ? t("planStatusCompleted") : undefined}
             decision={bySubject.get(plan.id)}
-            onKeep={() => {
-              createReflectionDecision({
-                reflectionSessionId: sessionId,
-                subjectType: "plan",
-                subjectId: plan.id,
-                decision: "keep",
-              });
-              refresh();
-            }}
-            onPostpone={() => setPostponeFor({ subjectType: "plan", subjectId: plan.id })}
-            onStop={() => setStopFor({ subjectType: "plan", subjectId: plan.id })}
+            decisionLabel={
+              bySubject.get(plan.id)
+                ? t(
+                    bySubject.get(plan.id)!.decision === "keep"
+                      ? "reflectionKeep"
+                      : bySubject.get(plan.id)!.decision === "postpone"
+                        ? "reflectionPostpone"
+                        : "reflectionStop",
+                  )
+                : undefined
+            }
+            onOpen={() => setChoiceFor({ subjectType: "plan", subjectId: plan.id })}
           />
         ))}
 
@@ -298,22 +382,80 @@ export default function ReflectionReview() {
           </section>
         ) : null}
 
-        <p className="text-sm text-muted-foreground mb-3">
-          {t("reflectionDecidedCount")
-            .replace("{done}", String(decidedCount))
-            .replace("{total}", String(subjectsTotal))}
-        </p>
-        {error ? <p className="text-sm text-muted-foreground mb-3">{error}</p> : null}
-        <button
-          type="button"
-          onClick={complete}
-          disabled={decidedCount < subjectsTotal}
-          className="w-full min-h-11 rounded-xl bg-accent text-accent-foreground text-sm font-semibold mb-10 disabled:opacity-40"
+        {completed ? null : (
+          <>
+            <p className="text-sm text-muted-foreground mb-3">
+              {t("reflectionDecidedCount")
+                .replace("{done}", String(decidedCount))
+                .replace("{total}", String(subjectsTotal))}
+            </p>
+            {error ? <p className="text-sm text-muted-foreground mb-3">{error}</p> : null}
+            <button
+              type="button"
+              data-testid="reflection-complete"
+              onClick={complete}
+              disabled={decidedCount < subjectsTotal}
+              className="w-full min-h-11 rounded-xl bg-accent text-accent-foreground text-sm font-semibold mb-6 disabled:opacity-40"
+            >
+              {t("reflectionComplete")}
+            </button>
+          </>
+        )}
+        {completed && award != null ? (
+          <p className="text-sm font-semibold mt-6" data-testid="reflection-points-awarded">
+            {t("reflectionPointsAwarded").replace("{n}", String(award))}
+          </p>
+        ) : null}
+
+      {choiceFor ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center px-4 pb-8"
+          data-testid="reflection-choice"
         >
-          {t("reflectionComplete")}
-        </button>
-        <div className="h-20" aria-hidden="true" />
-      </div>
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label={t("cancel")}
+            onClick={() => setChoiceFor(null)}
+          />
+          <div
+            className="liquid-glass liquid-glass-surface relative z-10 w-full max-w-md space-y-2 p-4"
+            role="group"
+            aria-label={t("reflectionChoiceLabel")}
+          >
+            <ChoiceButton
+              label={t("reflectionKeep")}
+              body={t("reflectionKeepExplain")}
+              onClick={() => {
+                createReflectionDecision({
+                  reflectionSessionId: sessionId,
+                  subjectType: choiceFor.subjectType,
+                  subjectId: choiceFor.subjectId,
+                  decision: "keep",
+                });
+                setChoiceFor(null);
+                refresh();
+              }}
+            />
+            <ChoiceButton
+              label={t("reflectionPostpone")}
+              body={t("reflectionPostponeExplain")}
+              onClick={() => {
+                setPostponeFor(choiceFor);
+                setChoiceFor(null);
+              }}
+            />
+            <ChoiceButton
+              label={t("reflectionStop")}
+              body={t("reflectionStopExplain")}
+              onClick={() => {
+                setStopFor(choiceFor);
+                setChoiceFor(null);
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <ReflectionPostponeSheet
         open={!!postponeFor}
@@ -362,8 +504,10 @@ export default function ReflectionReview() {
                 {t("reflectionPostponeTo")}
               </DrawerPrimitive.Title>
               <p className="text-sm">{duplicateMsg}</p>
-              <button
-                type="button"
+              <GlassControl
+                size="label"
+                variant="prominent"
+                className="w-full text-sm font-semibold"
                 onClick={() => {
                   if (!pendingPostpone) return;
                   createReflectionDecision({
@@ -377,25 +521,24 @@ export default function ReflectionReview() {
                   setPendingPostpone(null);
                   refresh();
                 }}
-                className="w-full min-h-11 rounded-xl bg-accent text-accent-foreground text-sm font-semibold"
               >
                 {t("reflectionUseExisting")}
-              </button>
-              <button
-                type="button"
+              </GlassControl>
+              <GlassControl
+                size="label"
+                className="w-full text-sm font-medium"
                 onClick={() => {
                   setDuplicateMsg(null);
                   setPendingPostpone(null);
                 }}
-                className="w-full min-h-11 rounded-xl bg-secondary/60 text-sm font-medium"
               >
-                {t("back")}
-              </button>
+                {t("cancel")}
+              </GlassControl>
             </div>
           </DrawerPrimitive.Content>
         </DrawerPrimitive.Portal>
       </DrawerPrimitive.Root>
-    </div>
+    </PlanningShell>
   );
 }
 
@@ -403,36 +546,90 @@ function SubjectCard({
   title,
   icon,
   statusLabel,
-  decision,
-  onKeep,
-  onPostpone,
-  onStop,
+  decisionLabel,
+  onOpen,
 }: {
   title: string;
   icon: string;
   statusLabel?: string;
   decision?: ReflectionDecision;
-  onKeep: () => void;
-  onPostpone: () => void;
-  onStop: () => void;
+  decisionLabel?: string;
+  onOpen: () => void;
 }) {
   return (
-    <div className="rounded-2xl bg-card shadow-card p-4 mb-3">
-      <div className="flex items-start gap-3 mb-3">
-        <span className="w-8 h-8 rounded-full bg-secondary/70 flex items-center justify-center shrink-0">
-          <PlanIconGlyph iconId={icon} />
-        </span>
-        <div className="min-w-0">
-          <p className="text-base font-medium">{title}</p>
-          {statusLabel ? <p className="text-xs text-muted-foreground mt-0.5">{statusLabel}</p> : null}
-        </div>
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid="reflection-subject"
+      className="mb-3 flex w-full items-start gap-3 rounded-2xl bg-card p-4 text-left shadow-card"
+    >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/70">
+        <PlanIconGlyph iconId={icon} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-base font-medium">{title}</span>
+        {statusLabel ? <span className="mt-0.5 block text-xs text-muted-foreground">{statusLabel}</span> : null}
+        {decisionLabel ? <span className="mt-1 block text-xs font-semibold">{decisionLabel}</span> : null}
+      </span>
+    </button>
+  );
+}
+
+function ChoiceButton({ label, body, onClick }: { label: string; body: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="w-full rounded-2xl bg-background/80 px-3 py-3 text-left">
+      <span className="block text-sm font-semibold">{label}</span>
+      <span className="mt-0.5 block text-xs text-muted-foreground">{body}</span>
+    </button>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-semibold tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+function ScoreRing({ score, label }: { score: number; label: string }) {
+  const [reduce, setReduce] = useState(false);
+  const [offset, setOffset] = useState(1);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduce(media.matches);
+    if (media.matches) {
+      setOffset(1 - score / 100);
+      return;
+    }
+    setOffset(1);
+    const id = requestAnimationFrame(() => setOffset(1 - score / 100));
+    return () => cancelAnimationFrame(id);
+  }, [score]);
+  const radius = 46;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <div className="relative mx-auto h-28 w-28" data-testid="reflection-score" aria-label={`${label} ${score}`}>
+      <svg viewBox="0 0 120 120" className="h-full w-full">
+        <circle cx="60" cy="60" r={radius} fill="none" className="text-muted" stroke="currentColor" strokeWidth="8" />
+        <circle
+          cx="60"
+          cy="60"
+          r={radius}
+          fill="none"
+          stroke="hsl(var(--accent))"
+          strokeWidth="8"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * offset}
+          transform="rotate(-90 60 60)"
+          style={{ transition: reduce ? "none" : "stroke-dashoffset 480ms var(--glass-spring)" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-2xl font-bold tabular-nums">{score}</span>
       </div>
-      <ReflectionDecisionBar
-        value={decision?.decision}
-        onKeep={onKeep}
-        onPostpone={onPostpone}
-        onStop={onStop}
-      />
     </div>
   );
 }

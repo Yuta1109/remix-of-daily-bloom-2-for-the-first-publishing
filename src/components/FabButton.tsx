@@ -1,6 +1,7 @@
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isTutorialBlockingCalendarChrome } from "@/lib/tutorial";
+import { GlassControl } from "@/components/GlassControl";
 
 interface Props {
   onClick: () => void;
@@ -16,8 +17,9 @@ export function FabButton({
   disabled = false,
 }: Props) {
   return (
-    <button
-      type="button"
+    <GlassControl
+      variant="prominent"
+      size="prominent"
       data-tutorial="calendar-fab"
       onClick={(e) => {
         if (disabled || isTutorialBlockingCalendarChrome()) {
@@ -31,14 +33,11 @@ export function FabButton({
       aria-disabled={disabled || undefined}
       aria-label={ariaLabel}
       className={cn(
-        "liquid-glass fixed z-40 w-14 h-14 rounded-full bg-accent/90 text-accent-foreground shadow-float",
-        "flex items-center justify-center transition-all hover:scale-110 active:scale-95",
-        "bottom-[calc(var(--bottom-nav-offset)+10px)] right-5",
-        disabled && "opacity-40 pointer-events-none",
-        className
+        "fixed z-40 bottom-[calc(var(--bottom-nav-offset)+10px)] right-5",
+        className,
       )}
     >
       <Plus className="w-6 h-6" strokeWidth={2.5} />
-    </button>
+    </GlassControl>
   );
 }

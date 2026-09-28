@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
+import { GlassControl } from "@/components/GlassControl";
 import { PlanIconPicker } from "@/components/plan/PlanIconPicker";
 import { PlanColorPicker } from "@/components/plan/PlanColorPicker";
 import { DEFAULT_COLOR, DEFAULT_ROUTINE_ICON } from "@/lib/v3/schema";
@@ -173,25 +174,17 @@ export function RoutineSheet({ request, onOpenChange, onSaved, onChanged }: Prop
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmOff(false)} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-card shadow-float overflow-hidden pointer-events-auto">
+      <div className="liquid-glass liquid-glass-surface relative z-10 w-full max-w-md overflow-hidden pointer-events-auto">
         <div className="px-4 pt-4 pb-2">
           <p className="text-sm font-semibold leading-snug">{t("todoRoutineDeactivateConfirm")}</p>
         </div>
-        <div className="px-3 pb-3 space-y-2">
-          <button
-            type="button"
-            onClick={runDeactivate}
-            className="w-full rounded-xl bg-destructive/10 px-4 py-3.5 text-sm font-semibold text-destructive hover:bg-destructive/15"
-          >
-            {t("todoRoutineDeactivate")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirmOff(false)}
-            className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
-          >
+        <div className="px-3 pb-3 flex gap-2">
+          <GlassControl size="label" className="flex-1" onClick={() => setConfirmOff(false)}>
             {t("cancel")}
-          </button>
+          </GlassControl>
+          <GlassControl size="label" className="flex-1 font-semibold" onClick={runDeactivate}>
+            {t("todoRoutineDeactivate")}
+          </GlassControl>
         </div>
       </div>
     </div>
@@ -211,14 +204,9 @@ export function RoutineSheet({ request, onOpenChange, onSaved, onChanged }: Prop
             <DrawerPrimitive.Title className="text-base font-semibold">
               {isEdit ? t("todoEditRoutineTitle") : t("todoCreateRoutineTitle")}
             </DrawerPrimitive.Title>
-            <button
-              type="button"
-              onClick={close}
-              aria-label={t("cancel")}
-              className="p-1.5 -mr-1 rounded-full text-muted-foreground hover:bg-secondary/70"
-            >
+            <GlassControl onClick={close} aria-label={t("cancel")}>
               <X className="w-5 h-5" aria-hidden="true" />
-            </button>
+            </GlassControl>
           </div>
 
           <div
@@ -376,13 +364,9 @@ export function RoutineSheet({ request, onOpenChange, onSaved, onChanged }: Prop
           </div>
 
           <div className="px-4 pb-4 pt-2 shrink-0 border-t border-border/50">
-            <button
-              type="button"
-              onClick={handleSave}
-              className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3.5 text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
+            <GlassControl size="label" variant="prominent" className="w-full text-sm font-semibold" onClick={handleSave}>
               {isEdit ? t("save") : t("todoAddRoutineCta")}
-            </button>
+            </GlassControl>
           </div>
 
           {confirmOverlay}

@@ -7,9 +7,11 @@ interface Props {
   underlay?: ReactNode;
   onBack: () => void;
   className?: string;
+  /** Previous page tracks the finger. Used by Progress detail routes. */
+  followFinger?: boolean;
 }
 
-export function SwipeBackPage({ children, underlay, onBack, className }: Props) {
+export function SwipeBackPage({ children, underlay, onBack, className, followFinger = false }: Props) {
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
   const startX = useRef(0);
@@ -53,19 +55,40 @@ export function SwipeBackPage({ children, underlay, onBack, className }: Props) 
     tracking.current = false;
     rejected.current = false;
     setDragging(false);
+    if (accept) {
+      onBack();
+      return;
+    }
     setDx(0);
-    if (accept) onBack();
   };
+
+  const reduceMotion =
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const settle = reduceMotion ? "none" : "transform var(--glass-duration) var(--glass-spring)";
 
   return (
     <div className="fixed inset-0 z-[70] overflow-hidden" data-swipe-back="horizontal">
       {underlay && (
-        <div className="absolute inset-0 overflow-hidden bg-background">
-          {underlay}
+        <div
+          className="absolute inset-0 overflow-hidden bg-background pointer-events-none"
+          data-swipe-underlay="true"
+          aria-hidden="true"
+          inert=""
+          style={
+            followFinger
+              ? {
+                  transform: `translateX(${dx > 0 ? -window.innerWidth * 0.3 * (1 - dx / window.innerWidth) : -window.innerWidth * 0.3}px)`,
+                  transition: dragging ? "none" : settle,
+                }
+              : undefined
+          }
+        >
+          {dragging || dx > 0 ? underlay : null}
         </div>
       )}
       <div
         className={cn("absolute inset-0 bg-background shadow-lg page-scroll", className)}
+        data-swipe-page="true"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={finish}
@@ -77,7 +100,9 @@ export function SwipeBackPage({ children, underlay, onBack, className }: Props) 
         }}
         style={{
           transform: dx > 0 ? `translateX(${dx}px)` : undefined,
-          transition: dragging ? "none" : "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)",
+          transition: dragging ? "none" : settle,
+          borderRadius: dx > 0 ? 16 : 0,
+          overflow: dx > 0 ? "hidden" : undefined,
         }}
       >
         {children}

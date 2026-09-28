@@ -6,9 +6,11 @@ interface Props {
   onPhotos: () => void;
   onCamera: () => void;
   onCancel: () => void;
+  /** Overrides the default recognition help. Notes attach uses a photo-only line. */
+  help?: string;
 }
 
-export function ImagePickSheet({ open, onPhotos, onCamera, onCancel }: Props) {
+export function ImagePickSheet({ open, onPhotos, onCamera, onCancel, help }: Props) {
   const { t } = useI18n();
   if (!open) return null;
   return createPortal(
@@ -20,7 +22,7 @@ export function ImagePickSheet({ open, onPhotos, onCamera, onCancel }: Props) {
       >
         <p className="text-sm font-semibold text-center mb-2">{t("ocrAddImage")}</p>
         <p className="text-xs text-muted-foreground text-center leading-relaxed mb-1 px-1">
-          {t("ocrHelp")}
+          {help ?? t("ocrHelp")}
         </p>
         <button
           type="button"

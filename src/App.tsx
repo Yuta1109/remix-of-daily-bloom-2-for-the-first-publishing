@@ -1,7 +1,10 @@
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useEdgeSwipeBack } from "@/hooks/use-edge-swipe-back";
 import { goPageBack } from "@/lib/page-back";
+import { rememberSessionLocation, sessionAreaForPath } from "@/lib/session-nav";
+import { SessionScrollKeeper } from "@/components/SessionScrollKeeper";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BottomNav } from "@/components/BottomNav";
@@ -15,6 +18,8 @@ import Progress from "./pages/Progress";
 import ProgressAnalytics from "./pages/ProgressAnalytics";
 import ProgressPoints from "./pages/ProgressPoints";
 import Plan from "./pages/Plan";
+import PlanHome from "./pages/PlanHome";
+import Replan from "./pages/Replan";
 import PostponeBox from "./pages/PostponeBox";
 import ReflectionCenter from "./pages/ReflectionCenter";
 import ReflectionCatchUpReview from "./pages/ReflectionCatchUpReview";
@@ -61,13 +66,28 @@ function AppRoutes() {
   const location = useLocation();
   const navigate = useNavigate();
   const hideNav = HIDE_NAV_ROUTES.includes(location.pathname);
+  const dedicatedSwipe =
+    location.pathname === "/privacy" ||
+    location.pathname === "/settings" ||
+    location.pathname === "/user" ||
+    location.pathname === "/progress/analytics" ||
+    location.pathname === "/progress/points" ||
+    location.pathname === "/todo/routines" ||
+    /^\/notes?\/(n|q|c)\//.test(location.pathname);
   useEdgeSwipeBack(
     () => goPageBack(navigate, "/progress"),
-    !TAB_ROOTS.has(location.pathname) && location.pathname !== "/privacy",
+    !TAB_ROOTS.has(location.pathname) && !dedicatedSwipe,
   );
+
+  useEffect(() => {
+    const area = sessionAreaForPath(location.pathname);
+    if (!area) return;
+    rememberSessionLocation(area, `${location.pathname}${location.search}${location.hash}`);
+  }, [location.pathname, location.search, location.hash]);
 
   return (
     <>
+      <SessionScrollKeeper />
       <Routes>
         {/* Progress is the new home tab. Today (ToDo) moves to /todo but its
             existing implementation is otherwise untouched — see Index.tsx. */}
@@ -76,6 +96,8 @@ function AppRoutes() {
         <Route path="/progress/analytics" element={<ProgressAnalytics />} />
         <Route path="/progress/points" element={<ProgressPoints />} />
         <Route path="/plan" element={<Plan />} />
+        <Route path="/plan/home" element={<PlanHome />} />
+        <Route path="/plan/replan" element={<Replan />} />
         <Route path="/plan/postpone-box" element={<PostponeBox />} />
         <Route path="/plan/reflection" element={<ReflectionCenter />} />
         <Route path="/plan/reflection/catch-up/:type" element={<ReflectionCatchUpReview />} />

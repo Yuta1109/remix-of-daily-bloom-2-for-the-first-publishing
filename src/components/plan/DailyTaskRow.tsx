@@ -11,12 +11,25 @@ interface Props {
   onPress: () => void;
   onToggleComplete: () => void;
   disabled?: boolean;
+  /** Past days keep the row open, but completion cannot be changed. */
+  completionDisabled?: boolean;
+  nested?: boolean;
+  onAddChild?: () => void;
 }
 
 /**
  * Daily Log row. Completion is the shared color circle on the right.
  */
-export function DailyTaskRow({ task, parentTitle, onPress, onToggleComplete, disabled = false }: Props) {
+export function DailyTaskRow({
+  task,
+  parentTitle,
+  onPress,
+  onToggleComplete,
+  disabled = false,
+  completionDisabled = false,
+  nested = false,
+  onAddChild,
+}: Props) {
   const { t } = useI18n();
   const accent = getThemeAccentOption(task.color as ThemeAccentId);
   const completed = task.status === "completed";
@@ -27,7 +40,7 @@ export function DailyTaskRow({ task, parentTitle, onPress, onToggleComplete, dis
       : task.startTime;
 
   return (
-    <div className="flex items-start gap-2 px-3 py-2.5">
+    <div className={cn("flex items-start gap-2 px-3 py-2.5", nested && "pl-8")} data-testid={nested ? "daily-child-task" : "daily-task"}>
       <button
         type="button"
         onClick={onPress}
@@ -62,12 +75,17 @@ export function DailyTaskRow({ task, parentTitle, onPress, onToggleComplete, dis
           )}
         </span>
       </button>
+      {onAddChild ? (
+        <button type="button" onClick={onAddChild} className="shrink-0 pt-2 text-xs font-medium text-accent">
+          {t("dailyChildAdd")}
+        </button>
+      ) : null}
       <TaskCompletionControl
         completed={completed}
         color={`hsl(${accent.accent})`}
         label={completed ? t("planCompleted") : t("planComplete")}
         onToggle={onToggleComplete}
-        disabled={disabled}
+        disabled={disabled || completionDisabled}
       />
     </div>
   );

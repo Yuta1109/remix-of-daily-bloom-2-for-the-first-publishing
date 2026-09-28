@@ -431,7 +431,7 @@ describe("Phase 5 collection migration and catch-up", () => {
   it("schedule preferences stay editable and are not hard deadlines", () => {
     const rules = defaultReflectionSchedule();
     const daily = scheduleAfterPeriod("daily", "2026-09-23", "2026-09-23", rules.daily);
-    expect(new Date(daily.scheduledAt).getHours()).toBe(21);
+    expect(new Date(daily.scheduledAt).getHours()).toBe(17);
     updateReflectionSchedule({
       daily: { ...rules.daily, timeOfDay: "08:00", scheduleOffsetDays: 1 },
     });

@@ -14,8 +14,6 @@ export interface PlanIconDefinition {
 }
 
 export const PLAN_ICON_DEFINITIONS: PlanIconDefinition[] = [
-  { id: "circle", labelKey: "planIconCircle" },
-  { id: "target", labelKey: "planIconTarget" },
   { id: "compass", labelKey: "planIconCompass" },
   { id: "flag", labelKey: "planIconFlag" },
   { id: "rocket", labelKey: "planIconRocket" },

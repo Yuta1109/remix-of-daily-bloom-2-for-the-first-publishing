@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom";
 import { beforeEach } from "vitest";
 import { resetCalendarAdapterForTests } from "@/lib/events-store";
+import { resetSessionNav } from "@/lib/session-nav";
 
 // jsdom has no ResizeObserver. Several components (BottomNav, InsetScrollArea)
 // use it to measure their own rendered size; a no-op stub is enough for tests.
@@ -16,6 +17,7 @@ Object.defineProperty(window, "ResizeObserver", {
 
 beforeEach(() => {
   resetCalendarAdapterForTests();
+  resetSessionNav();
 });
 
 Object.defineProperty(window, "matchMedia", {

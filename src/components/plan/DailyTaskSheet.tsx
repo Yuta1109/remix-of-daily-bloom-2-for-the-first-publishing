@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Drawer as DrawerPrimitive } from "vaul";
-import { X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
@@ -8,6 +9,7 @@ import { isTutorialActive } from "@/lib/tutorial";
 import { PlanIconPicker } from "@/components/plan/PlanIconPicker";
 import { PlanColorPicker } from "@/components/plan/PlanColorPicker";
 import { TaskCompletionControl } from "@/components/TaskCompletionControl";
+import { GlassControl } from "@/components/GlassControl";
 import { getThemeAccentOption, type ThemeAccentId } from "@/lib/theme-accent";
 import { DEFAULT_COLOR, DEFAULT_TASK_ICON } from "@/lib/v3/schema";
 import {
@@ -16,17 +18,20 @@ import {
   breakdownWeeklyToTask,
   completeTask,
   convertQuickMemoToTask,
+  createChildTask,
   createTask,
+  getMainPlan,
   getPlanItem,
   getPlanItemsForPeriod,
   getTask,
+  setMainPlan,
   getTaskSeriesById,
   moveTaskToDate,
   stopTaskSeries,
   updateTask,
 } from "@/lib/v3/repository";
 import { describeRecurrence } from "@/lib/v3/task-recurrence";
-import type { LocalDate } from "@/lib/v3/local-date";
+import { todayLocalDate, type LocalDate } from "@/lib/v3/local-date";
 import type { CreatedFromTask, PlanItem, TaskItem } from "@/lib/v3/types";
 
 export interface DailyTaskSheetRequest {
@@ -37,6 +42,8 @@ export interface DailyTaskSheetRequest {
   taskId?: string;
   /** Set when creating from Weekly → Daily Breakdown. */
   parentPlanId?: string;
+  /** Set when adding a step inside an existing Daily log. */
+  parentTaskId?: string;
   /**
    * Breakdown stays open after each save so several Daily Tasks can be
    * created from the same Weekly Plan without restarting the flow.
@@ -57,6 +64,8 @@ interface Props {
   onChanged: () => void;
   /** Opens the Repeat Log editor for this occurrence's TaskSeries. */
   onEditSeries?: (seriesId: string) => void;
+  /** Calendar create sheet: glass chrome, no centered title. */
+  calendarChrome?: boolean;
 }
 
 /**
@@ -69,8 +78,10 @@ export function DailyTaskSheet({
   onSaved,
   onChanged,
   onEditSeries,
+  calendarChrome = false,
 }: Props) {
   const { t, formatDateStr, locale } = useI18n();
+  const navigate = useNavigate();
 
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
@@ -84,6 +95,7 @@ export function DailyTaskSheet({
   const [titleError, setTitleError] = useState(false);
   const [duplicateError, setDuplicateError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isMainPlan, setIsMainPlan] = useState(false);
   const [confirmStopRepeat, setConfirmStopRepeat] = useState(false);
 
   const [editItem, setEditItem] = useState<TaskItem | null>(null);
@@ -115,6 +127,8 @@ export function DailyTaskSheet({
       setStartTime(item?.startTime ?? "");
       setEndTime(item?.endTime ?? "");
       setParentPlanId(item?.parentPlanId);
+      const main = getMainPlan();
+      setIsMainPlan(main?.subjectType === "task" && main.subjectId === request.taskId);
     } else {
       const parent = request.parentPlanId ? getPlanItem(request.parentPlanId) ?? null : null;
       setEditItem(null);
@@ -129,6 +143,7 @@ export function DailyTaskSheet({
       setStartTime("");
       setEndTime("");
       setParentPlanId(request.parentPlanId);
+      setIsMainPlan(false);
     }
     setTitleError(false);
     setDuplicateError(false);
@@ -155,6 +170,7 @@ export function DailyTaskSheet({
 
   const isEdit = activeRequest.mode === "edit";
   const isCompleted = editItem?.status === "completed";
+  const completionLocked = !!date && date < todayLocalDate();
   const repeatable = !isEdit && !!activeRequest.repeatable;
   const series = editItem?.seriesId ? getTaskSeriesById(editItem.seriesId) : undefined;
   const close = () => onOpenChange(false);
@@ -205,11 +221,18 @@ export function DailyTaskSheet({
           createdFrom: activeRequest.createdFrom ?? ("plan" as const),
           ...times,
         };
-        const saved = activeRequest.quickMemoId
-          ? convertQuickMemoToTask(activeRequest.quickMemoId, input).task
-          : parentPlanId
-            ? breakdownWeeklyToTask(parentPlanId, input)
-            : createTask(input);
+        const saved = activeRequest.parentTaskId
+          ? createChildTask(activeRequest.parentTaskId, {
+              title: trimmed,
+              note: note.trim() || undefined,
+              icon: iconId,
+              color: colorId,
+            })
+          : activeRequest.quickMemoId
+            ? convertQuickMemoToTask(activeRequest.quickMemoId, input).task
+            : parentPlanId
+              ? breakdownWeeklyToTask(parentPlanId, input)
+              : createTask(input);
         onSaved(saved);
         if (repeatable) {
           setTitle("");
@@ -239,7 +262,7 @@ export function DailyTaskSheet({
   };
 
   const toggleComplete = () => {
-    if (!editItem) return;
+    if (!editItem || completionLocked) return;
     const saved = completeTask(editItem.id, !isCompleted);
     setEditItem(saved);
     onChanged();
@@ -268,30 +291,30 @@ export function DailyTaskSheet({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="absolute inset-0 bg-black/40" onClick={() => { setConfirmDelete(false); setConfirmStopRepeat(false); }} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-card shadow-float overflow-hidden pointer-events-auto">
+      <div className="liquid-glass liquid-glass-surface relative z-10 w-full max-w-md overflow-hidden pointer-events-auto">
         <div className="px-4 pt-4 pb-2">
           <p className="text-sm font-semibold leading-snug">
             {confirmStopRepeat ? t("todoStopRepeatConfirm") : t("planTaskDeleteConfirm")}
           </p>
         </div>
-        <div className="px-3 pb-3 space-y-2">
-          <button
-            type="button"
-            onClick={confirmStopRepeat ? runStopRepeat : runDelete}
-            className="w-full rounded-xl bg-destructive/10 px-4 py-3.5 text-sm font-semibold text-destructive hover:bg-destructive/15"
-          >
-            {confirmStopRepeat ? t("todoStopRepeat") : t("planTaskDelete")}
-          </button>
-          <button
-            type="button"
+        <div className="px-3 pb-3 flex gap-2">
+          <GlassControl
+            size="label"
+            className="flex-1"
             onClick={() => {
               setConfirmDelete(false);
               setConfirmStopRepeat(false);
             }}
-            className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
           >
             {t("cancel")}
-          </button>
+          </GlassControl>
+          <GlassControl
+            size="label"
+            className="flex-1 font-semibold"
+            onClick={confirmStopRepeat ? runStopRepeat : runDelete}
+          >
+            {confirmStopRepeat ? t("todoStopRepeat") : t("planTaskDelete")}
+          </GlassControl>
         </div>
       </div>
     </div>
@@ -308,7 +331,8 @@ export function DailyTaskSheet({
         />
         <DrawerPrimitive.Content
           className={cn(
-            "fixed inset-x-0 bottom-0 flex flex-col rounded-t-2xl border bg-background min-h-0 overflow-hidden outline-none",
+            "fixed inset-x-0 bottom-0 flex flex-col rounded-t-2xl border min-h-0 overflow-x-hidden overflow-y-hidden outline-none w-full max-w-full min-w-0 box-border",
+            "bg-background",
             isTutorialActive() ? "z-[120]" : "z-50",
           )}
           style={{ maxHeight: "92dvh" }}
@@ -316,22 +340,37 @@ export function DailyTaskSheet({
         >
           <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
 
-          <div className="flex items-center justify-between px-4 pt-2 pb-3 border-b border-border/50 shrink-0">
-            <DrawerPrimitive.Title className="text-base font-semibold">
-              {isEdit ? t("planEditTaskTitle") : t("planCreateTaskTitle")}
-            </DrawerPrimitive.Title>
-            <button
-              type="button"
-              onClick={close}
-              aria-label={t("cancel")}
-              className="p-1.5 -mr-1 rounded-full text-muted-foreground hover:bg-secondary/70"
-            >
-              <X className="w-5 h-5" aria-hidden="true" />
-            </button>
+          <div className="flex items-center justify-between px-4 pt-2 pb-3 border-b border-border/50 shrink-0 min-w-0">
+            {calendarChrome && !isEdit ? (
+              <>
+                <DrawerPrimitive.Title className="sr-only">{t("planCreateTaskTitle")}</DrawerPrimitive.Title>
+                <GlassControl onClick={close} aria-label={t("cancel")} data-testid="task-sheet-close">
+                  <X className="w-5 h-5" aria-hidden="true" />
+                </GlassControl>
+              </>
+            ) : (
+              <DrawerPrimitive.Title className="text-base font-semibold">
+                {isEdit ? t("planEditTaskTitle") : t("planCreateTaskTitle")}
+              </DrawerPrimitive.Title>
+            )}
+            {calendarChrome && !isEdit ? (
+              <GlassControl onClick={handleSave} aria-label={t("planDailyAddCta")} data-testid="task-sheet-save">
+                <Check className="w-5 h-5" aria-hidden="true" />
+              </GlassControl>
+            ) : (
+              <button
+                type="button"
+                onClick={close}
+                aria-label={t("cancel")}
+                className="p-1.5 -mr-1 rounded-full text-muted-foreground hover:bg-secondary/70"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
+              </button>
+            )}
           </div>
 
           <div
-            className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-5"
+            className="flex-1 min-h-0 min-w-0 max-w-full overflow-x-hidden overflow-y-auto px-4 py-4 space-y-5"
             data-vaul-no-drag=""
             onPointerDown={(e) => e.stopPropagation()}
           >
@@ -387,7 +426,7 @@ export function DailyTaskSheet({
                 }}
                 placeholder={t("planTitlePlaceholder")}
                 className={cn(
-                  "w-full bg-secondary/50 rounded-xl px-4 py-3 text-base outline-none placeholder:text-muted-foreground/50",
+                  "w-full min-w-0 max-w-full box-border bg-secondary/50 rounded-xl px-4 py-3 text-base outline-none placeholder:text-muted-foreground/50",
                   (titleError || duplicateError) && "ring-2 ring-destructive",
                 )}
               />
@@ -423,7 +462,7 @@ export function DailyTaskSheet({
                   setDate(e.target.value);
                   if (duplicateError) setDuplicateError(false);
                 }}
-                className="w-full bg-secondary/50 rounded-xl px-4 py-3 text-base outline-none"
+                className="w-full min-w-0 max-w-full box-border bg-secondary/50 rounded-xl px-4 py-3 text-base outline-none"
               />
             </div>
 
@@ -438,7 +477,7 @@ export function DailyTaskSheet({
                 />
               </label>
               {!allDay && (
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-2 gap-2 mt-2 min-w-0">
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">
                       {t("planStartTime")}
@@ -447,7 +486,7 @@ export function DailyTaskSheet({
                       type="time"
                       value={startTime}
                       onChange={(e) => setStartTime(e.target.value)}
-                      className="w-full bg-secondary/50 rounded-xl px-3 py-2.5 text-sm outline-none"
+                      className="w-full min-w-0 max-w-full box-border bg-secondary/50 rounded-xl px-3 py-2.5 text-sm outline-none"
                     />
                   </div>
                   <div>
@@ -458,7 +497,7 @@ export function DailyTaskSheet({
                       type="time"
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
-                      className="w-full bg-secondary/50 rounded-xl px-3 py-2.5 text-sm outline-none"
+                      className="w-full min-w-0 max-w-full box-border bg-secondary/50 rounded-xl px-3 py-2.5 text-sm outline-none"
                     />
                   </div>
                 </div>
@@ -509,6 +548,34 @@ export function DailyTaskSheet({
               </div>
             )}
 
+            {isEdit && editItem && (
+              <button
+                type="button"
+                data-testid="set-main-plan"
+                disabled={isMainPlan}
+                onClick={() => {
+                  setMainPlan({ subjectType: "task", subjectId: editItem.id });
+                  setIsMainPlan(true);
+                  onChanged();
+                }}
+                className="w-full flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-3 text-sm font-medium hover:bg-secondary transition-colors disabled:opacity-60"
+              >
+                <span>{isMainPlan ? t("planMainCurrent") : t("planSetMain")}</span>
+              </button>
+            )}
+
+            {isEdit && (
+              <button
+                type="button"
+                data-testid="task-replan"
+                onClick={() => navigate("/plan/replan")}
+                className="w-full flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-3 text-sm font-medium hover:bg-secondary transition-colors"
+              >
+                <span>{t("taskReplan")}</span>
+                <span aria-hidden="true">→</span>
+              </button>
+            )}
+
             {isEdit && (
               <div className="flex items-center gap-2 pt-1">
                 <button
@@ -523,6 +590,7 @@ export function DailyTaskSheet({
                   color={`hsl(${getThemeAccentOption(colorId as ThemeAccentId).accent})`}
                   label={isCompleted ? t("planCompleted") : t("planComplete")}
                   onToggle={toggleComplete}
+                  disabled={completionLocked}
                 />
               </div>
             )}
@@ -534,13 +602,19 @@ export function DailyTaskSheet({
                 {formatDateStr(date, { month: "long", day: "numeric", year: "numeric" })}
               </p>
             )}
-            <button
-              type="button"
-              onClick={handleSave}
-              className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3.5 text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
-              {isEdit ? t("save") : t("planDailyAddCta")}
-            </button>
+            {calendarChrome ? (
+              <GlassControl size="label" onClick={handleSave} className="w-full text-sm font-semibold">
+                {isEdit ? t("save") : t("planDailyAddCta")}
+              </GlassControl>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSave}
+                className="w-full max-w-full min-w-0 rounded-xl px-4 py-3.5 text-sm font-semibold bg-accent text-accent-foreground"
+              >
+                {isEdit ? t("save") : t("planDailyAddCta")}
+              </button>
+            )}
           </div>
 
           {confirmOverlay}

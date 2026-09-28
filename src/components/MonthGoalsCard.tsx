@@ -256,7 +256,7 @@ export function MonthGoalsCard({
         type="button"
         data-tutorial="month-goals"
         onClick={toggleMinimized}
-        className="w-full rounded-2xl bg-card/95 backdrop-blur-sm shadow-card border border-border/50 px-4 py-2.5 flex items-center justify-between gap-2 text-left"
+        className="w-full rounded-2xl bg-card shadow-card border border-border/50 px-4 py-2.5 flex items-center justify-between gap-2 text-left"
       >
         <div className="min-w-0">
           <p className="text-sm font-semibold">{title}</p>
@@ -447,7 +447,7 @@ export function MonthGoalsCard({
 
   return (
     <div
-      className="w-full h-full rounded-2xl bg-card/95 backdrop-blur-sm shadow-card border border-border/50 flex flex-col overflow-hidden"
+      className="w-full h-full rounded-2xl bg-card shadow-card border border-border/50 flex flex-col overflow-hidden"
       data-kb-ignore
       data-tutorial="month-goals"
     >

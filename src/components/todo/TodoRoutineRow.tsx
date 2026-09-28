@@ -22,26 +22,6 @@ export function TodoRoutineRow({ routine, completed, onToggle, onEdit }: Props) 
 
   return (
     <div className="flex items-center gap-2 px-1 py-2 border-b border-border/40 last:border-b-0">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-label={completed ? t("planCompleted") : t("todoRoutineMarkComplete")}
-        aria-pressed={completed}
-        className="w-8 h-8 shrink-0 flex items-center justify-center"
-      >
-        <span
-          className={cn(
-            "inline-flex w-5 h-5 items-center justify-center rounded-full border text-[11px] leading-none",
-            completed
-              ? "border-accent bg-accent text-accent-foreground"
-              : "border-foreground/35 text-transparent",
-          )}
-          aria-hidden="true"
-        >
-          {completed ? "✓" : "○"}
-        </span>
-      </button>
-
       <button type="button" onClick={onEdit} className="flex-1 min-w-0 flex items-center gap-3 text-left">
         <span
           className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
@@ -64,6 +44,26 @@ export function TodoRoutineRow({ routine, completed, onToggle, onEdit }: Props) 
           {timeLabel ? (
             <span className="block text-xs text-muted-foreground mt-0.5">{timeLabel}</span>
           ) : null}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={completed ? t("planCompleted") : t("todoRoutineMarkComplete")}
+        aria-pressed={completed}
+        data-testid="routine-completion-control"
+        className="ml-auto w-8 h-8 shrink-0 flex items-center justify-center"
+      >
+        <span
+          className={cn(
+            "inline-flex w-5 h-5 items-center justify-center rounded-full border text-[11px] leading-none",
+            completed
+              ? "border-accent bg-accent text-accent-foreground"
+              : "border-foreground/35 text-transparent",
+          )}
+          aria-hidden="true"
+        >
+          {completed ? "✓" : "○"}
         </span>
       </button>
     </div>

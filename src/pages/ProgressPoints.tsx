@@ -1,6 +1,10 @@
-import { ChevronLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { SwipeBackPage } from "@/components/SwipeBackPage";
+import { GlassControl } from "@/components/GlassControl";
+import { goPageBack } from "@/lib/page-back";
+import Progress from "@/pages/Progress";
 import { Bar, BarChart, Line, LineChart, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { useI18n } from "@/lib/i18n";
@@ -30,17 +34,21 @@ export default function ProgressPoints() {
     label: formatDateStr(row.date, { month: "numeric", day: "numeric" }),
   }));
 
+  const back = () => goPageBack(navigate, "/progress");
+
   return (
+    <SwipeBackPage followFinger underlay={<Progress />} onBack={back}>
     <div className="app-shell-page">
       <div className="app-shell-header px-4 pb-2">
-        <button
-          type="button"
-          onClick={() => navigate("/progress")}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground mb-2"
+        <GlassControl
+          variant="regular"
+          aria-label={t("back")}
+          data-testid="progress-detail-back"
+          onClick={back}
+          className="mb-2"
         >
-          <ChevronLeft className="w-4 h-4" />
-          {t("back")}
-        </button>
+          <ArrowLeft className="w-5 h-5" />
+        </GlassControl>
         <h1 className="text-[28px] font-bold tracking-tight">{t("progressPointsDetailTitle")}</h1>
       </div>
       <div className="app-shell-scroll px-4 pb-8 space-y-4">
@@ -88,5 +96,6 @@ export default function ProgressPoints() {
         )}
       </div>
     </div>
+    </SwipeBackPage>
   );
 }

@@ -15,13 +15,17 @@ import { challengeDefinition, type ChallengeDefinition } from "./challenge-defin
 import {
   ensureDailyChallenges,
   getDailyChallenges,
+  getPlanItems,
   getPointBalance,
+  getPointTransactions,
   getSettings,
+  getTaskCompletionRate,
   getTaskStreak,
   getUserProfile,
 } from "./repository";
+import { localDateOfTransaction } from "./points-series";
 import { loadEssencesData } from "./storage";
-import { todayLocalDate, type LocalDate } from "./local-date";
+import { toLocalDate, todayLocalDate, type LocalDate } from "./local-date";
 import type { DailyChallengeAssignment, SpecialChallengeState } from "./types";
 
 export interface DailyChallengeView {
@@ -43,6 +47,33 @@ export interface SpecialChallengeView {
 
 export const PROGRESS_TOP_INCOMPLETE = 3;
 
+/** Today's activity only. Week and month analytics stay on the Analytics block. */
+export interface TodayActivitySummary {
+  taskCompletionRate: number;
+  challengeCompletionRate: number;
+  pointsEarned: number;
+  plannedCount: number;
+}
+
+export function todayActivitySummary(
+  date: LocalDate,
+  daily: DailyChallengeView[],
+): TodayActivitySummary {
+  const completed = daily.filter((row) => row.completed).length;
+  const pointsEarned = getPointTransactions()
+    .filter((tx) => localDateOfTransaction(tx) === date && tx.amount > 0)
+    .reduce((sum, tx) => sum + tx.amount, 0);
+  const plannedCount = getPlanItems().filter(
+    (plan) => !plan.inPostponeBox && toLocalDate(new Date(plan.createdAt)) === date,
+  ).length;
+  return {
+    taskCompletionRate: getTaskCompletionRate(date),
+    challengeCompletionRate: daily.length === 0 ? 0 : Math.round((completed / daily.length) * 100),
+    pointsEarned,
+    plannedCount,
+  };
+}
+
 export interface ProgressSnapshot {
   date: LocalDate;
   daily: DailyChallengeView[];
@@ -56,6 +87,7 @@ export interface ProgressSnapshot {
   points: number;
   commentId: AnalyticsCommentId;
   commentKey: string;
+  today: TodayActivitySummary;
 }
 
 function toDailyView(assignment: DailyChallengeAssignment): DailyChallengeView {
@@ -108,5 +140,6 @@ export function loadProgressSnapshot(date: LocalDate = todayLocalDate()): Progre
     points: getPointBalance(),
     commentId: analytics.commentId,
     commentKey: ANALYTICS_COMMENT_I18N[analytics.commentId],
+    today: todayActivitySummary(date, daily),
   };
 }

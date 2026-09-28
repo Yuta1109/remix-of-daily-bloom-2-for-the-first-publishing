@@ -24,18 +24,18 @@ export function newId(): string {
   return `id_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
 }
 
-export const DEFAULT_PLAN_ICON = "target";
-export const DEFAULT_TASK_ICON = "circle";
+export const DEFAULT_PLAN_ICON = "flag";
+export const DEFAULT_TASK_ICON = "flag";
 export const DEFAULT_ROUTINE_ICON = "repeat";
 /** Matches the default `--accent` token in `src/index.css`. */
 export const DEFAULT_COLOR = "orange";
 
 export function defaultReflectionSchedule(): ReflectionScheduleSettings {
   return {
-    daily: { enabled: true, graceHours: 24, timeOfDay: "21:00" },
-    weekly: { enabled: true, graceHours: 72, timeOfDay: "20:00", weekday: 0 },
-    monthly: { enabled: true, graceHours: 168, timeOfDay: "20:00", dayOfMonth: 1 },
-    future: { enabled: true, graceHours: 336, timeOfDay: "20:00", dayOfMonth: 1 },
+    daily: { enabled: true, graceHours: 24, timeOfDay: "17:00", scheduleOffsetDays: 0 },
+    weekly: { enabled: true, graceHours: 72, timeOfDay: "17:00", weekday: 0 },
+    monthly: { enabled: true, graceHours: 168, timeOfDay: "17:00", periodEdge: "end" },
+    future: { enabled: true, graceHours: 336, timeOfDay: "17:00", monthOfYear: 12, dayOfMonth: 31 },
   };
 }
 

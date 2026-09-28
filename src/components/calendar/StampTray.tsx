@@ -1,4 +1,5 @@
 import { StampGlyph } from "@/components/calendar/StampGlyph";
+import { GlassControl } from "@/components/GlassControl";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { STAMP_DEFINITIONS, stampDefinition } from "@/lib/v3/stamp-catalog";
@@ -31,8 +32,7 @@ export function StampTray({
   return (
     <div
       className={cn(
-        "fixed left-0 right-0 z-40 border-t border-border/60",
-        "bg-background/85 backdrop-blur-xl",
+        "fixed left-0 right-0 z-40 border-t border-border/60 bg-background",
       )}
       style={{ bottom: "var(--bottom-nav-offset)" }}
       role="toolbar"
@@ -42,13 +42,9 @@ export function StampTray({
         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           {t("calendarStamps")}
         </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-xs font-semibold text-accent px-2 py-1 rounded-lg"
-        >
+        <GlassControl size="label" onClick={onClose} className="text-xs font-semibold">
           {t("calendarStampTrayDone")}
-        </button>
+        </GlassControl>
       </div>
       <div className="flex gap-2 overflow-x-auto px-3 pb-2.5 scrollbar-none">
         {STAMP_DEFINITIONS.map((def) => (

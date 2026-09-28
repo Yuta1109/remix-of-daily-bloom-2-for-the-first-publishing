@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { GlassControl } from "@/components/GlassControl";
 import { NotesNameSheet } from "@/components/notes/NotesNameSheet";
 import { ConfirmMessage } from "@/components/notes/ConfirmMessage";
 import { useI18n } from "@/lib/i18n";
@@ -26,6 +27,9 @@ import {
   reorderCollectionEntries,
   renameCollection,
 } from "@/lib/v3/repository";
+import { SwipeBackPage } from "@/components/SwipeBackPage";
+import { goPageBack } from "@/lib/page-back";
+import NotesHomePage from "@/pages/NotesHomePage";
 
 const LONG_PRESS_MS = 420;
 const DRAG_THRESHOLD = 10;
@@ -63,7 +67,7 @@ export default function CollectionPage() {
     });
   }, [entryIdsKey]);
 
-  const goHome = () => navigate(NOTES_HOME_PATH);
+  const goHome = () => goPageBack(navigate, NOTES_HOME_PATH);
 
   const clearPress = () => {
     if (pressTimer.current != null) {
@@ -124,17 +128,13 @@ export default function CollectionPage() {
   const viewsById = new Map(entries.map((e) => [e.entry.id, e]));
 
   return (
+    <SwipeBackPage followFinger underlay={<NotesHomePage />} onBack={goHome}>
     <div className="app-shell-page" data-testid="collection-page">
       <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-label={t("notesBack")}
-            onClick={goHome}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-full"
-          >
+          <GlassControl aria-label={t("notesBack")} onClick={goHome}>
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </GlassControl>
           <button
             type="button"
             data-testid="collection-rename-open"
@@ -143,8 +143,7 @@ export default function CollectionPage() {
           >
             <h1 className="text-lg font-semibold truncate">{collection.name}</h1>
           </button>
-          <button
-            type="button"
+          <GlassControl
             aria-label={t("notesAddNote")}
             data-testid="collection-add-note"
             onClick={() => {
@@ -152,19 +151,16 @@ export default function CollectionPage() {
               setTick((n) => n + 1);
               navigate(noteDetailPath(note.id));
             }}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-full"
           >
             <Plus className="w-5 h-5" />
-          </button>
-          <button
-            type="button"
+          </GlassControl>
+          <GlassControl
             aria-label={t("notesArchiveCollection")}
             data-testid="collection-archive"
             onClick={() => setConfirmArchive(true)}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-full text-foreground/70"
           >
             <Trash2 className="w-5 h-5" />
-          </button>
+          </GlassControl>
         </div>
       </div>
       <div
@@ -272,5 +268,6 @@ export default function CollectionPage() {
         }}
       />
     </div>
+    </SwipeBackPage>
   );
 }

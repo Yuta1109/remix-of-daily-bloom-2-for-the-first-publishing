@@ -130,7 +130,7 @@ export function postponeDeltaDays(
 
 export function findEquivalentTaskIn(
   data: EssencesDataV3,
-  task: Pick<TaskItem, "id" | "title" | "parentPlanId" | "seriesId">,
+  task: Pick<TaskItem, "id" | "title" | "parentPlanId" | "seriesId"> & { parentTaskId?: string },
   date: LocalDate,
 ): TaskItem | undefined {
   const title = task.title.trim();
@@ -143,6 +143,8 @@ export function findEquivalentTaskIn(
       t.status !== "stopped" &&
       (t.seriesId && task.seriesId
         ? t.seriesId === task.seriesId
-        : t.title.trim() === title && t.parentPlanId === task.parentPlanId),
+        : t.title.trim() === title &&
+          t.parentPlanId === task.parentPlanId &&
+          (t.parentTaskId ?? "") === (task.parentTaskId ?? "")),
   );
 }

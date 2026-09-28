@@ -228,7 +228,7 @@ describe("convertLegacyReusable", () => {
       {
         id: "legacy-template:r1",
         title: "ゴミ出し",
-        icon: "circle",
+        icon: "flag",
         color: "orange",
         order: 0,
         createdAt: NOW,

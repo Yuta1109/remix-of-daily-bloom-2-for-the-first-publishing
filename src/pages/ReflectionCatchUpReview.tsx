@@ -9,9 +9,11 @@ import {
 import { ReflectionStopSheet, type StopResult } from "@/components/plan/ReflectionStopSheet";
 import { PlanIconGlyph } from "@/components/plan/plan-icon-registry";
 import { useI18n } from "@/lib/i18n";
+import { GlassControl } from "@/components/GlassControl";
 import {
   completeReflectionSession,
   createReflectionDecision,
+  getChildTasks,
   getEquivalentTaskOn,
   getPlanItem,
   getReflectionContext,
@@ -155,14 +157,9 @@ export default function ReflectionCatchUpReview() {
     <div className="app-shell-page">
       <div className="app-shell-header px-2 pb-2">
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => navigate("/plan/reflection")}
-            aria-label={t("back")}
-            className="p-2 rounded-full text-foreground/70 hover:bg-secondary/70"
-          >
+          <GlassControl onClick={() => navigate("/plan/reflection")} aria-label={t("back")}>
             <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-          </button>
+          </GlassControl>
           <div>
             <h1 className="text-xl font-bold tracking-tight">{t("reflectionCatchUpTitle")}</h1>
             <p className="text-xs text-muted-foreground">
@@ -182,8 +179,8 @@ export default function ReflectionCatchUpReview() {
         ) : null}
         {rows.map((row) =>
           row.kind === "task" ? (
+            <div key={row.task.id}>
             <SubjectCard
-              key={row.task.id}
               title={row.task.title}
               icon={row.task.icon}
               statusLabel={
@@ -206,6 +203,18 @@ export default function ReflectionCatchUpReview() {
                 setStopFor({ sessionId: row.sessionId, subjectType: "task", subjectId: row.task.id })
               }
             />
+            {getChildTasks(row.task.id).length > 0 ? (
+              <div className="mb-3 pl-8" data-testid="reflection-child-actions">
+                {getChildTasks(row.task.id).map((child) => (
+                  <p key={child.id} className="text-xs text-muted-foreground">
+                    {child.title}
+                    {" · "}
+                    {child.status === "completed" ? t("reflectionCompletedLabel") : t("reflectionOpenLabel")}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            </div>
           ) : (
             <SubjectCard
               key={row.plan.id}

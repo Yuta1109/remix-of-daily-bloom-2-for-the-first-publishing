@@ -12,6 +12,8 @@ import {
 } from "./events-store";
 import { formatEventSchedule } from "./event-display";
 import { getSettings, updateSettings } from "@/lib/v3/repository";
+import { planReflectionNotices, REFLECTION_NOTIF_ID_MAX, REFLECTION_NOTIF_ID_MIN } from "@/lib/v3/reflection-notices";
+import { loadEssencesData } from "@/lib/v3/storage";
 
 const MAX_SCHEDULED = 60;
 const HORIZON_DAYS = 120;
@@ -165,15 +167,49 @@ export async function rescheduleAll(): Promise<void> {
 
   items.sort((a, b) => a.at.getTime() - b.at.getTime());
   const slice = items.slice(0, MAX_SCHEDULED);
-  if (slice.length === 0) return;
+  if (slice.length > 0) {
+    let id = 1;
+    await LocalNotifications.schedule({
+      notifications: slice.map(({ at, event }) => ({
+        id: id++,
+        title: buildTitle(event),
+        body: buildBody(event),
+        schedule: { at, allowWhileIdle: true },
+      })),
+    });
+  }
 
-  let id = 1;
+  await scheduleReflectionNotices(now);
+}
+
+function isReflectionNoticeId(id: number): boolean {
+  return id >= REFLECTION_NOTIF_ID_MIN && id <= REFLECTION_NOTIF_ID_MAX;
+}
+
+/**
+ * One pending notice per upcoming Reflection availability.
+ * Rebuilding cancels the previous reflection ids first, so the same
+ * availability is not left scheduled twice. Completed sessions are excluded
+ * by `planReflectionNotices`.
+ */
+async function scheduleReflectionNotices(now: Date): Promise<void> {
+  const pending = await LocalNotifications.getPending();
+  const reflectionPending = pending.notifications.filter((n) => isReflectionNoticeId(n.id));
+  if (reflectionPending.length) {
+    await LocalNotifications.cancel({ notifications: reflectionPending.map((n) => ({ id: n.id })) });
+  }
+
+  const settings = getSettings();
+  if (!settings.notifications.enabled || !settings.notifications.reflectionReminders) return;
+
+  const notices = planReflectionNotices(loadEssencesData(), now);
+  if (notices.length === 0) return;
   await LocalNotifications.schedule({
-    notifications: slice.map(({ at, event }) => ({
-      id: id++,
-      title: buildTitle(event),
-      body: buildBody(event),
-      schedule: { at, allowWhileIdle: true },
+    notifications: notices.map((notice, index) => ({
+      id: REFLECTION_NOTIF_ID_MIN + index,
+      title: notice.title,
+      body: notice.body,
+      schedule: { at: notice.at, allowWhileIdle: true },
     })),
   });
 }

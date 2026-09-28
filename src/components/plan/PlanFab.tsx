@@ -1,5 +1,5 @@
 import { Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { GlassControl } from "@/components/GlassControl";
 
 interface Props {
   onClick: () => void;
@@ -16,18 +16,14 @@ interface Props {
  */
 export function PlanFab({ onClick, "aria-label": ariaLabel }: Props) {
   return (
-    <button
-      type="button"
+    <GlassControl
+      variant="prominent"
+      size="prominent"
       onClick={onClick}
       aria-label={ariaLabel}
-      className={cn(
-        "liquid-glass fixed z-40 w-14 h-14 rounded-full bg-accent/90 text-accent-foreground shadow-float",
-        "flex items-center justify-center transition-transform motion-reduce:transition-none",
-        "hover:scale-105 active:scale-95",
-        "bottom-[calc(var(--bottom-nav-offset)+10px)] right-5",
-      )}
+      className="fixed z-40 bottom-[calc(var(--bottom-nav-offset)+10px)] right-5"
     >
       <Plus className="w-6 h-6" strokeWidth={2.5} aria-hidden="true" />
-    </button>
+    </GlassControl>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { GlassControl } from "@/components/GlassControl";
 import {
   NOTES_HOME_PATH,
   noteDetailPath,
@@ -37,14 +38,9 @@ export default function NotesSearchPage() {
     <div className="app-shell-page" data-testid="notes-search-page">
       <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => navigate(NOTES_HOME_PATH)}
-            aria-label={t("notesBack")}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-full"
-          >
+          <GlassControl onClick={() => navigate(NOTES_HOME_PATH)} aria-label={t("notesBack")}>
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </GlassControl>
           <div className="flex-1 flex items-center gap-2 rounded-xl bg-secondary/70 px-3 min-h-11">
             <Search className="w-4 h-4 text-muted-foreground shrink-0" />
             <input

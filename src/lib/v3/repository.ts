@@ -48,6 +48,7 @@ import {
   startReflection,
   withDerivedStatus,
 } from "./reflection";
+import { reflectionActivityFromData, reflectionPointsForScore } from "./reflection-activity";
 import { seriesOccurrencesInRange, seriesOccursOn } from "./task-recurrence";
 import {
   DEFAULT_COLOR,
@@ -57,6 +58,7 @@ import {
   convertedTargetsOf,
   newId,
 } from "./schema";
+import { buildPlanPath, type PlanPathEntry } from "./plan-path";
 import { mergeUserSettings } from "./settings-io";
 import { loadEssencesData, saveEssencesData, updateEssencesData, ensureLegacyCatchup } from "./storage";
 import { isKnownStampDefinition, isKnownWallpaper } from "./stamp-catalog";
@@ -96,6 +98,7 @@ import type {
   ImageAttachment,
   EssencesDataV3,
   FutureTarget,
+  MainPlanSelection,
   NotePage,
   PlanItem,
   PlanLevel,
@@ -380,6 +383,13 @@ export function archivePlanItem(
       if (task.status === "completed" && !archiveCompleted) continue;
       data.tasks[task.id] = { ...task, status: "archived", updatedAt: now };
     }
+    const main = data.settings.mainPlan;
+    if (main?.subjectType === "plan" && idSet.has(main.subjectId)) {
+      delete data.settings.mainPlan;
+    } else if (main?.subjectType === "task") {
+      const mainTask = data.tasks[main.subjectId];
+      if (!mainTask || mainTask.status === "archived") delete data.settings.mainPlan;
+    }
     return archived;
   });
   return result;
@@ -626,7 +636,7 @@ export function getTask(id: string): TaskItem | undefined {
 
 export function getTasksForPlan(parentPlanId: string): TaskItem[] {
   return Object.values(loadEssencesData().tasks)
-    .filter((t) => t.parentPlanId === parentPlanId && !t.inPostponeBox)
+    .filter((t) => t.parentPlanId === parentPlanId && !t.parentTaskId && !t.inPostponeBox)
     .sort((a, b) => (a.date === b.date ? a.order - b.order : a.date < b.date ? -1 : 1));
 }
 
@@ -669,6 +679,78 @@ export function breakdownWeeklyToTask(
     parentPlanId: weeklyPlanId,
     createdFrom: input.createdFrom ?? "plan",
   });
+}
+
+/** Steps inside one Daily log. One level only; the parent task stays. */
+export function createChildTask(
+  parentTaskId: string,
+  input: { title: string; note?: string; icon?: string; color?: string },
+): TaskItem {
+  const { result } = updateEssencesData((data) => {
+    const parent = data.tasks[parentTaskId];
+    if (!parent) throw new RepositoryError(`unknown task ${parentTaskId}`, "task-not-found");
+    if (parent.parentTaskId) {
+      throw new RepositoryError("a daily step cannot contain another step", "task-child-nested");
+    }
+    if (parent.status === "archived") {
+      throw new RepositoryError("archived tasks cannot be broken down", "task-archived");
+    }
+    const title = input.title.trim();
+    if (!title) throw new RepositoryError("task title is empty", "task-title");
+    const siblings = Object.values(data.tasks).filter(
+      (task) => task.parentTaskId === parent.id && task.status !== "archived",
+    );
+    if (siblings.some((task) => task.title.trim() === title)) {
+      throw new RepositoryError("duplicate child task", "task-duplicate-child");
+    }
+    const now = nowTimestamp();
+    const task: TaskItem = {
+      id: newId(),
+      title,
+      note: input.note?.trim() || undefined,
+      date: parent.date,
+      allDay: true,
+      icon: input.icon ?? parent.icon,
+      color: input.color ?? parent.color,
+      parentPlanId: parent.parentPlanId,
+      parentTaskId: parent.id,
+      status: "open",
+      order: nextOrder(siblings),
+      createdAt: now,
+      updatedAt: now,
+      createdFrom: "plan",
+      inPostponeBox: parent.inPostponeBox,
+    };
+    data.tasks[task.id] = task;
+    pushActivity(data, { type: "task_created", entityType: "task", entityId: task.id });
+    return task;
+  });
+  return result;
+}
+
+export function getChildTasks(parentTaskId: string): TaskItem[] {
+  return Object.values(loadEssencesData().tasks)
+    .filter((task) => task.parentTaskId === parentTaskId && task.status !== "archived")
+    .sort((a, b) => a.order - b.order);
+}
+
+function syncChildTasks(
+  data: EssencesDataV3,
+  parentId: string,
+  patch: { date?: LocalDate; parentPlanId?: string; inPostponeBox?: boolean },
+  now: Timestamp,
+  fields: { date?: boolean; parentPlanId?: boolean; inPostponeBox?: boolean },
+): void {
+  for (const child of Object.values(data.tasks)) {
+    if (child.parentTaskId !== parentId || child.status === "archived") continue;
+    data.tasks[child.id] = {
+      ...child,
+      ...(fields.date && patch.date ? { date: patch.date } : {}),
+      ...(fields.parentPlanId ? { parentPlanId: patch.parentPlanId } : {}),
+      ...(fields.inPostponeBox ? { inPostponeBox: patch.inPostponeBox } : {}),
+      updatedAt: now,
+    };
+  }
 }
 
 function createTaskIn(data: EssencesDataV3, input: CreateTaskInput): TaskItem {
@@ -754,8 +836,16 @@ export function updateTask(id: string, patch: Partial<Omit<TaskItem, "id">>): Ta
         );
       }
     }
-    const next: TaskItem = { ...current, ...patch, id, updatedAt: nowTimestamp() };
+    const now = nowTimestamp();
+    const next: TaskItem = { ...current, ...patch, id, updatedAt: now };
     data.tasks[id] = next;
+    if (!current.parentTaskId) {
+      syncChildTasks(data, id, patch, now, {
+        date: !!patch.date && patch.date !== current.date,
+        parentPlanId: "parentPlanId" in patch && patch.parentPlanId !== current.parentPlanId,
+        inPostponeBox: "inPostponeBox" in patch && patch.inPostponeBox !== current.inPostponeBox,
+      });
+    }
     return next;
   });
   return result;
@@ -786,7 +876,17 @@ export function completeTask(id: string, completed = true): TaskItem {
 }
 
 export function archiveTask(id: string): TaskItem {
-  return updateTask(id, { status: "archived" });
+  const task = updateTask(id, { status: "archived" });
+  for (const child of getChildTasks(id)) {
+    if (child.status !== "archived") updateTask(child.id, { status: "archived" });
+  }
+  const main = loadEssencesData().settings.mainPlan;
+  if (main?.subjectType === "task" && (main.subjectId === id || getTask(main.subjectId)?.status === "archived")) {
+    updateEssencesData((data) => {
+      delete data.settings.mainPlan;
+    });
+  }
+  return task;
 }
 
 /**
@@ -809,13 +909,15 @@ export function moveTaskToDate(id: string, toDate: LocalDate): TaskItem {
       );
     }
     const sameDay = Object.values(data.tasks).filter((t) => t.date === toDate);
+    const now = nowTimestamp();
     const next: TaskItem = {
       ...current,
       date: toDate,
       order: nextOrder(sameDay),
-      updatedAt: nowTimestamp(),
+      updatedAt: now,
     };
     data.tasks[id] = next;
+    if (!current.parentTaskId) syncChildTasks(data, id, { date: toDate }, now, { date: true });
     return next;
   });
   return result;
@@ -1260,7 +1362,7 @@ function subjectsForSessionIn(
   if (session.type === "daily") {
     return {
       tasks: Object.values(data.tasks)
-        .filter((t) => t.date === from && isListedTaskStatus(t.status) && !t.inPostponeBox)
+        .filter((t) => t.date === from && isListedTaskStatus(t.status) && !t.inPostponeBox && !t.parentTaskId)
         .sort(sortTasks),
       plans: [],
     };
@@ -1305,6 +1407,36 @@ function relatedTasksForPlans(data: EssencesDataV3, plans: PlanItem[]): TaskItem
         !t.inPostponeBox,
     )
     .sort((a, b) => (a.date === b.date ? a.order - b.order : a.date < b.date ? -1 : 1));
+}
+
+/** Read a session for a period. Does not create one. */
+export function findReflectionForPeriod(
+  type: ReflectionType,
+  targetPeriodStart: LocalDate,
+): ReflectionSession | undefined {
+  const session = findSessionByPeriod(loadEssencesData(), type, targetPeriodStart);
+  return session ? withDerivedStatus(session) : undefined;
+}
+
+/**
+ * Listed tasks in a local date range. Same filter as the Daily list and ToDo:
+ * open or completed, not archived, stopped, or in the postpone box.
+ */
+export function listedTaskAchievement(
+  from: LocalDate,
+  to: LocalDate,
+): { completed: number; total: number } {
+  const tasks = Object.values(loadEssencesData().tasks).filter(
+    (task) =>
+      task.date >= from &&
+      task.date <= to &&
+      isListedTaskStatus(task.status) &&
+      !task.inPostponeBox,
+  );
+  return {
+    total: tasks.length,
+    completed: tasks.filter((task) => task.status === "completed").length,
+  };
 }
 
 export function getReflections(filter?: { type?: ReflectionType }): ReflectionSession[] {
@@ -1497,17 +1629,45 @@ export function completeReflectionSession(id: string): ReflectionSession {
         "reflection-incomplete",
       );
     }
+    const alreadyCompleted = current.status === "completed";
     const next = completeReflection(current);
     data.reflections[id] = next;
-    pushActivity(data, {
-      type: "reflection_completed",
-      entityType: "reflection",
-      entityId: id,
-      metadata: { reflectionType: next.type },
-    });
+    if (!alreadyCompleted) {
+      pushActivity(data, {
+        type: "reflection_completed",
+        entityType: "reflection",
+        entityId: id,
+        metadata: { reflectionType: next.type },
+      });
+      const from = next.targetPeriodStart;
+      const to = next.targetPeriodEnd ?? from;
+      const activity = reflectionActivityFromData(data, from, to, id);
+      const amount = reflectionPointsForScore(activity.score);
+      const awarded = Object.values(data.pointTransactions).some(
+        (tx) => tx.reason === "reflection" && tx.sourceId === id,
+      );
+      if (!awarded) {
+        const transaction = {
+          id: newId(),
+          amount,
+          reason: "reflection" as const,
+          sourceId: id,
+          createdAt: nowTimestamp(),
+        };
+        data.pointTransactions[transaction.id] = transaction;
+      }
+    }
     return next;
   });
   return result;
+}
+
+/** Points already written for this session. Missing means it was never awarded. */
+export function getReflectionAward(sessionId: string): number | undefined {
+  const tx = Object.values(loadEssencesData().pointTransactions).find(
+    (row) => row.reason === "reflection" && row.sourceId === sessionId,
+  );
+  return tx?.amount;
 }
 
 export function getReflectionDecisions(sessionId?: string): ReflectionDecision[] {
@@ -1549,6 +1709,12 @@ function moveOpenTaskToDate(
     order: nextOrder(sameDay),
     updatedAt: now,
   };
+  if (!task.parentTaskId) {
+    syncChildTasks(data, task.id, { date: toDate, inPostponeBox: false }, now, {
+      date: true,
+      inPostponeBox: true,
+    });
+  }
 }
 
 function putTaskInPostponeBox(data: EssencesDataV3, task: TaskItem, now: Timestamp): void {
@@ -1566,6 +1732,9 @@ function putTaskInPostponeBox(data: EssencesDataV3, task: TaskItem, now: Timesta
     return;
   }
   data.tasks[task.id] = { ...task, inPostponeBox: true, updatedAt: now };
+  if (!task.parentTaskId) {
+    syncChildTasks(data, task.id, { inPostponeBox: true }, now, { inPostponeBox: true });
+  }
 }
 
 function applyKeepToOpenTask(
@@ -2893,6 +3062,62 @@ export function getUserProfile() {
 
 export function getSettings(): UserSettings {
   return loadEssencesData().settings;
+}
+
+function readMainPlanSelection(selection: UserSettings["mainPlan"]): MainPlanSelection | null {
+  if (!selection) return null;
+  if (selection.subjectType !== "plan" && selection.subjectType !== "task") return null;
+  if (!selection.subjectId) return null;
+  return { subjectType: selection.subjectType, subjectId: selection.subjectId };
+}
+
+/** The user's main plan, when that plan or task is still listed. */
+export function getMainPlan(): MainPlanSelection | null {
+  const selection = readMainPlanSelection(loadEssencesData().settings.mainPlan);
+  if (!selection) return null;
+  if (selection.subjectType === "plan") {
+    const plan = loadEssencesData().plans[selection.subjectId];
+    if (!plan || plan.status === "archived") return null;
+    return selection;
+  }
+  const task = loadEssencesData().tasks[selection.subjectId];
+  if (!task || task.status === "archived") return null;
+  return selection;
+}
+
+/** Stores which existing plan or daily task is the main plan. */
+export function setMainPlan(selection: MainPlanSelection | null): void {
+  updateEssencesData((data) => {
+    if (!selection) {
+      delete data.settings.mainPlan;
+      return;
+    }
+    if (selection.subjectType === "plan") {
+      const plan = data.plans[selection.subjectId];
+      if (!plan || plan.status === "archived") {
+        throw new RepositoryError(`unknown plan ${selection.subjectId}`, "plan-not-found");
+      }
+    } else {
+      const task = data.tasks[selection.subjectId];
+      if (!task || task.status === "archived") {
+        throw new RepositoryError(`unknown task ${selection.subjectId}`, "task-not-found");
+      }
+    }
+    data.settings.mainPlan = {
+      subjectType: selection.subjectType,
+      subjectId: selection.subjectId,
+    };
+  });
+}
+
+export function getPlanPath(selection: MainPlanSelection): PlanPathEntry[] {
+  const data = loadEssencesData();
+  return buildPlanPath({
+    plans: data.plans,
+    tasks: data.tasks,
+    decisions: Object.values(data.reflectionDecisions),
+    selection,
+  });
 }
 
 export function updateSettings(patch: Partial<UserSettings>): UserSettings {

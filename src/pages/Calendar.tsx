@@ -14,6 +14,7 @@ import { WeekNavSwipeHint } from "@/components/WeekNavSwipeHint";
 import { FabButton } from "@/components/FabButton";
 import { MonthWheel } from "@/components/MonthWheel";
 import { UserButton } from "@/components/UserButton";
+import { GlassControl } from "@/components/GlassControl";
 import { DailyTaskSheet, type DailyTaskSheetRequest } from "@/components/plan/DailyTaskSheet";
 import {
   loadEvents,
@@ -144,6 +145,7 @@ interface MonthGridProps {
     event: React.PointerEvent<HTMLButtonElement>,
   ) => void;
   className?: string;
+  pauseEventMarquee?: boolean;
 }
 
 function MonthGrid({
@@ -165,6 +167,7 @@ function MonthGrid({
   onStampSelect,
   onStampMovePointerDown,
   className,
+  pauseEventMarquee = false,
 }: MonthGridProps) {
   const { t, formatDateStr } = useI18n();
   const today = todayLocalDate();
@@ -207,7 +210,7 @@ function MonthGrid({
           );
         })}
         </div>
-      <div className="grid grid-cols-7 auto-rows-fr flex-1 min-h-[28rem]">
+      <div className="grid grid-cols-7 auto-rows-fr flex-1 min-h-[36rem]">
         {Array.from({ length: firstDayOffset }).map((_, i) => (
             <div
               key={`empty-${i}`}
@@ -252,7 +255,7 @@ function MonthGrid({
               key={date}
               data-calendar-date={date}
               className={cn(
-                "relative min-h-0 border-b border-r border-border/40",
+                "relative min-h-0 border-b border-r border-border/40 overflow-visible",
                 col === 6 && "border-r-0",
                 isSelected && "bg-accent/10",
                 isDrop && "ring-1 ring-inset ring-accent bg-accent/15",
@@ -289,8 +292,8 @@ function MonthGrid({
                   </span>
                 ) : null}
                 </div>
-              <div className="flex-1 flex flex-col items-stretch justify-start gap-[2px] pt-0.5 min-h-0 overflow-hidden">
-                {markers.shownTasks.length > 0 && (
+              <div className="flex-1 flex flex-col items-stretch justify-start gap-[2px] pt-0.5 min-h-0 overflow-visible">
+                {!isSelected && markers.shownTasks.length > 0 && (
                   <div className="flex items-center justify-center gap-[2px]">
                     {markers.shownTasks.map((task, i) => {
                       const accent = getThemeAccentOption(task.color as ThemeAccentId);
@@ -310,44 +313,33 @@ function MonthGrid({
                     })}
                   </div>
                 )}
-                {isSelected
-                  ? markers.shownTasks.map((task) => {
-                      const accent = getThemeAccentOption(task.color as ThemeAccentId);
-                      return (
-                        <div
-                          key={`tt-${task.id}`}
-                          className="essences-marquee w-full text-[8px] leading-tight"
-                          style={{ color: `hsl(${accent.accent})` }}
-                        >
-                          <span>{task.title}</span>
-                        </div>
-                      );
-                    })
-                  : null}
                 {dayEvents.map((ev) => {
                   const span = calendarEventSpan(ev, date);
-                  const showTitle = span === "single" || span === "start" || isSelected;
+                  const showTitle = span === "single" || span === "start";
+                  const marquee = isSelected && !pauseEventMarquee && span === "single";
                   return (
                     <div
                       key={`e-${ev.id}`}
                       className={cn(
-                        "h-[13px] text-[8px] leading-[13px] px-[2px] -mx-px overflow-hidden text-white",
-                        (span === "single" || span === "start") && "rounded-l-[3px]",
-                        (span === "single" || span === "end") && "rounded-r-[3px]",
+                        "relative h-[13px] text-[8px] leading-[13px] text-white",
+                        span === "single" && "rounded-[3px] px-[2px] overflow-hidden",
+                        span === "start" && "rounded-l-[3px] pl-[2px] -mr-1.5 overflow-visible z-30",
+                        span === "middle" && "-mx-1.5 overflow-visible",
+                        span === "end" && "rounded-r-[3px] pr-[2px] -ml-1.5 overflow-visible",
                       )}
                       style={{ backgroundColor: `hsl(${colorHslFor(ev.color)} / 0.9)` }}
                     >
                       {showTitle ? (
-                        isSelected ? (
+                        marquee ? (
                           <div className="essences-marquee">
                             <span>{ev.title}</span>
                           </div>
+                        ) : span === "start" ? (
+                          <span className="absolute left-[2px] top-0 whitespace-nowrap">{ev.title}</span>
                         ) : (
                           <span className="block truncate">{ev.title}</span>
                         )
-                      ) : (
-                        <span className="opacity-0">.</span>
-                      )}
+                      ) : null}
                     </div>
                   );
                 })}
@@ -503,23 +495,19 @@ export default function CalendarPage() {
     reopenDayRef.current = reopenDay;
     setDaySheetOpen(false);
     setModalDate(date);
-    setTimeout(() => setModalOpen(true), 200);
+    setModalOpen(true);
   };
 
   const openNewTask = (date: string, reopenDay: boolean) => {
     reopenDayRef.current = reopenDay;
     setDaySheetOpen(false);
-    setTimeout(() => {
-      setTaskSheetRequest({ mode: "create", date, createdFrom: "calendar" });
-    }, 200);
+    setTaskSheetRequest({ mode: "create", date, createdFrom: "calendar" });
   };
 
   const openEditTask = (taskId: string, reopenDay: boolean) => {
     reopenDayRef.current = reopenDay;
     setDaySheetOpen(false);
-    setTimeout(() => {
-      setTaskSheetRequest({ mode: "edit", taskId });
-    }, 200);
+    setTaskSheetRequest({ mode: "edit", taskId });
   };
 
   const handleEditEvent = (id: string, occurrenceDate: string, reopenDay = false) => {
@@ -531,7 +519,7 @@ export default function CalendarPage() {
   const maybeReopenDay = () => {
     if (!reopenDayRef.current) return;
     reopenDayRef.current = false;
-    setTimeout(() => setDaySheetOpen(true), 200);
+    setDaySheetOpen(true);
   };
 
   const setStampDraggingFlag = (on: boolean) => {
@@ -634,7 +622,7 @@ export default function CalendarPage() {
   const openWallpaperPicker = (reopenDay: boolean) => {
     reopenDayRef.current = reopenDay;
     setDaySheetOpen(false);
-    setTimeout(() => setWallpaperPickerOpen(true), 200);
+    setWallpaperPickerOpen(true);
   };
 
   const selectedStamp = selectedStampId ? getStamp(selectedStampId) : undefined;
@@ -804,24 +792,15 @@ export default function CalendarPage() {
             )}
       </div>
 
-          <div className="flex items-center gap-1.5 shrink-0 mr-1">
-            <button
-              type="button"
-              onClick={toggleCalView}
-              className="text-sm font-semibold text-accent hover:opacity-80 px-3 py-2 rounded-xl bg-accent/10 transition-opacity"
-            >
+          <div className="flex items-center gap-2 shrink-0 mr-1">
+            <GlassControl type="button" size="label" onClick={toggleCalView} className="text-sm font-semibold text-accent">
               {calView === "month" ? t("calendarWeek") : t("calendarMonth")}
-            </button>
-            <button
-              data-tutorial="calendar-today"
-              onClick={goToday}
-              className="text-sm font-semibold text-accent hover:opacity-80 px-3 py-2 rounded-xl bg-accent/10 transition-opacity"
-            >
+            </GlassControl>
+            <GlassControl data-tutorial="calendar-today" size="label" onClick={goToday} className="text-sm font-semibold text-accent">
               {t("today")}
-            </button>
+            </GlassControl>
             {calView !== "week" && calendarWeekAllowsStamps(calView) ? (
-            <button
-              type="button"
+            <GlassControl
               aria-label={t("calendarStamps")}
               aria-pressed={stampTrayOpen}
               onClick={() => {
@@ -829,15 +808,11 @@ export default function CalendarPage() {
                 setDaySheetOpen(false);
                 setStampTrayOpen((v) => !v);
               }}
-              className={cn(
-                "inline-flex items-center justify-center w-9 h-9 rounded-xl transition-colors",
-                stampTrayOpen
-                  ? "bg-accent text-accent-foreground"
-                  : "text-accent bg-accent/10 hover:opacity-80",
-              )}
+              className="text-accent"
             >
-              <Sticker className="w-5 h-5" strokeWidth={1.8} aria-hidden="true" />
-            </button>
+              {stampTrayOpen ? <span className="liquid-glass-selected absolute inset-1" aria-hidden="true" /> : null}
+              <Sticker className="relative w-5 h-5" strokeWidth={1.8} aria-hidden="true" />
+            </GlassControl>
             ) : null}
             <UserButton />
           </div>
@@ -1134,6 +1109,7 @@ export default function CalendarPage() {
                     selectedStampId={selectedStampId ?? undefined}
                     onStampSelect={onStampSelect}
                     onMovePointerDown={onStampMovePointerDown}
+                    pauseEventMarquee={stampInteraction}
                   />
                 );
               }}
@@ -1163,30 +1139,30 @@ export default function CalendarPage() {
             onClick={() => setAddMenuOpen(false)}
           />
           <div
-            className="relative z-10 w-full rounded-t-2xl border bg-background px-4 pt-3"
+            className="liquid-glass-follow relative z-10 w-full rounded-t-2xl border bg-background px-4 pt-3"
             style={{ paddingBottom: "calc(var(--bottom-nav-offset) + 16px)" }}
           >
             <p className="text-base font-semibold mb-2">{t("calendarAddChooseTitle")}</p>
-            <button
-              type="button"
-              className="w-full min-h-11 rounded-xl bg-secondary/50 px-4 py-3 text-left text-sm font-medium mb-2"
+            <GlassControl
+              size="label"
+              className="w-full mb-2 justify-start text-sm font-medium"
               onClick={() => {
                 setAddMenuOpen(false);
                 openNewTask(selectedDate ?? todayLocalDate(), false);
               }}
             >
               {t("calendarAddTask")}
-            </button>
-            <button
-              type="button"
-              className="w-full min-h-11 rounded-xl bg-secondary/50 px-4 py-3 text-left text-sm font-medium"
+            </GlassControl>
+            <GlassControl
+              size="label"
+              className="w-full justify-start text-sm font-medium"
               onClick={() => {
                 setAddMenuOpen(false);
                 openNewEvent(selectedDate ?? todayLocalDate(), false);
               }}
             >
               {t("calendarAddEvent")}
-            </button>
+            </GlassControl>
           </div>
         </div>
       ) : null}
@@ -1266,6 +1242,7 @@ export default function CalendarPage() {
           refreshTasks();
         }}
         onChanged={refreshTasks}
+        calendarChrome
       />
 
       <EventSheet

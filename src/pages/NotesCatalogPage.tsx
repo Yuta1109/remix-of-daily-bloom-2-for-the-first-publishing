@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/lib/i18n";
+import { GlassControl } from "@/components/GlassControl";
 import { htmlToPlainText } from "@/lib/notes-store";
 import { goPageBack } from "@/lib/page-back";
 import {
@@ -77,20 +78,15 @@ export function NotesCatalogPage({
     <div className="app-shell-page" data-testid={`notes-${mode}-${kind}`}>
       <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            aria-label={t("notesBack")}
-            onClick={() => goPageBack(navigate, NOTES_HOME_PATH)}
-            className="liquid-glass inline-flex items-center justify-center w-9 h-9 rounded-full"
-          >
+          <GlassControl aria-label={t("notesBack")} onClick={() => goPageBack(navigate, NOTES_HOME_PATH)}>
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </GlassControl>
           <h1 className="text-lg font-semibold">{title}</h1>
           {mode === "list" && (
-            <button
-              type="button"
+            <GlassControl
               aria-label={t("notesSearchTitle")}
               data-testid={`notes-search-${kind}`}
+              className="ml-auto"
               onClick={() =>
                 navigate(
                   kind === "quick"
@@ -100,10 +96,9 @@ export function NotesCatalogPage({
                       : notesCollectionSearchPath(),
                 )
               }
-              className="liquid-glass ml-auto inline-flex items-center justify-center w-9 h-9 rounded-full"
             >
               <Search className="w-5 h-5" />
-            </button>
+            </GlassControl>
           )}
         </div>
         {mode === "search" && (

@@ -28,20 +28,23 @@ describe("Reflection Plan entry and center", () => {
 
   it("shows a secondary Reflection action on Plan, not a sixth tab", () => {
     renderAt(<Plan />, "/plan");
-    expect(screen.getByRole("button", { name: /Reflection/ })).toBeTruthy();
+    expect(screen.getByTestId("cycle-reflection")).toBeTruthy();
+    expect(screen.getByTestId("period-reflection")).toHaveTextContent("Reflection");
     expect(screen.queryByRole("tab", { name: "Reflection" })).toBeNull();
   });
 
   it("lists Daily / Weekly / Monthly / Future plus due or overdue reflections", () => {
     renderAt(<ReflectionCenter />, "/plan/reflection");
-    expect(screen.getByRole("heading", { name: "Reflection" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Planning" })).toBeTruthy();
+    expect(screen.getByTestId("cycle-reflection")).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("tab", { name: "Daily" })).toHaveAttribute("aria-selected", "true");
     fireEvent.click(screen.getByRole("tab", { name: "Weekly" }));
     expect(screen.getByRole("tab", { name: "Weekly" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Monthly" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Future" })).toBeTruthy();
     expect(screen.getByText("Due or overdue reflections")).toBeTruthy();
-    expect(screen.getByText("Schedule")).toBeTruthy();
+    expect(screen.getByText("Reflection timing")).toBeTruthy();
+    expect(screen.getByTestId("reflection-timing-settings")).toHaveTextContent("Change settings");
   });
 
   it("shows a catch-up summary for Daily reviews older than the recent window", () => {

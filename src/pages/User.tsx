@@ -13,8 +13,17 @@ import {
   Trophy,
   type LucideIcon,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { goPageBack } from "@/lib/page-back";
+import { SwipeBackPage } from "@/components/SwipeBackPage";
+import { GlassControl } from "@/components/GlassControl";
+import Progress from "@/pages/Progress";
+import Index from "@/pages/Index";
+import Calendar from "@/pages/Calendar";
+import Plan from "@/pages/Plan";
+import PlanHome from "@/pages/PlanHome";
+import Replan from "@/pages/Replan";
+import NotesHomePage from "@/pages/NotesHomePage";
 import { useAuth } from "@/lib/firebase/AuthProvider";
 import { useCloudSync } from "@/lib/firebase/SyncProvider";
 import { syncStatusI18nKey, type CloudSyncStatus } from "@/lib/firebase/sync-status";
@@ -105,27 +114,48 @@ function formatSyncedAt(
   });
 }
 
-export default function User() {
+function openerUnderlay(from: string | undefined) {
+  if (from === "/todo") return <Index />;
+  if (from === "/calendar") return <Calendar />;
+  if (from === "/plan") return <Plan />;
+  if (from === "/plan/home") return <PlanHome />;
+  if (from === "/plan/replan") return <Replan />;
+  if (from?.startsWith("/note")) return <NotesHomePage />;
+  return <Progress />;
+}
+
+export default function User({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t, locale } = useI18n();
   const { status, user, configPresent, signInWithGoogle, signOut } = useAuth();
   const { sync, syncNow } = useCloudSync();
   const pointBalance = useMemo(() => getPointBalance(), []);
   const signedIn = status === "signed_in" && !!user;
   const displayName = user?.displayName || user?.email || t("userAccountFallbackName");
+  const from = (location.state as { from?: string } | null)?.from;
+  const opener =
+    from && from !== "/settings" && from !== "/privacy" && from !== "/user" ? from : undefined;
+  const back = () => {
+    if (opener) {
+      navigate(opener, { replace: true });
+      return;
+    }
+    goPageBack(navigate, "/todo");
+  };
 
-  return (
+  const page = (
     <div className="app-shell-page">
       <div className="app-shell-header px-2 pb-2">
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => goPageBack(navigate, "/progress")}
+          <GlassControl
+            variant="regular"
+            onClick={back}
+            data-testid="user-back"
             aria-label={t("back")}
-            className="liquid-glass p-2 rounded-full text-foreground/70"
           >
             <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-          </button>
+          </GlassControl>
           <h1 className="text-xl font-bold tracking-tight">{t("userPageTitle")}</h1>
         </div>
       </div>
@@ -270,5 +300,11 @@ export default function User() {
         </section>
       </div>
     </div>
+  );
+  if (embedded) return page;
+  return (
+    <SwipeBackPage followFinger underlay={openerUnderlay(opener)} onBack={back}>
+      {page}
+    </SwipeBackPage>
   );
 }

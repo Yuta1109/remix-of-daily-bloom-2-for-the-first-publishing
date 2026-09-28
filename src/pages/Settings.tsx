@@ -16,6 +16,10 @@ import {
   Database,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { SwipeBackPage } from "@/components/SwipeBackPage";
+import { GlassControl } from "@/components/GlassControl";
+import { goPageBack } from "@/lib/page-back";
+import User from "@/pages/User";
 import { useI18n, type Locale, type TranslationKeys } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -54,7 +58,6 @@ import {
   setThemeAccentId,
   type ThemeAccentId,
 } from "@/lib/theme-accent";
-import { goPageBack } from "@/lib/page-back";
 import { useCloudSync } from "@/lib/firebase/SyncProvider";
 import { syncStatusI18nKey } from "@/lib/firebase/sync-status";
 
@@ -105,6 +108,17 @@ export default function Settings({ staticPreview = false }: Props) {
   const [settings, setSettings] = useState<UserSettings>(() => getSettings());
 
   const refreshSettings = () => setSettings(getSettings());
+
+  const saveReflection = (patch: Parameters<typeof updateReflectionSchedule>[0]) => {
+    updateReflectionSchedule(patch);
+    refreshSettings();
+    void rescheduleAll();
+  };
+
+  useEffect(() => {
+    if (location.hash !== "#reflection") return;
+    document.getElementById("settings-reflection")?.scrollIntoView({ block: "start" });
+  }, [location.hash]);
 
   const refreshPermission = async () => {
     if (!isNative()) return;
@@ -236,7 +250,8 @@ export default function Settings({ staticPreview = false }: Props) {
   const preview = templates.slice(0, PREVIEW_LIMIT);
   const overflow = Math.max(0, templates.length - PREVIEW_LIMIT);
   const schedule = settings.reflectionSchedule;
-  return (
+  const back = () => goPageBack(navigate, "/user");
+  const body = (
     <div
       className={cn("app-shell-page", staticPreview && "pointer-events-none select-none")}
       aria-hidden={staticPreview || undefined}
@@ -244,14 +259,9 @@ export default function Settings({ staticPreview = false }: Props) {
       {!staticPreview && (
         <div className="app-shell-header px-2 pb-2">
           <div className="flex items-center gap-1">
-      <button
-              type="button"
-        onClick={() => goPageBack(navigate, "/progress")}
-              aria-label={t("back")}
-              className="p-2 rounded-full text-foreground/70 hover:bg-secondary/70"
-            >
+      <GlassControl variant="regular" onClick={back} aria-label={t("back")} data-testid="settings-back">
               <ChevronLeft className="w-5 h-5" />
-            </button>
+            </GlassControl>
             <h1 className="text-xl font-bold tracking-tight">{t("appSettings")}</h1>
           </div>
         </div>
@@ -259,24 +269,6 @@ export default function Settings({ staticPreview = false }: Props) {
 
       <div className={cn("space-y-6 animate-fade-in-up pb-8", staticPreview ? "page-scroll px-5" : "app-shell-scroll px-4")}>
         {staticPreview && <h1 className="text-2xl font-bold tracking-tight">{t("appSettings")}</h1>}
-
-        <section>
-          <SectionLabel labelKey="settingsSectionAccount" />
-          <div className="bg-card rounded-2xl shadow-soft">
-            <button
-              type="button"
-              onClick={() => navigate("/user")}
-              className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
-              data-testid="settings-open-user"
-            >
-              <SettingsGlyph tone="bg-rose-100 text-rose-700">
-                <Cloud className="w-5 h-5" />
-              </SettingsGlyph>
-              <span className="flex-1 text-base">{t("settingsCloudOpenUser")}</span>
-              <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-            </button>
-          </div>
-        </section>
 
         <section>
           <SectionLabel labelKey="settingsSectionCloud" />
@@ -289,14 +281,6 @@ export default function Settings({ staticPreview = false }: Props) {
               </span>
             </div>
             <p className="px-4 py-3 text-xs text-muted-foreground">{t("settingsCloudHint")}</p>
-            <button
-              type="button"
-              onClick={() => navigate("/user")}
-              className="w-full flex items-center justify-between px-4 py-3.5 text-left text-sm"
-            >
-              <span>{t("settingsCloudOpenUser")}</span>
-              <ChevronRight className="w-4 h-4 text-muted-foreground/60" />
-            </button>
           </div>
         </section>
 
@@ -321,8 +305,10 @@ export default function Settings({ staticPreview = false }: Props) {
           </div>
 
           <div className="bg-card rounded-2xl p-5 shadow-soft" data-tutorial="reusable-tasks">
-            <div className="flex items-center gap-2 mb-1">
-              <ListPlus className="w-4 h-4 text-accent" />
+            <div className="flex items-center gap-3 mb-1">
+              <SettingsGlyph tone="bg-teal-100 text-teal-700">
+                <ListPlus className="w-5 h-5" />
+              </SettingsGlyph>
               <p className="text-sm font-semibold">{t("reusableTasks")}</p>
             </div>
             <p className="text-xs text-muted-foreground mb-4">{t("reusableTasksDesc")}</p>
@@ -388,7 +374,7 @@ export default function Settings({ staticPreview = false }: Props) {
           </div>
         </section>
 
-        <section>
+        <section id="settings-reflection">
           <SectionLabel labelKey="settingsSectionReflection" />
           <div className="bg-card rounded-2xl p-4 shadow-soft space-y-4">
             <div>
@@ -398,10 +384,9 @@ export default function Settings({ staticPreview = false }: Props) {
                   type="button"
                   data-testid="settings-reflection-evening"
                   onClick={() => {
-                    updateReflectionSchedule({
-                      daily: { ...schedule.daily, timeOfDay: "21:00", scheduleOffsetDays: 0 },
+                    saveReflection({
+                      daily: { ...schedule.daily, timeOfDay: "17:00", scheduleOffsetDays: 0 },
                     });
-                    refreshSettings();
                   }}
                   className={cn(
                     "flex-1 min-h-11 rounded-xl text-sm font-medium",
@@ -416,10 +401,9 @@ export default function Settings({ staticPreview = false }: Props) {
                   type="button"
                   data-testid="settings-reflection-morning"
                   onClick={() => {
-                    updateReflectionSchedule({
+                    saveReflection({
                       daily: { ...schedule.daily, timeOfDay: "08:00", scheduleOffsetDays: 1 },
                     });
-                    refreshSettings();
                   }}
                   className={cn(
                     "flex-1 min-h-11 rounded-xl text-sm font-medium",
@@ -436,8 +420,7 @@ export default function Settings({ staticPreview = false }: Props) {
                 aria-label={t("reflectionTime")}
                 value={schedule.daily.timeOfDay}
                 onChange={(e) => {
-                  updateReflectionSchedule({ daily: { ...schedule.daily, timeOfDay: e.target.value } });
-                  refreshSettings();
+                  saveReflection({ daily: { ...schedule.daily, timeOfDay: e.target.value } });
                 }}
                 className="w-full rounded-xl bg-secondary/50 px-3 py-3 text-sm"
               />
@@ -450,13 +433,12 @@ export default function Settings({ staticPreview = false }: Props) {
                   data-testid="settings-reflection-weekday"
                   value={schedule.weekly.weekday ?? 0}
                   onChange={(e) => {
-                    updateReflectionSchedule({
+                    saveReflection({
                       weekly: {
                         ...schedule.weekly,
                         weekday: Number(e.target.value) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
                       },
                     });
-                    refreshSettings();
                   }}
                   className="flex-1 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
                 >
@@ -471,52 +453,95 @@ export default function Settings({ staticPreview = false }: Props) {
                   aria-label={t("reflectionTime")}
                   value={schedule.weekly.timeOfDay}
                   onChange={(e) => {
-                    updateReflectionSchedule({ weekly: { ...schedule.weekly, timeOfDay: e.target.value } });
-                    refreshSettings();
+                    saveReflection({ weekly: { ...schedule.weekly, timeOfDay: e.target.value } });
                   }}
                   className="flex-1 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
                 />
               </div>
             </div>
-            {(["monthly", "future"] as const).map((kind) => (
-              <div key={kind}>
-                <p className="text-sm font-medium mb-1">
-                  {kind === "monthly" ? t("settingsReflectionMonthly") : t("settingsReflectionFuture")}
-                </p>
-                <p className="text-xs text-muted-foreground mb-2">
-                  {kind === "monthly" ? t("settingsReflectionMonthlyDesc") : t("settingsReflectionFutureDesc")}
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    aria-label={t("reflectionDayOfMonth")}
-                    data-testid={`settings-reflection-${kind}-day`}
-                    value={schedule[kind].dayOfMonth ?? 1}
-                    onChange={(e) => {
-                      updateReflectionSchedule({
-                        [kind]: { ...schedule[kind], dayOfMonth: Number(e.target.value) },
-                      });
-                      refreshSettings();
-                    }}
-                    className="w-20 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
-                  />
-                  <input
-                    type="time"
-                    aria-label={t("reflectionTime")}
-                    value={schedule[kind].timeOfDay}
-                    onChange={(e) => {
-                      updateReflectionSchedule({
-                        [kind]: { ...schedule[kind], timeOfDay: e.target.value },
-                      });
-                      refreshSettings();
-                    }}
-                    className="flex-1 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
-                  />
-                </div>
+            <div>
+              <p className="text-sm font-medium mb-1">{t("settingsReflectionMonthly")}</p>
+              <p className="text-xs text-muted-foreground mb-2">{t("settingsReflectionMonthlyDesc")}</p>
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  data-testid="settings-reflection-month-end"
+                  onClick={() => saveReflection({ monthly: { ...schedule.monthly, periodEdge: "end" } })}
+                  className={cn(
+                    "flex-1 min-h-11 rounded-xl text-sm font-medium",
+                    (schedule.monthly.periodEdge ?? "end") === "end"
+                      ? "bg-accent/10"
+                      : "bg-secondary/50 text-muted-foreground",
+                  )}
+                >
+                  {t("reflectionMonthEnd")}
+                </button>
+                <button
+                  type="button"
+                  data-testid="settings-reflection-month-start"
+                  onClick={() => saveReflection({ monthly: { ...schedule.monthly, periodEdge: "start" } })}
+                  className={cn(
+                    "flex-1 min-h-11 rounded-xl text-sm font-medium",
+                    schedule.monthly.periodEdge === "start"
+                      ? "bg-accent/10"
+                      : "bg-secondary/50 text-muted-foreground",
+                  )}
+                >
+                  {t("reflectionMonthStart")}
+                </button>
               </div>
-            ))}
+              <input
+                type="time"
+                aria-label={t("reflectionTime")}
+                value={schedule.monthly.timeOfDay}
+                onChange={(e) => saveReflection({ monthly: { ...schedule.monthly, timeOfDay: e.target.value } })}
+                className="w-full rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+              />
+            </div>
+            <div>
+              <p className="text-sm font-medium mb-1">{t("settingsReflectionFuture")}</p>
+              <p className="text-xs text-muted-foreground mb-2">{t("settingsReflectionFutureDesc")}</p>
+              <div className="flex gap-2 mb-2">
+                <select
+                  aria-label={t("reflectionFutureMonth")}
+                  data-testid="settings-reflection-future-month"
+                  value={schedule.future.monthOfYear ?? 12}
+                  onChange={(e) =>
+                    saveReflection({
+                      future: { ...schedule.future, monthOfYear: Number(e.target.value) },
+                    })
+                  }
+                  className="flex-1 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+                >
+                  {Array.from({ length: 12 }, (_, month) => (
+                    <option key={month + 1} value={month + 1}>
+                      {formatDateStr(`2026-${String(month + 1).padStart(2, "0")}-01`, { month: "long" })}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min={1}
+                  max={31}
+                  aria-label={t("reflectionFutureDay")}
+                  data-testid="settings-reflection-future-day"
+                  value={schedule.future.dayOfMonth ?? 31}
+                  onChange={(e) =>
+                    saveReflection({
+                      future: { ...schedule.future, dayOfMonth: Number(e.target.value) },
+                    })
+                  }
+                  className="w-20 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+                />
+              </div>
+              <input
+                type="time"
+                aria-label={t("reflectionTime")}
+                value={schedule.future.timeOfDay}
+                onChange={(e) => saveReflection({ future: { ...schedule.future, timeOfDay: e.target.value } })}
+                className="w-full rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+              />
+            </div>
           </div>
         </section>
 
@@ -540,14 +565,15 @@ export default function Settings({ staticPreview = false }: Props) {
                   <p className="text-xs text-muted-foreground mb-4">
                     {perm === "denied" ? t("notificationsDeniedHint") : t("notificationsPermissionNeeded")}
                   </p>
-                  <button
-                    type="button"
+                  <GlassControl
+                    size="label"
+                    variant="prominent"
                     onClick={handleEnableNotifications}
                     disabled={requesting}
-                    className="w-full bg-accent text-accent-foreground rounded-xl px-4 py-3 text-sm font-medium disabled:opacity-60"
+                    className="w-full text-sm font-medium"
                   >
                     {perm === "denied" ? t("openSettings") : t("enableNotifications")}
-                  </button>
+                  </GlassControl>
                 </>
               )}
             </div>
@@ -555,8 +581,10 @@ export default function Settings({ staticPreview = false }: Props) {
               id="settings-live-activity"
               className="bg-card rounded-2xl p-5 shadow-soft scroll-mt-4"
             >
-              <div className="flex items-center gap-2 mb-1">
-                <Activity className="w-4 h-4 text-accent" />
+              <div className="flex items-center gap-3 mb-1">
+                <SettingsGlyph tone="bg-cyan-100 text-cyan-700">
+                  <Activity className="w-5 h-5" />
+                </SettingsGlyph>
                 <p className="text-sm font-semibold">{t("liveActivitySettingsTitle")}</p>
               </div>
               <div className="mt-2 space-y-2">
@@ -592,7 +620,7 @@ export default function Settings({ staticPreview = false }: Props) {
           <SectionLabel labelKey="settingsSectionAppearance" />
           <div className="bg-card rounded-2xl p-5 shadow-soft mb-3">
             <div className="flex items-center gap-2 mb-1">
-              <SettingsGlyph tone="bg-amber-100 text-amber-700"><Palette className="w-5 h-5" /></SettingsGlyph>
+              <SettingsGlyph tone="bg-fuchsia-100 text-fuchsia-700"><Palette className="w-5 h-5" /></SettingsGlyph>
               <p className="text-sm font-semibold">{t("themeColor")}</p>
             </div>
             <p className="text-xs text-muted-foreground mb-4">{t("themeColorDesc")}</p>
@@ -627,8 +655,10 @@ export default function Settings({ staticPreview = false }: Props) {
             </div>
           </div>
           <div className="bg-card rounded-2xl p-5 shadow-soft mb-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Globe className="w-4 h-4 text-accent" />
+          <div className="flex items-center gap-3 mb-1">
+            <SettingsGlyph tone="bg-blue-100 text-blue-700">
+              <Globe className="w-5 h-5" />
+            </SettingsGlyph>
             <p className="text-sm font-semibold">{t("language")}</p>
           </div>
           <p className="text-xs text-muted-foreground mb-4">{t("selectLanguage")}</p>
@@ -691,16 +721,16 @@ export default function Settings({ staticPreview = false }: Props) {
         <section>
           <SectionLabel labelKey="settingsSectionData" />
           <div className="bg-card rounded-2xl p-5 shadow-soft space-y-4">
-            <div className="flex items-start gap-3">
-              <Cloud className="w-4 h-4 text-accent mt-0.5 shrink-0" />
-              <div>
+            <div className="flex items-center gap-3">
+              <SettingsGlyph tone="bg-sky-100 text-sky-700"><Cloud className="w-5 h-5" /></SettingsGlyph>
+              <div className="min-w-0">
                 <p className="text-sm font-semibold">{t("settingsDataCloudTitle")}</p>
                 <p className="text-xs text-muted-foreground mt-1">{t("settingsDataCloudBody")}</p>
               </div>
             </div>
-            <div className="flex items-start gap-3">
+            <div className="flex items-center gap-3">
               <SettingsGlyph tone="bg-slate-200 text-slate-700"><Database className="w-5 h-5" /></SettingsGlyph>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-semibold">{t("settingsDataDeviceTitle")}</p>
                 <p className="text-xs text-muted-foreground mt-1">{t("settingsDataDeviceBody")}</p>
               </div>
@@ -741,9 +771,9 @@ export default function Settings({ staticPreview = false }: Props) {
             >
               <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border/50 shrink-0">
                 <h2 className="text-base font-semibold">{t("reusableTasks")}</h2>
-                <button type="button" onClick={() => setListOpen(false)} className="p-2 text-muted-foreground">
+                <GlassControl onClick={() => setListOpen(false)} aria-label={t("cancel")}>
                   <X className="w-5 h-5" />
-                </button>
+                </GlassControl>
               </div>
               <div className="settings-modal-scroll min-h-0 flex-1 px-4 py-3 space-y-2">
                 {templates.length === 0 ? (
@@ -789,5 +819,11 @@ export default function Settings({ staticPreview = false }: Props) {
           document.body,
         )}
     </div>
+  );
+  if (staticPreview) return body;
+  return (
+    <SwipeBackPage followFinger underlay={<User embedded />} onBack={back}>
+      {body}
+    </SwipeBackPage>
   );
 }

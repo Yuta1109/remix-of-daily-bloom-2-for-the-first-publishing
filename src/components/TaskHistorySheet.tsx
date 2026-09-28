@@ -11,7 +11,7 @@ import {
 } from "@/lib/store";
 import { getPastDaysWithListedTasks } from "@/lib/v3/repository";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
-import { cn } from "@/lib/utils";
+import { GlassControl } from "@/components/GlassControl";
 import type { TaskItem as V3Task } from "@/lib/v3/types";
 
 interface Props {
@@ -102,7 +102,7 @@ export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }:
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
-          className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background min-h-0 overflow-hidden outline-none"
+          className="bg-background fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border min-h-0 overflow-hidden outline-none"
           style={{ maxHeight: "88dvh", height: "88dvh" }}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
@@ -114,36 +114,32 @@ export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }:
             <p className="text-xs text-muted-foreground mt-1">{t("taskHistoryHint")}</p>
             <div className="flex gap-1.5 overflow-x-auto mt-3 pb-0.5 -mx-0.5 px-0.5">
               {months.map((key) => (
-                <button
+                <GlassControl
                   key={key}
-                  type="button"
+                  size="label"
                   onClick={() => {
                     setMonthKey(key);
                     const nextWeeks = getWeeksInMonth(key);
                     setWeek(nextWeeks[0]?.week ?? 1);
                   }}
-                  className={cn(
-                    "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium",
-                    monthKey === key ? "bg-accent text-accent-foreground" : "bg-secondary text-foreground",
-                  )}
+                  className="shrink-0 text-xs font-medium"
                 >
-                  {monthLabel(key, locale)}
-                </button>
+                  {monthKey === key ? <span className="liquid-glass-selected absolute inset-1" aria-hidden="true" /> : null}
+                  <span className="relative">{monthLabel(key, locale)}</span>
+                </GlassControl>
               ))}
             </div>
             <div className="flex gap-1.5 overflow-x-auto mt-2 pb-0.5">
               {weeks.map((item) => (
-                <button
+                <GlassControl
                   key={item.week}
-                  type="button"
+                  size="label"
                   onClick={() => setWeek(item.week)}
-                  className={cn(
-                    "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium",
-                    week === item.week ? "bg-accent text-accent-foreground" : "bg-secondary text-foreground",
-                  )}
+                  className="shrink-0 text-xs font-medium"
                 >
-                  {locale === "ja" ? `第${item.week}週` : `Week ${item.week}`}
-                </button>
+                  {week === item.week ? <span className="liquid-glass-selected absolute inset-1" aria-hidden="true" /> : null}
+                  <span className="relative">{locale === "ja" ? `第${item.week}週` : `Week ${item.week}`}</span>
+                </GlassControl>
               ))}
             </div>
           </div>
@@ -217,13 +213,9 @@ function DayBlock({
             {scoreLabel} {score}%
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onBringAll}
-          className="shrink-0 text-[11px] font-medium text-accent px-2 py-1 rounded-lg bg-background/80"
-        >
+        <GlassControl size="label" onClick={onBringAll} className="shrink-0 text-[11px] font-medium">
           {bringAllLabel}
-        </button>
+        </GlassControl>
       </div>
       <ul className="space-y-1.5">
         {tasks.map((task) => (
@@ -238,14 +230,10 @@ function DayBlock({
             >
               {task.text}
             </span>
-            <button
-              type="button"
-              onClick={() => onBringOne(task.text)}
-              className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-medium text-accent"
-            >
+            <GlassControl size="label" onClick={() => onBringOne(task.text)} className="shrink-0 gap-0.5 text-[11px] font-medium">
               <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
               {bringLabel}
-            </button>
+            </GlassControl>
           </li>
         ))}
       </ul>

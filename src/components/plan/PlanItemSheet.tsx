@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
+import { GlassControl } from "@/components/GlassControl";
 import { PlanIconPicker } from "@/components/plan/PlanIconPicker";
 import { PlanColorPicker } from "@/components/plan/PlanColorPicker";
 import { DEFAULT_COLOR, DEFAULT_PLAN_ICON } from "@/lib/v3/schema";
@@ -13,7 +14,9 @@ import {
   breakdownPlanItem,
   convertQuickMemoToPlan,
   createPlanItem,
+  getMainPlan,
   getPlanItem,
+  setMainPlan,
   updatePlanItem,
 } from "@/lib/v3/repository";
 import type { FutureTarget, PlanItem, PlanLevel } from "@/lib/v3/types";
@@ -86,6 +89,7 @@ export function PlanItemSheet({ request, onOpenChange, onSaved, onBreakdown, onC
   const [titleError, setTitleError] = useState(false);
   const [duplicateError, setDuplicateError] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"stop" | "archive" | null>(null);
+  const [isMainPlan, setIsMainPlan] = useState(false);
 
   const [editItem, setEditItem] = useState<PlanItem | null>(null);
   const [parentItem, setParentItem] = useState<PlanItem | null>(null);
@@ -115,6 +119,8 @@ export function PlanItemSheet({ request, onOpenChange, onSaved, onBreakdown, onC
       setTargetType(item?.futureTarget?.type ?? "someday");
       setTargetMonth(item?.futureTarget?.type === "month" ? item.futureTarget.value ?? "" : "");
       setTargetDate(item?.futureTarget?.type === "date" ? item.futureTarget.value ?? "" : "");
+      const main = getMainPlan();
+      setIsMainPlan(main?.subjectType === "plan" && main.subjectId === request.planId);
     } else {
       setEditItem(null);
       const parent = request.parentPlanId ? getPlanItem(request.parentPlanId) ?? null : null;
@@ -127,6 +133,7 @@ export function PlanItemSheet({ request, onOpenChange, onSaved, onBreakdown, onC
       setTargetMonth("");
       setTargetDate("");
       setWeekIndex(0);
+      setIsMainPlan(false);
     }
     setTitleError(false);
     setDuplicateError(false);
@@ -261,27 +268,19 @@ export function PlanItemSheet({ request, onOpenChange, onSaved, onBreakdown, onC
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmAction(null)} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-card shadow-float overflow-hidden pointer-events-auto">
+      <div className="liquid-glass liquid-glass-surface relative z-10 w-full max-w-md overflow-hidden pointer-events-auto">
         <div className="px-4 pt-4 pb-2">
           <p className="text-sm font-semibold leading-snug">
             {t(confirmAction === "stop" ? "planStopConfirm" : "planArchiveConfirm")}
           </p>
         </div>
-        <div className="px-3 pb-3 space-y-2">
-          <button
-            type="button"
-            onClick={runConfirm}
-            className="w-full rounded-xl bg-secondary/80 px-4 py-3.5 text-sm font-semibold text-foreground hover:bg-secondary"
-          >
-            {t(confirmAction === "stop" ? "planStop" : "planArchive")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirmAction(null)}
-            className="w-full rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary/60"
-          >
+        <div className="px-3 pb-3 flex gap-2">
+          <GlassControl size="label" className="flex-1" onClick={() => setConfirmAction(null)}>
             {t("cancel")}
-          </button>
+          </GlassControl>
+          <GlassControl size="label" className="flex-1 font-semibold" onClick={runConfirm}>
+            {t(confirmAction === "stop" ? "planStop" : "planArchive")}
+          </GlassControl>
         </div>
       </div>
     </div>
@@ -302,14 +301,9 @@ export function PlanItemSheet({ request, onOpenChange, onSaved, onBreakdown, onC
             <DrawerPrimitive.Title className="text-base font-semibold">
               {isEdit ? t("planEditTitle") : t(CREATE_TITLE_KEY[level])}
             </DrawerPrimitive.Title>
-            <button
-              type="button"
-              onClick={close}
-              aria-label={t("cancel")}
-              className="p-1.5 -mr-1 rounded-full text-muted-foreground hover:bg-secondary/70"
-            >
+            <GlassControl onClick={close} aria-label={t("cancel")}>
               <X className="w-5 h-5" aria-hidden="true" />
-            </button>
+            </GlassControl>
           </div>
 
           <div
@@ -483,6 +477,22 @@ export function PlanItemSheet({ request, onOpenChange, onSaved, onBreakdown, onC
               </div>
             )}
 
+            {isEdit && editItem && (
+              <button
+                type="button"
+                data-testid="set-main-plan"
+                disabled={isMainPlan}
+                onClick={() => {
+                  setMainPlan({ subjectType: "plan", subjectId: editItem.id });
+                  setIsMainPlan(true);
+                  onChanged();
+                }}
+                className="w-full flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-3 text-sm font-medium hover:bg-secondary transition-colors disabled:opacity-60"
+              >
+                <span>{isMainPlan ? t("planMainCurrent") : t("planSetMain")}</span>
+              </button>
+            )}
+
             {isEdit && (
               <div className="flex items-center gap-2 pt-1">
                 <button
@@ -517,13 +527,9 @@ export function PlanItemSheet({ request, onOpenChange, onSaved, onBreakdown, onC
           </div>
 
           <div className="px-4 pb-4 pt-2 shrink-0 border-t border-border/50">
-            <button
-              type="button"
-              onClick={handleSave}
-              className="w-full rounded-xl bg-accent text-accent-foreground px-4 py-3.5 text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
+            <GlassControl size="label" variant="prominent" className="w-full text-sm font-semibold" onClick={handleSave}>
               {t("save")}
-            </button>
+            </GlassControl>
           </div>
 
           {confirmOverlay}

@@ -3,7 +3,7 @@ import { CalendarClock } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { PlanFab } from "@/components/plan/PlanFab";
 import { PlanRow } from "@/components/plan/PlanRow";
-import { PeriodNav } from "@/components/plan/PeriodNav";
+import { PeriodFacts, WeeklyPeriodButton } from "@/components/plan/PeriodControls";
 import { PlanItemSheet, type PlanSheetRequest } from "@/components/plan/PlanItemSheet";
 import { DailyTaskSheet, type DailyTaskSheetRequest } from "@/components/plan/DailyTaskSheet";
 import {
@@ -12,7 +12,9 @@ import {
   getPlanProgress,
   getSettings,
 } from "@/lib/v3/repository";
-import { addDays, endOfWeek, isWithin, startOfWeek, todayLocalDate, type LocalDate } from "@/lib/v3/local-date";
+import { endOfWeek, isWithin, startOfWeek, todayLocalDate, type LocalDate } from "@/lib/v3/local-date";
+import { useSessionView } from "@/hooks/use-session-view";
+import { PLANNING_VIEW } from "@/lib/session-nav";
 
 function weeklyProgressLabel(item: { id: string }): string | undefined {
   const { total, completed } = getPlanProgress(item.id);
@@ -28,7 +30,11 @@ function defaultBreakdownDate(periodStart: LocalDate, periodEnd: LocalDate): Loc
 export function WeeklySection() {
   const { t, formatDateStr } = useI18n();
   const weekStartsOn = getSettings().weekStartsOn;
-  const [weekAnchor, setWeekAnchor] = useState(() => startOfWeek(todayLocalDate(), weekStartsOn));
+  const [weekAnchor, setWeekAnchor] = useSessionView(
+    "planning",
+    PLANNING_VIEW.weekAnchor,
+    startOfWeek(todayLocalDate(), weekStartsOn),
+  );
   const [refreshTick, setRefreshTick] = useState(0);
   const [sheetRequest, setSheetRequest] = useState<PlanSheetRequest | null>(null);
   const [taskRequest, setTaskRequest] = useState<DailyTaskSheetRequest | null>(null);
@@ -50,12 +56,8 @@ export function WeeklySection() {
 
   return (
     <>
-      <PeriodNav
-        label={weekLabel}
-        onPrev={() => setWeekAnchor((w) => addDays(w, -7))}
-        onNext={() => setWeekAnchor((w) => addDays(w, 7))}
-        className="mb-3"
-      />
+      <WeeklyPeriodButton weekStart={weekAnchor} onChange={setWeekAnchor} />
+      <PeriodFacts type="weekly" anchorDate={periodStart} from={periodStart} to={periodEnd} />
 
       {items.length === 0 ? (
         <EmptyState

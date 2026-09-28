@@ -20,12 +20,14 @@ import {
   Undo2,
 } from "lucide-react";
 import { AiCameraIcon } from "@/components/AiCameraIcon";
+import { GlassControl } from "@/components/GlassControl";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { extractTextFromPickedImage, ocrToastKey, textToNoteHtml, type ImageSource } from "@/lib/ocr";
 import { pickLocalImageAttachment, noteImageSrc } from "@/lib/note-image";
 import { ocrDebugLog } from "@/lib/ocr-debug-log";
 import { ImagePickSheet } from "@/components/ImagePickSheet";
+import { ImagePreview } from "@/components/notes/ImagePreview";
 import { ConfirmMessage } from "@/components/notes/ConfirmMessage";
 import { OcrBusyOverlay } from "@/components/OcrBusyOverlay";
 import { OcrResultSheet } from "@/components/OcrResultSheet";
@@ -36,6 +38,9 @@ import { NoteCalculator } from "@/components/NoteCalculator";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { hideKeyboard, prepareForOcr } from "@/lib/keyboard-avoidance";
 import { NOTES_HOME_PATH, resolveNoteParam } from "@/lib/v3/notes-view";
+import { SwipeBackPage } from "@/components/SwipeBackPage";
+import { goPageBack } from "@/lib/page-back";
+import NotesHomePage from "@/pages/NotesHomePage";
 import { deleteNote, updateNote } from "@/lib/v3/repository";
 import type { NotePage } from "@/lib/v3/types";
 
@@ -69,6 +74,7 @@ export default function MemoDetailPage() {
   const [calcOpen, setCalcOpen] = useState(false);
   const [pickOpen, setPickOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [pickMode, setPickMode] = useState<"ocr" | "attach">("ocr");
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrFeedback, setOcrFeedback] = useState<{
@@ -316,7 +322,7 @@ export default function MemoDetailPage() {
 
   const goBackToList = () => {
     if (editing) flushDraft();
-    navigate(NOTES_HOME_PATH);
+    goPageBack(navigate, NOTES_HOME_PATH);
   };
 
   const exitToView = () => {
@@ -423,18 +429,14 @@ export default function MemoDetailPage() {
     });
 
   return (
+    <SwipeBackPage followFinger underlay={<NotesHomePage />} onBack={goBackToList}>
     <div className="page-shell" data-testid="note-detail">
       <div className="shrink-0 px-3 pt-1 pb-2">
         {editing ? (
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={goBackToList}
-              className={iconBtn}
-              aria-label={t("memoBackToList")}
-            >
+            <GlassControl onClick={goBackToList} aria-label={t("memoBackToList")}>
               <ArrowLeft className="w-5 h-5" />
-            </button>
+            </GlassControl>
             <input
               ref={titleInputRef}
               value={page.title}
@@ -456,24 +458,15 @@ export default function MemoDetailPage() {
                 <Calculator className="w-5 h-5" />
               </button>
             </div>
-            <button
-              type="button"
-              onClick={exitToView}
-              className="shrink-0 h-10 px-4 rounded-full bg-accent text-accent-foreground text-sm font-semibold shadow-soft"
-            >
+            <GlassControl size="label" variant="prominent" onClick={exitToView} className="shrink-0 text-sm font-semibold">
               {t("memoView")}
-            </button>
+            </GlassControl>
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={goBackToList}
-              className={iconBtn}
-              aria-label={t("memoBackToList")}
-            >
+            <GlassControl onClick={goBackToList} aria-label={t("memoBackToList")}>
               <ArrowLeft className="w-5 h-5" />
-            </button>
+            </GlassControl>
             <div className="flex-1" />
             <div className="flex items-center gap-1.5 shrink-0">
               <button
@@ -556,12 +549,14 @@ export default function MemoDetailPage() {
 
       {!editing && page.image && noteImageSrc(page.image) ? (
         <div className="shrink-0 px-4 pb-2">
-          <img
-            src={noteImageSrc(page.image) ?? ""}
-            alt=""
+          <button
+            type="button"
             data-testid="note-attached-image"
-            className="max-h-48 max-w-full object-contain"
-          />
+            className="block max-w-full"
+            onClick={() => setPreviewSrc(noteImageSrc(page.image) ?? null)}
+          >
+            <img src={noteImageSrc(page.image) ?? ""} alt="" className="max-h-48 max-w-full object-contain" />
+          </button>
           <button
             type="button"
             className="mt-1 text-[13px] text-muted-foreground min-h-11"
@@ -689,8 +684,12 @@ export default function MemoDetailPage() {
         }}
         onInsert={handleCalcInsert}
       />
+      {previewSrc ? (
+        <ImagePreview src={previewSrc} closeLabel={t("notesImagePreviewClose")} onClose={() => setPreviewSrc(null)} />
+      ) : null}
       <ImagePickSheet
         open={pickOpen}
+        help={pickMode === "attach" ? t("notesAttachImageHelp") : undefined}
         onPhotos={() => void (pickMode === "ocr" ? onOcr("photos") : onAttach("photos"))}
         onCamera={() => void (pickMode === "ocr" ? onOcr("camera") : onAttach("camera"))}
         onCancel={() => setPickOpen(false)}
@@ -719,5 +718,6 @@ export default function MemoDetailPage() {
         }}
       />
     </div>
+    </SwipeBackPage>
   );
 }

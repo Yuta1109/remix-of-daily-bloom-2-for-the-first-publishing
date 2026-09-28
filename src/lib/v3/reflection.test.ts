@@ -135,6 +135,6 @@ describe("reflection periods and scheduling", () => {
     expect(nextReflectionAnchor("daily", rules.daily, "2026-09-21")).toBe("2026-09-22");
     expect(nextReflectionAnchor("weekly", rules.weekly, "2026-09-21", 1)).toBe("2026-10-04");
     expect(nextReflectionAnchor("monthly", rules.monthly, "2026-09-21")).toBe("2026-10-01");
-    expect(nextReflectionAnchor("future", rules.future, "2026-12-15")).toBe("2027-01-01");
+    expect(nextReflectionAnchor("future", rules.future, "2026-12-15")).toBe("2027-01-31");
   });
 });

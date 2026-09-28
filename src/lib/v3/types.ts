@@ -103,6 +103,13 @@ export interface TaskItem {
 
   parentPlanId?: string;
 
+  /**
+   * Set when this task is a step inside a Daily log. It is still the same
+   * TaskItem: its own completion, the parent's date and plan, and not its
+   * own Reflection decision.
+   */
+  parentTaskId?: string;
+
   status: TaskStatus;
 
   order: number;
@@ -592,7 +599,8 @@ export type PointReason =
   | "special_challenge"
   | "store_purchase"
   | "bonus"
-  | "refund";
+  | "refund"
+  | "reflection";
 
 /** Ledger entry. Balance is always derived, never stored as a mutable field. */
 export interface PointTransaction {
@@ -660,6 +668,10 @@ export interface ReflectionScheduleRule {
   weekday?: Weekday;
   /** `monthly` / `future` only: day of month (clamped to month length). */
   dayOfMonth?: number;
+  /** `monthly` only. `end` is the last day of that month. `start` is the 1st of the next month. */
+  periodEdge?: "start" | "end";
+  /** `future` only: calendar month (1–12) when the yearly reflection becomes available. */
+  monthOfYear?: number;
   /**
    * Daily only. `0` (default) = same local day as the review target
    * (evening). `1` = next morning. Preferred time, not a deadline.
@@ -701,6 +713,18 @@ export interface UserSettings {
 
   /** When false, TaskTemplate chips are hidden on the ToDo page. Default true. */
   showTaskTemplatesOnTodo: boolean;
+
+  /**
+   * Plan the user chose as メインプラン. A pointer only — status still comes
+   * from the plan/task and its reflection decisions. Daily is a task.
+   */
+  mainPlan?: MainPlanSelection;
+}
+
+/** Which existing plan or daily task is the main plan. Not a status. */
+export interface MainPlanSelection {
+  subjectType: "plan" | "task";
+  subjectId: string;
 }
 
 /* ----------------------------------------------------------------- Root */

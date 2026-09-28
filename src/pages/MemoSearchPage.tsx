@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { GlassControl } from "@/components/GlassControl";
 import { cn } from "@/lib/utils";
 import {
   htmlToPlainText,
@@ -74,14 +75,9 @@ export default function MemoSearchPage() {
     <div className="page-shell">
       <div className="shrink-0 px-4 pt-3 pb-2 space-y-3">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={exitSearch}
-            className="p-2 rounded-full text-foreground/80 shrink-0"
-            aria-label={t("memoBackToList")}
-          >
+          <GlassControl onClick={exitSearch} aria-label={t("memoBackToList")}>
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </GlassControl>
           <h1 className="text-xl font-bold flex-1 truncate">{t("memoSearchTitle")}</h1>
         </div>
         <div className="relative flex items-center gap-2">
@@ -92,17 +88,12 @@ export default function MemoSearchPage() {
               value={query}
               onChange={(e) => updateQuery(e.target.value)}
               placeholder={t("memoSearchPlaceholder")}
-              className="w-full rounded-2xl pl-10 pr-4 py-3 text-sm outline-none border border-border/30 bg-background/35 backdrop-blur-md placeholder:text-muted-foreground/50"
+              className="w-full rounded-2xl pl-10 pr-4 py-3 text-sm outline-none bg-secondary/70 placeholder:text-muted-foreground/50"
             />
           </div>
-          <button
-            type="button"
-            onClick={exitSearch}
-            className="shrink-0 h-11 w-11 rounded-full flex items-center justify-center text-muted-foreground bg-background/35 backdrop-blur-md border border-border/30"
-            aria-label={t("memoSearchClear")}
-          >
+          <GlassControl onClick={exitSearch} aria-label={t("memoSearchClear")}>
             <X className="w-5 h-5" />
-          </button>
+          </GlassControl>
         </div>
       </div>
 

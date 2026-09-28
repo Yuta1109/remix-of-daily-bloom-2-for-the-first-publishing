@@ -3,7 +3,7 @@ import { CalendarRange } from "lucide-react";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { PlanFab } from "@/components/plan/PlanFab";
 import { PlanRow } from "@/components/plan/PlanRow";
-import { PeriodNav } from "@/components/plan/PeriodNav";
+import { MonthlyPeriodButton, PeriodFacts } from "@/components/plan/PeriodControls";
 import { PlanItemSheet, type PlanSheetRequest } from "@/components/plan/PlanItemSheet";
 import {
   getPlanItem,
@@ -12,7 +12,6 @@ import {
   getSettings,
 } from "@/lib/v3/repository";
 import {
-  addMonths,
   localMonthEnd,
   localMonthStart,
   todayLocalDate,
@@ -20,6 +19,8 @@ import {
   weeksOverlappingMonth,
 } from "@/lib/v3/local-date";
 import type { PlanItem } from "@/lib/v3/types";
+import { useSessionView } from "@/hooks/use-session-view";
+import { PLANNING_VIEW } from "@/lib/session-nav";
 
 function progressLabel(item: PlanItem, t: (key: TranslationKeys) => string): string {
   const { total, completed } = getPlanProgress(item.id);
@@ -28,7 +29,11 @@ function progressLabel(item: PlanItem, t: (key: TranslationKeys) => string): str
 
 export function MonthlySection() {
   const { t, locale } = useI18n();
-  const [monthAnchor, setMonthAnchor] = useState(() => toLocalMonth(todayLocalDate()));
+  const [monthAnchor, setMonthAnchor] = useSessionView(
+    "planning",
+    PLANNING_VIEW.monthAnchor,
+    toLocalMonth(todayLocalDate()),
+  );
   const [refreshTick, setRefreshTick] = useState(0);
   const [sheetRequest, setSheetRequest] = useState<PlanSheetRequest | null>(null);
 
@@ -53,12 +58,8 @@ export function MonthlySection() {
 
   return (
     <>
-      <PeriodNav
-        label={monthLabel}
-        onPrev={() => setMonthAnchor((m) => toLocalMonth(addMonths(localMonthStart(m), -1)))}
-        onNext={() => setMonthAnchor((m) => toLocalMonth(addMonths(localMonthStart(m), 1)))}
-        className="mb-3"
-      />
+      <MonthlyPeriodButton month={monthAnchor} onChange={setMonthAnchor} />
+      <PeriodFacts type="monthly" anchorDate={periodStart} from={periodStart} to={periodEnd} />
 
       {items.length === 0 ? (
         <EmptyState

@@ -82,13 +82,13 @@ describe("Phase 14-A Progress", () => {
   it("5. Analytics block opens the detail page", () => {
     renderProgressApp();
     fireEvent.click(screen.getByTestId("progress-analytics"));
-    expect(screen.getByRole("heading", { name: "Analytics" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Analytics" })).toBeTruthy();
   });
 
   it("6. Points block opens the detail page", () => {
     renderProgressApp();
     fireEvent.click(screen.getByTestId("progress-points"));
-    expect(screen.getByRole("heading", { name: "Points" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Points" })).toBeTruthy();
   });
 
   it("7–8. cumulative and daily point series stay separate", () => {
