@@ -88,7 +88,7 @@ export default function MemoSearchPage() {
               value={query}
               onChange={(e) => updateQuery(e.target.value)}
               placeholder={t("memoSearchPlaceholder")}
-              className="w-full rounded-2xl pl-10 pr-4 py-3 text-sm outline-none bg-secondary/70 placeholder:text-muted-foreground/50"
+              className="liquid-glass liquid-glass-field w-full pl-10 pr-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50"
             />
           </div>
           <GlassControl onClick={exitSearch} aria-label={t("memoSearchClear")}>

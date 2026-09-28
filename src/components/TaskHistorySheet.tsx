@@ -102,7 +102,7 @@ export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }:
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
-          className="bg-background fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border min-h-0 overflow-hidden outline-none"
+          className="liquid-glass liquid-glass-sheet fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border min-h-0 overflow-hidden outline-none"
           style={{ maxHeight: "88dvh", height: "88dvh" }}
           onOpenAutoFocus={(e) => e.preventDefault()}
         >

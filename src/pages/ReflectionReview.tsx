@@ -497,7 +497,7 @@ export default function ReflectionReview() {
       >
         <DrawerPrimitive.Portal>
           <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
-          <DrawerPrimitive.Content className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background outline-none">
+          <DrawerPrimitive.Content className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border liquid-glass liquid-glass-sheet outline-none">
             <div className="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-muted shrink-0" />
             <div className="px-5 pt-3 pb-6 space-y-3">
               <DrawerPrimitive.Title className="text-base font-semibold">

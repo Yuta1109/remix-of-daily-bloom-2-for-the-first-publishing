@@ -332,7 +332,7 @@ export function DailyTaskSheet({
         <DrawerPrimitive.Content
           className={cn(
             "fixed inset-x-0 bottom-0 flex flex-col rounded-t-2xl border min-h-0 overflow-x-hidden overflow-y-hidden outline-none w-full max-w-full min-w-0 box-border",
-            "bg-background",
+            "liquid-glass liquid-glass-sheet",
             isTutorialActive() ? "z-[120]" : "z-50",
           )}
           style={{ maxHeight: "92dvh" }}
@@ -358,14 +358,9 @@ export function DailyTaskSheet({
                 <Check className="w-5 h-5" aria-hidden="true" />
               </GlassControl>
             ) : (
-              <button
-                type="button"
-                onClick={close}
-                aria-label={t("cancel")}
-                className="p-1.5 -mr-1 rounded-full text-muted-foreground hover:bg-secondary/70"
-              >
+              <GlassControl onClick={close} aria-label={t("cancel")}>
                 <X className="w-5 h-5" aria-hidden="true" />
-              </button>
+              </GlassControl>
             )}
           </div>
 

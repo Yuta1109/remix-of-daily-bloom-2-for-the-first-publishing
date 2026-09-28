@@ -1139,7 +1139,7 @@ export default function CalendarPage() {
             onClick={() => setAddMenuOpen(false)}
           />
           <div
-            className="liquid-glass-follow relative z-10 w-full rounded-t-2xl border bg-background px-4 pt-3"
+            className="liquid-glass-follow relative z-10 w-full rounded-t-2xl border liquid-glass liquid-glass-sheet px-4 pt-3"
             style={{ paddingBottom: "calc(var(--bottom-nav-offset) + 16px)" }}
           >
             <p className="text-base font-semibold mb-2">{t("calendarAddChooseTitle")}</p>

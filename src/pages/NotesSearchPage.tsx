@@ -41,7 +41,7 @@ export default function NotesSearchPage() {
           <GlassControl onClick={() => navigate(NOTES_HOME_PATH)} aria-label={t("notesBack")}>
             <ArrowLeft className="w-5 h-5" />
           </GlassControl>
-          <div className="flex-1 flex items-center gap-2 rounded-xl bg-secondary/70 px-3 min-h-11">
+          <div className="flex-1 flex items-center gap-2 liquid-glass liquid-glass-field px-3 min-h-11">
             <Search className="w-4 h-4 text-muted-foreground shrink-0" />
             <input
               ref={inputRef}

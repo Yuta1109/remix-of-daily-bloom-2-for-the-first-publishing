@@ -31,7 +31,7 @@ export function NotesAddMenu({ open, onOpenChange, onPick }: Props) {
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
-          className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border bg-background outline-none"
+          className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border liquid-glass liquid-glass-sheet outline-none"
           style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}
           aria-describedby={undefined}
         >

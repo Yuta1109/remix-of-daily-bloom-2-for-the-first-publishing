@@ -1133,7 +1133,7 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         <DrawerPrimitive.Overlay className="fixed inset-0 z-[70] bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
           className={cn(
-            "fixed inset-x-0 bottom-0 z-[70] flex flex-col rounded-t-2xl border bg-background",
+            "fixed inset-x-0 bottom-0 z-[70] flex flex-col rounded-t-2xl border liquid-glass liquid-glass-sheet",
             "min-h-0 overflow-hidden outline-none",
           )}
           style={{ maxHeight: "88dvh" }}

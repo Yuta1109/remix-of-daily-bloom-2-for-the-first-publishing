@@ -104,7 +104,7 @@ describe("Phase 15-B ToDo", () => {
     expect(user?.className).toContain("liquid-glass");
     fireEvent.click(clock);
     const sheet = document.querySelector("[data-vaul-drawer]") as HTMLElement;
-    expect(sheet?.className).not.toContain("liquid-glass");
-    expect(sheet?.className).toContain("bg-background");
+    expect(sheet?.className).toContain("liquid-glass-sheet");
+    expect(sheet?.querySelector("h2, h3, p")?.className ?? "").not.toContain("liquid-glass");
   });
 });

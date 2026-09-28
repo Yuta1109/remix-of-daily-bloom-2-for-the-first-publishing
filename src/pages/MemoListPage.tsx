@@ -922,7 +922,7 @@ export default function MemoListPage() {
                 readOnly
                 onFocus={() => navigate("/notes/search")}
                 placeholder={t("memoSearchPlaceholder")}
-                className="w-full rounded-2xl bg-secondary/70 pl-10 pr-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50 cursor-pointer"
+                className="liquid-glass liquid-glass-field w-full pl-10 pr-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50 cursor-pointer"
               />
             </div>
           </div>

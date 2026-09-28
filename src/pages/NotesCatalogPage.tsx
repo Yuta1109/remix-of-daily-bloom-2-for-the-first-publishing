@@ -107,7 +107,7 @@ export function NotesCatalogPage({
             onChange={(e) => setQuery(e.target.value)}
             placeholder={placeholder}
             data-testid={`notes-search-input-${kind}`}
-            className="mt-2 w-full min-w-0 max-w-full rounded-xl bg-secondary/70 px-3 py-2 text-[16px] outline-none"
+            className="liquid-glass liquid-glass-field mt-2 w-full min-w-0 max-w-full px-3 py-2 text-[16px] outline-none"
           />
         )}
       </div>
