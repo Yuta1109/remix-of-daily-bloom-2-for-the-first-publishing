@@ -46,6 +46,7 @@ export default function Plan() {
       current="do"
       trailing={
         <GlassControl
+          nativeGlass={{ role: "icon", symbol: "tray" }}
           onClick={() => navigate("/plan/postpone-box")}
           aria-label={t("postponeBox")}
           data-testid="postpone-box-entry"
@@ -55,6 +56,7 @@ export default function Plan() {
           {postponeCount > 0 ? (
             <span
               aria-hidden="true"
+              data-native-glass-badge=""
               className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-foreground text-background text-[10px] font-bold leading-4 text-center"
             >
               {postponeCount > 9 ? "9+" : postponeCount}

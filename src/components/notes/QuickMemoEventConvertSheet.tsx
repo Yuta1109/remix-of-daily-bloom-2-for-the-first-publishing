@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Drawer as DrawerPrimitive } from "vaul";
-import { X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { GlassControl } from "@/components/GlassControl";
+import { PopupCornerControls } from "@/components/PopupCornerControls";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { convertQuickMemoToEvent, getQuickMemo, RepositoryError } from "@/lib/v3/repository";
 import { todayLocalDate, type LocalDate } from "@/lib/v3/local-date";
@@ -99,13 +99,11 @@ export function QuickMemoEventConvertSheet({ request, onOpenChange, onSaved }: P
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0" />
-          <div className="flex items-center justify-between px-4 py-2">
-            <DrawerPrimitive.Title className="text-base font-semibold">
+          <div className="pb-1">
+            <PopupCornerControls onClose={close} closeLabel={t("notesBack")} />
+            <DrawerPrimitive.Title className="px-4 text-base font-semibold">
               {t("notesConvertToEvent")}
             </DrawerPrimitive.Title>
-            <GlassControl onClick={close} aria-label={t("notesBack")}>
-              <X className="w-5 h-5" />
-            </GlassControl>
           </div>
           <div className="px-4 pb-6 space-y-3 overflow-y-auto">
             <input

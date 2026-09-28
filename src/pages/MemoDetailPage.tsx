@@ -434,7 +434,7 @@ export default function MemoDetailPage() {
       <div className="shrink-0 px-3 pt-1 pb-2">
         {editing ? (
           <div className="flex items-center gap-2">
-            <GlassControl onClick={goBackToList} aria-label={t("memoBackToList")}>
+            <GlassControl nativeGlass={{ role: "back" }} onClick={goBackToList} aria-label={t("memoBackToList")}>
               <ArrowLeft className="w-5 h-5" />
             </GlassControl>
             <input
@@ -464,7 +464,7 @@ export default function MemoDetailPage() {
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <GlassControl onClick={goBackToList} aria-label={t("memoBackToList")}>
+            <GlassControl nativeGlass={{ role: "back" }} onClick={goBackToList} aria-label={t("memoBackToList")}>
               <ArrowLeft className="w-5 h-5" />
             </GlassControl>
             <div className="flex-1" />

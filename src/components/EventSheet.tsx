@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Drawer as DrawerPrimitive } from "vaul";
 import { GlassControl } from "@/components/GlassControl";
+import { PopupCornerControls } from "@/components/PopupCornerControls";
 import {
   Trash2,
   Bell,
@@ -14,7 +15,6 @@ import {
   Activity,
   AlertCircle,
   Check,
-  X,
 } from "lucide-react";
 import {
   getEvent,
@@ -261,23 +261,20 @@ function FormBody({
       data-kb-ignore
     >
       {/* Fixed header — does not scroll */}
-      <div className="flex items-center justify-between px-5 pt-2 pb-3 shrink-0 border-b border-border/40">
-        <GlassControl onClick={onClose} aria-label={t("cancel")}>
-          <X className="w-5 h-5" aria-hidden="true" />
-        </GlassControl>
-        <h2 className="text-base font-semibold">
-          {isNew ? t("newEvent") : t("editEvent")}
-        </h2>
-        <GlassControl
-          onClick={() => {
+      <div className="shrink-0 border-b border-border/40 pb-2">
+        <PopupCornerControls
+          onClose={onClose}
+          closeLabel={t("cancel")}
+          onConfirm={() => {
             void hideKeyboard();
             onSave();
           }}
-          disabled={!form.title.trim()}
-          aria-label={t("save")}
-        >
-          <Check className="w-5 h-5" aria-hidden="true" />
-        </GlassControl>
+          confirmLabel={t("save")}
+          confirmDisabled={!form.title.trim()}
+        />
+        <h2 className="px-4 text-base font-semibold">
+          {isNew ? t("newEvent") : t("editEvent")}
+        </h2>
       </div>
 
       {/* Native overflow scroll (pre–scrollbar-inset experiments; scrolling worked here). */}
@@ -1029,16 +1026,15 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         onClick={() => setRepeatDeleteOpen(false)}
       />
       <div className="liquid-glass liquid-glass-surface relative z-10 w-full max-w-md overflow-hidden pointer-events-auto">
-        <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-2">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold leading-snug">{t(deleteTitleTk)}</p>
-            <p className="text-xs text-muted-foreground mt-1 leading-snug">
-              {t("deleteRepeatSheetHint")}
-            </p>
-          </div>
-          <GlassControl aria-label={t("cancel")} onClick={() => setRepeatDeleteOpen(false)}>
-            <X className="w-4 h-4" />
-          </GlassControl>
+        <PopupCornerControls
+          onClose={() => setRepeatDeleteOpen(false)}
+          closeLabel={t("cancel")}
+        />
+        <div className="px-4 pb-2">
+          <p className="text-sm font-semibold leading-snug">{t(deleteTitleTk)}</p>
+          <p className="text-xs text-muted-foreground mt-1 leading-snug">
+            {t("deleteRepeatSheetHint")}
+          </p>
         </div>
         <div className="px-3 pb-3 flex flex-col gap-2">
           <GlassControl size="label" className="w-full" onClick={confirmDeleteOnlyThis}>

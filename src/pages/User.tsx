@@ -146,10 +146,11 @@ export default function User({ embedded = false }: { embedded?: boolean }) {
 
   const page = (
     <div className="app-shell-page">
-      <div className="app-shell-header px-2 pb-2">
+      <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-1">
           <GlassControl
             variant="regular"
+            nativeGlass={{ role: "back" }}
             onClick={back}
             data-testid="user-back"
             aria-label={t("back")}

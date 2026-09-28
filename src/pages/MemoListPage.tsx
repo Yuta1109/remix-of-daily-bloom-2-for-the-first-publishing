@@ -4,13 +4,14 @@
  * Not routed from App.tsx. Compatibility / reference only — do not wire new
  * UI here. Canonical Notes are V3 pages under /note.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { Capacitor } from "@capacitor/core";
 import { Keyboard } from "@capacitor/keyboard";
 import { Check, ChevronDown, ChevronRight, Pencil, Plus, Redo2, Search, Trash2, Undo2 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { useNativeGlass } from "@/hooks/use-native-glass";
 import { cn } from "@/lib/utils";
 import { tickHaptic } from "@/lib/haptics";
 import {
@@ -203,6 +204,15 @@ export default function MemoListPage() {
   const [categoryLongPressId, setCategoryLongPressId] = useState<string | null>(null);
   const [memoLongPressId, setMemoLongPressId] = useState<string | null>(null);
   const [searchVisible, setSearchVisible] = useState(true);
+  const searchFieldRef = useRef<HTMLDivElement>(null);
+  const searchId = useId();
+  useNativeGlass(searchFieldRef, searchVisible && !listEditing ? {
+    id: searchId,
+    role: "search",
+    symbol: "navigate",
+    label: t("memoSearchPlaceholder"),
+    value: "",
+  } : null);
   const [renameTarget, setRenameTarget] = useState<
     { kind: "category"; id: string; value: string } | { kind: "memo"; id: string; value: string } | null
   >(null);
@@ -911,6 +921,7 @@ export default function MemoListPage() {
         >
           <div className="overflow-hidden min-h-0">
             <div
+              ref={searchFieldRef}
               className={cn(
                 "relative pt-1 transition-opacity duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
                 !listEditing && searchVisible ? "opacity-100" : "opacity-0 pointer-events-none",

@@ -80,6 +80,31 @@ app_sources = app_target.source_build_phase
   app_sources.add_file_reference(ref)
 end
 
+# Shared native Liquid Glass controls. Same rule as Live Activities: cap sync
+# never sees App/*.swift, so the App target has to compile these files itself.
+glass_group = app_group["NativeGlass"] || app_group.new_group("NativeGlass", "NativeGlass")
+glass_plugin_path = File.expand_path("App/NativeGlass/NativeGlassPlugin.swift", Dir.pwd)
+glass_views_path = File.expand_path("App/NativeGlass/NativeGlassViews.swift", Dir.pwd)
+glass_plugin_ref = ref_for(project, glass_group, glass_plugin_path, "NativeGlassPlugin.swift")
+glass_views_ref = ref_for(project, glass_group, glass_views_path, "NativeGlassViews.swift")
+[glass_plugin_ref, glass_views_ref].each do |ref|
+  next if app_sources.files_references.include?(ref)
+
+  app_sources.add_file_reference(ref)
+end
+
+# iOS 26 Home Screen icon. The layered Icon Composer bundle is separate from
+# the 1024 AppIcon.appiconset, which stays the launch / pre-iOS 26 icon.
+icon_path = File.expand_path("App/AppIcon.icon", Dir.pwd)
+icon_ref = ref_for(project, app_group, icon_path, "AppIcon.icon")
+icon_ref.last_known_file_type = "folder.iconcomposer.icon"
+resources = app_target.resources_build_phase
+resources.add_file_reference(icon_ref) unless resources.files_references.include?(icon_ref)
+app_target.build_configurations.each do |cfg|
+  cfg.build_settings["ASSETCATALOG_COMPILER_APPICON_NAME"] = "AppIcon"
+  cfg.build_settings["ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS"] = "YES"
+end
+
 # --- ActivityKit on the main app target -------------------------------------
 %w[ActivityKit].each do |fw|
   already = app_target.frameworks_build_phase.files.any? do |bf|
@@ -221,6 +246,7 @@ if File.exist?(cap_json_path)
   # In-app plugin + Firebase plugins required for FCM / remote Live Activity.
   required_plugins = %w[
     LiveActivitiesPlugin
+    NativeGlassPlugin
     FirebaseMessagingPlugin
     AppPlugin
   ]

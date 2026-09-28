@@ -39,6 +39,17 @@ describe("Liquid Glass control", () => {
     expect(label.className).toContain("liquid-glass-label");
     expect(label.className).not.toContain("liquid-glass-regular");
     expect(label.textContent).toBe("Today");
+
+    rerender(
+      <GlassControl nativeGlass={{ id: "settings-back", role: "back" }} aria-label="Back">
+        B
+      </GlassControl>,
+    );
+    const nativeBack = screen.getByRole("button", { name: "Back" });
+    expect(nativeBack.getAttribute("data-native-glass-id")).toBe("settings-back");
+    expect(nativeBack.hasAttribute("data-native-glass-host")).toBe(true);
+    expect(nativeBack.className).toContain("liquid-glass");
+    expect(document.documentElement.hasAttribute("data-native-glass")).toBe(false);
   });
 
   it("marks the pressed state and skips it while disabled", () => {

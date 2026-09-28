@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { GlassControl } from "@/components/GlassControl";
+import { useNativeGlass } from "@/hooks/use-native-glass";
 import {
   NOTES_HOME_PATH,
   noteDetailPath,
@@ -15,6 +16,8 @@ export default function NotesSearchPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const searchId = useId();
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
 
   useEffect(() => {
@@ -27,6 +30,12 @@ export default function NotesSearchPage() {
   }, []);
 
   const hits = useMemo(() => searchNotesCatalog(query), [query]);
+  useNativeGlass(fieldRef, {
+    id: searchId,
+    role: "search",
+    label: t("notesSearchPlaceholder"),
+    value: query,
+  });
 
   const updateQuery = (next: string) => {
     setQuery(next);
@@ -38,10 +47,10 @@ export default function NotesSearchPage() {
     <div className="app-shell-page" data-testid="notes-search-page">
       <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-2">
-          <GlassControl onClick={() => navigate(NOTES_HOME_PATH)} aria-label={t("notesBack")}>
+          <GlassControl nativeGlass={{ role: "back" }} onClick={() => navigate(NOTES_HOME_PATH)} aria-label={t("notesBack")}>
             <ArrowLeft className="w-5 h-5" />
           </GlassControl>
-          <div className="flex-1 flex items-center gap-2 liquid-glass liquid-glass-field px-3 min-h-11">
+          <div ref={fieldRef} className="flex-1 flex items-center gap-2 liquid-glass liquid-glass-field px-3 min-h-11">
             <Search className="w-4 h-4 text-muted-foreground shrink-0" />
             <input
               ref={inputRef}

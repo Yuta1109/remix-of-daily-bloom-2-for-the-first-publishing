@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Drawer as DrawerPrimitive } from "vaul";
-import { X } from "lucide-react";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { GlassControl } from "@/components/GlassControl";
+import { PopupCornerControls } from "@/components/PopupCornerControls";
 import { PlanIconPicker } from "@/components/plan/PlanIconPicker";
 import { PlanColorPicker } from "@/components/plan/PlanColorPicker";
 import { DEFAULT_COLOR, DEFAULT_PLAN_ICON } from "@/lib/v3/schema";
@@ -297,13 +297,11 @@ export function PlanItemSheet({ request, onOpenChange, onSaved, onBreakdown, onC
         >
           <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
 
-          <div className="flex items-center justify-between px-4 pt-2 pb-3 border-b border-border/50 shrink-0">
-            <DrawerPrimitive.Title className="text-base font-semibold">
+          <div className="border-b border-border/50 shrink-0 pb-2">
+            <PopupCornerControls onClose={close} closeLabel={t("cancel")} />
+            <DrawerPrimitive.Title className="px-4 text-base font-semibold">
               {isEdit ? t("planEditTitle") : t(CREATE_TITLE_KEY[level])}
             </DrawerPrimitive.Title>
-            <GlassControl onClick={close} aria-label={t("cancel")}>
-              <X className="w-5 h-5" aria-hidden="true" />
-            </GlassControl>
           </div>
 
           <div

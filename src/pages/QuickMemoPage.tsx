@@ -125,11 +125,11 @@ export default function QuickMemoPage() {
     <div className="app-shell-page" data-testid="quick-memo-page">
       <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-2">
-          <GlassControl aria-label={t("notesBack")} onClick={back}>
+          <GlassControl nativeGlass={{ role: "back" }} aria-label={t("notesBack")} onClick={back}>
             <ArrowLeft className="w-5 h-5" />
           </GlassControl>
           <h1 className="flex-1 text-lg font-semibold">{t("notesSectionQuickMemo")}</h1>
-          <GlassControl aria-label={t("notesDelete")} data-testid="quick-memo-delete" onClick={() => setConfirmDelete(true)}>
+          <GlassControl nativeGlass={{ role: "icon", symbol: "trash" }} aria-label={t("notesDelete")} data-testid="quick-memo-delete" onClick={() => setConfirmDelete(true)}>
             <Trash2 className="w-5 h-5" />
           </GlassControl>
         </div>

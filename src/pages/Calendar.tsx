@@ -801,6 +801,7 @@ export default function CalendarPage() {
             </GlassControl>
             {calView !== "week" && calendarWeekAllowsStamps(calView) ? (
             <GlassControl
+              nativeGlass={{ role: "icon", symbol: "seal", selected: stampTrayOpen }}
               aria-label={t("calendarStamps")}
               aria-pressed={stampTrayOpen}
               onClick={() => {

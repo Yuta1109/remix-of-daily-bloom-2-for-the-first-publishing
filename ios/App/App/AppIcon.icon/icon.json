@@ -1,0 +1,32 @@
+{
+  "fill": "automatic",
+  "groups": [
+    {
+      "name": "Artwork",
+      "lighting": "combined",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.2
+      },
+      "blur-material": 0.15,
+      "layers": [
+        {
+          "name": "Essences",
+          "image-name": "AppIcon.png",
+          "glass": true,
+          "hidden": false,
+          "opacity": 1,
+          "fill": "none"
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared",
+    "circles": ["watchOS"]
+  }
+}

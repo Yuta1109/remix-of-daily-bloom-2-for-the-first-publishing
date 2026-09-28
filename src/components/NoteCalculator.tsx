@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { PopupCornerControls } from "@/components/PopupCornerControls";
 import { cn } from "@/lib/utils";
 
 type Op = "+" | "-" | "×" | "÷";
@@ -195,11 +195,9 @@ export function NoteCalculator({ open, onClose, onInsert }: Props) {
         className="relative z-10 w-full max-w-md max-h-[90dvh] min-h-0 rounded-t-3xl bg-background border shadow-float flex flex-col overflow-hidden"
         style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
       >
-        <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0">
-          <p className="text-sm font-semibold">{t("memoCalculator")}</p>
-          <button type="button" onClick={onClose} className="p-2 rounded-xl text-muted-foreground">
-            <X className="w-4 h-4" />
-          </button>
+        <div className="shrink-0 pb-1">
+          <PopupCornerControls onClose={onClose} closeLabel={t("cancel")} />
+          <p className="px-4 text-sm font-semibold">{t("memoCalculator")}</p>
         </div>
         <div
           className="event-sheet-scroll min-h-0 overflow-y-scroll overscroll-contain px-4 pb-2"

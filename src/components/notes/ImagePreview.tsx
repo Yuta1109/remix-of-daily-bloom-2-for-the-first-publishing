@@ -16,10 +16,11 @@ export function ImagePreview({ src, closeLabel, onClose }: Props) {
       aria-modal="true"
     >
       <GlassControl
+        nativeGlass={{ role: "close" }}
         aria-label={closeLabel}
         data-testid="note-image-preview-close"
         onClick={onClose}
-        className="absolute top-[max(12px,env(safe-area-inset-top))] right-3 z-10 text-foreground"
+        className="absolute left-4 top-[max(12px,env(safe-area-inset-top))] z-10 text-foreground"
       >
         <X className="w-5 h-5" aria-hidden="true" />
       </GlassControl>

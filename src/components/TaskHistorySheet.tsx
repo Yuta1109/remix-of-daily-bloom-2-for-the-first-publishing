@@ -117,6 +117,7 @@ export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }:
                 <GlassControl
                   key={key}
                   size="label"
+                  nativeGlass={{ role: "button", selected: monthKey === key }}
                   onClick={() => {
                     setMonthKey(key);
                     const nextWeeks = getWeeksInMonth(key);
@@ -134,6 +135,7 @@ export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }:
                 <GlassControl
                   key={item.week}
                   size="label"
+                  nativeGlass={{ role: "button", selected: week === item.week }}
                   onClick={() => setWeek(item.week)}
                   className="shrink-0 text-xs font-medium"
                 >

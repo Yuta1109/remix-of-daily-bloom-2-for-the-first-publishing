@@ -116,12 +116,14 @@ jobs:
 
       - name: Verify LiveActivities + Firebase plugins are registered
         run: |
-          for name in LiveActivitiesPlugin FirebaseMessagingPlugin AppPlugin CameraPlugin; do
+          for name in LiveActivitiesPlugin NativeGlassPlugin FirebaseMessagingPlugin AppPlugin CameraPlugin; do
             grep -q "$name" ios/App/App/capacitor.config.json \
               || { echo "$name missing from packageClassList"; exit 1; }
           done
           grep -q 'LiveActivitiesPlugin.swift' ios/App/App.xcodeproj/project.pbxproj \
             || { echo "LiveActivitiesPlugin.swift not in Xcode project"; exit 1; }
+          grep -q 'NativeGlassPlugin.swift' ios/App/App.xcodeproj/project.pbxproj \
+            || { echo "NativeGlassPlugin.swift not in Xcode project"; exit 1; }
           grep -q 'CapacitorFirebaseMessaging' ios/App/CapApp-SPM/Package.swift \
             || { echo "CapacitorFirebaseMessaging missing from CapApp-SPM/Package.swift — FCM tokens will be null"; exit 1; }
           grep -q 'CapacitorCamera' ios/App/CapApp-SPM/Package.swift \

@@ -132,7 +132,7 @@ export default function CollectionPage() {
     <div className="app-shell-page" data-testid="collection-page">
       <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-2">
-          <GlassControl aria-label={t("notesBack")} onClick={goHome}>
+          <GlassControl nativeGlass={{ role: "back" }} aria-label={t("notesBack")} onClick={goHome}>
             <ArrowLeft className="w-5 h-5" />
           </GlassControl>
           <button
@@ -144,6 +144,7 @@ export default function CollectionPage() {
             <h1 className="text-lg font-semibold truncate">{collection.name}</h1>
           </button>
           <GlassControl
+            nativeGlass={{ role: "icon", symbol: "plus" }}
             aria-label={t("notesAddNote")}
             data-testid="collection-add-note"
             onClick={() => {
@@ -155,6 +156,7 @@ export default function CollectionPage() {
             <Plus className="w-5 h-5" />
           </GlassControl>
           <GlassControl
+            nativeGlass={{ role: "icon", symbol: "trash" }}
             aria-label={t("notesArchiveCollection")}
             data-testid="collection-archive"
             onClick={() => setConfirmArchive(true)}

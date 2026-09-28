@@ -21,7 +21,9 @@ export default function Privacy() {
       onBack={() => goPageBack(navigate, "/settings")}
       className="px-5"
     >
+      <div className="pt-[calc(env(safe-area-inset-top,0px)+8px)]">
       <GlassControl
+        nativeGlass={{ role: "back" }}
         onClick={() => goPageBack(navigate, "/settings")}
         aria-label={t("back")}
         data-testid="privacy-back"
@@ -29,6 +31,7 @@ export default function Privacy() {
       >
         <ArrowLeft className="w-5 h-5" />
       </GlassControl>
+      </div>
 
       <article className="prose prose-sm max-w-none space-y-4 animate-fade-in-up pb-8">
         <h1 className="text-2xl font-bold tracking-tight">{t("privacyPolicy")}</h1>

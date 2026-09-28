@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Drawer as DrawerPrimitive } from "vaul";
-import { Check, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
@@ -10,6 +9,7 @@ import { PlanIconPicker } from "@/components/plan/PlanIconPicker";
 import { PlanColorPicker } from "@/components/plan/PlanColorPicker";
 import { TaskCompletionControl } from "@/components/TaskCompletionControl";
 import { GlassControl } from "@/components/GlassControl";
+import { PopupCornerControls } from "@/components/PopupCornerControls";
 import { getThemeAccentOption, type ThemeAccentId } from "@/lib/theme-accent";
 import { DEFAULT_COLOR, DEFAULT_TASK_ICON } from "@/lib/v3/schema";
 import {
@@ -340,27 +340,26 @@ export function DailyTaskSheet({
         >
           <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
 
-          <div className="flex items-center justify-between px-4 pt-2 pb-3 border-b border-border/50 shrink-0 min-w-0">
+          <div className="border-b border-border/50 shrink-0 min-w-0 pb-2">
             {calendarChrome && !isEdit ? (
               <>
+                <PopupCornerControls
+                  onClose={close}
+                  closeLabel={t("cancel")}
+                  onConfirm={handleSave}
+                  confirmLabel={t("planDailyAddCta")}
+                  closeTestId="task-sheet-close"
+                  confirmTestId="task-sheet-save"
+                />
                 <DrawerPrimitive.Title className="sr-only">{t("planCreateTaskTitle")}</DrawerPrimitive.Title>
-                <GlassControl onClick={close} aria-label={t("cancel")} data-testid="task-sheet-close">
-                  <X className="w-5 h-5" aria-hidden="true" />
-                </GlassControl>
               </>
             ) : (
-              <DrawerPrimitive.Title className="text-base font-semibold">
-                {isEdit ? t("planEditTaskTitle") : t("planCreateTaskTitle")}
-              </DrawerPrimitive.Title>
-            )}
-            {calendarChrome && !isEdit ? (
-              <GlassControl onClick={handleSave} aria-label={t("planDailyAddCta")} data-testid="task-sheet-save">
-                <Check className="w-5 h-5" aria-hidden="true" />
-              </GlassControl>
-            ) : (
-              <GlassControl onClick={close} aria-label={t("cancel")}>
-                <X className="w-5 h-5" aria-hidden="true" />
-              </GlassControl>
+              <>
+                <PopupCornerControls onClose={close} closeLabel={t("cancel")} />
+                <DrawerPrimitive.Title className="px-4 text-base font-semibold">
+                  {isEdit ? t("planEditTaskTitle") : t("planCreateTaskTitle")}
+                </DrawerPrimitive.Title>
+              </>
             )}
           </div>
 

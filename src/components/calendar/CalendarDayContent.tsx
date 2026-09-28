@@ -79,7 +79,7 @@ export function CalendarDayContent({
             {t("calendarEventsSection")}
           </h3>
           {!past ? (
-            <GlassControl aria-label={t("calendarAddEvent")} data-testid="calendar-add-event" onClick={onAddEvent}>
+            <GlassControl nativeGlass={{ role: "icon", symbol: "plus" }} aria-label={t("calendarAddEvent")} data-testid="calendar-add-event" onClick={onAddEvent}>
               <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
             </GlassControl>
           ) : null}
@@ -130,7 +130,7 @@ export function CalendarDayContent({
             {t("calendarTasksSection")}
           </h3>
           {!past ? (
-            <GlassControl aria-label={t("calendarAddTask")} data-testid="calendar-add-task" onClick={onAddTask}>
+            <GlassControl nativeGlass={{ role: "icon", symbol: "plus" }} aria-label={t("calendarAddTask")} data-testid="calendar-add-task" onClick={onAddTask}>
               <Plus className="w-4 h-4" strokeWidth={2.5} aria-hidden="true" />
             </GlassControl>
           ) : null}

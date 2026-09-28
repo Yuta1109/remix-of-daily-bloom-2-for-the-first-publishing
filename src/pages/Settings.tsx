@@ -18,6 +18,7 @@ import {
 import { useNavigate, useLocation } from "react-router-dom";
 import { SwipeBackPage } from "@/components/SwipeBackPage";
 import { GlassControl } from "@/components/GlassControl";
+import { PopupCornerControls } from "@/components/PopupCornerControls";
 import { goPageBack } from "@/lib/page-back";
 import User from "@/pages/User";
 import { useI18n, type Locale, type TranslationKeys } from "@/lib/i18n";
@@ -257,13 +258,17 @@ export default function Settings({ staticPreview = false }: Props) {
       aria-hidden={staticPreview || undefined}
     >
       {!staticPreview && (
-        <div className="app-shell-header px-2 pb-2">
-          <div className="flex items-center gap-1">
-      <GlassControl variant="regular" onClick={back} aria-label={t("back")} data-testid="settings-back">
-              <ChevronLeft className="w-5 h-5" />
-            </GlassControl>
-            <h1 className="text-xl font-bold tracking-tight">{t("appSettings")}</h1>
-          </div>
+        <div className="app-shell-header px-4 pb-2">
+          <GlassControl
+            variant="regular"
+            nativeGlass={{ id: "settings-back", role: "back" }}
+            onClick={back}
+            aria-label={t("back")}
+            data-testid="settings-back"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </GlassControl>
+          <h1 className="mt-2 text-xl font-bold tracking-tight">{t("appSettings")}</h1>
         </div>
       )}
 
@@ -769,11 +774,9 @@ export default function Settings({ staticPreview = false }: Props) {
               data-kb-shell="translate"
               className="relative z-10 w-full max-w-md max-h-[80dvh] bg-background rounded-3xl shadow-float flex flex-col overflow-hidden"
             >
-              <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border/50 shrink-0">
-                <h2 className="text-base font-semibold">{t("reusableTasks")}</h2>
-                <GlassControl onClick={() => setListOpen(false)} aria-label={t("cancel")}>
-                  <X className="w-5 h-5" />
-                </GlassControl>
+              <div className="border-b border-border/50 shrink-0 pb-2">
+                <PopupCornerControls onClose={() => setListOpen(false)} closeLabel={t("cancel")} />
+                <h2 className="px-4 text-base font-semibold">{t("reusableTasks")}</h2>
               </div>
               <div className="settings-modal-scroll min-h-0 flex-1 px-4 py-3 space-y-2">
                 {templates.length === 0 ? (

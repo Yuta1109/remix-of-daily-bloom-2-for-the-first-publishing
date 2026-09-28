@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom";
 import { beforeEach } from "vitest";
 import { resetCalendarAdapterForTests } from "@/lib/events-store";
+import { resetNativeGlassForTests } from "@/lib/native-glass";
 import { resetSessionNav } from "@/lib/session-nav";
 
 // jsdom has no ResizeObserver. Several components (BottomNav, InsetScrollArea)
@@ -18,6 +19,7 @@ Object.defineProperty(window, "ResizeObserver", {
 beforeEach(() => {
   resetCalendarAdapterForTests();
   resetSessionNav();
+  resetNativeGlassForTests();
 });
 
 Object.defineProperty(window, "matchMedia", {

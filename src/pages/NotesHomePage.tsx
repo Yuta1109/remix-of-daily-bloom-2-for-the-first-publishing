@@ -61,6 +61,7 @@ export default function NotesHomePage() {
           <h1 className="text-[28px] font-bold tracking-tight leading-tight">{t("notesPageTitle")}</h1>
           <div className="flex items-center gap-2">
             <GlassControl
+              nativeGlass={{ role: "icon", symbol: "magnifyingglass" }}
               aria-label={t("notesSearchTitle")}
               data-testid="notes-search-open"
               onClick={() => navigate(notesNoteSearchPath())}
@@ -181,6 +182,7 @@ export default function NotesHomePage() {
       <GlassControl
         variant="prominent"
         size="prominent"
+        nativeGlass={{ role: "icon", symbol: "plus" }}
         aria-label={t("notesAddMenuTitle")}
         data-testid="notes-add-open"
         onClick={() => setAddOpen(true)}

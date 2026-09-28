@@ -43,6 +43,7 @@ export default function ProgressAnalytics() {
       <div className="app-shell-header px-4 pb-2">
         <GlassControl
           variant="regular"
+          nativeGlass={{ role: "back" }}
           aria-label={t("back")}
           data-testid="progress-detail-back"
           onClick={back}

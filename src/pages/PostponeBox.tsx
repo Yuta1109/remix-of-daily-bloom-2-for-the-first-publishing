@@ -95,7 +95,7 @@ export default function PostponeBox() {
   return (
     <div className="app-shell-page">
       <div className="app-shell-header px-4 pb-2">
-        <GlassControl onClick={() => navigate("/plan/replan")} aria-label={t("back")} className="mb-2">
+        <GlassControl nativeGlass={{ role: "back" }} onClick={() => navigate("/plan/replan")} aria-label={t("back")} className="mb-2">
           <ChevronLeft className="w-5 h-5" aria-hidden="true" />
         </GlassControl>
         <h1 className="text-[28px] font-bold tracking-tight">{t("postponeBox")}</h1>

@@ -155,9 +155,9 @@ export default function ReflectionCatchUpReview() {
 
   return (
     <div className="app-shell-page">
-      <div className="app-shell-header px-2 pb-2">
+      <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-1">
-          <GlassControl onClick={() => navigate("/plan/reflection")} aria-label={t("back")}>
+          <GlassControl nativeGlass={{ role: "back" }} onClick={() => navigate("/plan/reflection")} aria-label={t("back")}>
             <ChevronLeft className="w-5 h-5" aria-hidden="true" />
           </GlassControl>
           <div>

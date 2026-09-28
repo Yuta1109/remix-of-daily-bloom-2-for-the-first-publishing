@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { CircleUserRound } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -19,10 +20,12 @@ export function UserButton({ className }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useI18n();
+  const id = useId();
 
   return (
     <GlassControl
       variant="regular"
+      nativeGlass={{ id, role: "icon", symbol: "person.crop.circle" }}
       onClick={() => navigate("/user", { state: { from: location.pathname } })}
       aria-label={t("userButtonLabel")}
       className={cn("text-foreground/80", className)}

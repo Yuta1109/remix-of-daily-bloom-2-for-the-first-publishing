@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/lib/i18n";
 import { GlassControl } from "@/components/GlassControl";
+import { useNativeGlass } from "@/hooks/use-native-glass";
 import { htmlToPlainText } from "@/lib/notes-store";
 import { goPageBack } from "@/lib/page-back";
 import {
@@ -31,6 +32,8 @@ export function NotesCatalogPage({
   const { t } = useI18n();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searchId = useId();
   const title =
     kind === "quick"
       ? t("notesSectionQuickMemo")
@@ -43,6 +46,12 @@ export function NotesCatalogPage({
       : kind === "note"
         ? t("notesSearchNotePlaceholder")
         : t("notesSearchCollectionPlaceholder");
+  useNativeGlass(searchRef, mode === "search" ? {
+    id: searchId,
+    role: "search",
+    label: placeholder,
+    value: query,
+  } : null);
 
   const rows = useMemo(() => {
     const q = mode === "search" ? query : "";
@@ -78,12 +87,13 @@ export function NotesCatalogPage({
     <div className="app-shell-page" data-testid={`notes-${mode}-${kind}`}>
       <div className="app-shell-header px-4 pb-2">
         <div className="flex items-center gap-2">
-          <GlassControl aria-label={t("notesBack")} onClick={() => goPageBack(navigate, NOTES_HOME_PATH)}>
+          <GlassControl nativeGlass={{ role: "back" }} aria-label={t("notesBack")} onClick={() => goPageBack(navigate, NOTES_HOME_PATH)}>
             <ArrowLeft className="w-5 h-5" />
           </GlassControl>
           <h1 className="text-lg font-semibold">{title}</h1>
           {mode === "list" && (
             <GlassControl
+              nativeGlass={{ role: "icon", symbol: "magnifyingglass" }}
               aria-label={t("notesSearchTitle")}
               data-testid={`notes-search-${kind}`}
               className="ml-auto"
@@ -103,6 +113,7 @@ export function NotesCatalogPage({
         </div>
         {mode === "search" && (
           <input
+            ref={searchRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={placeholder}

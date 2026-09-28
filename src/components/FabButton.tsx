@@ -20,6 +20,7 @@ export function FabButton({
     <GlassControl
       variant="prominent"
       size="prominent"
+      nativeGlass={{ role: "icon", symbol: "plus" }}
       data-tutorial="calendar-fab"
       onClick={(e) => {
         if (disabled || isTutorialBlockingCalendarChrome()) {

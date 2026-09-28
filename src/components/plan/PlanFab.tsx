@@ -19,6 +19,7 @@ export function PlanFab({ onClick, "aria-label": ariaLabel }: Props) {
     <GlassControl
       variant="prominent"
       size="prominent"
+      nativeGlass={{ role: "icon", symbol: "plus" }}
       onClick={onClick}
       aria-label={ariaLabel}
       className="fixed z-40 bottom-[calc(var(--bottom-nav-offset)+10px)] right-5"

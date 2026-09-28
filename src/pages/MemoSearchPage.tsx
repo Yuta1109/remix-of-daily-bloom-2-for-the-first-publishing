@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { GlassControl } from "@/components/GlassControl";
+import { useNativeGlass } from "@/hooks/use-native-glass";
 import { cn } from "@/lib/utils";
 import {
   htmlToPlainText,
@@ -33,6 +34,8 @@ export default function MemoSearchPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const searchId = useId();
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
 
   useEffect(() => {
@@ -60,6 +63,13 @@ export default function MemoSearchPage() {
       .filter(({ pages }) => pages.length > 0);
   }, [lib, query]);
 
+  useNativeGlass(fieldRef, {
+    id: searchId,
+    role: "search",
+    label: t("memoSearchPlaceholder"),
+    value: query,
+  });
+
   const updateQuery = (next: string) => {
     setQuery(next);
     if (next.trim()) {
@@ -75,13 +85,13 @@ export default function MemoSearchPage() {
     <div className="page-shell">
       <div className="shrink-0 px-4 pt-3 pb-2 space-y-3">
         <div className="flex items-center gap-2">
-          <GlassControl onClick={exitSearch} aria-label={t("memoBackToList")}>
+          <GlassControl nativeGlass={{ role: "back" }} onClick={exitSearch} aria-label={t("memoBackToList")}>
             <ArrowLeft className="w-5 h-5" />
           </GlassControl>
           <h1 className="text-xl font-bold flex-1 truncate">{t("memoSearchTitle")}</h1>
         </div>
         <div className="relative flex items-center gap-2">
-          <div className="relative flex-1">
+          <div ref={fieldRef} className="relative flex-1">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60 pointer-events-none" />
             <input
               ref={inputRef}
@@ -91,7 +101,7 @@ export default function MemoSearchPage() {
               className="liquid-glass liquid-glass-field w-full pl-10 pr-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50"
             />
           </div>
-          <GlassControl onClick={exitSearch} aria-label={t("memoSearchClear")}>
+          <GlassControl nativeGlass={{ role: "close" }} onClick={exitSearch} aria-label={t("memoSearchClear")}>
             <X className="w-5 h-5" />
           </GlassControl>
         </div>

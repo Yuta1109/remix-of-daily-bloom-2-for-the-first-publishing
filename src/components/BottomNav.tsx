@@ -13,6 +13,7 @@ import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 import { tickHaptic } from "@/lib/haptics";
 import { sessionTabTarget } from "@/lib/session-nav";
+import { useNativeGlass } from "@/hooks/use-native-glass";
 
 interface TabConfig {
   /** Canonical path the tab navigates to. */
@@ -20,6 +21,8 @@ interface TabConfig {
   /** Route prefixes that should show this tab as selected. */
   matchPrefixes: string[];
   icon: LucideIcon;
+  /** SF Symbol used when this tab is drawn by native Liquid Glass. */
+  symbol: string;
   labelKey: TranslationKeys;
   /** `data-tutorial` anchor for the first-run coach tour, when one exists. */
   tutorial?: string;
@@ -30,18 +33,19 @@ interface TabConfig {
  * User is intentionally not a tab — it opens from `UserButton` instead.
  */
 const TABS: TabConfig[] = [
-  { path: "/progress", matchPrefixes: ["/", "/progress"], icon: ChartColumn, labelKey: "progressTab" },
-  { path: "/plan", matchPrefixes: ["/plan"], icon: NotebookText, labelKey: "planTab" },
-  { path: "/todo", matchPrefixes: ["/todo"], icon: ListChecks, labelKey: "todoTab" },
+  { path: "/progress", matchPrefixes: ["/", "/progress"], icon: ChartColumn, symbol: "chart.bar", labelKey: "progressTab" },
+  { path: "/plan", matchPrefixes: ["/plan"], icon: NotebookText, symbol: "book", labelKey: "planTab" },
+  { path: "/todo", matchPrefixes: ["/todo"], icon: ListChecks, symbol: "checklist", labelKey: "todoTab" },
   {
     path: "/calendar",
     matchPrefixes: ["/calendar"],
     icon: Calendar,
+    symbol: "calendar",
     labelKey: "calendar",
     tutorial: "nav-calendar",
   },
   // `/notes` is the legacy prefix, kept so deep links still highlight this tab.
-  { path: "/note", matchPrefixes: ["/note", "/notes"], icon: StickyNote, labelKey: "noteTab" },
+  { path: "/note", matchPrefixes: ["/note", "/notes"], icon: StickyNote, symbol: "note.text", labelKey: "noteTab" },
 ];
 
 function isTabActive(pathname: string, tab: TabConfig): boolean {
@@ -62,6 +66,17 @@ export function BottomNav() {
   const navRef = useRef<HTMLElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const [pill, setPill] = useState({ x: 0, y: 0, w: 0, h: 0 });
+  useNativeGlass(navRef, {
+    id: "main-tab-bar",
+    role: "tabBar",
+    label: t("mainNavigationLabel"),
+    tabs: TABS.map((tab) => ({
+      id: tab.path,
+      label: t(tab.labelKey),
+      symbol: tab.symbol,
+      selected: isTabActive(location.pathname, tab),
+    })),
+  });
 
   useLayoutEffect(() => {
     const row = rowRef.current;
@@ -124,6 +139,7 @@ export function BottomNav() {
               key={tab.path}
               type="button"
               data-tutorial={tab.tutorial}
+              data-native-glass-id={tab.path}
               aria-label={t(tab.labelKey)}
               aria-current={active ? "page" : undefined}
               onClick={() => {

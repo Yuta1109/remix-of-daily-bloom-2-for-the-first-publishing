@@ -63,7 +63,8 @@
     --glass-bar: rgba(255, 255, 255, 0.72);
     --glass-icon: hsl(var(--foreground) / 0.84);
     --glass-prominent: hsl(var(--accent) / 0.78);
-    --glass-size-regular: 36px;
+    --glass-size-regular: 44px;
+    --glass-size-label: 36px;
     --glass-size-prominent: 56px;
     --glass-radius: 999px;
     --glass-spacing: 8px;
@@ -307,7 +308,7 @@ html.overlay-open #root {
 }
 
 .liquid-glass-label {
-  height: var(--glass-size-regular);
+  height: var(--glass-size-label);
   padding-inline: 12px;
 }
 
@@ -407,6 +408,34 @@ html.overlay-open #root {
 .liquid-glass[aria-disabled="true"] {
   opacity: var(--glass-disabled-opacity);
   transform: none;
+}
+
+/* iOS 26 draws these hosts natively. CSS material stays until that flag is set. */
+html[data-native-glass="on"] [data-native-glass-host] {
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-native-glass="on"] [data-native-glass-host] .liquid-glass {
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-native-glass="on"] [data-native-glass-host] .liquid-glass-selected {
+  opacity: 0 !important;
+}
+html[data-native-glass="on"] [data-native-glass-host]:not([data-native-glass-surface]),
+html[data-native-glass="on"] [data-native-glass-host]:not([data-native-glass-surface]) * {
+  color: transparent !important;
+}
+html[data-native-glass="on"] [data-native-glass-host] [data-native-glass-badge] {
+  color: hsl(var(--background)) !important;
 }
 
 button.liquid-glass[role="switch"][data-state="checked"] {

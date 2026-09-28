@@ -1,7 +1,8 @@
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useId, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useI18n, type TranslationKeys } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { useNativeGlass } from "@/hooks/use-native-glass";
 import { getReflectionAttentionCount } from "@/lib/v3/repository";
 
 export type CycleId = "plan" | "do" | "reflection" | "replan";
@@ -27,6 +28,8 @@ function attentionText(count: number): string {
 export function CycleNav({ current }: { current: CycleId }) {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const barId = useId();
+  const navRef = useRef<HTMLElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [dragX, setDragX] = useState<number | null>(null);
@@ -55,8 +58,25 @@ export function CycleNav({ current }: { current: CycleId }) {
     if (item && item.id !== current) navigate(item.to);
   };
 
+  useNativeGlass(navRef, {
+    id: barId,
+    role: "tabBar",
+    label: t("cycleNavLabel"),
+    tabs: ITEMS.map((item) => {
+      const name = t(item.labelKey);
+      const showAttention = item.id === "reflection" && attentionCount > 0;
+      return {
+        id: `${barId}-${item.id}`,
+        label: showAttention ? `${name} ${attentionLabel}` : name,
+        symbol: "",
+        selected: item.id === current,
+      };
+    }),
+  });
+
   return (
     <nav
+      ref={navRef}
       aria-label={t("cycleNavLabel")}
       data-testid="cycle-nav"
       className="liquid-glass liquid-glass-bar relative z-30 px-2 py-2"
@@ -80,6 +100,7 @@ export function CycleNav({ current }: { current: CycleId }) {
                 }}
                 type="button"
                 data-testid={`cycle-${item.id}`}
+                data-native-glass-id={`${barId}-${item.id}`}
                 aria-current={selected ? "page" : undefined}
                 aria-label={
                   showAttention ? `${t(item.labelKey)} · ${attentionLabel}` : undefined

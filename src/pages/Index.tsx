@@ -245,6 +245,7 @@ export default function Index() {
           </h1>
           <div className="flex items-center gap-2">
             <GlassControl
+              nativeGlass={{ role: "icon", symbol: "clock" }}
               onClick={() => setHistoryOpen(true)}
               aria-label={t("todoTaskHistoryAria")}
               data-testid="todo-history"
