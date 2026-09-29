@@ -424,6 +424,17 @@ html[data-native-glass="on"] [data-native-glass-host] {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+/* Popup hosts keep their CSS material until the native plate is actually applied,
+   and again as soon as that plate is cleared. Otherwise a closing popup leaves
+   a native button with no web button under it. */
+html[data-native-glass="on"]:not([data-native-glass-sheet="on"]) .liquid-glass-sheet [data-native-glass-host],
+html[data-native-glass="on"]:not([data-native-glass-sheet="on"]) .liquid-glass-surface [data-native-glass-host] {
+  background-color: var(--glass-surface) !important;
+  background-image: linear-gradient(180deg, var(--glass-highlight), transparent 46%) !important;
+  border-color: var(--glass-edge) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), var(--glass-shadow) !important;
+  color: var(--glass-icon) !important;
+}
 html[data-native-glass="on"] [data-native-glass-host] .liquid-glass {
   background-color: transparent !important;
   background-image: none !important;
@@ -435,9 +446,20 @@ html[data-native-glass="on"] [data-native-glass-host] .liquid-glass {
 html[data-native-glass="on"] [data-native-glass-host] .liquid-glass-selected {
   opacity: 0 !important;
 }
-html[data-native-glass="on"] [data-native-glass-host]:not([data-native-glass-surface]),
-html[data-native-glass="on"] [data-native-glass-host]:not([data-native-glass-surface]) * {
+html[data-native-glass="on"] [data-native-glass-host]:not(.liquid-glass-sheet *):not(.liquid-glass-surface *),
+html[data-native-glass="on"] [data-native-glass-host]:not(.liquid-glass-sheet *):not(.liquid-glass-surface *) * {
   color: transparent !important;
+}
+html[data-native-glass-sheet="on"] .liquid-glass-sheet [data-native-glass-host]:not([data-native-glass-surface]),
+html[data-native-glass-sheet="on"] .liquid-glass-sheet [data-native-glass-host]:not([data-native-glass-surface]) *,
+html[data-native-glass-sheet="on"] .liquid-glass-surface [data-native-glass-host]:not([data-native-glass-surface]),
+html[data-native-glass-sheet="on"] .liquid-glass-surface [data-native-glass-host]:not([data-native-glass-surface]) * {
+  color: transparent !important;
+}
+/* The native tab bar draws the icons. The web bar stays in the layout for
+   measurement and navigation, but must not show a second set through the glass. */
+html[data-native-glass="on"] nav[data-native-glass-host] * {
+  opacity: 0 !important;
 }
 html[data-native-glass="on"] [data-native-glass-host] [data-native-glass-badge] {
   color: hsl(var(--background)) !important;
@@ -455,6 +477,7 @@ html[data-native-glass="on"] [data-native-glass-host] [data-native-glass-badge] 
 }
 html[data-native-glass-sheet="on"] .liquid-glass-sheet,
 html[data-native-glass-sheet="on"] .liquid-glass-surface {
+  isolation: isolate;
   background-color: transparent !important;
   background-image: none !important;
   border-color: transparent !important;
@@ -469,15 +492,7 @@ html[data-native-glass-sheet="on"] [data-radix-alert-dialog-overlay] {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
-html[data-native-glass-sheet="on"] .liquid-glass-surface::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: #000;
-  mix-blend-mode: destination-out;
-  pointer-events: none;
-}
+html[data-native-glass-sheet="on"] .liquid-glass-sheet > *,
 html[data-native-glass-sheet="on"] .liquid-glass-surface > * {
   position: relative;
   z-index: 1;

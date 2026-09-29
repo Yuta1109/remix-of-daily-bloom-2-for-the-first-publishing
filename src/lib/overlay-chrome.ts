@@ -1,4 +1,4 @@
-import { scheduleNativeGlassSync } from "@/lib/native-glass";
+import { flushNativeGlass, scheduleNativeGlassSync } from "@/lib/native-glass";
 
 const OVERLAY_CLASS = "overlay-open";
 const listeners = new Set<() => void>();
@@ -8,7 +8,8 @@ export function setOverlayChrome(active: boolean): void {
   document.documentElement.classList.toggle(OVERLAY_CLASS, active);
   document.body.classList.toggle(OVERLAY_CLASS, active);
   listeners.forEach((listener) => listener());
-  scheduleNativeGlassSync();
+  if (active) scheduleNativeGlassSync();
+  else void flushNativeGlass();
 }
 
 export function isOverlayChromeOpen(): boolean {

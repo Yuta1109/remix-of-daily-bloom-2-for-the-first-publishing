@@ -100,10 +100,15 @@ export function QuickMemoEventConvertSheet({ request, onOpenChange, onSaved }: P
         >
           <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0" />
           <div className="pb-1">
-            <PopupCornerControls onClose={close} closeLabel={t("notesBack")} />
-            <DrawerPrimitive.Title className="px-4 text-base font-semibold">
-              {t("notesConvertToEvent")}
-            </DrawerPrimitive.Title>
+            <PopupCornerControls
+              onClose={close}
+              closeLabel={t("notesBack")}
+              title={
+                <DrawerPrimitive.Title className="truncate text-base font-semibold">
+                  {t("notesConvertToEvent")}
+                </DrawerPrimitive.Title>
+              }
+            />
           </div>
           <div className="px-4 pb-6 space-y-3 overflow-y-auto">
             <input

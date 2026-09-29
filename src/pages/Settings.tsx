@@ -826,10 +826,13 @@ export default function Settings({ staticPreview = false }: Props) {
               className="liquid-glass-surface relative z-10 w-full max-w-md max-h-[80dvh] bg-background rounded-3xl shadow-float flex flex-col overflow-hidden"
             >
               <div className="border-b border-border/50 shrink-0 pb-2">
-                <PopupCornerControls onClose={() => setListOpen(false)} closeLabel={t("cancel")} />
-                <h2 className="px-4 text-base font-semibold">{t("reusableTasks")}</h2>
+                <PopupCornerControls
+                  onClose={() => setListOpen(false)}
+                  closeLabel={t("cancel")}
+                  title={<h2 className="truncate text-base font-semibold">{t("reusableTasks")}</h2>}
+                />
               </div>
-              <div className="settings-modal-scroll min-h-0 flex-1 px-4 py-3 space-y-2">
+              <div className="settings-modal-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-3 space-y-2">
                 {templates.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">{t("addReusable")}</p>
                 ) : (

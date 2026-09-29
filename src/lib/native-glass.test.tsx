@@ -116,6 +116,50 @@ describe("native Liquid Glass bridge", () => {
     document.documentElement.classList.remove("overlay-open");
   });
 
+  it("omits a button that has scrolled outside the popup", () => {
+    document.documentElement.classList.add("overlay-open");
+    const sheet = document.createElement("div");
+    sheet.className = "liquid-glass-sheet";
+    sheet.style.overflow = "hidden";
+    place(sheet, rect(0, 200, 390, 500));
+    const scroll = document.createElement("div");
+    scroll.style.overflowY = "scroll";
+    scroll.getBoundingClientRect = () => rect(0, 280, 390, 400);
+    sheet.appendChild(scroll);
+    const button = document.createElement("button");
+    button.getBoundingClientRect = () => rect(300, 120, 70, 32);
+    scroll.appendChild(button);
+    registerNativeGlass({ id: "bring", role: "button", element: button, label: "Add" });
+
+    expect(measureNativeGlassSlots().find((spec) => spec.id === "bring")).toBeUndefined();
+    document.documentElement.classList.remove("overlay-open");
+  });
+
+  it("keeps the nested confirmation in front of the sheet controls", () => {
+    document.documentElement.classList.add("overlay-open");
+    const sheet = document.createElement("div");
+    sheet.className = "liquid-glass-sheet";
+    place(sheet, rect(0, 200, 390, 500));
+    const sheetButton = document.createElement("button");
+    sheetButton.getBoundingClientRect = () => rect(16, 240, 44, 44);
+    sheet.appendChild(sheetButton);
+    const confirm = document.createElement("div");
+    confirm.className = "liquid-glass-surface";
+    confirm.getBoundingClientRect = () => rect(24, 420, 340, 180);
+    const confirmButton = document.createElement("button");
+    confirmButton.getBoundingClientRect = () => rect(40, 520, 120, 36);
+    confirm.appendChild(confirmButton);
+    sheet.appendChild(confirm);
+    registerNativeGlass({ id: "sheet-button", role: "button", element: sheetButton, label: "Save" });
+    registerNativeGlass({ id: "confirm-button", role: "button", element: confirmButton, label: "Delete" });
+
+    const specs = measureNativeGlassSlots();
+    expect(specs.find((spec) => spec.id === "sheet-button")?.suppressed).toBe(true);
+    expect(specs.find((spec) => spec.id === "confirm-button")?.suppressed).toBe(false);
+    document.documentElement.classList.remove("overlay-open");
+    expect(measureNativeGlassSlots().find((spec) => spec.id === "confirm-button")?.suppressed).toBe(true);
+  });
+
   it("runs the existing web handler for a native tap and ignores a disabled control", () => {
     const back = document.createElement("button");
     back.setAttribute("data-native-glass-id", "settings-back");
@@ -195,7 +239,7 @@ describe("native Liquid Glass bridge", () => {
     expect(views).toContain("struct NativeGlassSurfaceLayer");
     expect(views).toContain("glassEffectID");
     expect(views).toContain("GlassEffectContainer");
-    expect(views).toContain("DragGesture(minimumDistance: 10)");
+    expect(views).toContain("DragGesture(minimumDistance: 10, coordinateSpace: .local)");
     expect(readFileSync("ios/App/App/NativeGlass/NativeGlassPlugin.swift", "utf8")).toContain("NativeGlassShieldView");
     expect(views).toContain(".glassEffect(.regular.interactive()");
     expect(views).toContain(".buttonStyle(.glass)");

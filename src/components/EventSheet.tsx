@@ -265,6 +265,11 @@ function FormBody({
         <PopupCornerControls
           onClose={onClose}
           closeLabel={t("cancel")}
+          title={
+            <h2 className="truncate text-base font-semibold">
+              {isNew ? t("newEvent") : t("editEvent")}
+            </h2>
+          }
           onConfirm={() => {
             void hideKeyboard();
             onSave();
@@ -272,9 +277,6 @@ function FormBody({
           confirmLabel={t("save")}
           confirmDisabled={!form.title.trim()}
         />
-        <h2 className="px-4 text-base font-semibold">
-          {isNew ? t("newEvent") : t("editEvent")}
-        </h2>
       </div>
 
       {/* Native overflow scroll (pre–scrollbar-inset experiments; scrolling worked here). */}
@@ -1029,9 +1031,9 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         <PopupCornerControls
           onClose={() => setRepeatDeleteOpen(false)}
           closeLabel={t("cancel")}
+          title={<p className="line-clamp-2 text-sm font-semibold leading-snug">{t(deleteTitleTk)}</p>}
         />
         <div className="px-4 pb-2">
-          <p className="text-sm font-semibold leading-snug">{t(deleteTitleTk)}</p>
           <p className="text-xs text-muted-foreground mt-1 leading-snug">
             {t("deleteRepeatSheetHint")}
           </p>
@@ -1062,9 +1064,11 @@ export function EventSheet({ open, onOpenChange, target, variant = "drawer", onS
         onClick={() => confirmPrompt.resolve(false)}
       />
       <div className="liquid-glass liquid-glass-surface relative z-10 w-full max-w-md overflow-hidden pointer-events-auto">
-        <div className="px-4 pt-4 pb-2">
-          <p className="text-sm font-semibold leading-snug">{confirmPrompt.message}</p>
-        </div>
+        <PopupCornerControls
+          onClose={() => confirmPrompt.resolve(false)}
+          closeLabel={confirmPrompt.cancelLabel || t("cancel")}
+          title={<p className="line-clamp-2 text-sm font-semibold leading-snug">{confirmPrompt.message}</p>}
+        />
         <div className="px-3 pb-3 flex gap-2">
           <GlassControl size="label" className="flex-1" onClick={() => confirmPrompt.resolve(false)}>
             {confirmPrompt.cancelLabel || t("cancel")}

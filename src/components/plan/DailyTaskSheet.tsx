@@ -346,19 +346,28 @@ export function DailyTaskSheet({
                 <PopupCornerControls
                   onClose={close}
                   closeLabel={t("cancel")}
+                  title={
+                    <DrawerPrimitive.Title className="truncate text-base font-semibold">
+                      {t("planCreateTaskTitle")}
+                    </DrawerPrimitive.Title>
+                  }
                   onConfirm={handleSave}
                   confirmLabel={t("planDailyAddCta")}
                   closeTestId="task-sheet-close"
                   confirmTestId="task-sheet-save"
                 />
-                <DrawerPrimitive.Title className="sr-only">{t("planCreateTaskTitle")}</DrawerPrimitive.Title>
               </>
             ) : (
               <>
-                <PopupCornerControls onClose={close} closeLabel={t("cancel")} />
-                <DrawerPrimitive.Title className="px-4 text-base font-semibold">
-                  {isEdit ? t("planEditTaskTitle") : t("planCreateTaskTitle")}
-                </DrawerPrimitive.Title>
+                <PopupCornerControls
+                  onClose={close}
+                  closeLabel={t("cancel")}
+                  title={
+                    <DrawerPrimitive.Title className="truncate text-base font-semibold">
+                      {isEdit ? t("planEditTaskTitle") : t("planCreateTaskTitle")}
+                    </DrawerPrimitive.Title>
+                  }
+                />
               </>
             )}
           </div>

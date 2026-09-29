@@ -115,10 +115,19 @@ struct NativeGlassLayer: View {
         ZStack(alignment: .topLeading) {
             ForEach(model.controls) { spec in
                 if spec.role != "surface" && !spec.suppressed {
-                    control(spec)
-                        .frame(width: max(spec.width, 1), height: max(spec.height, 1))
-                        .glassEffectID(spec.id, in: glassNamespace)
-                        .position(x: spec.x + spec.width / 2, y: spec.y + spec.height / 2)
+                    // The tab bar keeps its own glass container, so it does not
+                    // share an effect id with Plus, User, or other controls.
+                    Group {
+                        if spec.role == "tabBar" {
+                            control(spec)
+                                .frame(width: max(spec.width, 1), height: max(spec.height, 1))
+                        } else {
+                            control(spec)
+                                .frame(width: max(spec.width, 1), height: max(spec.height, 1))
+                                .glassEffectID(spec.id, in: glassNamespace)
+                        }
+                    }
+                    .position(x: spec.x + spec.width / 2, y: spec.y + spec.height / 2)
                 }
             }
         }
@@ -167,7 +176,9 @@ struct NativeGlassLayer: View {
             NativeLiquidGlassTabBar(
                 tabs: spec.tabs,
                 accent: accent,
-                insetBottom: CGFloat(spec.insetBottom)
+                insetBottom: CGFloat(spec.insetBottom),
+                width: CGFloat(spec.width),
+                height: CGFloat(spec.height)
             ) { id in
                 model.onTap(id)
             }
@@ -352,16 +363,15 @@ struct NativeLiquidGlassSwitch: View {
                 let knob = max(geo.size.height - 6, 10)
                 ZStack(alignment: on ? .trailing : .leading) {
                     Capsule()
-                        .fill(on ? accent.opacity(0.85) : Color.white.opacity(0.28))
+                        .fill(on ? accent : Color.primary.opacity(0.22))
                     Circle()
-                        .fill(Color.white)
+                        .fill(on ? Color.white : Color.primary)
                         .frame(width: knob, height: knob)
                         .padding(3)
                 }
             }
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Capsule())
         .accessibilityLabel(label)
         .modifier(GlassPressHold())
     }
@@ -478,9 +488,14 @@ struct NativeLiquidGlassTabBar: View {
     var tabs: [NativeGlassTab]
     var accent: Color
     var insetBottom: CGFloat
+    /// Measured web frame. Safe area is already inside this rect; do not add it again.
+    var width: CGFloat
+    var height: CGFloat
     var onSelect: (String) -> Void
 
     @State private var dragX: CGFloat?
+    @State private var dragging = false
+    @State private var ignoreButton = false
     @Namespace private var tabGlass
 
     private var textual: Bool {
@@ -488,55 +503,80 @@ struct NativeLiquidGlassTabBar: View {
     }
 
     var body: some View {
-        GlassEffectContainer(spacing: 12) {
-            GeometryReader { geo in
-                let count = max(tabs.count, 1)
-                let width = max(geo.size.width, 1)
-                let contentHeight = max(geo.size.height - insetBottom, 44)
-                let segmentWidth = width / CGFloat(count)
-                let selectedIndex = tabs.firstIndex(where: \.selected)
-                let travel: CGFloat = {
-                    if let dragX { return min(max(dragX, 0), width) }
-                    if let selectedIndex { return (CGFloat(selectedIndex) + 0.5) * segmentWidth }
-                    return -1
-                }()
-                let showPill = travel >= 0
-                let pillWidth = max(segmentWidth - 8, 44)
-                ZStack(alignment: .topLeading) {
-                    Color.clear
-                        .glassEffect(.regular, in: Capsule())
-                    if showPill {
-                        Color.clear
-                            .glassEffect(.regular, in: Capsule())
-                            .glassEffectID("tab-selection", in: tabGlass)
-                            .frame(width: pillWidth, height: max(contentHeight - 10, 36))
-                            .offset(x: min(max(travel - pillWidth / 2, 4), width - pillWidth - 4), y: 5)
-                    }
-                    HStack(spacing: 0) {
-                        ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
-                            segment(tab, icon: !textual, highlighted: highlighted(index: index, travel: travel, segment: segmentWidth))
-                        }
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.top, 6)
-                    .padding(.bottom, insetBottom + 6)
-                }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 10)
-                        .onChanged { value in
-                            dragX = min(max(value.location.x, 0), width)
-                        }
-                        .onEnded { value in
-                            let x = min(max(value.location.x, 0), width - 0.01)
-                            let index = min(count - 1, max(0, Int(x / segmentWidth)))
-                            dragX = nil
-                            if tabs.indices.contains(index) {
-                                onSelect(tabs[index].id)
-                            }
-                        }
-                )
+        let barWidth = max(width, 1)
+        let barHeight = max(height, 1)
+        let count = max(tabs.count, 1)
+        let segmentWidth = barWidth / CGFloat(count)
+        let band = max(barHeight - insetBottom, 1)
+        let lens = min(max(band - 8, 44), band)
+        let selectedIndex = tabs.firstIndex(where: \.selected)
+        let travel: CGFloat = {
+            if let dragX {
+                return min(max(dragX, lens / 2 + 4), barWidth - lens / 2 - 4)
             }
+            if let selectedIndex {
+                return (CGFloat(selectedIndex) + 0.5) * segmentWidth
+            }
+            return -1
+        }()
+        let showLens = travel >= 0
+        // `insetBottom` is the home-indicator padding already measured in the
+        // web bar. Do not add a second safe area. The capsule stays that rect.
+        // The lens is its own glass so it does not melt into the bar, and the
+        // labels sit in front of both.
+        ZStack {
+            Color.clear
+                .frame(width: barWidth, height: barHeight)
+                .glassEffect(.regular, in: Capsule())
+                .allowsHitTesting(false)
+                .zIndex(0)
+            GlassEffectContainer(spacing: 0) {
+                if showLens {
+                    Color.clear
+                        .frame(width: lens, height: lens)
+                        .glassEffect(.clear, in: Circle())
+                        .glassEffectID("tab-selection", in: tabGlass)
+                        .offset(x: travel - barWidth / 2, y: -insetBottom / 2)
+                        .animation(dragging ? nil : .easeOut(duration: 0.16), value: travel)
+                }
+            }
+            .frame(width: barWidth, height: barHeight)
+            .allowsHitTesting(false)
+            .zIndex(1)
+            HStack(spacing: 0) {
+                ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+                    segment(
+                        tab,
+                        icon: !textual,
+                        highlighted: highlighted(index: index, travel: travel, segment: segmentWidth)
+                    )
+                }
+            }
+            .padding(.bottom, insetBottom)
+            .zIndex(2)
+        }
+        .frame(width: barWidth, height: barHeight)
+        .contentShape(Capsule())
+        .gesture(
+            DragGesture(minimumDistance: 10, coordinateSpace: .local)
+                .onChanged { value in
+                    dragging = true
+                    dragX = min(max(value.location.x, 0), barWidth)
+                }
+                .onEnded { value in
+                    let x = min(max(value.location.x, 0), barWidth - 0.01)
+                    let index = min(count - 1, max(0, Int(x / segmentWidth)))
+                    ignoreButton = true
+                    dragging = false
+                    dragX = (CGFloat(index) + 0.5) * segmentWidth
+                    if tabs.indices.contains(index) {
+                        onSelect(tabs[index].id)
+                    }
+                    DispatchQueue.main.async { ignoreButton = false }
+                }
+        )
+        .onChange(of: tabs.first(where: \.selected)?.id) { _, _ in
+            dragX = nil
         }
     }
 
@@ -547,6 +587,7 @@ struct NativeLiquidGlassTabBar: View {
 
     private func segment(_ tab: NativeGlassTab, icon: Bool, highlighted: Bool) -> some View {
         Button {
+            if dragging || ignoreButton { return }
             onSelect(tab.id)
         } label: {
             Group {
@@ -567,7 +608,7 @@ struct NativeLiquidGlassTabBar: View {
                         .padding(.horizontal, 4)
                 }
             }
-            .foregroundStyle(highlighted ? (icon ? accent : Color.primary) : Color.secondary)
+            .foregroundStyle(highlighted ? accent : Color.primary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .buttonStyle(.plain)

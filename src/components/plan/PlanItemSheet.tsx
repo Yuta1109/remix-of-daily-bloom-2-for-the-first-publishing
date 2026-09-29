@@ -298,10 +298,15 @@ export function PlanItemSheet({ request, onOpenChange, onSaved, onBreakdown, onC
           <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
 
           <div className="border-b border-border/50 shrink-0 pb-2">
-            <PopupCornerControls onClose={close} closeLabel={t("cancel")} />
-            <DrawerPrimitive.Title className="px-4 text-base font-semibold">
-              {isEdit ? t("planEditTitle") : t(CREATE_TITLE_KEY[level])}
-            </DrawerPrimitive.Title>
+            <PopupCornerControls
+              onClose={close}
+              closeLabel={t("cancel")}
+              title={
+                <DrawerPrimitive.Title className="truncate text-base font-semibold">
+                  {isEdit ? t("planEditTitle") : t(CREATE_TITLE_KEY[level])}
+                </DrawerPrimitive.Title>
+              }
+            />
           </div>
 
           <div

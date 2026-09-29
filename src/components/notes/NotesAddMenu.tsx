@@ -3,6 +3,7 @@ import { FolderPlus, StickyNote, Zap } from "lucide-react";
 import { Drawer as DrawerPrimitive } from "vaul";
 import { useI18n } from "@/lib/i18n";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
+import { PopupCornerControls } from "@/components/PopupCornerControls";
 
 export type NotesAddKind = "quickMemo" | "note" | "collection";
 
@@ -31,14 +32,20 @@ export function NotesAddMenu({ open, onOpenChange, onPick }: Props) {
       <DrawerPrimitive.Portal>
         <DrawerPrimitive.Overlay className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px]" />
         <DrawerPrimitive.Content
-          className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border liquid-glass liquid-glass-sheet outline-none"
+          className="fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border liquid-glass liquid-glass-sheet min-h-0 overflow-hidden outline-none"
           style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}
           aria-describedby={undefined}
         >
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 rounded-full bg-muted shrink-0" />
-          <DrawerPrimitive.Title className="px-5 pt-2 pb-3 text-base font-semibold">
-            {t("notesAddMenuTitle")}
-          </DrawerPrimitive.Title>
+          <PopupCornerControls
+            onClose={() => onOpenChange(false)}
+            closeLabel={t("cancel")}
+            title={
+              <DrawerPrimitive.Title className="truncate text-base font-semibold">
+                {t("notesAddMenuTitle")}
+              </DrawerPrimitive.Title>
+            }
+          />
           <div className="px-3 pb-2 space-y-1">
             <AddRow
               icon={<Zap className="w-5 h-5" aria-hidden="true" />}

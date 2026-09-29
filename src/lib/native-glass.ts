@@ -109,7 +109,15 @@ export function unregisterNativeGlass(id: string): void {
   const slot = slots.get(id);
   slot?.element.removeAttribute("aria-hidden");
   slots.delete(id);
-  scheduleSync();
+  flushNativeGlassSoon();
+}
+
+/** Drop a removed control in this turn. A deferred frame is how a closed popup leaves a glass button behind. */
+function flushNativeGlassSoon(): void {
+  if (typeof window === "undefined") return;
+  if (frame) cancelAnimationFrame(frame);
+  frame = 0;
+  void flushNativeGlass();
 }
 
 export function measureNativeGlassSlots(): NativeGlassSpec[] {
@@ -154,7 +162,10 @@ export async function flushNativeGlass(): Promise<void> {
   if (document.documentElement.classList.contains("overlay-open")) scheduleSync();
   const controls = measureNativeGlassSlots();
   const payload = JSON.stringify(envelopeFor(controls));
-  if (payload === lastPayload) return;
+  if (payload === lastPayload) {
+    if (popupIsMoving()) scheduleSync();
+    return;
+  }
   if (flushing) {
     pending = true;
     return;
@@ -188,7 +199,19 @@ export async function flushNativeGlass(): Promise<void> {
     syncPopupHoles([]);
   } finally {
     flushing = false;
+    if (popupIsMoving()) scheduleSync();
   }
+}
+
+function popupIsMoving(): boolean {
+  if (typeof document === "undefined") return false;
+  if (!document.documentElement.classList.contains("overlay-open")) return false;
+  for (const node of document.querySelectorAll<HTMLElement>(POPUP_SELECTOR)) {
+    const transform = getComputedStyle(node).transform;
+    if (transform && transform !== "none") return true;
+    if (typeof node.getAnimations === "function" && node.getAnimations().length > 0) return true;
+  }
+  return false;
 }
 
 export function resetNativeGlassForTests(): void {
@@ -220,7 +243,9 @@ function envelopeFor(controls: NativeGlassSpec[]) {
 function measureSlot(slot: NativeGlassSlot): NativeGlassSpec | null {
   const el = slot.element;
   if (!el.isConnected) return null;
-  const box = el.getBoundingClientRect();
+  const raw = el.getBoundingClientRect();
+  const box = clipFrame(el, raw);
+  if (!box) return null;
   const x = box.left;
   let y = box.top;
   const width = box.width;
@@ -261,8 +286,70 @@ function measureSlot(slot: NativeGlassSlot): NativeGlassSpec | null {
 }
 
 function controlIsBehindModal(el: HTMLElement): boolean {
-  if (!document.documentElement.classList.contains("overlay-open")) return false;
-  return el.closest("[role='dialog'], [role='alertdialog'], [data-vaul-drawer], .liquid-glass-sheet, .liquid-glass-surface") == null;
+  const inPopup = el.closest(POPUP_SELECTOR) != null;
+  if (!document.documentElement.classList.contains("overlay-open")) return inPopup;
+  const top = topPopup();
+  if (!top) return true;
+  return !top.contains(el);
+}
+
+/** The last visible popup in document order. A confirmation nested in a sheet comes after that sheet. */
+function topPopup(): HTMLElement | null {
+  let top: HTMLElement | null = null;
+  for (const node of document.querySelectorAll<HTMLElement>(POPUP_SELECTOR)) {
+    const box = node.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0) top = node;
+  }
+  return top;
+}
+
+/**
+ * Native controls are drawn above the web view, so a scrolled button would
+ * paint outside its popup. Keep only the part inside each clipping ancestor.
+ */
+function clipFrame(el: HTMLElement, box: DOMRect): DOMRect | null {
+  const popup = el.closest<HTMLElement>(POPUP_SELECTOR);
+  if (!popup || popup === el) return box;
+  let left = box.left;
+  let top = box.top;
+  let right = box.right;
+  let bottom = box.bottom;
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const style = getComputedStyle(node);
+    const clipsX = style.overflowX === "auto" || style.overflowX === "scroll" || style.overflowX === "hidden";
+    const clipsY = style.overflowY === "auto" || style.overflowY === "scroll" || style.overflowY === "hidden";
+    if (clipsX || clipsY) {
+      const clip = node.getBoundingClientRect();
+      if (clipsX) {
+        left = Math.max(left, clip.left);
+        right = Math.min(right, clip.right);
+      }
+      if (clipsY) {
+        top = Math.max(top, clip.top);
+        bottom = Math.min(bottom, clip.bottom);
+      }
+    }
+    if (node === popup) break;
+    node = node.parentElement;
+  }
+  const width = right - left;
+  const height = bottom - top;
+  if (!(width >= 8) || !(height >= 8)) return null;
+  if (left === box.left && top === box.top && width === box.width && height === box.height) return box;
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    right,
+    bottom,
+    width,
+    height,
+    toJSON() {
+      return {};
+    },
+  } as DOMRect;
 }
 
 function measurePopupSurfaces(): NativeGlassSpec[] {
@@ -375,6 +462,8 @@ function ensureViewportListeners() {
   const schedule = () => scheduleSync();
   window.addEventListener("resize", schedule);
   window.addEventListener("scroll", schedule, true);
+  document.addEventListener("transitionrun", schedule, true);
+  document.addEventListener("animationstart", schedule, true);
   window.visualViewport?.addEventListener("resize", schedule);
   window.visualViewport?.addEventListener("scroll", schedule);
 }

@@ -117,6 +117,10 @@ extension NativeGlassPlugin {
 @available(iOS 26.0, *)
 final class NativeGlassOverlayView: UIView {
     var hitFrames: [CGRect] = []
+    /// While a popup is open, controls cannot paint outside its rect.
+    var clipRect: CGRect? {
+        didSet { setNeedsLayout() }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -129,16 +133,28 @@ final class NativeGlassOverlayView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let clipRect else {
+            layer.mask = nil
+            return
+        }
+        let mask = CAShapeLayer()
+        mask.frame = bounds
+        mask.path = UIBezierPath(roundedRect: clipRect, cornerRadius: 22).cgPath
+        layer.mask = mask
+    }
+
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        hitFrames.contains { $0.contains(point) }
+        if let clipRect, !clipRect.contains(point) { return false }
+        return hitFrames.contains { $0.contains(point) }
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // Only control frames are inside this view. Returning the SwiftUI host
+        // keeps the drag on the native tab bar instead of the web view behind it.
         guard self.point(inside: point, with: event) else { return nil }
-        let hit = super.hitTest(point, with: event)
-        if hit == nil || hit === self { return nil }
-        if subviews.contains(where: { $0 === hit }) { return nil }
-        return hit
+        return super.hitTest(point, with: event)
     }
 }
 
@@ -242,6 +258,7 @@ final class NativeGlassMount {
     func detach() {
         model.controls = []
         overlay.hitFrames = []
+        overlay.clipRect = nil
         shield.holes = []
         shield.isHidden = true
         shield.isUserInteractionEnabled = false
@@ -266,6 +283,9 @@ final class NativeGlassMount {
         }
         let surfaces = envelope.controls.filter { $0.role == "surface" && !$0.suppressed }
         overlay.hitFrames = envelope.controls.filter { $0.role != "surface" && !$0.suppressed && !$0.passThrough }.map(\.frame)
+        overlay.clipRect = surfaces.reduce(nil as CGRect?) { union, spec in
+            union?.union(spec.frame) ?? spec.frame
+        }
         shield.holes = surfaces.map(\.frame)
         shield.isHidden = surfaces.isEmpty
         shield.isUserInteractionEnabled = !surfaces.isEmpty

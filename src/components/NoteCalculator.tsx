@@ -196,8 +196,11 @@ export function NoteCalculator({ open, onClose, onInsert }: Props) {
         style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
       >
         <div className="shrink-0 pb-1">
-          <PopupCornerControls onClose={onClose} closeLabel={t("cancel")} />
-          <p className="px-4 text-sm font-semibold">{t("memoCalculator")}</p>
+          <PopupCornerControls
+            onClose={onClose}
+            closeLabel={t("cancel")}
+            title={<p className="truncate text-sm font-semibold">{t("memoCalculator")}</p>}
+          />
         </div>
         <div
           className="event-sheet-scroll min-h-0 overflow-y-scroll overscroll-contain px-4 pb-2"

@@ -12,6 +12,7 @@ import {
 import { getPastDaysWithListedTasks } from "@/lib/v3/repository";
 import { setOverlayChrome } from "@/lib/overlay-chrome";
 import { GlassControl } from "@/components/GlassControl";
+import { PopupCornerControls } from "@/components/PopupCornerControls";
 import type { TaskItem as V3Task } from "@/lib/v3/types";
 
 interface Props {
@@ -107,10 +108,17 @@ export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }:
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <div className="mx-auto mt-2.5 mb-0.5 h-1.5 w-10 rounded-full bg-muted shrink-0 touch-none" />
-          <div className="px-4 pt-2 pb-3 shrink-0">
-            <DrawerPrimitive.Title className="text-base font-semibold">
-              {t("taskHistory")}
-            </DrawerPrimitive.Title>
+          <div className="shrink-0">
+            <PopupCornerControls
+              onClose={() => onOpenChange(false)}
+              closeLabel={t("cancel")}
+              title={
+                <DrawerPrimitive.Title className="truncate text-base font-semibold">
+                  {t("taskHistory")}
+                </DrawerPrimitive.Title>
+              }
+            />
+            <div className="px-4 pb-3">
             <p className="text-xs text-muted-foreground mt-1">{t("taskHistoryHint")}</p>
             <div className="flex gap-1.5 overflow-x-auto mt-3 pb-0.5 -mx-0.5 px-0.5">
               {months.map((key) => (
@@ -143,6 +151,7 @@ export function TaskHistorySheet({ open, todayKey, onOpenChange, onBringTasks }:
                   <span className="relative">{locale === "ja" ? `第${item.week}週` : `Week ${item.week}`}</span>
                 </GlassControl>
               ))}
+            </div>
             </div>
           </div>
           <div

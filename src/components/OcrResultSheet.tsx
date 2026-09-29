@@ -1,6 +1,9 @@
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { setOverlayChrome } from "@/lib/overlay-chrome";
+import { PopupCornerControls } from "@/components/PopupCornerControls";
 
 type Props = {
   open: boolean;
@@ -11,16 +14,23 @@ type Props = {
 
 export function OcrResultSheet({ open, message, kind = "info", onClose }: Props) {
   const { t } = useI18n();
+  useEffect(() => {
+    if (!open) return;
+    setOverlayChrome(true);
+    return () => setOverlayChrome(false);
+  }, [open]);
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-6 bg-black/30">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/30 p-6">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="ocr-result-message"
-        className="w-full max-w-sm bg-card rounded-2xl shadow-float border border-border/60 px-5 py-5"
+        className="liquid-glass-surface w-full max-w-sm overflow-hidden rounded-2xl border border-border/60"
       >
+        <PopupCornerControls onClose={onClose} closeLabel={t("cancel")} />
+        <div className="px-5 pb-5">
         <p
           id="ocr-result-message"
           className={cn(
@@ -37,6 +47,7 @@ export function OcrResultSheet({ open, message, kind = "info", onClose }: Props)
         >
           {t("ocrAcknowledge")}
         </button>
+        </div>
       </div>
     </div>,
     document.body,
