@@ -493,15 +493,15 @@ struct NativeLiquidGlassTabBar: View {
                 let count = max(tabs.count, 1)
                 let width = max(geo.size.width, 1)
                 let contentHeight = max(geo.size.height - insetBottom, 44)
-                let segment = width / CGFloat(count)
+                let segmentWidth = width / CGFloat(count)
                 let selectedIndex = tabs.firstIndex(where: \.selected)
                 let travel: CGFloat = {
                     if let dragX { return min(max(dragX, 0), width) }
-                    if let selectedIndex { return (CGFloat(selectedIndex) + 0.5) * segment }
+                    if let selectedIndex { return (CGFloat(selectedIndex) + 0.5) * segmentWidth }
                     return -1
                 }()
                 let showPill = travel >= 0
-                let pillWidth = max(segment - 8, 44)
+                let pillWidth = max(segmentWidth - 8, 44)
                 ZStack(alignment: .topLeading) {
                     Color.clear
                         .glassEffect(.regular, in: Capsule())
@@ -514,7 +514,7 @@ struct NativeLiquidGlassTabBar: View {
                     }
                     HStack(spacing: 0) {
                         ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
-                            segment(tab, icon: !textual, highlighted: highlighted(index: index, travel: travel, segment: segment))
+                            segment(tab, icon: !textual, highlighted: highlighted(index: index, travel: travel, segment: segmentWidth))
                         }
                     }
                     .padding(.horizontal, 6)
@@ -529,7 +529,7 @@ struct NativeLiquidGlassTabBar: View {
                         }
                         .onEnded { value in
                             let x = min(max(value.location.x, 0), width - 0.01)
-                            let index = min(count - 1, max(0, Int(x / segment)))
+                            let index = min(count - 1, max(0, Int(x / segmentWidth)))
                             dragX = nil
                             if tabs.indices.contains(index) {
                                 onSelect(tabs[index].id)
