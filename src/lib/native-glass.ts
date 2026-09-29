@@ -16,6 +16,7 @@ export type NativeGlassRole =
   | "close"
   | "check"
   | "icon"
+  | "switch"
   | "search"
   | "tabBar"
   | "surface";
@@ -36,6 +37,8 @@ export interface NativeGlassRegistration {
   enabled?: boolean;
   value?: string;
   tabs?: NativeGlassTabSpec[];
+  /** Glass is drawn, and the web control keeps the tap. Used for pickers. */
+  passThrough?: boolean;
 }
 
 export interface NativeGlassSlot extends NativeGlassRegistration {
@@ -55,6 +58,14 @@ export interface NativeGlassSpec {
   enabled: boolean;
   value: string;
   tabs: NativeGlassTabSpec[];
+  /** Hidden while a popup is the top layer. Not drawn and not tappable. */
+  suppressed: boolean;
+  /** Extra space inside a tab bar, below the icons, so the bar can reach the screen edge. */
+  insetBottom: number;
+  /** Corner radius for a popup surface. Unused by buttons. */
+  corner: number;
+  /** Glass is drawn, and the web control keeps the tap. */
+  passThrough: boolean;
 }
 
 interface NativeGlassPlugin {
@@ -73,7 +84,7 @@ interface NativeGlassPlugin {
 
 const NativeGlass = registerPlugin<NativeGlassPlugin>("NativeGlass");
 
-const TAB_BAR_PAD = 4;
+const POPUP_SELECTOR = ".liquid-glass-sheet, .liquid-glass-surface";
 const slots = new Map<string, NativeGlassSlot>();
 
 let frame = 0;
@@ -107,8 +118,13 @@ export function measureNativeGlassSlots(): NativeGlassSpec[] {
     const measured = measureSlot(slot);
     if (measured) specs.push(measured);
   }
+  specs.push(...measurePopupSurfaces());
   specs.sort((a, b) => a.id.localeCompare(b.id));
   return specs;
+}
+
+export function scheduleNativeGlassSync(): void {
+  scheduleSync();
 }
 
 export function dispatchNativeGlassTap(id: string): boolean {
@@ -135,6 +151,7 @@ export function dispatchNativeGlassChange(id: string, value: string): boolean {
 export async function flushNativeGlass(): Promise<void> {
   if (!nativeGlassSupported()) return;
   if (availability === false) return;
+  if (document.documentElement.classList.contains("overlay-open")) scheduleSync();
   const controls = measureNativeGlassSlots();
   const payload = JSON.stringify(envelopeFor(controls));
   if (payload === lastPayload) return;
@@ -155,7 +172,9 @@ export async function flushNativeGlass(): Promise<void> {
     for (;;) {
       const result = await NativeGlass.sync({ payload: next });
       lastPayload = next;
-      setNativeGlassActive(result.applied === true && nextControls.length > 0);
+      const applied = result.applied === true && nextControls.length > 0;
+      setNativeGlassActive(applied);
+      syncPopupHoles(applied ? nextControls.filter((spec) => spec.role === "surface") : []);
       if (!result.applied) lastPayload = "";
       if (!pending) break;
       pending = false;
@@ -166,6 +185,7 @@ export async function flushNativeGlass(): Promise<void> {
   } catch {
     lastPayload = "";
     setNativeGlassActive(false);
+    syncPopupHoles([]);
   } finally {
     flushing = false;
   }
@@ -180,7 +200,11 @@ export function resetNativeGlassForTests(): void {
   flushing = false;
   availability = null;
   if (typeof document !== "undefined") {
+    document.documentElement.classList.remove("overlay-open");
+    document.body.classList.remove("overlay-open");
     document.documentElement.removeAttribute("data-native-glass");
+    document.documentElement.removeAttribute("data-native-glass-sheet");
+    document.getElementById("native-glass-holes")?.remove();
   }
 }
 
@@ -201,6 +225,7 @@ function measureSlot(slot: NativeGlassSlot): NativeGlassSpec | null {
   let y = box.top;
   const width = box.width;
   let height = box.height;
+  let insetBottom = 0;
   if (slot.role === "tabBar") {
     const buttons = [...el.querySelectorAll("button")].filter((button) => {
       const rect = button.getBoundingClientRect();
@@ -208,10 +233,10 @@ function measureSlot(slot: NativeGlassSlot): NativeGlassSpec | null {
     });
     if (buttons.length > 0) {
       const rects = buttons.map((button) => button.getBoundingClientRect());
-      const top = Math.min(...rects.map((rect) => rect.top)) - TAB_BAR_PAD;
-      const bottom = Math.max(...rects.map((rect) => rect.bottom)) + TAB_BAR_PAD;
-      y = top;
-      height = bottom - top;
+      const buttonBottom = Math.max(...rects.map((rect) => rect.bottom));
+      insetBottom = Math.max(0, box.bottom - buttonBottom);
+      y = box.top;
+      height = box.height;
     }
   }
   if (!(width > 0) || !(height > 0)) return null;
@@ -228,7 +253,78 @@ function measureSlot(slot: NativeGlassSlot): NativeGlassSpec | null {
     enabled: slot.enabled ?? true,
     value: slot.value ?? "",
     tabs: slot.tabs ?? [],
+    suppressed: controlIsBehindModal(el),
+    insetBottom,
+    corner: 0,
+    passThrough: slot.passThrough ?? false,
   };
+}
+
+function controlIsBehindModal(el: HTMLElement): boolean {
+  if (!document.documentElement.classList.contains("overlay-open")) return false;
+  return el.closest("[role='dialog'], [role='alertdialog'], [data-vaul-drawer], .liquid-glass-sheet, .liquid-glass-surface") == null;
+}
+
+function measurePopupSurfaces(): NativeGlassSpec[] {
+  if (!document.documentElement.classList.contains("overlay-open")) return [];
+  const nodes = [...document.querySelectorAll<HTMLElement>(POPUP_SELECTOR)];
+  const specs: NativeGlassSpec[] = [];
+  nodes.forEach((el, index) => {
+    const box = el.getBoundingClientRect();
+    if (!(box.width > 0) || !(box.height > 0)) return;
+    const id = el.getAttribute("data-native-glass-surface-id") ?? `popup-surface-${index}`;
+    el.setAttribute("data-native-glass-surface-id", id);
+    const raw = getComputedStyle(el).borderTopLeftRadius;
+    const parsed = Number.parseFloat(raw);
+    specs.push({
+      id,
+      role: "surface",
+      x: box.left,
+      y: box.top,
+      width: box.width,
+      height: box.height,
+      label: "",
+      symbol: "",
+      prominent: false,
+      enabled: true,
+      value: "",
+      tabs: [],
+      suppressed: false,
+      insetBottom: 0,
+      corner: Number.isFinite(parsed) && parsed > 0 ? parsed : 22,
+      passThrough: false,
+    });
+  });
+  return specs;
+}
+
+function syncPopupHoles(surfaces: NativeGlassSpec[]) {
+  const root = document.documentElement;
+  if (surfaces.length === 0) {
+    root.removeAttribute("data-native-glass-sheet");
+    document.getElementById("native-glass-holes")?.remove();
+    return;
+  }
+  root.setAttribute("data-native-glass-sheet", "on");
+  let layer = document.getElementById("native-glass-holes");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "native-glass-holes";
+    layer.setAttribute("aria-hidden", "true");
+    document.body.appendChild(layer);
+  }
+  layer.replaceChildren(
+    ...surfaces.map((spec) => {
+      const hole = document.createElement("div");
+      hole.className = "native-glass-hole";
+      hole.style.left = `${spec.x}px`;
+      hole.style.top = `${spec.y}px`;
+      hole.style.width = `${spec.width}px`;
+      hole.style.height = `${spec.height}px`;
+      hole.style.borderRadius = `${spec.corner}px`;
+      return hole;
+    }),
+  );
 }
 
 function activationTarget(host: HTMLElement): HTMLElement {

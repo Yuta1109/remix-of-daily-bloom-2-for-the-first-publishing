@@ -40,17 +40,18 @@ export default function ProgressPoints() {
     <SwipeBackPage followFinger underlay={<Progress />} onBack={back}>
     <div className="app-shell-page">
       <div className="app-shell-header px-4 pb-2">
-        <GlassControl
-          variant="regular"
-          nativeGlass={{ role: "back" }}
-          aria-label={t("back")}
-          data-testid="progress-detail-back"
-          onClick={back}
-          className="mb-2"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </GlassControl>
-        <h1 className="text-[28px] font-bold tracking-tight">{t("progressPointsDetailTitle")}</h1>
+        <div className="flex items-center gap-2 min-h-11">
+          <GlassControl
+            variant="regular"
+            nativeGlass={{ role: "back" }}
+            aria-label={t("back")}
+            data-testid="progress-detail-back"
+            onClick={back}
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </GlassControl>
+          <h1 className="text-[28px] font-bold tracking-tight">{t("progressPointsDetailTitle")}</h1>
+        </div>
       </div>
       <div className="app-shell-scroll px-4 pb-8 space-y-4">
         <div className="rounded-2xl bg-card shadow-soft px-4 py-3" data-testid="progress-points-balance">

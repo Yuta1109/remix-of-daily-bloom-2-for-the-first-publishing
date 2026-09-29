@@ -95,11 +95,15 @@ export default function PostponeBox() {
   return (
     <div className="app-shell-page">
       <div className="app-shell-header px-4 pb-2">
-        <GlassControl nativeGlass={{ role: "back" }} onClick={() => navigate("/plan/replan")} aria-label={t("back")} className="mb-2">
-          <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-        </GlassControl>
-        <h1 className="text-[28px] font-bold tracking-tight">{t("postponeBox")}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{t("postponeNoDate")}</p>
+        <div className="flex items-center gap-2 min-h-11">
+          <GlassControl nativeGlass={{ role: "back" }} onClick={() => navigate("/plan/replan")} aria-label={t("back")}>
+            <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+          </GlassControl>
+          <div className="min-w-0">
+            <h1 className="text-[28px] font-bold tracking-tight">{t("postponeBox")}</h1>
+            <p className="text-sm text-muted-foreground">{t("postponeNoDate")}</p>
+          </div>
+        </div>
       </div>
       <div className="app-shell-scroll px-4 pb-8 space-y-3">
         {rows.length === 0 ? (

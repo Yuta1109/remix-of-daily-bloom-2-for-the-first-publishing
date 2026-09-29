@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import {
   Globe,
   ListPlus,
-  Plus,
   X,
   Bell,
   Shield,
@@ -17,9 +16,11 @@ import {
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { SwipeBackPage } from "@/components/SwipeBackPage";
-import { GlassControl } from "@/components/GlassControl";
+import { GlassControl, GlassField } from "@/components/GlassControl";
 import { PopupCornerControls } from "@/components/PopupCornerControls";
 import { goPageBack } from "@/lib/page-back";
+import { clearSettingsPrivacyReturn, markSettingsPrivacyReturn, peekSettingsPrivacyReturn } from "@/lib/settings-return";
+import { setOverlayChrome } from "@/lib/overlay-chrome";
 import User from "@/pages/User";
 import { useI18n, type Locale, type TranslationKeys } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -120,6 +121,21 @@ export default function Settings({ staticPreview = false }: Props) {
     if (location.hash !== "#reflection") return;
     document.getElementById("settings-reflection")?.scrollIntoView({ block: "start" });
   }, [location.hash]);
+
+  useEffect(() => {
+    if (staticPreview || !peekSettingsPrivacyReturn()) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById("settings-privacy")?.scrollIntoView({ block: "center" });
+      clearSettingsPrivacyReturn();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [staticPreview]);
+
+  useEffect(() => {
+    if (staticPreview) return;
+    setOverlayChrome(listOpen);
+    return () => setOverlayChrome(false);
+  }, [listOpen, staticPreview]);
 
   const refreshPermission = async () => {
     if (!isNative()) return;
@@ -259,16 +275,21 @@ export default function Settings({ staticPreview = false }: Props) {
     >
       {!staticPreview && (
         <div className="app-shell-header px-4 pb-2">
-          <GlassControl
-            variant="regular"
-            nativeGlass={{ id: "settings-back", role: "back" }}
-            onClick={back}
-            aria-label={t("back")}
-            data-testid="settings-back"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </GlassControl>
-          <h1 className="mt-2 text-xl font-bold tracking-tight">{t("appSettings")}</h1>
+          <div className="relative flex items-center min-h-11">
+            <GlassControl
+              variant="regular"
+              nativeGlass={{ id: "settings-back", role: "back" }}
+              onClick={back}
+              aria-label={t("back")}
+              data-testid="settings-back"
+              className="relative z-10"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </GlassControl>
+            <h1 className="pointer-events-none absolute inset-x-0 text-center text-xl font-bold tracking-tight">
+              {t("appSettings")}
+            </h1>
+          </div>
         </div>
       )}
 
@@ -338,24 +359,26 @@ export default function Settings({ staticPreview = false }: Props) {
                   className="flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-2.5"
                 >
                   <span className="text-sm">{r.title}</span>
-                  <button
+                  <GlassControl
+                    nativeGlass={{ role: "icon", symbol: "xmark" }}
+                    aria-label={t("notesDelete")}
                     onClick={() => handleRemove(r.id)}
-                    className="text-muted-foreground hover:text-destructive p-1"
+                    className="!h-8 !w-8 text-muted-foreground"
                   >
                     <X className="w-4 h-4" />
-                  </button>
+                  </GlassControl>
                 </div>
               ))}
             </div>
             {overflow > 0 && (
-              <button
-                type="button"
+              <GlassControl
+                size="content"
                 onClick={() => setListOpen(true)}
-                className="w-full mb-3 flex items-center justify-center gap-2 rounded-xl bg-secondary/60 hover:bg-secondary px-4 py-2.5 text-sm font-medium"
+                className="w-full mb-3 text-sm font-medium"
               >
                 <span className="text-accent font-semibold">+{overflow}</span>
                 <span>{t("showMore")}</span>
-              </button>
+              </GlassControl>
             )}
             <div className="flex items-center gap-2">
               <input
@@ -367,14 +390,9 @@ export default function Settings({ staticPreview = false }: Props) {
                 placeholder={t("addReusable")}
                 className="flex-1 bg-secondary/60 rounded-xl px-4 py-2.5 text-base outline-none placeholder:text-muted-foreground/50"
               />
-              <button
-                type="button"
-                onClick={handleAdd}
-                className="bg-accent text-accent-foreground rounded-xl px-4 py-2.5 text-sm font-medium flex items-center gap-1"
-              >
-                <Plus className="w-4 h-4" strokeWidth={2.5} />
-                {t("add")}
-              </button>
+              <GlassControl size="content" onClick={handleAdd} className="text-sm font-medium">
+                {`＋ ${t("add")}`}
+              </GlassControl>
             </div>
           </div>
         </section>
@@ -385,41 +403,44 @@ export default function Settings({ staticPreview = false }: Props) {
             <div>
               <p className="text-sm font-medium mb-2">{t("settingsReflectionDaily")}</p>
               <div className="flex gap-2 mb-2">
-                <button
-                  type="button"
+                <GlassControl
+                  size="content"
                   data-testid="settings-reflection-evening"
+                  nativeGlass={{ role: "button", selected: (schedule.daily.scheduleOffsetDays ?? 0) === 0 }}
                   onClick={() => {
                     saveReflection({
                       daily: { ...schedule.daily, timeOfDay: "17:00", scheduleOffsetDays: 0 },
                     });
                   }}
                   className={cn(
-                    "flex-1 min-h-11 rounded-xl text-sm font-medium",
+                    "flex-1 min-h-11 text-sm font-medium",
                     (schedule.daily.scheduleOffsetDays ?? 0) === 0
                       ? "bg-accent/10"
-                      : "bg-secondary/50 text-muted-foreground",
+                      : "text-muted-foreground",
                   )}
                 >
                   {t("reflectionDailyEvening")}
-                </button>
-                <button
-                  type="button"
+                </GlassControl>
+                <GlassControl
+                  size="content"
                   data-testid="settings-reflection-morning"
+                  nativeGlass={{ role: "button", selected: schedule.daily.scheduleOffsetDays === 1 }}
                   onClick={() => {
                     saveReflection({
                       daily: { ...schedule.daily, timeOfDay: "08:00", scheduleOffsetDays: 1 },
                     });
                   }}
                   className={cn(
-                    "flex-1 min-h-11 rounded-xl text-sm font-medium",
+                    "flex-1 min-h-11 text-sm font-medium",
                     schedule.daily.scheduleOffsetDays === 1
                       ? "bg-accent/10"
-                      : "bg-secondary/50 text-muted-foreground",
+                      : "text-muted-foreground",
                   )}
                 >
                   {t("reflectionDailyMorning")}
-      </button>
+                </GlassControl>
               </div>
+              <GlassField label={schedule.daily.timeOfDay} className="w-full">
               <input
                 type="time"
                 aria-label={t("reflectionTime")}
@@ -427,12 +448,20 @@ export default function Settings({ staticPreview = false }: Props) {
                 onChange={(e) => {
                   saveReflection({ daily: { ...schedule.daily, timeOfDay: e.target.value } });
                 }}
-                className="w-full rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+                className="w-full bg-transparent px-3 py-3 text-sm"
               />
+              </GlassField>
             </div>
             <div>
               <p className="text-sm font-medium mb-2">{t("settingsReflectionWeekly")}</p>
               <div className="flex gap-2">
+                <GlassField
+                  label={formatDateStr(
+                    `2026-09-${String(6 + (schedule.weekly.weekday ?? 0)).padStart(2, "0")}`,
+                    { weekday: "long" },
+                  )}
+                  className="flex-1 min-w-0"
+                >
                 <select
                   aria-label={t("reflectionWeekday")}
                   data-testid="settings-reflection-weekday"
@@ -445,7 +474,7 @@ export default function Settings({ staticPreview = false }: Props) {
                       },
                     });
                   }}
-                  className="flex-1 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+                  className="w-full bg-transparent px-3 py-3 text-sm"
                 >
                   {Array.from({ length: 7 }, (_, d) => (
                     <option key={d} value={d}>
@@ -453,6 +482,8 @@ export default function Settings({ staticPreview = false }: Props) {
                     </option>
                   ))}
                 </select>
+                </GlassField>
+                <GlassField label={schedule.weekly.timeOfDay} className="flex-1 min-w-0">
                 <input
                   type="time"
                   aria-label={t("reflectionTime")}
@@ -460,53 +491,65 @@ export default function Settings({ staticPreview = false }: Props) {
                   onChange={(e) => {
                     saveReflection({ weekly: { ...schedule.weekly, timeOfDay: e.target.value } });
                   }}
-                  className="flex-1 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+                  className="w-full bg-transparent px-3 py-3 text-sm"
                 />
+                </GlassField>
               </div>
             </div>
             <div>
               <p className="text-sm font-medium mb-1">{t("settingsReflectionMonthly")}</p>
               <p className="text-xs text-muted-foreground mb-2">{t("settingsReflectionMonthlyDesc")}</p>
               <div className="flex gap-2 mb-2">
-                <button
-                  type="button"
+                <GlassControl
+                  size="content"
                   data-testid="settings-reflection-month-end"
+                  nativeGlass={{ role: "button", selected: (schedule.monthly.periodEdge ?? "end") === "end" }}
                   onClick={() => saveReflection({ monthly: { ...schedule.monthly, periodEdge: "end" } })}
                   className={cn(
-                    "flex-1 min-h-11 rounded-xl text-sm font-medium",
+                    "flex-1 min-h-11 text-sm font-medium",
                     (schedule.monthly.periodEdge ?? "end") === "end"
                       ? "bg-accent/10"
-                      : "bg-secondary/50 text-muted-foreground",
+                      : "text-muted-foreground",
                   )}
                 >
                   {t("reflectionMonthEnd")}
-                </button>
-                <button
-                  type="button"
+                </GlassControl>
+                <GlassControl
+                  size="content"
                   data-testid="settings-reflection-month-start"
+                  nativeGlass={{ role: "button", selected: schedule.monthly.periodEdge === "start" }}
                   onClick={() => saveReflection({ monthly: { ...schedule.monthly, periodEdge: "start" } })}
                   className={cn(
-                    "flex-1 min-h-11 rounded-xl text-sm font-medium",
+                    "flex-1 min-h-11 text-sm font-medium",
                     schedule.monthly.periodEdge === "start"
                       ? "bg-accent/10"
-                      : "bg-secondary/50 text-muted-foreground",
+                      : "text-muted-foreground",
                   )}
                 >
                   {t("reflectionMonthStart")}
-                </button>
+                </GlassControl>
               </div>
+              <GlassField label={schedule.monthly.timeOfDay} className="w-full">
               <input
                 type="time"
                 aria-label={t("reflectionTime")}
                 value={schedule.monthly.timeOfDay}
                 onChange={(e) => saveReflection({ monthly: { ...schedule.monthly, timeOfDay: e.target.value } })}
-                className="w-full rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+                className="w-full bg-transparent px-3 py-3 text-sm"
               />
+              </GlassField>
             </div>
             <div>
               <p className="text-sm font-medium mb-1">{t("settingsReflectionFuture")}</p>
               <p className="text-xs text-muted-foreground mb-2">{t("settingsReflectionFutureDesc")}</p>
               <div className="flex gap-2 mb-2">
+                <GlassField
+                  label={formatDateStr(
+                    `2026-${String(schedule.future.monthOfYear ?? 12).padStart(2, "0")}-01`,
+                    { month: "long" },
+                  )}
+                  className="flex-1 min-w-0"
+                >
                 <select
                   aria-label={t("reflectionFutureMonth")}
                   data-testid="settings-reflection-future-month"
@@ -516,7 +559,7 @@ export default function Settings({ staticPreview = false }: Props) {
                       future: { ...schedule.future, monthOfYear: Number(e.target.value) },
                     })
                   }
-                  className="flex-1 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+                  className="w-full bg-transparent px-3 py-3 text-sm"
                 >
                   {Array.from({ length: 12 }, (_, month) => (
                     <option key={month + 1} value={month + 1}>
@@ -524,6 +567,8 @@ export default function Settings({ staticPreview = false }: Props) {
                     </option>
                   ))}
                 </select>
+                </GlassField>
+                <GlassField label={String(schedule.future.dayOfMonth ?? 31)} className="w-20 shrink-0">
                 <input
                   type="number"
                   min={1}
@@ -536,16 +581,19 @@ export default function Settings({ staticPreview = false }: Props) {
                       future: { ...schedule.future, dayOfMonth: Number(e.target.value) },
                     })
                   }
-                  className="w-20 rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+                  className="w-full bg-transparent px-3 py-3 text-sm"
                 />
+                </GlassField>
               </div>
+              <GlassField label={schedule.future.timeOfDay} className="w-full">
               <input
                 type="time"
                 aria-label={t("reflectionTime")}
                 value={schedule.future.timeOfDay}
                 onChange={(e) => saveReflection({ future: { ...schedule.future, timeOfDay: e.target.value } })}
-                className="w-full rounded-xl bg-secondary/50 px-3 py-3 text-sm"
+                className="w-full bg-transparent px-3 py-3 text-sm"
               />
+              </GlassField>
             </div>
           </div>
         </section>
@@ -633,28 +681,22 @@ export default function Settings({ staticPreview = false }: Props) {
               {THEME_ACCENTS.map((opt) => {
                 const selected = themeAccent === opt.id;
                 return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => handleThemeSelect(opt.id)}
-                    className={cn(
-                      "flex flex-col items-center gap-1.5 rounded-xl px-1 py-2",
-                      selected ? "bg-accent/10 ring-1 ring-accent/35" : "hover:bg-secondary/60",
-                    )}
-                    aria-label={t(opt.labelKey)}
-                    aria-pressed={selected}
-                  >
-                    <span
-                      className={cn(
-                        "w-9 h-9 rounded-full shadow-soft",
-                        selected && "ring-2 ring-offset-2 ring-offset-card ring-accent",
-                      )}
-                      style={{ backgroundColor: `hsl(${opt.accent})` }}
-                    />
+                  <div key={opt.id} className="flex flex-col items-center gap-1.5">
+                    <GlassControl
+                      nativeGlass={{ role: "icon", symbol: "circle.fill", selected, value: opt.accent }}
+                      onClick={() => handleThemeSelect(opt.id)}
+                      aria-label={t(opt.labelKey)}
+                      aria-pressed={selected}
+                    >
+                      <span
+                        className="w-9 h-9 rounded-full"
+                        style={{ backgroundColor: `hsl(${opt.accent})` }}
+                      />
+                    </GlassControl>
                     <span className={cn("text-[10px] font-medium", selected ? "text-accent" : "text-muted-foreground")}>
                       {t(opt.labelKey)}
                     </span>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -669,56 +711,58 @@ export default function Settings({ staticPreview = false }: Props) {
           <p className="text-xs text-muted-foreground mb-4">{t("selectLanguage")}</p>
           <div className="space-y-2">
             {languages.map((lang) => (
-              <button
+              <GlassControl
                 key={lang.key}
-                  onClick={() => {
-                    setLocale(lang.key);
-                    refreshSettings();
-                  }}
+                size="content"
+                nativeGlass={{ role: "button", selected: locale === lang.key }}
+                onClick={() => {
+                  setLocale(lang.key);
+                  refreshSettings();
+                }}
                 className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium",
-                  locale === lang.key
-                    ? "bg-accent/10 text-accent ring-1 ring-accent/30"
-                      : "bg-secondary/60 text-foreground hover:bg-secondary",
+                  "w-full justify-start gap-3 px-4 py-3 text-sm font-medium",
+                  locale === lang.key ? "text-accent" : "text-foreground",
                 )}
               >
                 <span className="text-lg">{lang.flag}</span>
                 <span>{lang.label}</span>
-              </button>
+              </GlassControl>
             ))}
           </div>
         </div>
           <div className="bg-card rounded-2xl p-5 shadow-soft">
             <p className="text-sm font-semibold mb-3">{t("settingsWeekStart")}</p>
             <div className="flex gap-2">
-              <button
-                type="button"
+              <GlassControl
+                size="content"
                 data-testid="settings-week-sunday"
+                nativeGlass={{ role: "button", selected: settings.weekStartsOn === 0 }}
                 onClick={() => {
                   updateSettings({ weekStartsOn: 0 });
                   refreshSettings();
                 }}
                 className={cn(
-                  "flex-1 min-h-11 rounded-xl text-sm",
-                  settings.weekStartsOn === 0 ? "bg-accent/10 font-semibold" : "bg-secondary/50 text-muted-foreground",
+                  "flex-1 min-h-11 text-sm",
+                  settings.weekStartsOn === 0 ? "font-semibold" : "text-muted-foreground",
                 )}
               >
                 {t("weekStartSunday")}
-              </button>
-              <button
-                type="button"
+              </GlassControl>
+              <GlassControl
+                size="content"
                 data-testid="settings-week-monday"
+                nativeGlass={{ role: "button", selected: settings.weekStartsOn === 1 }}
                 onClick={() => {
                   updateSettings({ weekStartsOn: 1 });
                   refreshSettings();
                 }}
                 className={cn(
-                  "flex-1 min-h-11 rounded-xl text-sm",
-                  settings.weekStartsOn === 1 ? "bg-accent/10 font-semibold" : "bg-secondary/50 text-muted-foreground",
+                  "flex-1 min-h-11 text-sm",
+                  settings.weekStartsOn === 1 ? "font-semibold" : "text-muted-foreground",
                 )}
               >
                 {t("weekStartMonday")}
-              </button>
+              </GlassControl>
             </div>
           </div>
         </section>
@@ -752,7 +796,12 @@ export default function Settings({ staticPreview = false }: Props) {
               <p className="text-sm font-semibold">{t("about")}</p>
             </div>
             <button
-              onClick={() => navigate("/privacy")}
+              id="settings-privacy"
+              type="button"
+              onClick={() => {
+                markSettingsPrivacyReturn();
+                navigate("/privacy");
+              }}
               className="w-full flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-3 text-sm"
             >
               <span>{t("privacyPolicy")}</span>
@@ -771,8 +820,10 @@ export default function Settings({ staticPreview = false }: Props) {
           <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => setListOpen(false)} />
             <div
+              role="dialog"
+              aria-modal="true"
               data-kb-shell="translate"
-              className="relative z-10 w-full max-w-md max-h-[80dvh] bg-background rounded-3xl shadow-float flex flex-col overflow-hidden"
+              className="liquid-glass-surface relative z-10 w-full max-w-md max-h-[80dvh] bg-background rounded-3xl shadow-float flex flex-col overflow-hidden"
             >
               <div className="border-b border-border/50 shrink-0 pb-2">
                 <PopupCornerControls onClose={() => setListOpen(false)} closeLabel={t("cancel")} />
@@ -788,12 +839,14 @@ export default function Settings({ staticPreview = false }: Props) {
                 className="flex items-center justify-between gap-2 bg-secondary/50 rounded-xl px-4 py-2.5"
               >
                       <span className="text-sm">{r.title}</span>
-                <button
+                <GlassControl
+                  nativeGlass={{ role: "icon", symbol: "xmark" }}
+                  aria-label={t("notesDelete")}
                   onClick={() => handleRemove(r.id)}
-                  className="text-muted-foreground hover:text-destructive p-1"
+                  className="!h-8 !w-8 text-muted-foreground"
                 >
                   <X className="w-4 h-4" />
-                </button>
+                </GlassControl>
               </div>
                   ))
                 )}
@@ -808,14 +861,9 @@ export default function Settings({ staticPreview = false }: Props) {
               placeholder={t("addReusable")}
                   className="flex-1 bg-secondary/60 rounded-xl px-4 py-2.5 text-base outline-none"
             />
-            <button
-                  type="button"
-                  onClick={handleModalAdd}
-                  className="bg-accent text-accent-foreground rounded-xl px-4 py-2.5 text-sm font-medium flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" strokeWidth={2.5} />
-              {t("add")}
-            </button>
+            <GlassControl size="content" onClick={handleModalAdd} className="text-sm font-medium">
+              {`＋ ${t("add")}`}
+            </GlassControl>
           </div>
         </div>
           </div>,

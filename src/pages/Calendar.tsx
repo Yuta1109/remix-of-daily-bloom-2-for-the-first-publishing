@@ -187,7 +187,7 @@ function MonthGrid({
   return (
     <div
       className={cn(
-        "bg-card rounded-2xl shadow-card overflow-x-hidden overflow-y-auto w-full h-full flex flex-col month-grid-fade",
+        "bg-card rounded-2xl shadow-card overflow-hidden w-full h-full flex flex-col month-grid-fade",
         faded ? "opacity-40 pointer-events-none" : "opacity-100",
         className,
       )}
@@ -210,7 +210,7 @@ function MonthGrid({
           );
         })}
         </div>
-      <div className="grid grid-cols-7 auto-rows-fr flex-1 min-h-[36rem]">
+      <div className="grid grid-cols-7 auto-rows-fr flex-1 min-h-0">
         {Array.from({ length: firstDayOffset }).map((_, i) => (
             <div
               key={`empty-${i}`}
@@ -395,6 +395,7 @@ export default function CalendarPage() {
   const [, setDecoRev] = useState(0);
   const refreshDecorations = useCallback(() => setDecoRev((n) => n + 1), []);
   const [stampTrayOpen, setStampTrayOpen] = useState(false);
+  const [fabPos, setFabPos] = useState<{ x: number; y: number } | null>(null);
   const [wallpaperPickerOpen, setWallpaperPickerOpen] = useState(false);
   const [selectedStampId, setSelectedStampId] = useState<string | null>(null);
   const [dropDate, setDropDate] = useState<string | null>(null);
@@ -793,15 +794,15 @@ export default function CalendarPage() {
       </div>
 
           <div className="flex items-center gap-2 shrink-0 mr-1">
-            <GlassControl type="button" size="label" onClick={toggleCalView} className="text-sm font-semibold text-accent">
+            <GlassControl type="button" size="label" onClick={toggleCalView} className="shrink-0 text-sm font-semibold text-accent">
               {calView === "month" ? t("calendarWeek") : t("calendarMonth")}
             </GlassControl>
-            <GlassControl data-tutorial="calendar-today" size="label" onClick={goToday} className="text-sm font-semibold text-accent">
+            <GlassControl data-tutorial="calendar-today" size="label" onClick={goToday} className="shrink-0 text-sm font-semibold text-accent">
               {t("today")}
             </GlassControl>
             {calView !== "week" && calendarWeekAllowsStamps(calView) ? (
             <GlassControl
-              nativeGlass={{ role: "icon", symbol: "seal", selected: stampTrayOpen }}
+              nativeGlass={{ role: "icon", symbol: "sticker", selected: stampTrayOpen }}
               aria-label={t("calendarStamps")}
               aria-pressed={stampTrayOpen}
               onClick={() => {
@@ -887,9 +888,12 @@ export default function CalendarPage() {
             stampTrayOpen && calView === "month" && "overflow-auto",
           )}
           style={{
-            paddingBottom: stampTrayOpen
-              ? "calc(var(--bottom-nav-offset) + 92px)"
-              : "var(--bottom-nav-offset)",
+            paddingBottom:
+              calView === "month" && !stampTrayOpen
+                ? undefined
+                : stampTrayOpen
+                  ? "calc(var(--bottom-nav-offset) + 92px)"
+                  : "var(--bottom-nav-offset)",
           }}
         >
           {calView === "week" ? (
@@ -1087,6 +1091,7 @@ export default function CalendarPage() {
               monthKey={monthKeyOf(viewDate)}
               disabled={overlayOpen}
               lockSwipe={stampInteraction}
+              extendBehindTab={!stampTrayOpen}
               onMonthStep={onMonthStep}
             >
               {(rel, { faded }) => {
@@ -1123,6 +1128,8 @@ export default function CalendarPage() {
       {calView !== "week" && !stampTrayOpen && !dragGhost ? (
       <FabButton
         disabled={blockDayTaps}
+        position={fabPos}
+        onPositionChange={setFabPos}
         onClick={() => {
           if (blockDayTaps || isTutorialBlockingCalendarDays()) return;
           setAddMenuOpen(true);

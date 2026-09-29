@@ -14,6 +14,7 @@ import {
   List,
   ListOrdered,
   Calculator,
+  Check,
   Redo2,
   Trash2,
   Upload,
@@ -418,9 +419,6 @@ export default function MemoDetailPage() {
         ? NOTE_TOOLBAR_CLEARANCE
         : 0;
 
-  const iconBtn =
-    "h-11 w-11 rounded-full flex items-center justify-center text-foreground/80 bg-card shadow-soft border border-border/60 disabled:opacity-40";
-
   const formatUpdated = (ts: string) =>
     new Date(ts).toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
       year: "numeric",
@@ -430,8 +428,8 @@ export default function MemoDetailPage() {
 
   return (
     <SwipeBackPage followFinger underlay={<NotesHomePage />} onBack={goBackToList}>
-    <div className="page-shell" data-testid="note-detail">
-      <div className="shrink-0 px-3 pt-1 pb-2">
+    <div className="page-shell" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }} data-testid="note-detail">
+      <div className="shrink-0 pl-2 pr-3 pb-2">
         {editing ? (
           <div className="flex items-center gap-2">
             <GlassControl nativeGlass={{ role: "back" }} onClick={goBackToList} aria-label={t("memoBackToList")}>
@@ -445,21 +443,18 @@ export default function MemoDetailPage() {
               placeholder={t("memoNoTitle")}
               className="flex-1 min-w-0 bg-secondary/70 rounded-full px-4 py-2.5 text-base font-semibold outline-none placeholder:text-muted-foreground/50"
             />
-            <div className="shrink-0 flex items-center gap-1 bg-card rounded-full shadow-soft border border-border/70 px-1 py-1">
-              <button
-                type="button"
-                aria-label={t("memoCalculator")}
-                onClick={() => {
-                  calcFromView.current = false;
-                  setCalcOpen(true);
-                }}
-                className="h-10 w-10 rounded-full flex items-center justify-center text-foreground/80"
-              >
-                <Calculator className="w-5 h-5" />
-              </button>
-            </div>
-            <GlassControl size="label" variant="prominent" onClick={exitToView} className="shrink-0 text-sm font-semibold">
-              {t("memoView")}
+            <GlassControl
+              nativeGlass={{ role: "icon", symbol: "plus.forwardslash.minus" }}
+              aria-label={t("memoCalculator")}
+              onClick={() => {
+                calcFromView.current = false;
+                setCalcOpen(true);
+              }}
+            >
+              <Calculator className="w-5 h-5" />
+            </GlassControl>
+            <GlassControl nativeGlass={{ role: "check" }} onClick={exitToView} aria-label={t("memoView")}>
+              <Check className="w-5 h-5" strokeWidth={2.5} />
             </GlassControl>
           </div>
         ) : (
@@ -469,8 +464,8 @@ export default function MemoDetailPage() {
             </GlassControl>
             <div className="flex-1" />
             <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
+              <GlassControl
+                nativeGlass={{ role: "icon", symbol: "ai.camera" }}
                 aria-label={t("memoScan")}
                 disabled={ocrBusy}
                 onClick={() => {
@@ -478,49 +473,44 @@ export default function MemoDetailPage() {
                   setPickMode("ocr");
                   setPickOpen(true);
                 }}
-                className={iconBtn}
               >
                 <AiCameraIcon variant="memo" />
-              </button>
-              <button
-                type="button"
+              </GlassControl>
+              <GlassControl
+                nativeGlass={{ role: "icon", symbol: "photo.badge.plus" }}
                 aria-label={t("notesAttachImage")}
                 onClick={() => {
                   setPickMode("attach");
                   setPickOpen(true);
                 }}
-                className={iconBtn}
               >
                 <ImagePlus className="w-5 h-5" />
-              </button>
-              <button
-                type="button"
+              </GlassControl>
+              <GlassControl
+                nativeGlass={{ role: "icon", symbol: "plus.forwardslash.minus" }}
                 aria-label={t("memoCalculator")}
                 onClick={() => {
                   calcFromView.current = true;
                   setCalcOpen(true);
                 }}
-                className={iconBtn}
               >
                 <Calculator className="w-5 h-5" />
-              </button>
-              <button
-                type="button"
+              </GlassControl>
+              <GlassControl
+                nativeGlass={{ role: "icon", symbol: "square.and.arrow.up" }}
                 aria-label={t("memoShare")}
                 onClick={() => void shareMemoPage(page)}
-                className={iconBtn}
               >
                 <Upload className="w-5 h-5" />
-              </button>
-              <button
-                type="button"
+              </GlassControl>
+              <GlassControl
+                nativeGlass={{ role: "icon", symbol: "trash" }}
                 aria-label={t("notesDelete")}
                 data-testid="note-delete"
                 onClick={() => setConfirmDelete(true)}
-                className={iconBtn}
               >
                 <Trash2 className="w-5 h-5" />
-              </button>
+              </GlassControl>
             </div>
           </div>
         )}

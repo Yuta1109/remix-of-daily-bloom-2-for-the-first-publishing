@@ -82,7 +82,7 @@ describe("Phase 11 Settings", () => {
     fireEvent.change(screen.getAllByPlaceholderText("Add a reusable task")[0], {
       target: { value: "Email professor" },
     });
-    fireEvent.click(screen.getAllByRole("button", { name: "Add" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /Add/ })[0]);
     expect(localStorage.getItem(LEGACY_KEYS.reusable)).toBeNull();
     expect(screen.getByText("Email professor")).toBeTruthy();
   });

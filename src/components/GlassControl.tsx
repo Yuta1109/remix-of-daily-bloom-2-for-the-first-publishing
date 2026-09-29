@@ -10,8 +10,8 @@ export type NativeGlassButtonRole = Exclude<NativeGlassRole, "search" | "tabBar"
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: GlassVariant;
-  /** Circle diameter. Label is a shorter capsule for short text. */
-  size?: "regular" | "prominent" | "label";
+  /** Circle diameter. Label and content stay wide enough for their text. */
+  size?: "regular" | "prominent" | "label" | "content";
   /**
    * Opt this control into the shared native overlay.
    * iOS 26 draws system Liquid Glass on this button's frame and keeps the
@@ -24,6 +24,8 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
     symbol?: string;
     /** Tints the native control without changing the CSS variant. */
     selected?: boolean;
+    /** Passed through to the native control. Search text, or an HSL tint. */
+    value?: string;
   };
   children?: ReactNode;
 }
@@ -51,7 +53,7 @@ export function GlassControl({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const autoId = useId();
   const role: NativeGlassButtonRole =
-    nativeGlass?.role ?? (size === "label" || variant === "bar" ? "button" : "icon");
+    nativeGlass?.role ?? (size === "label" || size === "content" || variant === "bar" ? "button" : "icon");
   const symbol =
     nativeGlass?.symbol ??
     (role === "icon" && (variant === "prominent" || size === "prominent") ? "plus" : "");
@@ -71,6 +73,7 @@ export function GlassControl({
     prominent,
     label: ariaLabel || visibleLabel,
     enabled: !disabled,
+    value: nativeGlass?.value,
   });
 
   return (
@@ -82,11 +85,11 @@ export function GlassControl({
       aria-label={ariaLabel}
       className={cn(
         "liquid-glass inline-flex items-center justify-center relative",
-        variant === "regular" && size !== "label" && "liquid-glass-regular",
+        variant === "regular" && size !== "label" && size !== "content" && "liquid-glass-regular",
         variant === "prominent" && "liquid-glass-accent",
         variant === "bar" && "liquid-glass-bar",
         size === "prominent" && "liquid-glass-prominent-size",
-        size === "label" && "liquid-glass-label",
+        (size === "label" || size === "content") && "liquid-glass-label",
         className,
       )}
       onPointerDown={(event) => {
@@ -116,5 +119,28 @@ export function GlassControl({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Glass around a web picker or field. The native plate uses the same button
+ * material, and the field underneath keeps the tap so the system picker opens.
+ */
+export function GlassField({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const id = useId();
+  useNativeGlass(ref, { id, role: "button", label, passThrough: true });
+  return (
+    <div ref={ref} className={cn("liquid-glass rounded-xl", className)}>
+      {children}
+    </div>
   );
 }

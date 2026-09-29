@@ -87,7 +87,7 @@ export function SwipeBackPage({ children, underlay, onBack, className, followFin
         </div>
       )}
       <div
-        className={cn("absolute inset-0 bg-background shadow-lg page-scroll", className)}
+        className={cn("absolute inset-0 bg-background shadow-lg overflow-x-hidden overflow-y-auto", className)}
         data-swipe-page="true"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}

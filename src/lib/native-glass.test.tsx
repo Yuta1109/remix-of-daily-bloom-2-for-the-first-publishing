@@ -63,11 +63,15 @@ describe("native Liquid Glass bridge", () => {
         enabled: true,
         value: "",
         tabs: [],
+        suppressed: false,
+        insetBottom: 0,
+        corner: 0,
+        passThrough: false,
       },
     ]);
   });
 
-  it("hugs the tab bar to the tab buttons and keeps each tab id", () => {
+  it("extends the tab bar to the bottom of its bar and keeps each tab id", () => {
     const nav = document.createElement("nav");
     place(nav, rect(12, 700, 350, 90));
     const plan = document.createElement("button");
@@ -83,9 +87,33 @@ describe("native Liquid Glass bridge", () => {
     const [spec] = measureNativeGlassSlots();
     expect(spec.x).toBe(12);
     expect(spec.width).toBe(350);
-    expect(spec.y).toBe(704);
-    expect(spec.height).toBe(48);
+    expect(spec.y).toBe(700);
+    expect(spec.height).toBe(90);
+    expect(spec.insetBottom).toBe(42);
+    expect(spec.suppressed).toBe(false);
     expect(spec.tabs).toEqual([{ id: "/plan", label: "Planning", symbol: "book", selected: true }]);
+  });
+
+  it("hides background controls and measures the popup while a modal is open", () => {
+    document.documentElement.classList.add("overlay-open");
+    const nav = document.createElement("nav");
+    place(nav, rect(0, 700, 300, 80));
+    registerNativeGlass({ id: "main-tab-bar", role: "tabBar", element: nav, tabs: [] });
+    const sheet = document.createElement("div");
+    sheet.className = "liquid-glass-sheet";
+    sheet.setAttribute("role", "dialog");
+    place(sheet, rect(0, 220, 390, 480));
+    const close = document.createElement("button");
+    close.getBoundingClientRect = () => rect(16, 232, 44, 44);
+    sheet.appendChild(close);
+    registerNativeGlass({ id: "sheet-close", role: "close", element: close, label: "Close" });
+
+    const specs = measureNativeGlassSlots();
+    expect(specs.find((spec) => spec.id === "main-tab-bar")?.suppressed).toBe(true);
+    expect(specs.find((spec) => spec.id === "sheet-close")?.suppressed).toBe(false);
+    const surface = specs.find((spec) => spec.role === "surface");
+    expect(surface).toMatchObject({ x: 0, y: 220, width: 390, height: 480, suppressed: false });
+    document.documentElement.classList.remove("overlay-open");
   });
 
   it("runs the existing web handler for a native tap and ignores a disabled control", () => {
@@ -164,8 +192,11 @@ describe("native Liquid Glass bridge", () => {
       "AppIcon-512@2x.png",
     );
     expect(views).toContain("struct NativeGlassLayer");
+    expect(views).toContain("struct NativeGlassSurfaceLayer");
     expect(views).toContain("glassEffectID");
     expect(views).toContain("GlassEffectContainer");
+    expect(views).toContain("DragGesture(minimumDistance: 10)");
+    expect(readFileSync("ios/App/App/NativeGlass/NativeGlassPlugin.swift", "utf8")).toContain("NativeGlassShieldView");
     expect(views).toContain(".glassEffect(.regular.interactive()");
     expect(views).toContain(".buttonStyle(.glass)");
     expect(views).toContain(".buttonStyle(.glassProminent)");

@@ -88,9 +88,7 @@ extension NativeGlassPlugin {
 
     func removeGlassOnMain() {
         guard let mount = glassMount as? NativeGlassMount else { return }
-        mount.model.controls = []
-        mount.overlay.hitFrames = []
-        mount.overlay.removeFromSuperview()
+        mount.detach()
     }
 
     func ensureMount() -> NativeGlassMount {
@@ -99,7 +97,10 @@ extension NativeGlassPlugin {
         }
         let mount = NativeGlassMount(
             onTap: { [weak self] id in
-                self?.notifyListeners("tap", data: ["id": id])
+                let delay = UIAccessibility.isReduceMotionEnabled ? 0.0 : 0.12
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    self?.notifyListeners("tap", data: ["id": id])
+                }
             },
             onChange: { [weak self] id, value in
                 self?.notifyListeners("change", data: ["id": id, "value": value])
@@ -110,9 +111,9 @@ extension NativeGlassPlugin {
     }
 }
 
-/// Full-screen sibling of the web view. One SwiftUI layer draws every control
-/// inside a shared glass container. Only control frames receive touches.
-/// A `surface` plate is visual only, so a drag on empty chrome still reaches the page.
+/// Full-screen siblings of the web view.
+/// Controls sit above the page. Popup glass sits behind it, with a dimming
+/// shield between them that blocks touches outside the popup.
 @available(iOS 26.0, *)
 final class NativeGlassOverlayView: UIView {
     var hitFrames: [CGRect] = []
@@ -136,55 +137,167 @@ final class NativeGlassOverlayView: UIView {
         guard self.point(inside: point, with: event) else { return nil }
         let hit = super.hitTest(point, with: event)
         if hit == nil || hit === self { return nil }
-        // The hosting view fills the screen. A miss inside a frame still has to
-        // reach the page; only a real control keeps the touch.
         if subviews.contains(where: { $0 === hit }) { return nil }
         return hit
+    }
+}
+
+/// Dims the page and swallows touches while a popup is open.
+/// Holes match the popup frames so the form itself stays sharp and tappable.
+@available(iOS 26.0, *)
+final class NativeGlassShieldView: UIView {
+    var holes: [CGRect] = [] {
+        didSet { setNeedsLayout() }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = UIColor.black.withAlphaComponent(0.28)
+        isOpaque = false
+        isHidden = true
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let path = UIBezierPath(rect: bounds)
+        for hole in holes {
+            path.append(UIBezierPath(roundedRect: hole, cornerRadius: 22))
+        }
+        path.usesEvenOddFillRule = true
+        let mask = CAShapeLayer()
+        mask.frame = bounds
+        mask.path = path.cgPath
+        mask.fillRule = .evenOdd
+        layer.mask = holes.isEmpty ? nil : mask
+    }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        if isHidden || !isUserInteractionEnabled { return false }
+        if holes.contains(where: { $0.insetBy(dx: -8, dy: -8).contains(point) }) { return false }
+        return bounds.contains(point)
     }
 }
 
 @available(iOS 26.0, *)
 final class NativeGlassMount {
     let overlay = NativeGlassOverlayView()
+    let shield = NativeGlassShieldView()
     let model = NativeGlassSceneModel()
     private var controller: UIHostingController<NativeGlassLayer>?
+    private var surfaceController: UIHostingController<NativeGlassSurfaceLayer>?
     private var constraints: [NSLayoutConstraint] = []
+    private var shieldConstraints: [NSLayoutConstraint] = []
+    private var surfaceConstraints: [NSLayoutConstraint] = []
     private var hostConstraints: [NSLayoutConstraint] = []
+    private var surfaceHostConstraints: [NSLayoutConstraint] = []
+    private let surfaceOverlay = UIView()
+    private weak var webView: WKWebView?
+    private var savedWebOpaque: Bool?
+    private var savedWebBackground: UIColor?
+    private var savedScrollOpaque: Bool?
+    private var savedScrollBackground: UIColor?
 
     init(onTap: @escaping (String) -> Void, onChange: @escaping (String, String) -> Void) {
         model.onTap = onTap
         model.onChange = onChange
+        surfaceOverlay.backgroundColor = .clear
+        surfaceOverlay.isOpaque = false
+        surfaceOverlay.isUserInteractionEnabled = false
     }
 
     func attach(to webView: WKWebView) {
         guard let parent = webView.superview else { return }
+        self.webView = webView
+        if savedWebOpaque == nil {
+            savedWebOpaque = webView.isOpaque
+            savedWebBackground = webView.backgroundColor
+            savedScrollOpaque = webView.scrollView.isOpaque
+            savedScrollBackground = webView.scrollView.backgroundColor
+        }
+        if surfaceOverlay.superview !== parent {
+            surfaceOverlay.removeFromSuperview()
+            parent.insertSubview(surfaceOverlay, belowSubview: webView)
+        }
+        if shield.superview !== parent {
+            shield.removeFromSuperview()
+            parent.insertSubview(shield, aboveSubview: webView)
+        }
         if overlay.superview !== parent {
             overlay.removeFromSuperview()
-            parent.insertSubview(overlay, aboveSubview: webView)
+            parent.insertSubview(overlay, aboveSubview: shield)
         }
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.deactivate(constraints)
-        constraints = [
-            overlay.leadingAnchor.constraint(equalTo: webView.leadingAnchor),
-            overlay.trailingAnchor.constraint(equalTo: webView.trailingAnchor),
-            overlay.topAnchor.constraint(equalTo: webView.topAnchor),
-            overlay.bottomAnchor.constraint(equalTo: webView.bottomAnchor),
-        ]
-        NSLayoutConstraint.activate(constraints)
+        pin(surfaceOverlay, to: webView, constraints: &surfaceConstraints)
+        pin(shield, to: webView, constraints: &shieldConstraints)
+        pin(overlay, to: webView, constraints: &constraints)
         ensureController()
+        ensureSurfaceController()
+    }
+
+    func detach() {
+        model.controls = []
+        overlay.hitFrames = []
+        shield.holes = []
+        shield.isHidden = true
+        shield.isUserInteractionEnabled = false
+        setWebViewClear(false)
+        overlay.removeFromSuperview()
+        shield.removeFromSuperview()
+        surfaceOverlay.removeFromSuperview()
     }
 
     func update(_ envelope: NativeGlassEnvelope) {
         let style: UIUserInterfaceStyle = envelope.colorScheme == "dark" ? .dark : .light
         overlay.overrideUserInterfaceStyle = style
+        shield.overrideUserInterfaceStyle = style
+        surfaceOverlay.overrideUserInterfaceStyle = style
         controller?.overrideUserInterfaceStyle = style
+        surfaceController?.overrideUserInterfaceStyle = style
         if model.accentRaw != envelope.accent {
             model.accentRaw = envelope.accent
         }
         if model.controls != envelope.controls {
             model.controls = envelope.controls
         }
-        overlay.hitFrames = envelope.controls.filter { $0.role != "surface" }.map(\.frame)
+        let surfaces = envelope.controls.filter { $0.role == "surface" && !$0.suppressed }
+        overlay.hitFrames = envelope.controls.filter { $0.role != "surface" && !$0.suppressed && !$0.passThrough }.map(\.frame)
+        shield.holes = surfaces.map(\.frame)
+        shield.isHidden = surfaces.isEmpty
+        shield.isUserInteractionEnabled = !surfaces.isEmpty
+        surfaceOverlay.isHidden = surfaces.isEmpty
+        setWebViewClear(surfaces.isEmpty == false)
+    }
+
+    private func pin(_ view: UIView, to webView: WKWebView, constraints store: inout [NSLayoutConstraint]) {
+        view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.deactivate(store)
+        store = [
+            view.leadingAnchor.constraint(equalTo: webView.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: webView.trailingAnchor),
+            view.topAnchor.constraint(equalTo: webView.topAnchor),
+            view.bottomAnchor.constraint(equalTo: webView.bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(store)
+    }
+
+    private func setWebViewClear(_ clear: Bool) {
+        guard let webView else { return }
+        if clear {
+            webView.isOpaque = false
+            webView.backgroundColor = .clear
+            webView.scrollView.isOpaque = false
+            webView.scrollView.backgroundColor = .clear
+        } else if let savedWebOpaque {
+            webView.isOpaque = savedWebOpaque
+            webView.backgroundColor = savedWebBackground
+            webView.scrollView.isOpaque = savedScrollOpaque ?? true
+            webView.scrollView.backgroundColor = savedScrollBackground
+        }
     }
 
     private func ensureController() {
@@ -204,5 +317,25 @@ final class NativeGlassMount {
         ]
         NSLayoutConstraint.activate(hostConstraints)
         controller = host
+    }
+
+    private func ensureSurfaceController() {
+        if surfaceController != nil { return }
+        let host = UIHostingController(rootView: NativeGlassSurfaceLayer(model: model))
+        host.view.backgroundColor = .clear
+        host.view.isOpaque = false
+        host.view.isUserInteractionEnabled = false
+        host.view.insetsLayoutMarginsFromSafeArea = false
+        host.safeAreaRegions = []
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        surfaceOverlay.addSubview(host.view)
+        surfaceHostConstraints = [
+            host.view.leadingAnchor.constraint(equalTo: surfaceOverlay.leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: surfaceOverlay.trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: surfaceOverlay.topAnchor),
+            host.view.bottomAnchor.constraint(equalTo: surfaceOverlay.bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(surfaceHostConstraints)
+        surfaceController = host
     }
 }

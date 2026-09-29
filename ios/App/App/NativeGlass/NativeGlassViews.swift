@@ -3,9 +3,14 @@ import SwiftUI
 /// Shared native Liquid Glass controls.
 ///
 /// Every screen asks for a role (`back`, `close`, `check`, `icon`, `button`,
-/// `search`, `tabBar`, `surface`). There is one layer and one
-/// `GlassEffectContainer`, so nearby controls share a material and can morph
-/// later via `glassEffectID`. Pages do not declare their own glass.
+/// `search`, `tabBar`, `surface`). Independent controls each draw their own
+/// glass. `GlassEffectContainer` is only used inside a tab bar, where the
+/// selection pill has to move with the finger. Pages do not declare their
+/// own glass.
+///
+/// Popup surfaces are drawn behind the web view. Their text stays in the
+/// page, in front of that plate. The surface is not a button, so a long
+/// press does not scale the popup.
 ///
 /// iOS 17.2–25 keep the existing CSS material. Callers must not construct
 /// these views below iOS 26. System glass follows Reduce Motion and
@@ -31,6 +36,11 @@ struct NativeGlassSpec: Codable, Equatable, Identifiable {
     var enabled: Bool
     var value: String
     var tabs: [NativeGlassTab]
+    var suppressed: Bool = false
+    var insetBottom: Double = 0
+    var corner: Double = 22
+    /// Drawn, but taps pass through to the web control underneath.
+    var passThrough: Bool = false
 
     var frame: CGRect {
         CGRect(x: x, y: y, width: width, height: height)
@@ -94,27 +104,25 @@ final class NativeGlassSceneModel: ObservableObject {
     var accent: Color { colorFromAccent(accentRaw) }
 }
 
-/// One glass layer for the whole window. Control ids stay stable so a later
-/// screen can morph an existing back, close, check, or tab instead of
-/// inventing a new material.
+/// Controls in front of the page. Each one is its own glass. A popup
+/// surface is not drawn here — it lives behind the web view.
 @available(iOS 26.0, *)
 struct NativeGlassLayer: View {
     @ObservedObject var model: NativeGlassSceneModel
     @Namespace private var glassNamespace
 
     var body: some View {
-        GlassEffectContainer(spacing: 16) {
-            ZStack(alignment: .topLeading) {
-                ForEach(model.controls) { spec in
+        ZStack(alignment: .topLeading) {
+            ForEach(model.controls) { spec in
+                if spec.role != "surface" && !spec.suppressed {
                     control(spec)
                         .frame(width: max(spec.width, 1), height: max(spec.height, 1))
                         .glassEffectID(spec.id, in: glassNamespace)
                         .position(x: spec.x + spec.width / 2, y: spec.y + spec.height / 2)
-                        .allowsHitTesting(spec.role != "surface")
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
     }
 
@@ -140,7 +148,8 @@ struct NativeGlassLayer: View {
                 label: spec.accessibilityName,
                 prominent: spec.prominent,
                 enabled: spec.enabled,
-                accent: accent
+                accent: accent,
+                tintRaw: spec.value
             ) {
                 model.onTap(spec.id)
             }
@@ -155,11 +164,19 @@ struct NativeGlassLayer: View {
                 }
             }
         case "tabBar":
-            NativeLiquidGlassTabBar(tabs: spec.tabs, accent: accent) { id in
+            NativeLiquidGlassTabBar(
+                tabs: spec.tabs,
+                accent: accent,
+                insetBottom: CGFloat(spec.insetBottom)
+            ) { id in
                 model.onTap(id)
             }
+        case "switch":
+            NativeLiquidGlassSwitch(on: spec.prominent, label: spec.accessibilityName, accent: accent) {
+                model.onTap(spec.id)
+            }
         case "surface":
-            NativeLiquidGlassSurface()
+            NativeLiquidGlassSurface(corner: spec.corner)
         default:
             NativeLiquidGlassButton(
                 title: spec.label,
@@ -189,7 +206,7 @@ struct NativeLiquidGlassButton: View {
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
-                    .padding(.horizontal, 4)
+                    .minimumScaleFactor(0.7)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Image(systemName: symbol)
@@ -253,14 +270,100 @@ struct NativeLiquidGlassIconButton: View {
     var prominent: Bool
     var enabled: Bool
     var accent: Color
+    /// HSL channels (`h s% l%`) when this icon should use its own tint.
+    var tintRaw: String = ""
     var action: () -> Void
 
     var body: some View {
-        glassButton(prominent: prominent, accent: accent, circular: true, enabled: enabled, label: label, action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .semibold))
+        let tint = tintRaw.isEmpty ? accent : colorFromAccent(tintRaw)
+        glassButton(prominent: prominent || !tintRaw.isEmpty, accent: tint, circular: true, enabled: enabled, label: label, action: action) {
+            NativeGlassSymbol(symbol: symbol)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+}
+
+/// Icons that SF Symbols do not draw as the React control does.
+@available(iOS 26.0, *)
+struct NativeGlassSymbol: View {
+    var symbol: String
+
+    var body: some View {
+        switch symbol {
+        case "sticker":
+            PeeledStampSymbol()
+        case "ai.camera":
+            ZStack {
+                Image(systemName: "camera")
+                    .font(.system(size: 17, weight: .semibold))
+                Text("AI")
+                    .font(.system(size: 7, weight: .bold))
+                    .offset(y: -12)
+            }
+        default:
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+        }
+    }
+}
+
+/// Circle with one edge peeled back. Not a gear and not a scalloped seal.
+@available(iOS 26.0, *)
+struct PeeledStampSymbol: View {
+    var body: some View {
+        GeometryReader { geo in
+            let side = min(geo.size.width, geo.size.height)
+            let peel = side * 0.34
+            ZStack {
+                Circle()
+                    .trim(from: 0, to: 0.86)
+                    .stroke(style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
+                    .rotationEffect(.degrees(-70))
+                    .padding(2)
+                Path { path in
+                    let right = side - 2
+                    let bottom = side - 2
+                    path.move(to: CGPoint(x: right - peel, y: bottom))
+                    path.addQuadCurve(
+                        to: CGPoint(x: right, y: bottom - peel),
+                        control: CGPoint(x: right - peel * 0.15, y: bottom - peel * 0.15)
+                    )
+                    path.addLine(to: CGPoint(x: right - peel * 0.55, y: bottom - peel * 0.2))
+                    path.closeSubpath()
+                }
+                .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .padding(6)
+    }
+}
+
+@available(iOS 26.0, *)
+struct NativeLiquidGlassSwitch: View {
+    var on: Bool
+    var label: String
+    var accent: Color
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            GeometryReader { geo in
+                let knob = max(geo.size.height - 6, 10)
+                ZStack(alignment: on ? .trailing : .leading) {
+                    Capsule()
+                        .fill(on ? accent.opacity(0.85) : Color.white.opacity(0.28))
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: knob, height: knob)
+                        .padding(3)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .accessibilityLabel(label)
+        .modifier(GlassPressHold())
     }
 }
 
@@ -337,16 +440,36 @@ struct NativeLiquidGlassSearchOpenButton: View {
     }
 }
 
-/// Non-interactive plate. It does not take taps, so a form under it stays usable
-/// only when the plate is chrome with no text of its own. Sheet bodies stay in
-/// the web view for that reason.
+/// Popup plate. Not interactive, so a long press does not scale the popup.
+/// Drawn behind the web view; the form text stays in front of it.
 @available(iOS 26.0, *)
 struct NativeLiquidGlassSurface: View {
+    var corner: CGFloat
+
     var body: some View {
         Color.clear
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: max(corner, 16), style: .continuous))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+/// Glass plate for every open popup, placed behind the web view.
+@available(iOS 26.0, *)
+struct NativeGlassSurfaceLayer: View {
+    @ObservedObject var model: NativeGlassSceneModel
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(model.controls.filter { $0.role == "surface" && !$0.suppressed }) { spec in
+                NativeLiquidGlassSurface(corner: CGFloat(spec.corner))
+                    .frame(width: max(spec.width, 1), height: max(spec.height, 1))
+                    .position(x: spec.x + spec.width / 2, y: spec.y + spec.height / 2)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .ignoresSafeArea()
     }
 }
 
@@ -354,76 +477,102 @@ struct NativeLiquidGlassSurface: View {
 struct NativeLiquidGlassTabBar: View {
     var tabs: [NativeGlassTab]
     var accent: Color
+    var insetBottom: CGFloat
     var onSelect: (String) -> Void
+
+    @State private var dragX: CGFloat?
+    @Namespace private var tabGlass
 
     private var textual: Bool {
         tabs.allSatisfy { $0.symbol.isEmpty }
     }
 
     var body: some View {
-        Group {
-            if textual {
-                textBar
-            } else {
-                iconBar
+        GlassEffectContainer(spacing: 12) {
+            GeometryReader { geo in
+                let count = max(tabs.count, 1)
+                let width = max(geo.size.width, 1)
+                let contentHeight = max(geo.size.height - insetBottom, 44)
+                let segment = width / CGFloat(count)
+                let selectedIndex = tabs.firstIndex(where: \.selected)
+                let travel: CGFloat = {
+                    if let dragX { return min(max(dragX, 0), width) }
+                    if let selectedIndex { return (CGFloat(selectedIndex) + 0.5) * segment }
+                    return -1
+                }()
+                let showPill = travel >= 0
+                let pillWidth = max(segment - 8, 44)
+                ZStack(alignment: .topLeading) {
+                    Color.clear
+                        .glassEffect(.regular, in: Capsule())
+                    if showPill {
+                        Color.clear
+                            .glassEffect(.regular, in: Capsule())
+                            .glassEffectID("tab-selection", in: tabGlass)
+                            .frame(width: pillWidth, height: max(contentHeight - 10, 36))
+                            .offset(x: min(max(travel - pillWidth / 2, 4), width - pillWidth - 4), y: 5)
+                    }
+                    HStack(spacing: 0) {
+                        ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+                            segment(tab, icon: !textual, highlighted: highlighted(index: index, travel: travel, segment: segment))
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.top, 6)
+                    .padding(.bottom, insetBottom + 6)
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { value in
+                            dragX = min(max(value.location.x, 0), width)
+                        }
+                        .onEnded { value in
+                            let x = min(max(value.location.x, 0), width - 0.01)
+                            let index = min(count - 1, max(0, Int(x / segment)))
+                            dragX = nil
+                            if tabs.indices.contains(index) {
+                                onSelect(tabs[index].id)
+                            }
+                        }
+                )
             }
         }
-        .glassEffect(.regular.interactive(), in: Capsule())
     }
 
-    private var textBar: some View {
-        HStack(spacing: 4) {
-            ForEach(tabs) { tab in
-                segment(tab, icon: false)
-            }
-        }
-        .padding(4)
+    private func highlighted(index: Int, travel: CGFloat, segment: CGFloat) -> Bool {
+        let center = (CGFloat(index) + 0.5) * segment
+        return abs(travel - center) <= segment / 2
     }
 
-    private var iconBar: some View {
-        HStack(spacing: 0) {
-            ForEach(tabs) { tab in
-                segment(tab, icon: true)
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-    }
-
-    private func segment(_ tab: NativeGlassTab, icon: Bool) -> some View {
+    private func segment(_ tab: NativeGlassTab, icon: Bool, highlighted: Bool) -> some View {
         Button {
             onSelect(tab.id)
         } label: {
             Group {
                 if icon {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 3) {
                         Image(systemName: tab.symbol)
-                            .font(.system(size: 18, weight: tab.selected ? .semibold : .regular))
+                            .font(.system(size: 20, weight: highlighted ? .semibold : .regular))
                         Text(tab.label)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                     }
                 } else {
                     Text(tab.label)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .padding(.horizontal, 4)
                 }
             }
-            .foregroundStyle(tab.selected ? (icon ? accent : Color.primary) : Color.secondary)
+            .foregroundStyle(highlighted ? (icon ? accent : Color.primary) : Color.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                if tab.selected {
-                    Color.clear
-                        .glassEffect(.regular.interactive(), in: Capsule())
-                }
-            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tab.label)
-        .accessibilityAddTraits(tab.selected ? .isSelected : AccessibilityTraits())
+        .accessibilityAddTraits(highlighted ? .isSelected : AccessibilityTraits())
     }
 }
 
@@ -446,11 +595,39 @@ private func glassButton<Label: View>(
             .tint(accent)
             .disabled(!enabled)
             .accessibilityLabel(label)
+            .modifier(GlassPressHold())
     } else {
         Button(action: action, label: content)
             .buttonStyle(.glass)
             .buttonBorderShape(shape)
             .disabled(!enabled)
             .accessibilityLabel(label)
+            .modifier(GlassPressHold())
+    }
+}
+
+/// Keeps a pressed scale visible for a moment after the finger lifts, then
+/// the shared tap path changes the page. Reduced Motion skips the hold.
+@available(iOS 26.0, *)
+private struct GlassPressHold: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var holding = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(holding ? 0.94 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: holding)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        if !reduceMotion { holding = true }
+                    }
+                    .onEnded { _ in
+                        let delay = reduceMotion ? 0.0 : 0.12
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            holding = false
+                        }
+                    }
+            )
     }
 }

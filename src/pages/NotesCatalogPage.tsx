@@ -85,7 +85,7 @@ export function NotesCatalogPage({
 
   return (
     <div className="app-shell-page" data-testid={`notes-${mode}-${kind}`}>
-      <div className="app-shell-header px-4 pb-2">
+      <div className="app-shell-header pl-2 pr-4 pb-2" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div className="flex items-center gap-2">
           <GlassControl nativeGlass={{ role: "back" }} aria-label={t("notesBack")} onClick={() => goPageBack(navigate, NOTES_HOME_PATH)}>
             <ArrowLeft className="w-5 h-5" />

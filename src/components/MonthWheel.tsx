@@ -11,7 +11,10 @@ import { cn } from "@/lib/utils";
 import { emitTutorial, isTutorialActive } from "@/lib/tutorial";
 
 const GAP_PX = 8;
-const PEEK_PX = 88;
+/** Previous month, kept short so it sits under the header without covering it. */
+const PEEK_TOP_PX = 44;
+/** Next month. This height stays put when the calendar grows behind the tab bar. */
+const PEEK_BOTTOM_PX = 88;
 const SNAP_RATIO = 0.22;
 const VELOCITY_THRESHOLD = 0.35; // px/ms
 
@@ -25,6 +28,8 @@ interface Props {
    */
   lockSwipe?: boolean;
   onMonthStep: (delta: -1 | 1) => void;
+  /** When set, the wheel continues under the tab and the next-month peek stays visible above it. */
+  extendBehindTab?: boolean;
   /** Fired when the user starts dragging the month wheel. */
   onInteractionStart?: () => void;
   /** Render a month panel. `index` is -1 | 0 | 1 relative to the selected month. */
@@ -41,11 +46,13 @@ export function MonthWheel({
   disabled,
   lockSwipe,
   onMonthStep,
+  extendBehindTab,
   onInteractionStart,
   children,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewportH, setViewportH] = useState(0);
+  const [coverPx, setCoverPx] = useState(0);
   const [offset, setOffset] = useState(0);
   const [animating, setAnimating] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -67,7 +74,7 @@ export function MonthWheel({
   onInteractionStartRef.current = onInteractionStart;
   const interactionNotifiedRef = useRef(false);
 
-  const itemH = Math.max(0, viewportH - PEEK_PX * 2);
+  const itemH = Math.max(0, viewportH - PEEK_TOP_PX - PEEK_BOTTOM_PX - coverPx);
   const stride = itemH + GAP_PX;
   strideRef.current = stride;
   disabledRef.current = !!disabled || !!lockSwipe;
@@ -76,12 +83,20 @@ export function MonthWheel({
   useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
-    const measure = () => setViewportH(el.clientHeight);
+    const measure = () => {
+      setViewportH(el.clientHeight);
+      if (!extendBehindTab) {
+        setCoverPx(0);
+        return;
+      }
+      const raw = getComputedStyle(document.documentElement).getPropertyValue("--bottom-nav-offset");
+      setCoverPx(Number.parseFloat(raw) || 0);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [extendBehindTab]);
 
   useEffect(() => {
     cancelAnimationFrame(rafRef.current!);
@@ -246,7 +261,7 @@ export function MonthWheel({
     };
   }, [finishGesture, setOffsetBoth]);
 
-  const translateY = PEEK_PX - stride + offset;
+  const translateY = PEEK_TOP_PX - stride + offset;
 
   return (
     <div

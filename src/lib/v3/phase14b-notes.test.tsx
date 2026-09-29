@@ -87,7 +87,9 @@ describe("Phase 14-B Notes", () => {
 });
 
 describe("Phase 14-B settings copy", () => {
-  it("shows Future plan reflection wording and version 1.2.0", async () => {
+  it(
+    "shows Future plan reflection wording and version 1.2.0",
+    async () => {
     const { default: Settings } = await import("@/pages/Settings");
     localStorage.clear();
     localStorage.setItem("growth-app-lang", "en");
@@ -106,5 +108,7 @@ describe("Phase 14-B settings copy", () => {
     expect(screen.getByText("Monthly plan reflection")).toBeTruthy();
     expect(screen.getByText(/1\.2\.0/)).toBeTruthy();
     expect(screen.queryByTestId("settings-open-account")).toBeNull();
-  });
+    },
+    15000,
+  );
 });

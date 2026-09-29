@@ -41,6 +41,7 @@ export function useNativeGlass<T extends HTMLElement>(
     spec?.prominent,
     spec?.enabled,
     spec?.value,
+    spec?.passThrough,
     tabsKey,
   ]);
 }

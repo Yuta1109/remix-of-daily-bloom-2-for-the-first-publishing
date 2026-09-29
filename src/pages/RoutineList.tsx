@@ -42,10 +42,12 @@ export default function RoutineList() {
     <SwipeBackPage followFinger underlay={<Index />} onBack={back}>
     <div className="app-shell-page">
       <div className="app-shell-header px-4 pb-2">
-        <GlassControl nativeGlass={{ role: "back" }} aria-label={t("back")} data-testid="routine-list-back" onClick={back} className="mb-2">
-          <ArrowLeft className="w-5 h-5" />
-        </GlassControl>
-        <h1 className="text-[28px] font-bold tracking-tight">{t("todoRoutineListTitle")}</h1>
+        <div className="flex items-center gap-2 min-h-11">
+          <GlassControl nativeGlass={{ role: "back" }} aria-label={t("back")} data-testid="routine-list-back" onClick={back}>
+            <ArrowLeft className="w-5 h-5" />
+          </GlassControl>
+          <h1 className="text-[28px] font-bold tracking-tight">{t("todoRoutineListTitle")}</h1>
+        </div>
       </div>
       <div className="app-shell-scroll px-4 pb-8">
         {routines.length === 0 ? (

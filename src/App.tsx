@@ -46,26 +46,11 @@ ensureLegacyMemoArchive();
  * 4. AuthProvider restores Google session and reconciles cloud *after* local V3 exists
  */
 
-/**
- * Routes that present their own full-screen chrome (back button, no tab bar).
- * Mirrors how `/privacy` already hid the tab bar before this Phase.
- */
-const HIDE_NAV_ROUTES = [
-  "/privacy",
-  "/settings",
-  "/user",
-  "/progress/analytics",
-  "/progress/points",
-  "/plan/postpone-box",
-  "/todo/routines",
-];
-
 const TAB_ROOTS = new Set(["/", "/progress", "/plan", "/todo", "/calendar", "/note"]);
 
 function AppRoutes() {
   const location = useLocation();
   const navigate = useNavigate();
-  const hideNav = HIDE_NAV_ROUTES.includes(location.pathname);
   const dedicatedSwipe =
     location.pathname === "/privacy" ||
     location.pathname === "/settings" ||
@@ -114,7 +99,7 @@ function AppRoutes() {
         <Route path="/privacy" element={<Privacy />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
-      {!hideNav && <BottomNav />}
+      <BottomNav />
     </>
   );
 }

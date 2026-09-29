@@ -258,7 +258,7 @@ html.overlay-open #root {
 
 .app-shell-header {
   flex-shrink: 0;
-  padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+  padding-top: max(env(safe-area-inset-top, 0px), 8px);
 }
 
 .app-shell-scroll {
@@ -307,9 +307,14 @@ html.overlay-open #root {
   height: var(--glass-size-prominent);
 }
 
-.liquid-glass-label {
-  height: var(--glass-size-label);
-  padding-inline: 12px;
+.liquid-glass-label,
+.liquid-glass-content {
+  height: auto;
+  min-height: var(--glass-size-label);
+  min-width: max-content;
+  padding-inline: 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .liquid-glass-surface {
@@ -390,8 +395,8 @@ html.overlay-open #root {
   transform: scale(var(--glass-pressed-scale));
 }
 
-.liquid-glass:active:not(:disabled):not([aria-disabled="true"]),
-.liquid-glass[data-pressed="true"]:not(:disabled):not([aria-disabled="true"]) {
+.liquid-glass:active:not(:disabled):not([aria-disabled="true"]):not(.liquid-glass-sheet):not(.liquid-glass-surface):not(.liquid-glass-bar),
+.liquid-glass[data-pressed="true"]:not(:disabled):not([aria-disabled="true"]):not(.liquid-glass-sheet):not(.liquid-glass-surface):not(.liquid-glass-bar) {
   transform: scale(var(--glass-pressed-scale));
   box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.36), var(--glass-shadow-pressed);
   background-color: var(--glass-surface);
@@ -436,6 +441,46 @@ html[data-native-glass="on"] [data-native-glass-host]:not([data-native-glass-sur
 }
 html[data-native-glass="on"] [data-native-glass-host] [data-native-glass-badge] {
   color: hsl(var(--background)) !important;
+}
+
+/* Popup glass is a native plate behind the web view. These holes clear the
+   page pixels in the popup rect so that plate shows through, while the
+   popup's own text and fields stay in the web view above it. */
+.native-glass-hole {
+  position: fixed;
+  z-index: 35;
+  pointer-events: none;
+  background: #000;
+  mix-blend-mode: destination-out;
+}
+html[data-native-glass-sheet="on"] .liquid-glass-sheet,
+html[data-native-glass-sheet="on"] .liquid-glass-surface {
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-native-glass-sheet="on"] [data-vaul-overlay],
+html[data-native-glass-sheet="on"] [data-radix-dialog-overlay],
+html[data-native-glass-sheet="on"] [data-radix-alert-dialog-overlay] {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-native-glass-sheet="on"] .liquid-glass-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #000;
+  mix-blend-mode: destination-out;
+  pointer-events: none;
+}
+html[data-native-glass-sheet="on"] .liquid-glass-surface > * {
+  position: relative;
+  z-index: 1;
 }
 
 button.liquid-glass[role="switch"][data-state="checked"] {

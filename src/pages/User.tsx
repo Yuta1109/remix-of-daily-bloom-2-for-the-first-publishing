@@ -146,18 +146,21 @@ export default function User({ embedded = false }: { embedded?: boolean }) {
 
   const page = (
     <div className="app-shell-page">
-      <div className="app-shell-header px-4 pb-2">
-        <div className="flex items-center gap-1">
+      <div className="app-shell-header relative px-2 pb-1" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+        <div className="relative flex items-center min-h-11">
           <GlassControl
             variant="regular"
             nativeGlass={{ role: "back" }}
             onClick={back}
             data-testid="user-back"
             aria-label={t("back")}
+            className="relative z-10"
           >
             <ChevronLeft className="w-5 h-5" aria-hidden="true" />
           </GlassControl>
-          <h1 className="text-xl font-bold tracking-tight">{t("userPageTitle")}</h1>
+          <h1 className="pointer-events-none absolute inset-x-14 text-center text-xl font-bold tracking-tight">
+            {t("userPageTitle")}
+          </h1>
         </div>
       </div>
 

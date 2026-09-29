@@ -19,22 +19,27 @@ export default function Privacy() {
       followFinger
       underlay={<Settings staticPreview />}
       onBack={() => goPageBack(navigate, "/settings")}
-      className="px-5"
+      className="pb-[var(--bottom-nav-offset)]"
     >
-      <div className="pt-[calc(env(safe-area-inset-top,0px)+8px)]">
-      <GlassControl
-        nativeGlass={{ role: "back" }}
-        onClick={() => goPageBack(navigate, "/settings")}
-        aria-label={t("back")}
-        data-testid="privacy-back"
-        className="mb-4"
+      <div
+        className="relative flex items-center min-h-11 pl-2 pr-2"
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <ArrowLeft className="w-5 h-5" />
-      </GlassControl>
+        <GlassControl
+          nativeGlass={{ role: "back" }}
+          onClick={() => goPageBack(navigate, "/settings")}
+          aria-label={t("back")}
+          data-testid="privacy-back"
+          className="relative z-10"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </GlassControl>
+        <h1 className="pointer-events-none absolute inset-x-12 text-center text-base font-semibold leading-tight">
+          {t("privacyPolicy")}
+        </h1>
       </div>
 
-      <article className="prose prose-sm max-w-none space-y-4 animate-fade-in-up pb-8">
-        <h1 className="text-2xl font-bold tracking-tight">{t("privacyPolicy")}</h1>
+      <article className="px-5 prose prose-sm max-w-none space-y-4 animate-fade-in-up pb-8">
         <p className="text-xs text-muted-foreground">
           {ja ? "最終更新日" : "Last updated"}: {LAST_UPDATED}
         </p>
