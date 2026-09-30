@@ -17,7 +17,6 @@ struct NativeFloatingTabBar: View {
             let lensCenter = min(max(dragX ?? selectedCenter, segmentWidth / 2), width - segmentWidth / 2)
 
             ZStack {
-                barSurface
                 selectionLens(width: segmentWidth - 8)
                     .offset(x: lensCenter - width / 2)
                     .animation(
@@ -54,21 +53,9 @@ struct NativeFloatingTabBar: View {
             )
         }
         .frame(height: 66)
+        .modifier(NativeTabBarChrome())
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Main navigation")
-    }
-
-    @ViewBuilder
-    private var barSurface: some View {
-        if #available(iOS 26.0, *) {
-            Color.clear
-                .glassEffect(.regular, in: Capsule())
-        } else {
-            Capsule()
-                .fill(.thickMaterial)
-                .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.75))
-                .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
-        }
     }
 
     @ViewBuilder
@@ -129,5 +116,20 @@ private struct NativeTabLens26: View {
                 .glassEffectID("native-tab-selection", in: lensNamespace)
         }
         .allowsHitTesting(false)
+    }
+}
+
+private struct NativeTabBarChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: Capsule())
+        } else {
+            content.background {
+                Capsule()
+                    .fill(.thickMaterial)
+                    .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.75))
+                    .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
+            }
+        }
     }
 }

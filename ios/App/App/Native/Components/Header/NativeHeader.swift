@@ -24,6 +24,7 @@ struct NativeHeader: View {
             if let title {
                 Text(title)
                     .font(.headline)
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
                     .padding(.horizontal, 108)
             }
@@ -38,7 +39,7 @@ struct NativeHeader: View {
         .background {
             if backgroundStyle == .translucent {
                 Rectangle()
-                    .fill(.regularMaterial)
+                    .fill(.ultraThinMaterial)
                     .ignoresSafeArea(edges: .top)
             }
         }

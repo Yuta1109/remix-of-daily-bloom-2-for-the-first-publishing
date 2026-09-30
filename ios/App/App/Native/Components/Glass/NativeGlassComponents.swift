@@ -38,9 +38,9 @@ struct NativeGlassIconButton: View {
         } else {
             Button(action: action) {
                 Image(systemName: icon.rawValue)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(prominent ? Color.white : theme.foreground)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 40, height: 40)
                     .background(
                         Circle().fill(prominent ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.thinMaterial))
                     )
@@ -53,8 +53,8 @@ struct NativeGlassIconButton: View {
 
     private var label: some View {
         Image(systemName: icon.rawValue)
-            .font(.system(size: 17, weight: .semibold))
-            .frame(width: 44, height: 44)
+            .font(.system(size: 16, weight: .semibold))
+            .frame(width: 40, height: 40)
     }
 }
 
