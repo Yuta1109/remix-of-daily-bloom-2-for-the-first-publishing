@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 import UserNotifications
 import Capacitor
 import FirebaseAuth
@@ -18,6 +19,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             self.window?.backgroundColor = cream
             self.window?.rootViewController?.view.backgroundColor = cream
         }
+        // The native rebuild owns the iOS view hierarchy. The Capacitor
+        // storyboard and WebView sources remain in the target as the frozen
+        // reference, but the SwiftUI app shell does not depend on that bridge.
+        let nativeRoot = UIHostingController(rootView: NativeAppRoot())
+        nativeRoot.view.backgroundColor = cream
+        window?.rootViewController = nativeRoot
+        window?.makeKeyAndVisible()
+
         // Start ActivityKit push-to-start token observation early and keep the
         // Task alive for the process lifetime (see LiveActivityPushTokenCenter).
         LiveActivityPushTokenCenter.start()

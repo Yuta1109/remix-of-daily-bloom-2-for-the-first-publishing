@@ -18,6 +18,7 @@
 
 require "xcodeproj"
 require "json"
+require "pathname"
 
 APP_NAME = "App"
 WIDGET_NAME = "EssentialsWidget"
@@ -91,6 +92,23 @@ glass_views_ref = ref_for(project, glass_group, glass_views_path, "NativeGlassVi
   next if app_sources.files_references.include?(ref)
 
   app_sources.add_file_reference(ref)
+end
+
+# Pure SwiftUI application shell. Keep this separate from NativeGlass: the
+# latter is the preserved WebView overlay bridge, while Native/ owns the new
+# native hierarchy. Files are discovered recursively so later feature files
+# do not require hand-editing the Xcode project.
+native_root_path = File.expand_path("App/Native", Dir.pwd)
+native_root_group = app_group["Native"] || app_group.new_group("Native", "Native")
+Dir.glob(File.join(native_root_path, "**", "*.swift")).sort.each do |absolute_path|
+  relative_path = Pathname.new(absolute_path).relative_path_from(Pathname.new(native_root_path))
+  parts = relative_path.each_filename.to_a
+  filename = parts.pop
+  group = parts.reduce(native_root_group) do |parent, part|
+    parent[part] || parent.new_group(part, part)
+  end
+  ref = ref_for(project, group, Pathname.new(absolute_path), filename)
+  app_sources.add_file_reference(ref) unless app_sources.files_references.include?(ref)
 end
 
 # iOS 26 Home Screen icon. The layered Icon Composer bundle is separate from

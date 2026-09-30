@@ -100,6 +100,8 @@ jobs:
             || { echo "NativeGlassPlugin missing from packageClassList"; exit 1; }
           grep -q 'NativeGlassPlugin.swift' ios/App/App.xcodeproj/project.pbxproj \
             || { echo "NativeGlassPlugin.swift not in Xcode project"; exit 1; }
+          grep -q 'NativeAppRoot.swift' ios/App/App.xcodeproj/project.pbxproj \
+            || { echo "NativeAppRoot.swift not in Xcode project"; exit 1; }
           grep -q 'AppPlugin' ios/App/App/capacitor.config.json \
             || { echo "AppPlugin missing from packageClassList"; exit 1; }
           grep -q 'CapacitorFirebaseMessaging' ios/App/CapApp-SPM/Package.swift \
