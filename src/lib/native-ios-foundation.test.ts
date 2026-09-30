@@ -30,20 +30,19 @@ describe("native iOS foundation", () => {
     expect(state).toContain("navigationByTab");
     expect(state).toContain("scrollPositions");
     expect(shell).toContain("NavigationStack(path: $navigation.path)");
-    expect(shell).toContain(".safeAreaInset(edge: .bottom");
+    expect(shell).toContain(".tabItem");
+    expect(shell).not.toContain("NativeFloatingTabBar");
+    expect(shell).not.toContain(".toolbar(.hidden, for: .tabBar)");
   });
 
   it("uses official iOS 26 glass with an older-system fallback", () => {
     const glass = readFileSync(`${nativeRoot}/Components/Glass/NativeGlassComponents.swift`, "utf8");
-    const tabBar = readFileSync(`${nativeRoot}/Components/Glass/NativeFloatingTabBar.swift`, "utf8");
 
     expect(glass).toContain("if #available(iOS 26.0, *)");
     expect(glass).toContain(".buttonStyle(.glass)");
     expect(glass).toContain(".thinMaterial");
-    expect(tabBar).toContain("GlassEffectContainer");
-    expect(tabBar).toContain("DragGesture");
-    expect(tabBar).toContain("dragX = min(max(value.location.x");
-    expect(tabBar).toContain(".thickMaterial");
+    expect(glass).toContain("width: 30, height: 30");
+    expect(glass).toContain("minWidth: 44, minHeight: 44");
   });
 
   it("keeps deployment and CI project integration stable", () => {

@@ -10,19 +10,11 @@ struct AppShell: View {
                     tab: tab,
                     navigation: appState.navigation(for: tab)
                 )
-                .toolbar(.hidden, for: .tabBar)
+                .tabItem {
+                    Label(tab.title, systemImage: tab.systemImage)
+                }
                 .tag(tab)
             }
-        }
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            NativeFloatingTabBar(
-                tabs: appState.tabConfiguration.order,
-                selection: $appState.selectedTab
-            )
-            .padding(.horizontal, 12)
-            .padding(.top, 6)
-            .padding(.bottom, 6)
         }
     }
 }

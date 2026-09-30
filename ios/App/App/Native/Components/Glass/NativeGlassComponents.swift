@@ -26,6 +26,8 @@ struct NativeGlassIconButton: View {
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.circle)
                 .tint(theme.accent)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
                 .accessibilityLabel(accessibilityLabel)
             } else {
                 Button(action: action) {
@@ -33,28 +35,32 @@ struct NativeGlassIconButton: View {
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
                 .accessibilityLabel(accessibilityLabel)
             }
         } else {
             Button(action: action) {
                 Image(systemName: icon.rawValue)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(prominent ? Color.white : theme.foreground)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 30, height: 30)
                     .background(
                         Circle().fill(prominent ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.thinMaterial))
                     )
                     .overlay(Circle().stroke(.white.opacity(0.24), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
             .accessibilityLabel(accessibilityLabel)
         }
     }
 
     private var label: some View {
         Image(systemName: icon.rawValue)
-            .font(.system(size: 16, weight: .semibold))
-            .frame(width: 40, height: 40)
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 30, height: 30)
     }
 }
 
