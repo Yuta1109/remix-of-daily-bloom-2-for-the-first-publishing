@@ -1,11 +1,8 @@
 import SwiftUI
 
+@MainActor
 struct NativeAppRoot: View {
-    @StateObject private var appState: AppState
-
-    init(appState: AppState = AppState()) {
-        _appState = StateObject(wrappedValue: appState)
-    }
+    @StateObject private var appState = AppState()
 
     var body: some View {
         AppThemeReader { theme in
