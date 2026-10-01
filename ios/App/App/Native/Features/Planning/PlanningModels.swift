@@ -43,6 +43,14 @@ enum PlanningBucket: String, CaseIterable, Identifiable, Hashable {
         case .daily: "Daily"
         }
     }
+
+    var section: PlanningSection {
+        switch self {
+        case .monthly: .monthly
+        case .weekly: .weekly
+        case .daily: .daily
+        }
+    }
 }
 
 enum PlanningItemKind: String, CaseIterable, Identifiable, Hashable {
@@ -142,12 +150,24 @@ struct PlanDocument: Identifiable, Hashable {
     }
 }
 
+enum ReflectionDisposition: String, Codable, Hashable {
+    case keep
+    case postpone
+    case stop
+}
+
 struct PlanningNode: Identifiable, Hashable {
     var id: UUID
     var title: String
     var children: [PlanningNode]
     var kind: PlanningItemKind
     var bucket: PlanningBucket
+    var periodKey: String
+    /// Same value when one logical item is shown on more than one period page.
+    var logicalID: UUID
+    var completed: Bool
+    /// Separate from completion. 維持 / 先送り / 終了.
+    var reflectionDisposition: ReflectionDisposition?
     /// Shared with Calendar when this node is an event. Not a second copy.
     var eventID: UUID?
     /// Shared with Today when this node is a Daily task.
@@ -159,6 +179,10 @@ struct PlanningNode: Identifiable, Hashable {
         children: [PlanningNode] = [],
         kind: PlanningItemKind,
         bucket: PlanningBucket,
+        periodKey: String = "",
+        logicalID: UUID = UUID(),
+        completed: Bool = false,
+        reflectionDisposition: ReflectionDisposition? = nil,
         eventID: UUID? = nil,
         todayTaskID: UUID? = nil
     ) {
@@ -167,6 +191,10 @@ struct PlanningNode: Identifiable, Hashable {
         self.children = children
         self.kind = kind
         self.bucket = bucket
+        self.periodKey = periodKey
+        self.logicalID = logicalID
+        self.completed = completed
+        self.reflectionDisposition = reflectionDisposition
         self.eventID = eventID
         self.todayTaskID = todayTaskID
     }
@@ -366,6 +394,7 @@ final class PlanningSession: ObservableObject {
     @Published var monthlyPeriodKey = ""
     @Published var weeklyPeriodKey = ""
     @Published var dailyPeriodKey = ""
+    @Published var periodRecords: [PeriodReflectionRecord] = []
 
     init(year: Int = Calendar.current.component(.year, from: Date())) {
         selectedYear = year
@@ -377,7 +406,16 @@ final class PlanningSession: ObservableObject {
     }
 
     func badgeCount(for section: PlanningSection) -> Int {
-        PlanningRules.displayedReflectionBadge(section: section, obligations: obligations)
+        let base = PlanningRules.displayedReflectionBadge(section: section, obligations: obligations)
+        let extra = periodRecords.reduce(0) { partial, record in
+            guard record.bucket.section == section else { return partial }
+            return partial + PeriodCalendar.periodBadge(
+                hasMeaningfulActivity: record.hasMeaningfulActivity,
+                outstanding: record.reflectionOutstanding,
+                completed: record.reflectionCompleted
+            )
+        }
+        return min(PlanningRules.maximumBadgeCount, base + extra)
     }
 
     func select(_ section: PlanningSection) {
@@ -441,7 +479,9 @@ final class PlanningSession: ObservableObject {
     func transfer(planID: UUID, bulletIDs: Set<UUID>, includeChildren: Bool, to target: PlanTransferTarget) {
         guard let plan = plans.first(where: { $0.id == planID }) else { return }
         let selected = selectedBullets(in: plan.bullets, ids: bulletIDs, includeChildren: includeChildren, force: false)
-        periodItems.append(contentsOf: selected.map { node(from: $0, target: target) })
+        let key = periodKey(for: target.bucket)
+        periodItems.append(contentsOf: selected.map { node(from: $0, target: target, periodKey: key) })
+        markActivity(bucket: target.bucket, periodKey: key)
     }
 
     func movePostponed(_ id: UUID, to bucket: PlanningBucket) {
@@ -451,16 +491,24 @@ final class PlanningSession: ObservableObject {
 
     func placePostponedOnPlan(_ id: UUID) {
         guard let entry = postponed.first(where: { $0.id == id }) else { return }
+        let key = periodKey(for: entry.bucket)
+        guard !containsLogicalItem(eventID: entry.eventID, todayTaskID: entry.todayTaskID, bucket: entry.bucket, periodKey: key) else {
+            postponed.removeAll { $0.id == id }
+            return
+        }
         periodItems.append(
             PlanningNode(
                 title: entry.title,
                 kind: entry.kind,
                 bucket: entry.bucket,
+                periodKey: key,
+                logicalID: entry.todayTaskID ?? entry.eventID ?? UUID(),
                 eventID: entry.eventID,
                 todayTaskID: entry.todayTaskID
             )
         )
         postponed.removeAll { $0.id == id }
+        markActivity(bucket: entry.bucket, periodKey: key)
     }
 
     func addEvent(_ event: PlanningEventRecord) {
@@ -490,6 +538,7 @@ final class PlanningSession: ObservableObject {
         if !years.contains(where: { $0.year == selectedYear }) {
             years.append(PlanningRules.makeYear(selectedYear))
         }
+        ensurePeriodDefaults()
     }
 
     func persist(into navigation: TabNavigationState) {
@@ -514,13 +563,18 @@ final class PlanningSession: ObservableObject {
         }
     }
 
-    private func node(from bullet: PlanBullet, target: PlanTransferTarget) -> PlanningNode {
-        PlanningNode(
+    private func node(from bullet: PlanBullet, target: PlanTransferTarget, periodKey: String) -> PlanningNode {
+        let eventID = target.kind == .event ? UUID() : nil
+        let logicalID = UUID()
+        return PlanningNode(
             title: bullet.text,
-            children: bullet.children.map { node(from: $0, target: target) },
+            children: bullet.children.map { node(from: $0, target: target, periodKey: periodKey) },
             kind: target.kind,
             bucket: target.bucket,
-            eventID: target.kind == .event ? UUID() : nil
+            periodKey: periodKey,
+            logicalID: logicalID,
+            eventID: eventID,
+            todayTaskID: target.bucket == .daily && target.kind == .task ? logicalID : nil
         )
     }
 }

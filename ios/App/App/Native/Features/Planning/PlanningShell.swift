@@ -28,7 +28,7 @@ struct PlanningShell: View {
             case .planEditor(let id):
                 PlanEditorPage(session: session, planID: id)
             case .reflectionSettings, .weeklySettings:
-                PlanningLinkPlaceholder(route: route)
+                PlanningLinkPlaceholder(session: session, route: route)
             }
         }
         .onAppear {
@@ -39,6 +39,9 @@ struct PlanningShell: View {
         .onChange(of: session.section) { _, _ in session.persist(into: navigation) }
         .onChange(of: session.selectedYear) { _, _ in session.persist(into: navigation) }
         .onChange(of: session.weeklyEnabled) { _, _ in session.persist(into: navigation) }
+        .onChange(of: session.monthlyPeriodKey) { _, _ in session.persist(into: navigation) }
+        .onChange(of: session.weeklyPeriodKey) { _, _ in session.persist(into: navigation) }
+        .onChange(of: session.dailyPeriodKey) { _, _ in session.persist(into: navigation) }
     }
 }
 
@@ -137,27 +140,19 @@ private struct PlanningSectionPage: View {
                 .foregroundStyle(Color.primary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(24)
-        case .monthly, .weekly, .daily:
-            PlanningPeriodPlaceholder(section: session.section)
+        case .monthly:
+            PeriodPlannerPage(session: session, bucket: .monthly)
+        case .weekly:
+            PeriodPlannerPage(session: session, bucket: .weekly)
+        case .daily:
+            PeriodPlannerPage(session: session, bucket: .daily)
         }
-    }
-}
-
-private struct PlanningPeriodPlaceholder: View {
-    let section: PlanningSection
-
-    var body: some View {
-        VStack(spacing: 12) {
-            PlanningGlyph(section: section)
-            Text(section.indexTitle)
-                .font(.title3.weight(.semibold))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 private struct PlanningLinkPlaceholder: View {
     @EnvironmentObject private var navigation: TabNavigationState
+    @ObservedObject var session: PlanningSession
     let route: PlanningRoute
 
     var body: some View {
@@ -169,6 +164,12 @@ private struct PlanningLinkPlaceholder: View {
             }
             Text(route == .weeklySettings ? "Weekly Settings" : "Reflection Settings")
                 .font(.title2.bold())
+            if route == .weeklySettings {
+                Button("Weeklyを無効にする") {
+                    session.setWeeklyEnabled(false)
+                }
+                .buttonStyle(.bordered)
+            }
             Spacer()
         }
         .padding(16)
