@@ -184,7 +184,7 @@ struct FutureMonthSheet: View {
     @State private var minutes = 9 * 60
 
     var body: some View {
-        NativeSheetScaffold(title: monthTitle, onClose: onClose, onConfirm: saveGoal) {
+        NativeSheetScaffold(title: LocalizedStringKey(monthTitle), onClose: onClose, onConfirm: saveGoal) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("月の目標")
