@@ -419,10 +419,10 @@ extension PlanningSession {
                 bucket: bucket,
                 periodKey: periodKey,
                 logicalID: subtask.id,
-                startMinutes: subtask.startMinutes,
-                endMinutes: subtask.endMinutes,
                 todayTaskID: bucket == .daily && kind == .task ? subtask.id : nil,
-                colorID: draft.colorID
+                colorID: draft.colorID,
+                startMinutes: subtask.startMinutes,
+                endMinutes: subtask.endMinutes
             )
         }
         if let existingID, findNode(existingID) != nil {

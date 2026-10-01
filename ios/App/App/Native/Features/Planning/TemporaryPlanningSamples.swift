@@ -5,6 +5,7 @@ import Foundation
 enum TemporaryPlanningSamples {
     static let enabled = true
 
+    @MainActor
     static func install(_ session: PlanningSession) {
         let now = Date()
         let monthly = PeriodCalendar.currentKey(.monthly, now: now)
@@ -51,6 +52,7 @@ enum TemporaryPlanningSamples {
         )
     }
 
+    @MainActor
     private static func seedReflected(_ session: PlanningSession, bucket: PlanningBucket, key: String) {
         let kept = PlanningNode(title: "続けたこと", kind: .task, bucket: bucket, periodKey: key, completed: true, reflectionDisposition: .keep)
         let postponed = PlanningNode(title: "先送りしたこと", kind: .task, bucket: bucket, periodKey: key, completed: false, reflectionDisposition: .postpone)
