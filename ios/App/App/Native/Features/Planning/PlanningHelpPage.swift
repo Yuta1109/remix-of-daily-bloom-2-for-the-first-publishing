@@ -6,17 +6,21 @@ struct PlanningHelpPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    if !navigation.path.isEmpty {
-                        navigation.path.removeLast()
+                HStack(alignment: .center, spacing: 8) {
+                    NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
+                        navigation.pop()
                     }
+                    Text("Planning の使い方")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(PlanningPalette.ink)
                 }
-                Text("Planningの使い方")
-                    .font(.largeTitle.bold())
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.ultraThinMaterial)
                 Text("EssencesのPlanningは、頭の中にあることを整理し、「いつやるか」「次にどうするか」を少しずつ決めていく場所です。")
                 Text("バレットジャーナルの考え方を参考にしていますが、すべてのページを毎日使う必要はありません。自分に必要なページだけ使ってください。")
-                helpSection("Plan", "まずは考えていることを自由に箇条書きします。最大3段階まで整理できます。\n\n書いた項目は、1項目だけでも、まとまりでも、必要なら全体でもMonthly / Weeklyへ移せます。")
-                helpSection("Future", "1年を大きく見渡すページです。月ごとの目標、先に決まっている予定、ざっくりした見通しを残します。")
+                helpSection("Plan", "まずは考えていることを自由に箇条書きします。親項目と、その下のサブタスクまで整理できます。\n\n書いた項目は、1項目だけでも、まとまりでも、必要なら全体でもMonthly / Weekly / Dailyへコピーできます。コピーしても、Planに書いた内容は残り続けます。")
+                helpSection("Future", "1年を大きく見渡すページです。月ごとの目標と、先に決まっている予定を残します。")
                 helpSection("Monthly", "今月やりたいことと予定を整理します。Planから持ってきても、その場で追加しても、先送りボックスから戻しても構いません。")
                 helpSection("Weekly", "Monthlyを今週できる大きさへ分けるためのページです。Weeklyを使わない場合はSettingsから無効にできます。")
                 helpSection("Daily", "今日やることを決めます。Monthly / Weeklyから選ぶ、新しく追加する、先送りボックスから戻す、という方法があります。\n\nDailyの完了チェックはPlanningではなくTodayタブで行います。")
@@ -29,7 +33,10 @@ struct PlanningHelpPage: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(uiColor: .systemBackground))
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
         .navigationBarHidden(true)
     }
 

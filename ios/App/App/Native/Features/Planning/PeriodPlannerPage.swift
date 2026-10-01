@@ -11,9 +11,48 @@ struct PeriodPlannerPage: View {
     private var periodKey: String { session.periodKey(for: bucket) }
 
     var body: some View {
+        TabView(selection: periodSelection) {
+            ForEach(pageKeys, id: \.self) { key in
+                periodPage(key).tag(key)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .background(PlanningPalette.paper)
+        .onAppear {
+            session.refreshDue(ReflectionScope.period(bucket, periodKey))
+        }
+        .sheet(isPresented: $showingPicker) {
+            PeriodPickerSheet(session: session, bucket: bucket) { showingPicker = false }
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { addingKind != nil },
+                set: { if !$0 { addingKind = nil } }
+            )
+        ) {
+            if let addingKind {
+                PeriodItemListSheet(session: session, bucket: bucket, kind: addingKind, periodKey: periodKey)
+            }
+        }
+    }
+
+    private var pageKeys: [String] {
+        let anchor = PeriodCalendar.currentKey(bucket)
+        let span = bucket == .daily ? -45...45 : -24...24
+        return span.map { PeriodCalendar.shift(anchor, bucket: bucket, by: $0) }
+    }
+
+    private var periodSelection: Binding<String> {
+        Binding(
+            get: { session.periodKey(for: bucket) },
+            set: { session.assignPeriod($0, bucket: bucket) }
+        )
+    }
+
+    private func periodPage(_ key: String) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                periodBar
+                periodBar(key)
                 if bucket == .weekly {
                     Button("Weeklyをなくす") {
                         navigation.path.append(PlanningRoute.weeklySettings)
@@ -21,46 +60,19 @@ struct PeriodPlannerPage: View {
                     .buttonStyle(.bordered)
                 }
                 if bucket == .monthly {
-                    monthlyGoal
+                    monthlyGoal(key)
                 }
-                periodBody
+                periodBody(key)
             }
             .padding(16)
         }
-        .onAppear {
-            session.refreshDue(ReflectionScope.period(bucket, periodKey))
-        }
-        .gesture(
-            DragGesture(minimumDistance: 24)
-                .onEnded { value in
-                    if value.translation.width <= -40 {
-                        session.shiftPeriod(bucket, by: 1)
-                    } else if value.translation.width >= 40 {
-                        session.shiftPeriod(bucket, by: -1)
-                    }
-                }
-        )
-        .nativeSheet(isPresented: $showingPicker, detents: [.medium, .large]) {
-            PeriodPickerSheet(session: session, bucket: bucket) { showingPicker = false }
-        }
-        .nativeSheet(
-            isPresented: Binding(
-                get: { addingKind != nil },
-                set: { if !$0 { addingKind = nil } }
-            ),
-            detents: [.large]
-        ) {
-            if let addingKind {
-                PeriodAddSheet(session: session, bucket: bucket, kind: addingKind, periodKey: periodKey) {
-                    self.addingKind = nil
-                }
-            }
-        }
+        .planningScroll()
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
     }
 
-    private var periodBar: some View {
+    private func periodBar(_ key: String) -> some View {
         HStack(spacing: 8) {
-            PlanningGlyph(section: bucket.section)
             Button {
                 session.shiftPeriod(bucket, by: -1)
             } label: {
@@ -69,7 +81,8 @@ struct PeriodPlannerPage: View {
             Button {
                 showingPicker = true
             } label: {
-                Text(PeriodCalendar.label(bucket: bucket, key: periodKey))
+                Text(PeriodCalendar.label(bucket: bucket, key: key))
+                    .foregroundStyle(PlanningPalette.ink)
                     .font(.title3.bold())
                     .frame(minHeight: 44)
             }
@@ -84,34 +97,38 @@ struct PeriodPlannerPage: View {
     }
 
     @ViewBuilder
-    private var periodBody: some View {
-        let scope = ReflectionScope.period(bucket, periodKey)
-        let reflected = session.isReflectionComplete(bucket: bucket, periodKey: periodKey)
-        let editing = session.isExplicitEdit(bucket: bucket, periodKey: periodKey)
+    private func periodBody(_ key: String) -> some View {
+        let scope = ReflectionScope.period(bucket, key)
+        let reflected = session.isReflectionComplete(bucket: bucket, periodKey: key)
+        let editing = session.isExplicitEdit(bucket: bucket, periodKey: key)
+        let elapsed = PeriodCalendar.periodHasEnded(bucket, key: key)
+        let inactive = !session.existingRecord(bucket: bucket, periodKey: key).hasMeaningfulActivity
         if reflected {
             ReflectionResultView(session: session, scope: scope)
         }
         if !reflected || editing {
-            if !reflected, !session.existingRecord(bucket: bucket, periodKey: periodKey).hasMeaningfulActivity {
+            if !reflected, elapsed, inactive {
                 NoActivityMemorySection(session: session, scope: scope)
-            }
-            if !reflected, session.isActivePrompt(scope) {
-                Button("振り返りを始めますか？") {
-                    session.refreshDue(scope)
-                    navigation.path.append(PlanningRoute.reflection(scope))
+            } else {
+                if !reflected, session.isActivePrompt(scope) {
+                    Button("振り返りを始めますか？") {
+                        session.refreshDue(scope)
+                        navigation.path.append(PlanningRoute.reflection(scope))
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
+                itemSection(.task, key: key)
+                itemSection(.event, key: key)
             }
-            itemSection(.task)
-            itemSection(.event)
         }
     }
 
-    private var monthlyGoal: some View {
-        let parts = PeriodCalendar.monthParts(periodKey)
+    private func monthlyGoal(_ key: String) -> some View {
+        let parts = PeriodCalendar.monthParts(key)
         return VStack(alignment: .leading, spacing: 6) {
-            Text("月の目標")
+            Text("今月の目標")
                 .font(.headline)
+                .foregroundStyle(PlanningPalette.ink)
             TextField(
                 "目標は1つ",
                 text: Binding(
@@ -123,28 +140,49 @@ struct PeriodPlannerPage: View {
         }
     }
 
-    private func itemSection(_ kind: PlanningItemKind) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(kind == .task ? "ToDo" : "予定")
-                    .font(.title3.weight(.semibold))
-                Spacer()
-                Button("追加") { addingKind = kind }
-                    .buttonStyle(.bordered)
-            }
-            let nodes = session.nodes(bucket: bucket, periodKey: periodKey, kind: kind)
+    private func itemSection(_ kind: PlanningItemKind, key: String) -> some View {
+        let card = bucket == .daily
+            ? PlanningPalette.card
+            : (kind == .task ? PlanningPalette.todo : PlanningPalette.event)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(sectionTitle(kind))
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(PlanningPalette.ink)
+            let nodes = session.nodes(bucket: bucket, periodKey: key, kind: kind)
             if nodes.isEmpty {
                 Text("まだありません")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PlanningPalette.muted)
             }
             ForEach(nodes) { node in
-                PeriodNodeRow(session: session, node: node, bucket: bucket, depth: 0)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(node.title).foregroundStyle(PlanningPalette.ink)
+                    let range = PlanningRangeText.display(startDay: node.startDay, endDay: node.endDay, startMinutes: node.startMinutes, endMinutes: node.endMinutes)
+                    if !range.isEmpty {
+                        Text(range).font(.caption).foregroundStyle(PlanningPalette.muted)
+                    }
+                    ForEach(node.children) { child in
+                        Text(child.title)
+                            .font(.subheadline)
+                            .foregroundStyle(PlanningPalette.muted)
+                            .padding(.leading, 16)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .onTapGesture { addingKind = kind }
+    }
+
+    private func sectionTitle(_ kind: PlanningItemKind) -> String {
+        if bucket == .daily {
+            return kind == .task ? "今日のタスク" : "予定"
+        }
+        return kind == .task ? "ToDo" : "予定"
     }
 }
 
@@ -153,7 +191,6 @@ private struct PeriodNodeRow: View {
     let node: PlanningNode
     let bucket: PlanningBucket
     let depth: Int
-    @State private var childTitle = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -167,18 +204,6 @@ private struct PeriodNodeRow: View {
                 Button("削除", role: .destructive) { session.deleteNode(node.id) }
                     .font(.caption)
                     .buttonStyle(.borderless)
-            }
-            if depth < PlanningRules.maximumDepth - 1 {
-                HStack {
-                    TextField("サブタスク", text: $childTitle)
-                        .textFieldStyle(.roundedBorder)
-                    Button("追加") {
-                        session.addChild(to: node.id, title: childTitle)
-                        childTitle = ""
-                    }
-                    .disabled(childTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .font(.caption)
             }
             ForEach(node.children) { child in
                 PeriodNodeRow(session: session, node: child, bucket: bucket, depth: depth + 1)
@@ -232,8 +257,12 @@ private struct PeriodPickerSheet: View {
     let onClose: () -> Void
     @State private var pickedDate = Date()
 
+    @State private var year = Calendar.current.component(.year, from: Date())
+    @State private var month = Calendar.current.component(.month, from: Date())
+    @State private var weekOffset = 0
+
     var body: some View {
-        NativeSheetScaffold(title: pickerTitle, onClose: onClose, onConfirm: apply) {
+        PlanningSheetChrome(onClose: onClose, onConfirm: apply, fixedHeight: bucket == .daily ? 460 : 280) {
             Group {
                 if bucket == .monthly {
                     monthPicker
@@ -242,68 +271,59 @@ private struct PeriodPickerSheet: View {
                 } else {
                     DatePicker("日付", selection: $pickedDate, displayedComponents: .date)
                         .datePickerStyle(.graphical)
-                        .padding()
+                        .labelsHidden()
+                        .padding(.horizontal, 8)
                 }
             }
+        }
         .onAppear {
-            session.refreshDue(ReflectionScope.period(bucket, session.periodKey(for: bucket)))
             pickedDate = PeriodCalendar.date(from: session.periodKey(for: bucket)) ?? Date()
-        }
-        }
-    }
-
-    private var pickerTitle: LocalizedStringKey {
-        switch bucket {
-        case .monthly: "月を選ぶ"
-        case .weekly: "週を選ぶ"
-        case .daily: "日を選ぶ"
+            let parts = PeriodCalendar.monthParts(session.periodKey(for: .monthly))
+            year = parts.year
+            month = parts.month
+            weekOffset = 0
         }
     }
 
     private var monthPicker: some View {
-        let parts = PeriodCalendar.monthParts(session.periodKey(for: .monthly))
-        return VStack {
-            Stepper("\(parts.year)年", value: Binding(
-                get: { parts.year },
-                set: { session.assignPeriod(PeriodCalendar.monthKey(year: $0, month: parts.month), bucket: .monthly) }
-            ))
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 8) {
-                ForEach(1...12, id: \.self) { month in
-                    Button("\(month)月") {
-                        session.assignPeriod(PeriodCalendar.monthKey(year: parts.year, month: month), bucket: .monthly)
-                        onClose()
-                    }
-                    .buttonStyle(.bordered)
+        HStack {
+            Picker("年", selection: $year) {
+                ForEach(2020...2036, id: \.self) { value in
+                    Text(String(value)).tag(value)
                 }
             }
-            .padding()
+            .pickerStyle(.wheel)
+            Picker("月", selection: $month) {
+                ForEach(1...12, id: \.self) { value in
+                    Text("\(value)月").tag(value)
+                }
+            }
+            .pickerStyle(.wheel)
         }
-        .padding()
+        .labelsHidden()
     }
 
     private var weekPicker: some View {
         let current = PeriodCalendar.date(from: session.periodKey(for: .weekly)) ?? Date()
-        return ScrollView {
-            VStack(spacing: 8) {
-                ForEach(-8...8, id: \.self) { offset in
-                    let key = PeriodCalendar.shift(PeriodCalendar.weekKey(containing: current), bucket: .weekly, by: offset)
-                    Button(PeriodCalendar.label(bucket: .weekly, key: key)) {
-                        session.assignPeriod(key, bucket: .weekly)
-                        onClose()
-                    }
-                    .buttonStyle(.bordered)
-                }
+        let base = PeriodCalendar.weekKey(containing: current)
+        return Picker("週", selection: $weekOffset) {
+            ForEach(-8...8, id: \.self) { offset in
+                let key = PeriodCalendar.shift(base, bucket: .weekly, by: offset)
+                Text(PeriodCalendar.label(bucket: .weekly, key: key)).tag(offset)
             }
-            .padding()
         }
+        .pickerStyle(.wheel)
+        .labelsHidden()
     }
 
     private func apply() {
         switch bucket {
         case .monthly:
-            break
+            session.assignPeriod(PeriodCalendar.monthKey(year: year, month: month), bucket: .monthly)
         case .weekly:
-            session.assignPeriod(PeriodCalendar.weekKey(containing: pickedDate), bucket: .weekly)
+            let current = PeriodCalendar.date(from: session.periodKey(for: .weekly)) ?? Date()
+            let key = PeriodCalendar.shift(PeriodCalendar.weekKey(containing: current), bucket: .weekly, by: weekOffset)
+            session.assignPeriod(key, bucket: .weekly)
         case .daily:
             session.assignPeriod(PeriodCalendar.dayKey(pickedDate), bucket: .daily)
         }
@@ -311,7 +331,7 @@ private struct PeriodPickerSheet: View {
     }
 }
 
-private struct PeriodAddSheet: View {
+private struct RemovedPeriodAddSheet: View {
     @ObservedObject var session: PlanningSession
     let bucket: PlanningBucket
     let kind: PlanningItemKind
@@ -356,6 +376,7 @@ private struct PeriodAddSheet: View {
                 }
                 .padding(16)
             }
+            .planningScroll()
         }
     }
 
@@ -438,6 +459,8 @@ private struct PlanBulletImportList: View {
         case (.monthly, .event): .monthlyEvent
         case (.weekly, .task): .weeklyTask
         case (.weekly, .event): .weeklyEvent
+        case (.daily, .task): .dailyTask
+        case (.daily, .event): .dailyEvent
         default: nil
         }
     }

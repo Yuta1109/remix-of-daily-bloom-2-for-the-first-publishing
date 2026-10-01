@@ -408,10 +408,123 @@ extension PlanningSession {
         )
     }
 
+    func saveItem(existingID: UUID?, draft: PlanningItemDraft, bucket: PlanningBucket, kind: PlanningItemKind, periodKey: String) {
+        let children = draft.subtasks.compactMap { subtask -> PlanningNode? in
+            let title = subtask.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return nil }
+            return PlanningNode(
+                id: subtask.id,
+                title: title,
+                kind: kind,
+                bucket: bucket,
+                periodKey: periodKey,
+                logicalID: subtask.id,
+                startMinutes: subtask.startMinutes,
+                endMinutes: subtask.endMinutes,
+                todayTaskID: bucket == .daily && kind == .task ? subtask.id : nil,
+                colorID: draft.colorID
+            )
+        }
+        if let existingID, findNode(existingID) != nil {
+            _ = updateNode(existingID) { node in
+                node.title = draft.title
+                node.iconSymbol = draft.iconSymbol
+                node.colorID = draft.colorID
+                node.startDay = draft.startDay
+                node.endDay = draft.endDay
+                node.startMinutes = draft.startMinutes
+                node.endMinutes = draft.endMinutes
+                node.children = children
+                syncEvent(node)
+            }
+            return
+        }
+        let logicalID = UUID()
+        var eventID: UUID?
+        if kind == .event {
+            eventID = UUID()
+            var record = eventRecord(id: eventID!, title: draft.title, bucket: bucket, periodKey: periodKey)
+            record.startDay = draft.startDay ?? record.startDay
+            record.endDay = draft.endDay
+            record.timeMinutes = draft.startMinutes
+            record.endTimeMinutes = draft.endMinutes
+            record.iconSymbol = draft.iconSymbol
+            record.colorID = draft.colorID
+            events.append(record)
+        }
+        periodItems.append(
+            PlanningNode(
+                title: draft.title,
+                children: children,
+                kind: kind,
+                bucket: bucket,
+                periodKey: periodKey,
+                logicalID: logicalID,
+                eventID: eventID,
+                todayTaskID: bucket == .daily && kind == .task ? logicalID : nil,
+                iconSymbol: draft.iconSymbol,
+                colorID: draft.colorID,
+                startDay: draft.startDay,
+                endDay: draft.endDay,
+                startMinutes: draft.startMinutes,
+                endMinutes: draft.endMinutes
+            )
+        )
+        markActivity(bucket: bucket, periodKey: periodKey)
+    }
+
+    func importSources(_ ids: Set<UUID>, source: PeriodAddSource, bucket: PlanningBucket, kind: PlanningItemKind, periodKey: String) {
+        switch source {
+        case .create:
+            break
+        case .plan:
+            for plan in plans where plan.hasBeenSaved {
+                let target = PlanTransferTarget.allCases.first { $0.bucket == bucket && $0.kind == kind }
+                if let target {
+                    transfer(planID: plan.id, bulletIDs: ids, includeChildren: false, to: target)
+                }
+            }
+        case .postpone:
+            for id in ids {
+                _ = retrievePostponed(id, into: bucket, periodKey: periodKey)
+            }
+        case .monthly:
+            if kind == .task {
+                copyMonthlyTasks(ids, toWeeklyPeriod: periodKey)
+            } else {
+                for id in ids {
+                    if let eventID = findNode(id)?.eventID {
+                        linkWeeklyEvent(eventID, weekKey: periodKey)
+                    }
+                }
+            }
+        case .periods:
+            for id in ids {
+                placeCopy(id, into: bucket, periodKey: periodKey)
+            }
+        }
+    }
+
+    private func syncEvent(_ node: PlanningNode) {
+        guard node.kind == .event, let eventID = node.eventID else { return }
+        guard let index = events.firstIndex(where: { $0.id == eventID }) else { return }
+        events[index].title = node.title
+        events[index].startDay = node.startDay ?? events[index].startDay
+        events[index].endDay = node.endDay
+        events[index].timeMinutes = node.startMinutes
+        events[index].endTimeMinutes = node.endMinutes
+        events[index].iconSymbol = node.iconSymbol
+        events[index].colorID = node.colorID
+    }
+
     func copied(_ node: PlanningNode, bucket: PlanningBucket, periodKey: String) -> PlanningNode {
         PlanningNode(
             title: node.title,
-            children: node.children.map { copied($0, bucket: bucket, periodKey: periodKey) },
+            children: node.children.map { child in
+                var copy = copied(child, bucket: bucket, periodKey: periodKey)
+                copy.children = []
+                return copy
+            },
             kind: node.kind,
             bucket: bucket,
             periodKey: periodKey,
@@ -419,7 +532,13 @@ extension PlanningSession {
             completed: node.completed,
             reflectionDisposition: nil,
             eventID: node.eventID,
-            todayTaskID: bucket == .daily && node.kind == .task ? node.logicalID : node.todayTaskID
+            todayTaskID: bucket == .daily && node.kind == .task ? node.logicalID : node.todayTaskID,
+            iconSymbol: node.iconSymbol,
+            colorID: node.colorID,
+            startDay: node.startDay,
+            endDay: node.endDay,
+            startMinutes: node.startMinutes,
+            endMinutes: node.endMinutes
         )
     }
 

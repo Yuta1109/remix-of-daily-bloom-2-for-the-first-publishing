@@ -6,18 +6,19 @@ struct PlanningShell: View {
     @State private var didRestore = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                PlanningHeader(
-                    onPostpone: { navigation.path.append(PlanningRoute.postponeBox) },
-                    onHelp: { navigation.path.append(PlanningRoute.help) },
-                    onUser: {}
-                )
+        VStack(spacing: 0) {
+            PlanningHeader(
+                onPostpone: { navigation.path.append(PlanningRoute.postponeBox) },
+                onHelp: { navigation.path.append(PlanningRoute.help) },
+                onUser: {}
+            )
+            HStack(alignment: .top, spacing: 0) {
                 PlanningSectionPage(session: session)
+                PlanningIndex(session: session)
             }
-            PlanningIndex(session: session)
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(PlanningPalette.paper)
+        .planningKeyboardDismiss()
         .navigationBarHidden(true)
         .navigationDestination(for: PlanningRoute.self) { route in
             switch route {
@@ -52,8 +53,6 @@ struct PlanningShell: View {
 }
 
 private struct PlanningHeader: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     let onPostpone: () -> Void
     let onHelp: () -> Void
     let onUser: () -> Void
@@ -62,7 +61,7 @@ private struct PlanningHeader: View {
         HStack(alignment: .center, spacing: 8) {
             Text("Planning")
                 .font(.largeTitle.bold())
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(PlanningPalette.ink)
             Spacer(minLength: 8)
             NativeGlassIconButton(icon: .postpone, accessibilityLabel: "Postpone Box", action: onPostpone)
             NativeGlassIconButton(icon: .help, accessibilityLabel: "Planning help", action: onHelp)
@@ -71,13 +70,12 @@ private struct PlanningHeader: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(colorScheme == .dark ? Color.black : Color.white)
+        .background(PlanningPalette.paper)
     }
 }
 
 private struct PlanningIndex: View {
     @ObservedObject var session: PlanningSession
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 6) {
@@ -88,9 +86,14 @@ private struct PlanningIndex: View {
                     ZStack(alignment: .topTrailing) {
                         Text(section.indexTitle)
                             .font(.system(size: 11, weight: session.section == section ? .bold : .medium))
-                            .foregroundStyle(session.section == section ? Color(uiColor: .systemBackground) : Color.primary)
-                            .frame(width: 62, height: 36)
-                            .background(indexBackground(section), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .foregroundStyle(PlanningPalette.ink)
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 28, height: 64)
+                            .background(indexBackground(section), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(session.section == section ? PlanningPalette.ink : Color.clear, lineWidth: 1.5)
+                            )
                         let count = session.badgeCount(for: section)
                         if count > 0 {
                             Text(count > 99 ? "99" : "\(count)")
@@ -109,25 +112,20 @@ private struct PlanningIndex: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.top, 12)
-        .padding(.trailing, 8)
-        .background(colorScheme == .dark ? Color.black : Color.white)
+        .padding(.top, 8)
+        .padding(.trailing, 6)
+        .background(PlanningPalette.paper)
     }
 
     private func indexBackground(_ section: PlanningSection) -> Color {
-        if session.section == section {
-            return Color.primary
-        }
-        let family: Color
         switch section {
-        case .plan: family = Color.primary
-        case .future: family = Color.blue
-        case .monthly: family = Color.teal
-        case .weekly: family = Color.orange
-        case .daily: family = Color.pink
-        case .plus: family = Color.secondary
+        case .plan: return PlanningPalette.plan
+        case .future: return PlanningPalette.future
+        case .monthly: return PlanningPalette.monthly
+        case .weekly: return PlanningPalette.weekly
+        case .daily: return PlanningPalette.daily
+        case .plus: return PlanningPalette.plus
         }
-        return family.opacity(colorScheme == .dark ? 0.28 : 0.16)
     }
 }
 
@@ -165,7 +163,7 @@ private struct PlanningLinkPlaceholder: View {
         VStack(alignment: .leading, spacing: 16) {
             NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
                 if !navigation.path.isEmpty {
-                    navigation.path.removeLast()
+                    navigation.pop()
                 }
             }
             Text(route == .weeklySettings ? "Weekly Settings" : "Reflection Settings")
@@ -180,7 +178,7 @@ private struct PlanningLinkPlaceholder: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(uiColor: .systemBackground))
+        .background(PlanningPalette.paper)
         .navigationBarHidden(true)
     }
 }

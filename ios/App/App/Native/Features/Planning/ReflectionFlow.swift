@@ -23,6 +23,8 @@ struct PlanningMemoryEntry: Identifiable, Hashable {
     var kind: PlanningMemoryKind
     var text: String
     var hasPhoto: Bool
+    var title: String = ""
+    var dateText: String = ""
 }
 
 struct ReflectionSchedule: Hashable {
@@ -356,8 +358,16 @@ extension PlanningSession {
         }
     }
 
-    func addMemory(scope: ReflectionScope, kind: PlanningMemoryKind, text: String, hasPhoto: Bool) {
-        memoryEntries.append(PlanningMemoryEntry(scope: scope, kind: kind, text: text, hasPhoto: hasPhoto))
+    func addMemory(scope: ReflectionScope, kind: PlanningMemoryKind, text: String, hasPhoto: Bool, title: String = "", dateText: String = "") {
+        memoryEntries.append(PlanningMemoryEntry(scope: scope, kind: kind, text: text, hasPhoto: hasPhoto, title: title, dateText: dateText))
+    }
+
+    func updateMemory(id: UUID, text: String, title: String, dateText: String, hasPhoto: Bool) {
+        guard let index = memoryEntries.firstIndex(where: { $0.id == id }) else { return }
+        memoryEntries[index].text = text
+        memoryEntries[index].title = title
+        memoryEntries[index].dateText = dateText
+        memoryEntries[index].hasPhoto = hasPhoto
     }
 
     func isExplicitEdit(bucket: PlanningBucket, periodKey: String) -> Bool {

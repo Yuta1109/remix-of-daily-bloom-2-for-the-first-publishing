@@ -10,7 +10,7 @@ struct PostponeBoxPage: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    if !navigation.path.isEmpty { navigation.path.removeLast() }
+                    if !navigation.path.isEmpty { navigation.pop() }
                 }
                 Text("Postpone Box")
                     .font(.title2.bold())
@@ -64,8 +64,12 @@ struct PostponeBoxPage: View {
                 }
             }
             .listStyle(.plain)
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
         }
-        .background(Color(uiColor: .systemBackground))
+        .planningScroll()
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
         .navigationBarHidden(true)
         .nativeSheet(isPresented: Binding(
             get: { editing != nil },

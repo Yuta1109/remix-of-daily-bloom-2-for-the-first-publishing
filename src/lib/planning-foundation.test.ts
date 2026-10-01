@@ -60,33 +60,36 @@ describe("planning foundation rules", () => {
   });
 
   it("matches the native planning shell contracts", () => {
-    expect(models).toContain("static let maximumDepth = 3");
+    expect(models).toContain("static let maximumDepth = 2");
     expect(models).toContain("static let maximumBadgeCount = 99");
     expect(models).toContain("static let monthCount = 12");
     expect(models).toContain("case monthlyTask");
     expect(models).toContain("case weeklyEvent");
-    expect(models).not.toContain("case dailyTask");
-    expect(models).not.toContain("case dailyEvent");
+    expect(models).toContain("case dailyTask");
+    expect(models).toContain("case dailyEvent");
     expect(models).toContain("var goal: String");
     expect(planningShell).toContain("Text(\"Planning\")");
     expect(planningShell).toContain("icon: .postpone");
     expect(planningShell).toContain("icon: .help");
     expect(planningShell).toContain("icon: .user");
-    expect(planningShell).toContain("Color.black : Color.white");
+    expect(planningShell).toContain("PlanningPalette.paper");
+    expect(planningShell).toContain(".rotationEffect(.degrees(-90))");
+    expect(planningShell.indexOf("PlanningHeader(")).toBeLessThan(planningShell.indexOf("PlanningIndex("));
     expect(planningShell).not.toContain("ultraThinMaterial");
     expect(planningShell).toContain("次回のアップデートをお楽しみに");
     expect(planningShell).toContain("navigationDestination(for: PlanningRoute.self)");
     expect(shell).toContain("NavigationStack(path: $navigation.path)");
-    expect(help).toContain("Planningの使い方");
+    expect(help).toContain("Planning の使い方");
     expect(postpone).toContain("Tasks");
     expect(postpone).toContain("Events");
     expect(plans).toContain("プランを新規作成");
     expect(plans).toContain("PlanningRoute.planEditor");
-    expect(plans).not.toContain(".sheet");
+    expect(plans).toContain("タスク・予定に反映");
     expect(plans).toContain("PlanningRules.transferExplanation");
     expect(models).toContain("プラン全体を移動する必要はありません。");
     expect(future).toContain("count: 3");
-    expect(future).toContain("detents: [.large]");
+    expect(future).toContain("presentationDetents([.large])");
+    expect(future).toContain(".tabViewStyle(.page(indexDisplayMode: .never))");
     expect(future).toContain("目標は1つ");
   });
 });
@@ -132,7 +135,8 @@ describe("planning period pages", () => {
     expect(period).toContain("func assignPeriod");
     expect(planningShell).toContain("monthlyPeriodKey");
     expect(models).toContain("planning.monthlyPeriod");
-    expect(periodPage).not.toContain("PeriodCalendar.currentKey");
+    expect(period).toContain("func assignPeriod");
+    expect(periodPage).toContain("periodSelection");
   });
 
   it("uses one page for Monthly, Weekly, and Daily and keeps system tabs", () => {
@@ -143,15 +147,16 @@ describe("planning period pages", () => {
     expect(shell).not.toContain("NativeFloatingTabBar");
     expect(periodPage).toContain("chevron.left");
     expect(periodPage).toContain("chevron.right");
-    expect(periodPage).toContain("DragGesture");
+    expect(periodPage).toContain(".tabViewStyle(.page(indexDisplayMode: .never))");
+    expect(periodPage).not.toContain("DragGesture");
   });
 
-  it("lists the source choices and blocks a direct Plan transfer to Daily", () => {
+  it("lists the source choices and copies a Plan into Daily", () => {
     expect(addSources("monthly")).toEqual(["Planから追加", "新しく追加", "先送りボックスから追加"]);
     expect(addSources("weekly")).toContain("Monthlyから追加");
     expect(addSources("daily")).not.toContain("Planから追加");
     expect(period).toContain("case .daily: [.periods, .create, .postpone]");
-    expect(models).not.toContain("case dailyTask");
+    expect(models).toContain("case dailyTask");
     expect(periodPage).toContain("retrievePostponed");
     expect(periodPage).toContain("copyMonthlyTasks");
   });
@@ -179,7 +184,7 @@ describe("planning period pages", () => {
     expect(models).toContain("var goal: String");
     expect(periodPage).toContain("Weeklyをなくす");
     expect(periodPage).toContain("PlanningRoute.weeklySettings");
-    expect(models).toContain("static let maximumDepth = 3");
+    expect(models).toContain("static let maximumDepth = 2");
   });
 });
 
@@ -217,8 +222,8 @@ describe("planning reflection", () => {
     expect(reflectionPage).toContain("達成");
     expect(reflectionPage).toContain("振り返り結果");
     expect(reflectionPage).toContain("Button(\"Replan\")");
-    expect(reflectionPage).toContain("写真＋一言");
-    expect(reflectionPage).toContain("日記形式で書いてみる");
+    expect(reflectionPage).toContain("写真 & 一言");
+    expect(reflectionPage).toContain("なんでも日記");
     expect(reflectionPage).toContain("addMemory");
     expect(reflectionPage).toContain("updateHistoricalDecision");
     expect(reflectionPage).toContain("振り返りを始めますか？");
@@ -226,5 +231,151 @@ describe("planning reflection", () => {
     expect(reflectionPage).toContain("今週はやめとく");
     expect(reflectionPage).toContain("今月はやめとく");
     expect(reflectionPage).toContain("今年はやめとく");
+  });
+});
+
+const appState = readFileSync("ios/App/App/Native/App/AppState.swift", "utf8");
+const chrome = readFileSync(`${planningRoot}/PlanningChrome.swift`, "utf8");
+const samples = readFileSync(`${planningRoot}/TemporaryPlanningSamples.swift`, "utf8");
+
+function periodHasEnded(bucket: Bucket, key: string, today: string): boolean {
+  if (bucket === "daily") return key < today;
+  if (bucket === "weekly") {
+    const [year, month, day] = key.split("-").map(Number);
+    const end = new Date(Date.UTC(year, month - 1, day + 7));
+    const endKey = `${end.getUTCFullYear()}-${String(end.getUTCMonth() + 1).padStart(2, "0")}-${String(end.getUTCDate()).padStart(2, "0")}`;
+    return endKey <= today;
+  }
+  const [year, month] = key.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month, 1));
+  const nextKey = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}`;
+  return `${nextKey}-01` <= today;
+}
+
+describe("planning blueprint fidelity", () => {
+  it("pops only when a route exists", () => {
+    expect(appState).toContain("guard !isPopping, path.count > 0 else { return }");
+    expect(plans).toContain("navigation.pop()");
+    expect(help).toContain("navigation.pop()");
+    expect(postpone).toContain("navigation.pop()");
+    expect(planningShell).toContain("navigation.pop()");
+    expect(reflectionPage).toContain("navigation.pop()");
+    expect(plans).not.toContain("removeLast");
+    expect(future).not.toContain("removeLast");
+  });
+
+  it("places the header above a rotated index and uses the fixed paper palette", () => {
+    expect(planningShell.indexOf("PlanningHeader(")).toBeLessThan(planningShell.indexOf("HStack(alignment: .top"));
+    expect(planningShell).toContain(".rotationEffect(.degrees(-90))");
+    expect(chrome).toContain("enum PlanningPalette");
+    expect(planningShell).not.toContain("PlanningGlyph");
+    expect(periodPage).not.toContain("PlanningGlyph");
+    expect(plans).not.toContain("PlanningGlyph");
+  });
+
+  it("shows memory UI only after a period has ended", () => {
+    expect(periodHasEnded("daily", "2026-09-30", "2026-10-01")).toBe(true);
+    expect(periodHasEnded("daily", "2026-10-02", "2026-10-01")).toBe(false);
+    expect(periodHasEnded("monthly", "2026-09", "2026-10-01")).toBe(true);
+    expect(periodHasEnded("monthly", "2026-11", "2026-10-01")).toBe(false);
+    expect(chrome).toContain("func periodHasEnded");
+    expect(periodPage).toContain("periodHasEnded");
+    expect(periodPage).toContain("NoActivityMemorySection");
+    expect(reflectionPage).toContain("忙しい日はだれにでもあります。");
+  });
+
+  it("keeps month cards on a stable grid and pages years and periods", () => {
+    expect(chrome).toContain("static let rowCount = 6");
+    expect(chrome).toContain("static let columnCount = 7");
+    expect(future).toContain("PlanningCalendarGrid.matrix");
+    expect(future).toContain("indexDisplayMode: .never");
+    expect(periodPage).toContain("indexDisplayMode: .never");
+    expect(future).toContain("fixedHeight: 260");
+    expect(periodPage).toContain("fixedHeight: bucket == .daily ? 460 : 280");
+  });
+
+  it("seeds previous reflected periods without writing Firebase", () => {
+    expect(samples).toContain("TEMPORARY");
+    expect(samples).toContain("reflectionCompleted: true");
+    expect(samples).toContain(".keep");
+    expect(samples).toContain(".postpone");
+    expect(samples).toContain(".stop");
+    expect(samples).not.toContain("Firebase");
+    expect(models).toContain("TemporaryPlanningSamples.install");
+  });
+});
+
+const itemSheets = readFileSync(`${planningRoot}/PlanningItemSheets.swift`, "utf8");
+
+function toggleSelection(id: string, bullets: { id: string; children: string[] }[], selected: string[]): string[] {
+  const next = new Set(selected);
+  const parent = bullets.find((bullet) => bullet.id === id);
+  if (parent) {
+    if (next.has(id)) {
+      next.delete(id);
+      parent.children.forEach((child) => next.delete(child));
+    } else {
+      next.add(id);
+      parent.children.forEach((child) => next.add(child));
+    }
+    return [...next];
+  }
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return [...next];
+}
+
+describe("planning item editor", () => {
+  it("keeps two levels and copies a plan instead of moving it", () => {
+    expect(models).toContain("static let maximumDepth = 2");
+    expect(plans).toContain("clamped");
+    expect(plans).toContain("icon: .check");
+    expect(plans).toContain("session.plans[index].bullets = before");
+    expect(plans).toContain("Text(\"Daily\")");
+    expect(models).toContain("copiedAlready");
+    expect(plans).not.toContain("字下げ");
+  });
+
+  it("selects a parent with its subtasks and allows a subtask to be cleared", () => {
+    const bullets = [{ id: "parent", children: ["child"] }];
+    const withParent = toggleSelection("parent", bullets, []);
+    expect(withParent).toEqual(expect.arrayContaining(["parent", "child"]));
+    const withoutChild = toggleSelection("child", bullets, withParent);
+    expect(withoutChild).toContain("parent");
+    expect(withoutChild).not.toContain("child");
+    expect(itemSheets).toContain("func afterToggle");
+  });
+
+  it("opens sheets from the section and keeps the source lists", () => {
+    const section = periodPage.slice(periodPage.indexOf("func itemSection"), periodPage.indexOf("func sectionTitle"));
+    expect(section).not.toContain("追加");
+    expect(section).toContain("onTapGesture");
+    expect(periodPage).toContain("PeriodItemListSheet");
+    expect(period).toContain("case .monthly: [.plan, .create, .postpone]");
+    expect(period).toContain("case .weekly: [.plan, .create, .postpone, .monthly]");
+    expect(period).toContain("case .daily: [.periods, .create, .postpone]");
+    expect(period).toContain("func importSources");
+    expect(models).toContain("copiedAlready");
+  });
+
+  it("protects daily completion and shares the editor model", () => {
+    expect(period).toContain("bucket != .daily");
+    expect(itemSheets).toContain("allowsCompletionToggle");
+    expect(itemSheets).toContain("Today completion");
+    expect(itemSheets).not.toContain("Event status");
+    expect(itemSheets).toContain("checkmark.square.fill");
+    expect(help).toContain("親項目と、その下のサブタスク");
+    expect(help).toContain("Monthly / Weekly / Dailyへコピー");
+    expect(help).not.toContain("最大3段階");
+    expect(help).not.toContain("見通し");
+    expect(itemSheets).toContain("struct PlanningItemEditorSheet");
+    expect(itemSheets).toContain("existingID");
+    expect(itemSheets).toContain("開始時刻");
+    expect(itemSheets).toContain("終了時刻");
+    expect(itemSheets).toContain("～");
+    const symbols = itemSheets.slice(itemSheets.indexOf("static let symbols"), itemSheets.indexOf("enum PlanningRangeText"));
+    expect(symbols.split(",").length).toBeGreaterThanOrEqual(20);
+    expect(itemSheets).toContain("shouldAppendNextRow");
+    expect(plans).toContain("shouldAppendNextRow");
   });
 });

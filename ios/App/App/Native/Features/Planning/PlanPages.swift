@@ -7,12 +7,9 @@ struct PlanListPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .center, spacing: 10) {
-                    PlanningGlyph(section: .plan)
-                    Text("まずは今考えていることを箇条書きで書いてみましょう。そうしている内にやるべきことがわかってきます。")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                Text("まずは今考えていることを箇条書きで書いてみましょう。そうしている内にやるべきことがわかってきます。")
+                    .font(.subheadline)
+                    .foregroundStyle(PlanningPalette.muted)
                 Button("プランを新規作成") {
                     let id = session.beginPlan()
                     navigation.path.append(PlanningRoute.planEditor(id))
@@ -41,11 +38,15 @@ struct PlanListPage: View {
                         }
                     }
                     .padding(14)
-                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
                 }
             }
             .padding(16)
         }
+        .planningScroll()
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
     }
 
     private static func dateText(_ date: Date) -> String {
@@ -65,159 +66,223 @@ struct PlanEditorPage: View {
     @State private var title = ""
     @State private var bullets: [PlanBullet] = [PlanBullet()]
     @State private var memo = ""
-    @State private var selected: Set<UUID> = []
-    @State private var includeChildren = false
-    @State private var showingTransfer = false
+    @State private var savedSnapshot = ""
+    @State private var confirmDiscard = false
+    @State private var showingCopy = false
+    @FocusState private var focusedID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    if !navigation.path.isEmpty { navigation.path.removeLast() }
-                }
+                NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") { requestClose() }
                 TextField("タイトル", text: $title)
                     .font(.title3.weight(.semibold))
+                    .foregroundStyle(PlanningPalette.ink)
                 Spacer()
+                NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true, action: save)
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    BulletList(
-                        bullets: $bullets,
-                        selected: $selected,
-                        depth: 0
-                    )
-                    HStack {
-                        Button("字上げ") { outdentSelection() }
-                        Button("字下げ") { indentSelection() }
-                        Button(includeChildren ? "ブロック選択中" : "ブロック") {
-                            includeChildren.toggle()
+                    ForEach($bullets) { $bullet in
+                        TextField("項目", text: $bullet.text)
+                            .focused($focusedID, equals: bullet.id)
+                            .onSubmit { appendParent(after: bullet) }
+                        ForEach($bullet.children) { $child in
+                            TextField("サブタスク", text: $child.text)
+                                .padding(.leading, 18)
+                                .focused($focusedID, equals: child.id)
+                                .onSubmit { appendChild(of: bullet.id, after: child) }
                         }
-                        Button("全体") { selectEntirePlan() }
                     }
-                    .font(.caption)
-                    .buttonStyle(.bordered)
                     Text("メモ")
                         .font(.caption.weight(.semibold))
+                        .foregroundStyle(PlanningPalette.muted)
                         .padding(.top, 12)
                     TextEditor(text: $memo)
                         .frame(minHeight: 120)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.3)))
+                        .scrollContentBackground(.hidden)
+                        .padding(8)
+                        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(PlanningPalette.line, lineWidth: 1))
                 }
                 .padding(16)
             }
-            if showingTransfer {
-                Text(PlanningRules.transferExplanation)
-                    .font(.footnote)
-                    .padding(.horizontal, 16)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
-                        ForEach(PlanTransferTarget.allCases) { target in
-                            Button(target.title) {
-                                session.transfer(
-                                    planID: planID,
-                                    bulletIDs: selected,
-                                    includeChildren: includeChildren,
-                                    to: target
-                                )
-                                save()
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-            }
-            HStack {
-                Button("保存") {
-                    save()
-                }
+            .planningScroll()
+            Button("タスク・予定に反映") { showingCopy = true }
                 .buttonStyle(.borderedProminent)
-                Button("選んだ内容を移して保存") {
-                    showingTransfer = true
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding(16)
+                .padding(16)
         }
-        .background(Color(uiColor: .systemBackground))
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
         .navigationBarHidden(true)
         .onAppear(perform: load)
+        .sheet(isPresented: $showingCopy) {
+            PlanCopySheet(session: session, planID: planID, bullets: bullets, onCopied: save)
+        }
+        .confirmationDialog("この変更を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("破棄", role: .destructive) { navigation.pop() }
+            Button("キャンセル", role: .cancel) {}
+        }
     }
 
     private func load() {
         guard let plan = session.plans.first(where: { $0.id == planID }) else { return }
         title = plan.title
-        bullets = plan.bullets
+        bullets = clamped(plan.bullets)
         memo = plan.memo
+        savedSnapshot = snapshot()
     }
 
     private func save() {
+        bullets = clamped(bullets)
         session.save(planID: planID, title: title, bullets: bullets, memo: memo)
+        savedSnapshot = snapshot()
     }
 
-    private func indentSelection() {
-        for id in selected {
-            _ = PlanBulletEditing.indent(id, in: &bullets)
+    private func requestClose() {
+        if snapshot() != savedSnapshot { confirmDiscard = true } else { navigation.pop() }
+    }
+
+    private func snapshot() -> String {
+        title + "\n" + memo + "\n" + bullets.map { "\($0.id)\($0.text)" + $0.children.map { "\($0.id)\($0.text)" }.joined() }.joined()
+    }
+
+    private func clamped(_ nodes: [PlanBullet]) -> [PlanBullet] {
+        nodes.map { PlanBullet(id: $0.id, text: $0.text, children: $0.children.map { PlanBullet(id: $0.id, text: $0.text) }) }
+    }
+
+    private func appendParent(after bullet: PlanBullet) {
+        guard PlanningRowEntry.shouldAppendNextRow(bullet.text), let index = bullets.firstIndex(where: { $0.id == bullet.id }) else { return }
+        let next = PlanBullet()
+        if bullets[index].children.isEmpty {
+            bullets[index].children.append(next)
+        } else {
+            bullets.append(next)
         }
+        focusedID = next.id
     }
 
-    private func outdentSelection() {
-        for id in selected {
-            _ = PlanBulletEditing.outdent(id, in: &bullets)
-        }
-    }
-
-    private func selectEntirePlan() {
-        selected = Set(flattenedIDs(bullets))
-        includeChildren = true
-    }
-
-    private func flattenedIDs(_ nodes: [PlanBullet]) -> [UUID] {
-        nodes.flatMap { [$0.id] + flattenedIDs($0.children) }
+    private func appendChild(of parentID: UUID, after child: PlanBullet) {
+        guard PlanningRowEntry.shouldAppendNextRow(child.text), let index = bullets.firstIndex(where: { $0.id == parentID }) else { return }
+        let next = PlanBullet()
+        bullets[index].children.append(next)
+        focusedID = next.id
     }
 }
 
-private struct BulletList: View {
-    @Binding var bullets: [PlanBullet]
-    @Binding var selected: Set<UUID>
-    let depth: Int
+private struct PlanCopySheet: View {
+    @ObservedObject var session: PlanningSession
+    let planID: UUID
+    let bullets: [PlanBullet]
+    let onCopied: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected: Set<UUID> = []
+    @State private var showingDestination = false
 
     var body: some View {
-        ForEach($bullets) { $bullet in
-            HStack(alignment: .top, spacing: 8) {
-                Button {
-                    if selected.contains(bullet.id) {
-                        selected.remove(bullet.id)
-                    } else {
-                        selected.insert(bullet.id)
-                    }
-                } label: {
-                    Image(systemName: selected.contains(bullet.id) ? "checkmark.circle.fill" : "circle")
-                        .frame(width: 44, height: 32)
-                }
-                .buttonStyle(.plain)
-                bulletMark
-                TextField("項目", text: $bullet.text)
-                    .padding(.leading, CGFloat(depth) * 16)
+        VStack(alignment: .leading, spacing: 12) {
+            Text(PlanningRules.transferExplanation)
+                .font(.footnote)
+                .foregroundStyle(PlanningPalette.muted)
+            Button("全体を選択") {
+                selected = Set(bullets.flatMap { [$0.id] + $0.children.map(\.id) })
             }
-            if !bullet.children.isEmpty {
-                BulletList(bullets: $bullet.children, selected: $selected, depth: depth + 1)
-                    .padding(.leading, 12)
+            .buttonStyle(.bordered)
+            ForEach(bullets) { bullet in
+                Toggle(bullet.text.isEmpty ? "無題" : bullet.text, isOn: parentBinding(bullet))
+                ForEach(bullet.children) { child in
+                    Toggle(child.text.isEmpty ? "無題" : child.text, isOn: childBinding(child.id))
+                        .padding(.leading, 18)
+                }
+            }
+            Button("コピー先を選ぶ") { showingDestination = true }
+                .buttonStyle(.borderedProminent)
+                .disabled(selected.isEmpty)
+        }
+        .padding(16)
+        .background(PlanningPalette.paper)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.hidden)
+        .sheet(isPresented: $showingDestination) {
+            PlanDestinationSheet(session: session, planID: planID, selected: selected) {
+                onCopied()
+                dismiss()
             }
         }
     }
 
-    @ViewBuilder
-    private var bulletMark: some View {
-        switch depth {
-        case 0:
-            Circle().fill(Color.primary).frame(width: 8, height: 8).padding(.top, 12)
-        case 1:
-            Circle().stroke(Color.primary, lineWidth: 1.5).frame(width: 8, height: 8).padding(.top, 12)
-        default:
-            Capsule().fill(Color.secondary).frame(width: 10, height: 2).padding(.top, 16)
+    private func parentBinding(_ bullet: PlanBullet) -> Binding<Bool> {
+        Binding(
+            get: { selected.contains(bullet.id) },
+            set: { _ in selected = PlanningSelection.afterToggle(id: bullet.id, bullets: bullets, selected: selected) }
+        )
+    }
+
+    private func childBinding(_ id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { selected.contains(id) },
+            set: { _ in selected = PlanningSelection.afterToggle(id: id, bullets: bullets, selected: selected) }
+        )
+    }
+}
+
+private struct PlanDestinationSheet: View {
+    @ObservedObject var session: PlanningSession
+    let planID: UUID
+    let selected: Set<UUID>
+    let onDone: () -> Void
+    @State private var kind: PlanningItemKind = .task
+    @State private var bucket: PlanningBucket = .monthly
+    @State private var date = Date()
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        PlanningSheetChrome(onClose: { dismiss() }, onConfirm: copy, fixedHeight: 360) {
+            VStack {
+                Picker("種類", selection: $kind) {
+                    Text("タスク").tag(PlanningItemKind.task)
+                    Text("予定").tag(PlanningItemKind.event)
+                }
+                .pickerStyle(.segmented)
+                Picker("期間", selection: $bucket) {
+                    Text("Monthly").tag(PlanningBucket.monthly)
+                    Text("Weekly").tag(PlanningBucket.weekly)
+                    Text("Daily").tag(PlanningBucket.daily)
+                }
+                .pickerStyle(.segmented)
+                if bucket == .monthly {
+                    DatePicker("月", selection: $date, displayedComponents: .date)
+                        .datePickerStyle(.compact)
+                } else {
+                    DatePicker(bucket == .weekly ? "週" : "日", selection: $date, displayedComponents: .date)
+                        .datePickerStyle(.compact)
+                }
+            }
+            .padding(.horizontal, 16)
         }
+    }
+
+    private func copy() {
+        let key: String
+        switch bucket {
+        case .monthly:
+            let parts = PeriodCalendar.calendar.dateComponents([.year, .month], from: date)
+            key = PeriodCalendar.monthKey(year: parts.year ?? 2026, month: parts.month ?? 1)
+        case .weekly:
+            key = PeriodCalendar.weekKey(containing: date)
+        case .daily:
+            key = PeriodCalendar.dayKey(date)
+        }
+        session.assignPeriod(key, bucket: bucket)
+        let target = PlanTransferTarget.allCases.first { $0.bucket == bucket && $0.kind == kind } ?? .monthlyTask
+        let before = session.plans.first { $0.id == planID }?.bullets ?? []
+        session.transfer(planID: planID, bulletIDs: selected, includeChildren: false, to: target)
+        if let index = session.plans.firstIndex(where: { $0.id == planID }) {
+            session.plans[index].bullets = before
+        }
+        onDone()
     }
 }

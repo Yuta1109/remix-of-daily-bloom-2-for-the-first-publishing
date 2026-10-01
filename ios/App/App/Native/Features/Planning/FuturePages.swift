@@ -6,90 +6,33 @@ struct FutureYearPage: View {
     @State private var showingYearPicker = false
     @State private var selectedMonth: Int?
 
+    private let pageYears = Array(2020...2036)
+
     var body: some View {
-        let year = session.yearModel()
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    PlanningGlyph(section: .future)
-                    Button {
-                        session.shiftYear(by: -1)
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .frame(width: 44, height: 44)
-                    }
-                    Button {
-                        showingYearPicker = true
-                    } label: {
-                        Text(String(session.selectedYear))
-                            .font(.title2.bold())
-                            .frame(minWidth: 72, minHeight: 44)
-                    }
-                    Button {
-                        session.shiftYear(by: 1)
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .frame(width: 44, height: 44)
-                    }
-                    Spacer()
-                }
-                .buttonStyle(.plain)
-                let futureScope = ReflectionScope.future(session.selectedYear)
-                if session.futureReflections.first(where: { $0.year == session.selectedYear })?.reflectionCompleted == true {
-                    ReflectionResultView(session: session, scope: futureScope)
-                } else if session.isActivePrompt(futureScope) {
-                    Button("振り返りを始めますか？") {
-                        session.refreshDue(futureScope)
-                        navigation.path.append(PlanningRoute.reflection(futureScope))
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(year.months) { month in
-                        Button {
-                            selectedMonth = month.month
-                        } label: {
-                            FutureMonthCell(
-                                year: session.selectedYear,
-                                month: month,
-                                events: session.events.filter {
-                                    $0.year == session.selectedYear && $0.month == month.month
-                                }
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+        TabView(selection: $session.selectedYear) {
+            ForEach(pageYears, id: \.self) { year in
+                yearPage(year)
+                    .tag(year)
             }
-            .padding(16)
         }
-        .gesture(
-            DragGesture(minimumDistance: 24)
-                .onEnded { value in
-                    if value.translation.width <= -40 {
-                        session.shiftYear(by: 1)
-                    } else if value.translation.width >= 40 {
-                        session.shiftYear(by: -1)
-                    }
-                }
-        )
-        .nativeSheet(isPresented: $showingYearPicker, detents: [.medium]) {
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .onChange(of: session.selectedYear) { _, _ in
+            session.ensureSelectedYear()
+        }
+        .sheet(isPresented: $showingYearPicker) {
             YearPickerSheet(year: session.selectedYear) { picked in
                 session.selectedYear = picked
-                if !session.years.contains(where: { $0.year == picked }) {
-                    session.years.append(PlanningRules.makeYear(picked))
-                }
+                session.ensureSelectedYear()
                 showingYearPicker = false
             } onClose: {
                 showingYearPicker = false
             }
         }
-        .nativeSheet(
+        .sheet(
             isPresented: Binding(
                 get: { selectedMonth != nil },
                 set: { if !$0 { selectedMonth = nil } }
-            ),
-            detents: [.large]
+            )
         ) {
             if let selectedMonth {
                 FutureMonthSheet(
@@ -100,6 +43,55 @@ struct FutureYearPage: View {
                 )
             }
         }
+    }
+
+    private func yearPage(_ year: Int) -> some View {
+        let model = session.years.first(where: { $0.year == year }) ?? PlanningRules.makeYear(year)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 8) {
+                    Button { session.shiftYear(by: -1) } label: {
+                        Image(systemName: "chevron.left").frame(width: 44, height: 44)
+                    }
+                    Button { showingYearPicker = true } label: {
+                        Text(String(year))
+                            .font(.title2.bold())
+                            .foregroundStyle(PlanningPalette.ink)
+                            .frame(minWidth: 72, minHeight: 44)
+                    }
+                    Button { session.shiftYear(by: 1) } label: {
+                        Image(systemName: "chevron.right").frame(width: 44, height: 44)
+                    }
+                    Spacer()
+                }
+                .buttonStyle(.plain)
+                let futureScope = ReflectionScope.future(year)
+                if session.futureReflections.first(where: { $0.year == year })?.reflectionCompleted == true {
+                    ReflectionResultView(session: session, scope: futureScope)
+                } else if year == session.selectedYear, session.isActivePrompt(futureScope) {
+                    Button("振り返りを始めますか？") {
+                        session.refreshDue(futureScope)
+                        navigation.path.append(PlanningRoute.reflection(futureScope))
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                    ForEach(model.months) { month in
+                        Button { selectedMonth = month.month } label: {
+                            FutureMonthCell(
+                                year: year,
+                                month: month,
+                                events: session.events.filter { $0.year == year && $0.month == month.month }
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .planningScroll()
+        .background(PlanningPalette.paper)
     }
 }
 
@@ -112,24 +104,33 @@ private struct FutureMonthCell: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(monthTitle)
                 .font(.caption.weight(.semibold))
+                .foregroundStyle(PlanningPalette.ink)
             if !month.goal.isEmpty {
                 Text(month.goal)
                     .font(.caption2)
+                    .foregroundStyle(PlanningPalette.muted)
                     .lineLimit(1)
             }
-            let days = daysInMonth()
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 7), spacing: 1) {
-                ForEach(days, id: \.self) { day in
-                    Text("\(day)")
-                        .font(.system(size: 8))
-                        .frame(maxWidth: .infinity)
-                        .background(events.contains { $0.startDay == day } ? Color.accentColor.opacity(0.35) : Color.clear)
+            let rows = PlanningCalendarGrid.matrix(year: year, month: month.month)
+            VStack(spacing: 1) {
+                ForEach(0..<PlanningCalendarGrid.rowCount, id: \.self) { row in
+                    HStack(spacing: 1) {
+                        ForEach(0..<PlanningCalendarGrid.columnCount, id: \.self) { column in
+                            let day = rows[row][column]
+                            Text(day.map(String.init) ?? " ")
+                                .font(.system(size: 8))
+                                .foregroundStyle(PlanningPalette.ink)
+                                .frame(maxWidth: .infinity, minHeight: 11)
+                                .background(day != nil && events.contains { $0.startDay == day } ? PlanningPalette.future : Color.clear)
+                        }
+                    }
                 }
             }
         }
         .padding(8)
-        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 132, maxHeight: 132, alignment: .topLeading)
+        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
     }
 
     private var monthTitle: String {
@@ -141,16 +142,6 @@ private struct FutureMonthCell: View {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "MMM"
         return formatter.string(from: date)
-    }
-
-    private func daysInMonth() -> [Int] {
-        var components = DateComponents()
-        components.year = year
-        components.month = month.month
-        let calendar = Calendar(identifier: .gregorian)
-        let date = calendar.date(from: components) ?? Date()
-        let count = calendar.range(of: .day, in: .month, for: date)?.count ?? 30
-        return Array(1...count)
     }
 }
 
@@ -168,15 +159,27 @@ private struct YearPickerSheet: View {
     }
 
     var body: some View {
-        NativeSheetScaffold(title: "Year", onClose: onClose, onConfirm: { onPick(picked) }) {
+        PlanningSheetChrome(onClose: onClose, onConfirm: { onPick(picked) }, fixedHeight: 260) {
             Picker("Year", selection: $picked) {
                 ForEach((year - 5)...(year + 5), id: \.self) { value in
                     Text(String(value)).tag(value)
                 }
             }
             .pickerStyle(.wheel)
+            .labelsHidden()
         }
     }
+}
+
+private struct FutureEventDraft: Identifiable, Equatable {
+    var id: UUID
+    var title: String
+    var startDay: Int
+    var startMinutes: Int?
+    var endDay: Int
+    var endMinutes: Int?
+    var iconSymbol: String = "calendar"
+    var colorID: String = "lilac"
 }
 
 struct FutureMonthSheet: View {
@@ -186,55 +189,101 @@ struct FutureMonthSheet: View {
     let onClose: () -> Void
 
     @State private var goal = ""
-    @State private var outlook: [String] = []
-    @State private var outlookDraft = ""
-    @State private var selectedDay = 1
+    @State private var drafts: [FutureEventDraft] = []
+    @State private var originalGoal = ""
+    @State private var originalDrafts: [FutureEventDraft] = []
+    @State private var confirmDiscard = false
     @State private var eventTitle = ""
+    @State private var startDay = 1
     @State private var endDay = 1
-    @State private var includesTime = false
-    @State private var minutes = 9 * 60
+    @State private var includesStartTime = false
+    @State private var includesEndTime = false
+    @State private var startMinutes = 9 * 60
+    @State private var endMinutes = 10 * 60
+    @State private var showingSharedEditor = false
 
     var body: some View {
-        NativeSheetScaffold(title: LocalizedStringKey(monthTitle), onClose: onClose, onConfirm: saveGoal) {
+        VStack(spacing: 8) {
+            HStack {
+                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: requestClose)
+                Spacer()
+                NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true, action: save)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 14) {
                     Text("月の目標")
                         .font(.headline)
+                        .foregroundStyle(PlanningPalette.ink)
                     TextField("目標は1つ", text: $goal)
                         .textFieldStyle(.roundedBorder)
-                    Text("予定")
-                        .font(.headline)
-                    dayGrid
-                    TextField("タイトル", text: $eventTitle)
-                        .textFieldStyle(.roundedBorder)
-                    Stepper("開始 \(selectedDay)", value: $selectedDay, in: 1...dayCount)
-                    Stepper("終了 \(endDay)", value: $endDay, in: selectedDay...dayCount)
-                    Toggle("時間を入れる", isOn: $includesTime)
-                    if includesTime {
-                        Stepper(timeLabel, value: $minutes, in: 0...(23 * 60 + 59), step: 15)
-                    }
-                    Button("予定を追加") { addEvent() }
-                        .buttonStyle(.borderedProminent)
-                    Text("見通し")
-                        .font(.headline)
-                    ForEach(outlook.indices, id: \.self) { index in
-                        Text("・\(outlook[index])")
-                    }
-                    HStack {
-                        TextField("見通し", text: $outlookDraft)
-                            .textFieldStyle(.roundedBorder)
-                        Button("追加") {
-                            let text = outlookDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !text.isEmpty else { return }
-                            outlook.append(text)
-                            outlookDraft = ""
+                    ForEach(drafts) { draft in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(draft.title)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(PlanningPalette.ink)
+                            Text(rangeText(draft))
+                                .font(.caption)
+                                .foregroundStyle(PlanningPalette.muted)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(PlanningPalette.event, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
+                    TextField("内容", text: $eventTitle)
+                        .textFieldStyle(.roundedBorder)
+                    Stepper("開始日 \(startDay)", value: $startDay, in: 1...dayCount)
+                    Toggle("開始時刻", isOn: $includesStartTime)
+                    if includesStartTime {
+                        Stepper(clock(startMinutes), value: $startMinutes, in: 0...(23 * 60 + 59), step: 15)
+                    }
+                    Stepper("終了日 \(endDay)", value: $endDay, in: startDay...dayCount)
+                    Toggle("終了時刻", isOn: $includesEndTime)
+                    if includesEndTime {
+                        Stepper(clock(endMinutes), value: $endMinutes, in: 0...(23 * 60 + 59), step: 15)
+                    }
+                    Button("予定を追加") { showingSharedEditor = true }
+                        .buttonStyle(.bordered)
                 }
                 .padding(16)
             }
+            .planningScroll()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(PlanningPalette.paper)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.hidden)
+        .interactiveDismissDisabled(isDirty)
+        .presentationBackground(PlanningPalette.paper)
+        .planningKeyboardDismiss()
         .onAppear(perform: load)
+        .sheet(isPresented: $showingSharedEditor) {
+            PlanningItemEditorSheet(
+                draft: PlanningItemDraft(),
+                bucket: .monthly,
+                kind: .event,
+                periodKey: String(format: "%04d-%02d", year, month)
+            ) { draft in
+                drafts.append(
+                    FutureEventDraft(
+                        id: UUID(),
+                        title: draft.title,
+                        startDay: draft.startDay ?? 1,
+                        startMinutes: draft.startMinutes,
+                        endDay: draft.endDay ?? draft.startDay ?? 1,
+                        endMinutes: draft.endMinutes,
+                        iconSymbol: draft.iconSymbol,
+                        colorID: draft.colorID
+                    )
+                )
+                showingSharedEditor = false
+            } onClose: { showingSharedEditor = false }
+        }
+        .confirmationDialog("この変更を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("破棄", role: .destructive) { onClose() }
+            Button("キャンセル", role: .cancel) {}
+        }
     }
 
     private var dayCount: Int {
@@ -246,70 +295,82 @@ struct FutureMonthSheet: View {
         return calendar.range(of: .day, in: .month, for: date)?.count ?? 30
     }
 
-    private var monthTitle: String {
-        var components = DateComponents()
-        components.year = year
-        components.month = month
-        components.day = 1
-        let date = Calendar(identifier: .gregorian).date(from: components) ?? Date()
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ja_JP")
-        formatter.dateFormat = "M月"
-        return formatter.string(from: date)
-    }
-
-    private var timeLabel: String {
+    private func clock(_ minutes: Int) -> String {
         String(format: "%02d:%02d", minutes / 60, minutes % 60)
     }
 
-    private var dayGrid: some View {
-        let marked = Set(session.events.filter { $0.year == year && $0.month == month }.map(\.startDay))
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 6) {
-            ForEach(1...dayCount, id: \.self) { day in
-                Button {
-                    selectedDay = day
-                    endDay = max(endDay, day)
-                } label: {
-                    Text("\(day)")
-                        .frame(maxWidth: .infinity, minHeight: 32)
-                        .background(marked.contains(day) ? Color.accentColor.opacity(0.35) : Color.clear, in: Circle())
-                        .overlay(Circle().stroke(selectedDay == day ? Color.primary : Color.clear, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
-        }
+    private func rangeText(_ draft: FutureEventDraft) -> String {
+        var start = "\(draft.startDay)日"
+        if let startMinutes = draft.startMinutes { start += " \(clock(startMinutes))" }
+        var end = "\(draft.endDay)日"
+        if let endMinutes = draft.endMinutes { end += " \(clock(endMinutes))" }
+        return "\(start)～\(end)"
     }
 
     private func load() {
-        let model = session.yearModel()
-        if let monthModel = model.months.first(where: { $0.month == month }) {
-            goal = monthModel.goal
-            outlook = monthModel.outlook
+        let model = session.years.first(where: { $0.year == year }) ?? session.yearModel()
+        goal = model.months.first(where: { $0.month == month })?.goal ?? ""
+        drafts = session.events.filter { $0.year == year && $0.month == month }.map {
+                FutureEventDraft(
+                id: $0.id,
+                title: $0.title,
+                startDay: $0.startDay,
+                startMinutes: $0.timeMinutes,
+                endDay: $0.endDay ?? $0.startDay,
+                endMinutes: $0.endTimeMinutes,
+                iconSymbol: $0.iconSymbol,
+                colorID: $0.colorID
+            )
         }
-        selectedDay = min(selectedDay, dayCount)
-        endDay = min(max(endDay, selectedDay), dayCount)
+        originalGoal = goal
+        originalDrafts = drafts
     }
 
-    private func saveGoal() {
-        var model = session.yearModel()
-        guard let index = model.months.firstIndex(where: { $0.month == month }) else { return }
-        model.months[index].goal = goal
-        model.months[index].outlook = outlook
+    private var isDirty: Bool {
+        goal != originalGoal || drafts != originalDrafts
+    }
+
+    private func requestClose() {
+        if isDirty { confirmDiscard = true } else { onClose() }
+    }
+
+    private func save() {
+        var model = session.years.first(where: { $0.year == year }) ?? PlanningRules.makeYear(year)
+        if let index = model.months.firstIndex(where: { $0.month == month }) {
+            model.months[index].goal = goal
+        }
         session.updateYear(model)
+        session.events.removeAll { $0.year == year && $0.month == month }
+        for draft in drafts where !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            session.events.append(
+                PlanningEventRecord(
+                    id: draft.id,
+                    title: draft.title,
+                    year: year,
+                    month: month,
+                    startDay: draft.startDay,
+                    endDay: draft.endDay == draft.startDay ? nil : draft.endDay,
+                    timeMinutes: draft.startMinutes,
+                    endTimeMinutes: draft.endMinutes,
+                    iconSymbol: draft.iconSymbol,
+                    colorID: draft.colorID
+                )
+            )
+        }
         onClose()
     }
 
-    private func addEvent() {
+    private func addDraft() {
         let title = eventTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
-        session.addEvent(
-            PlanningEventRecord(
+        drafts.append(
+            FutureEventDraft(
+                id: UUID(),
                 title: title,
-                year: year,
-                month: month,
-                startDay: selectedDay,
-                endDay: endDay == selectedDay ? nil : endDay,
-                timeMinutes: includesTime ? minutes : nil
+                startDay: startDay,
+                startMinutes: includesStartTime ? startMinutes : nil,
+                endDay: endDay,
+                endMinutes: includesEndTime ? endMinutes : nil
             )
         )
         eventTitle = ""

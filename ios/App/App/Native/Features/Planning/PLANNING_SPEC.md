@@ -4,7 +4,54 @@ Canonical source of truth for the native Planning tab. Later phases must follow 
 
 Phase 2-A implements the shell, header, index, Help, Postpone Box, Plan list, Plan editor, Future year, and Future month sheet, plus the models those later pages need. Monthly, Weekly, Daily, and Reflection screens are specified here and are not fully built yet.
 
-The blueprint image is a structure and relative-layout reference only. It does not define the system tab bar, icons, type, or colors.
+## Phase 2-D2 overrides
+
+- Hierarchy stays parent plus subtask. No third level.
+- A Plan is saved only with the top-right check. Leaving with unsaved changes asks before discard.
+- `タスク・予定に反映` copies the selection to a chosen task or event on a specific Monthly, Weekly, or Daily period. The Plan itself stays intact.
+- Monthly, Weekly, and Daily main cards do not add items inline. Tapping ToDo or 予定 opens the list sheet. The floating plus opens the existing source list.
+- New and existing items share one editor: icon, content, color, optional start/end, and subtasks.
+- Daily task checkboxes display Today completion and do not change it.
+- Event row checks are local list state. They are not task completion and not 維持 / 先送り / 終了.
+
+## Phase 2-D1 overrides
+
+These rules supersede any older Planning UI rule in this file that conflicts with them.
+
+- Blueprint fidelity is primary. Reproduce the attached Blueprint at about 90%. Screen map: 1st phone Plan, 2nd Future, 3rd Monthly, 4th Daily. Weekly is not in the Blueprint and uses the Monthly visual language with Weekly content. Daily keeps the 4th-screen design and must not look identical to Monthly or Weekly.
+- Planning uses one fixed paper palette (`PlanningPalette`) in both Light and Dark. Do not recolor Planning with the system appearance. Do not force the app or system TabView into Light mode.
+- Layout: full-width Planning header, then content beside the right-edge index. The index starts below the header.
+- Index labels are rotated 90 degrees. Selected tab is visually distinct. Reflection badges stay, maximum 99. One `+`.
+- Section header glyphs for Plan, Future, Monthly, Weekly, and Daily are removed. Item-level Task and Event marks may remain.
+- Hierarchy is parent plus subtask only. Maximum depth is 2. The older 3-level rule is superseded.
+- Plan transfer may copy to Monthly, Weekly, or Daily. Plan content is copied and never removed from the Plan. The older "Plan cannot transfer directly to Daily" rule is superseded.
+- Hide scroll indicators throughout Planning. Scrolling stays enabled.
+- Dismiss the keyboard from empty background taps and from interactive scroll, without a hit layer that blocks controls.
+- Help body copy stays. Help header is one row: back chevron and `Planning の使い方`, slightly smaller, untinted material, not the solid Planning header.
+- Future year calendars use a stable 6 by 7 slot matrix so every month card is the same size. Year changes and Monthly, Weekly, and Daily period changes use real paging that follows the finger. Hide page dots.
+- Future month sheet has no title bar, month title, calendar, or rough outlook. Controls are 30pt × and ✓. Body is one Monthly Goal and the whole month's events as sticky notes, with start date, optional start time, end date, optional end time, joined by `～`. A dirty × asks `この変更を破棄しますか？` with 破棄 and キャンセル.
+- Year, month, week, and day pickers have no old titles, 30pt × and ✓, fixed height, and cannot expand upward.
+- 写真 & 一言 and なんでも日記 appear only for a past elapsed period with no meaningful activity, after a recommendation card, and only one is chosen. They are not Reflection.
+- A future period shows the normal empty planner, not the no-activity memory UI.
+- Temporary TestFlight sample data is in-memory only. Do not write it to Firebase or persisted user data.
+- Back navigation uses `TabNavigationState.pop()`, which does nothing when the path is empty.
+
+## Superseded
+
+The following older sentences remain below only as history. Do not implement them:
+
+- Blueprint is structure-only and must not define colors.
+- Planning header is solid white in Light and solid black in Dark.
+- Index colors must not copy the Blueprint, and index text is horizontal.
+- Section glyphs are required.
+- Nested bullets and tasks use 3 levels.
+- Plan cannot transfer directly to Daily. **Superseded by Phase 2-D1. Copy to Monthly, Weekly, or Daily. Never remove the Plan bullet.**
+- Future month sheet includes a calendar and rough outlook.
+- Period swipe may replace content after the gesture ends.
+- No-activity photo and diary controls appear whenever a period has no activity, including future periods.
+- Monthly and Weekly must not use the Blueprint card treatment, and Daily should share that same generic layout.
+
+The blueprint image is a structure and relative-layout reference only. It does not define the system tab bar, icons, type, or colors. **Superseded by Phase 2-D1.**
 
 ## Shell
 
@@ -22,7 +69,7 @@ The blueprint image is a structure and relative-layout reference only. It does n
 
 Planning uses a different header from Today, Calendar, and Progress.
 
-- Light mode: solid white. Dark mode: solid black.
+- Light mode: solid white. Dark mode: solid black. **Superseded by Phase 2-D1 fixed paper palette.**
 - No `.ultraThinMaterial` on the Planning header.
 - Large left-aligned title: `Planning`.
 - No breadcrumb `Plan / Future / Monthly / Weekly / Daily`.
@@ -43,7 +90,7 @@ Physical-planner vertical index on the right edge, in this order:
 
 - Weekly is hidden when Weekly is disabled in Settings. Default is enabled. Hiding it does not delete Weekly data.
 - The selected page is unmistakably highlighted.
-- Tabs may use a subtle color family. They must stay readable in Light and Dark. Do not copy the blueprint colors or shapes.
+- Tabs may use a subtle color family. They must stay readable in Light and Dark. Do not copy the blueprint colors or shapes. **Superseded by Phase 2-D1.**
 - There is only one `+`.
 - If an eligible Reflection is still unresolved, show its count at the upper-right of the matching period tab.
 - The displayed count is capped at 99.
@@ -52,7 +99,7 @@ Physical-planner vertical index on the right edge, in this order:
 
 ## Section glyphs
 
-Plan, Future, Monthly, Weekly, and Daily use an app-owned line-glyph system. Do not reuse the icons drawn under the blueprint header, and do not reproduce another app's icons.
+Plan, Future, Monthly, Weekly, and Daily use an app-owned line-glyph system. **Superseded by Phase 2-D1. Do not show section header glyphs.** Item-level Task and Event marks remain allowed.
 
 ## Help
 
@@ -163,19 +210,19 @@ Do not show blueprint period labels such as Plan, Future, or Daily on a plan row
 
 - Dedicated full page. Not a bottom sheet.
 - Blank brainstorming area.
-- Nested bullets, maximum 3 levels, with a clearly different hierarchy.
+- Nested bullets, maximum 3 levels, with a clearly different hierarchy. **Superseded by Phase 2-D1. Maximum depth is 2: parent plus subtask.**
 - Intuitive indent and outdent.
 - Memo area at the bottom. The memo is not linked to Notes.
 - Selection supports one bullet, a bullet plus its children, multiple blocks, and the entire Plan.
 - Selected content can be sent to Monthly ToDo, Monthly Event, Weekly ToDo, or Weekly Event.
-- Plan cannot transfer directly to Daily.
+- Plan cannot transfer directly to Daily. **Superseded by Phase 2-D1. Copy to Monthly, Weekly, or Daily. Never remove the Plan bullet.**
 - When the user reaches the transfer action, show:
 
 プラン全体を移動する必要はありません。
 必要な1項目だけ、まとまりだけ、または全体を選んで
 Monthly / Weekly のToDo・予定へ反映できます。
 
-- Allow save only, or transfer the selection and save.
+- Allow save only, or transfer the selection and save. **Superseded by Phase 2-D2. Save is the top-right check. Copy is `タスク・予定に反映`.**
 - Editing an existing plan counts as Replan and supports リプラン数.
 - Import from Notes only when that Note is already a bullet list. Handwritten/photo scan uses the same API and key path as the existing Notes AI camera, and only the prescribed scan format. Do not add another AI provider. Do not duplicate that API in Phase 2-A.
 
@@ -230,7 +277,7 @@ Monthly, Weekly, and Daily, when built, share one period-navigation architecture
 
 Monthly uses a month picker, Weekly a week picker, Daily a date picker. Do not build three unrelated navigators.
 
-ToDo and Events each use the full available width as a large section. Do not use the blueprint's side-by-side cards. Nested tasks go to 3 levels.
+ToDo and Events each use the full available width as a large section. Do not use the blueprint's side-by-side cards. Nested tasks go to 3 levels. **Superseded by Phase 2-D1 Blueprint card treatment and depth 2.**
 
 ## Completion
 
@@ -243,7 +290,7 @@ ToDo and Events each use the full available width as a large section. Do not use
 
 ## Subdivision
 
-Tasks can contain subtasks. The planning hierarchy is at most 3 levels everywhere: Plan, Monthly, Weekly, Daily, Today, and Reflection.
+Tasks can contain subtasks. The planning hierarchy is at most 3 levels everywhere: Plan, Monthly, Weekly, Daily, Today, and Reflection. **Superseded by Phase 2-D1. Parent plus one subtask level only.**
 
 For Monthly progress, a subtask divides the parent's contribution. A child is not a second full task.
 

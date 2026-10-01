@@ -14,7 +14,7 @@ struct ReflectionFlowPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    if !navigation.path.isEmpty { navigation.path.removeLast() }
+                    if !navigation.path.isEmpty { navigation.pop() }
                 }
                 Text(started ? "振り返りをしましょう！" : "振り返りを始めますか？")
                     .font(.title2.bold())
@@ -26,7 +26,7 @@ struct ReflectionFlowPage: View {
                     }
                     Button("振り返りを終える") {
                         if session.completeReflection(scope: scope), !navigation.path.isEmpty {
-                            navigation.path.removeLast()
+                            navigation.pop()
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -39,16 +39,18 @@ struct ReflectionFlowPage: View {
             }
             .padding(16)
         }
-        .background(Color(uiColor: .systemBackground))
+        .planningScroll()
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
         .navigationBarHidden(true)
         .confirmationDialog("振り返りを始めますか？", isPresented: $showConfirm, titleVisibility: .visible) {
             Button("始める") { session.beginReflection(scope) }
             Button(skipTitle) { 
                 session.skipReflection(scope)
-                if !navigation.path.isEmpty { navigation.path.removeLast() }
+                if !navigation.path.isEmpty { navigation.pop() }
             }
             Button("キャンセル", role: .cancel) {
-                if !navigation.path.isEmpty { navigation.path.removeLast() }
+                if !navigation.path.isEmpty { navigation.pop() }
             }
         }
         .onAppear {
@@ -175,7 +177,7 @@ struct ReflectionHistoryPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                if !navigation.path.isEmpty { navigation.path.removeLast() }
+                if !navigation.path.isEmpty { navigation.pop() }
             }
             Text("振り返り履歴")
                 .font(.title2.bold())
@@ -217,7 +219,9 @@ struct ReflectionHistoryPage: View {
             }
         }
         .padding(16)
-        .background(Color(uiColor: .systemBackground))
+        .planningScroll()
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
         .navigationBarHidden(true)
     }
 
@@ -239,7 +243,7 @@ struct ReflectionSettingsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    if !navigation.path.isEmpty { navigation.path.removeLast() }
+                    if !navigation.path.isEmpty { navigation.pop() }
                 }
                 Text("Reflection Settings")
                     .font(.title2.bold())
@@ -252,7 +256,9 @@ struct ReflectionSettingsPage: View {
             }
             .padding(16)
         }
-        .background(Color(uiColor: .systemBackground))
+        .planningScroll()
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
         .navigationBarHidden(true)
     }
 }
@@ -260,36 +266,115 @@ struct ReflectionSettingsPage: View {
 struct NoActivityMemorySection: View {
     @ObservedObject var session: PlanningSession
     let scope: ReflectionScope
-    @State private var photoText = ""
-    @State private var diary = ""
-    @State private var hasPhoto = false
     @State private var photo: PhotosPickerItem?
 
+    private var entry: PlanningMemoryEntry? {
+        session.memoryEntries.first { $0.scope == scope }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("写真＋一言")
-                .font(.headline)
-            PhotosPicker("写真を選ぶ", selection: $photo, matching: .images)
-            TextField("一言", text: $photoText)
+        if let entry {
+            if entry.kind == .photoNote {
+                photoLayout(entry)
+            } else {
+                diaryLayout(entry)
+            }
+        } else {
+            recommendation
+        }
+    }
+
+    private var recommendation: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("忙しい日はだれにでもあります。\n今日は下のどちらかをやってみませんか？")
+                .font(.body)
+                .foregroundStyle(PlanningPalette.ink)
+            choiceButton(
+                title: "写真 & 一言",
+                detail: "写真を1枚と、短い一言だけ残します。",
+                kind: .photoNote
+            )
+            choiceButton(
+                title: "なんでも日記",
+                detail: "タイトルと日にち、本文だけを書きます。",
+                kind: .diary
+            )
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+    }
+
+    private func choiceButton(title: String, detail: String, kind: PlanningMemoryKind) -> some View {
+        Button {
+            session.addMemory(scope: scope, kind: kind, text: "", hasPhoto: false)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline).foregroundStyle(PlanningPalette.ink)
+                Text(detail).font(.subheadline).foregroundStyle(PlanningPalette.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(PlanningPalette.paper, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func photoLayout(_ entry: PlanningMemoryEntry) -> some View {
+        VStack(spacing: 16) {
+            PhotosPicker(selection: $photo, matching: .images) {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(PlanningPalette.card)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 280)
+                    .overlay {
+                        Text(entry.hasPhoto ? "写真" : "写真を選ぶ")
+                            .foregroundStyle(PlanningPalette.muted)
+                    }
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(PlanningPalette.line, lineWidth: 1))
+            }
+            TextField("一言", text: memoryText(entry))
                 .textFieldStyle(.roundedBorder)
-            Button("残す") {
-                session.addMemory(scope: scope, kind: .photoNote, text: photoText, hasPhoto: hasPhoto)
-                photoText = ""
-            }
-            .buttonStyle(.bordered)
-            Text("過去を思い出して、その日何があったかを日記形式で書いてみる")
-                .font(.headline)
-            TextEditor(text: $diary)
-                .frame(minHeight: 100)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.secondary.opacity(0.3)))
-            Button("日記を残す") {
-                session.addMemory(scope: scope, kind: .diary, text: diary, hasPhoto: false)
-                diary = ""
-            }
-            .buttonStyle(.bordered)
         }
+        .frame(maxWidth: .infinity, minHeight: 420)
         .onChange(of: photo) { _, item in
-            hasPhoto = item != nil
+            session.updateMemory(id: entry.id, text: entry.text, title: entry.title, dateText: entry.dateText, hasPhoto: item != nil)
         }
+    }
+
+    private func diaryLayout(_ entry: PlanningMemoryEntry) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TextField("タイトル", text: memoryTitle(entry))
+                .font(.title3.weight(.semibold))
+            TextField("日にち", text: memoryDate(entry))
+            TextField("本文", text: memoryText(entry), axis: .vertical)
+                .lineLimit(8...16)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 420, alignment: .topLeading)
+        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(PlanningPalette.line, lineWidth: 1))
+    }
+
+    private func memoryText(_ entry: PlanningMemoryEntry) -> Binding<String> {
+        Binding(
+            get: { entry.text },
+            set: { session.updateMemory(id: entry.id, text: $0, title: entry.title, dateText: entry.dateText, hasPhoto: entry.hasPhoto) }
+        )
+    }
+
+    private func memoryTitle(_ entry: PlanningMemoryEntry) -> Binding<String> {
+        Binding(
+            get: { entry.title },
+            set: { session.updateMemory(id: entry.id, text: entry.text, title: $0, dateText: entry.dateText, hasPhoto: entry.hasPhoto) }
+        )
+    }
+
+    private func memoryDate(_ entry: PlanningMemoryEntry) -> Binding<String> {
+        Binding(
+            get: { entry.dateText },
+            set: { session.updateMemory(id: entry.id, text: entry.text, title: entry.title, dateText: $0, hasPhoto: entry.hasPhoto) }
+        )
     }
 }

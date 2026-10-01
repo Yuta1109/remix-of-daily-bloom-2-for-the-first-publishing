@@ -12,6 +12,17 @@ final class TabNavigationState: ObservableObject {
         scrollPositions.removeAll()
         selectedValues.removeAll()
     }
+
+    /// Pops one Planning route. Safe when the path is already empty or the
+    /// back button fires twice before SwiftUI publishes the first pop.
+    func pop() {
+        guard !isPopping, path.count > 0 else { return }
+        isPopping = true
+        path.removeLast()
+        isPopping = false
+    }
+
+    private var isPopping = false
 }
 
 @MainActor

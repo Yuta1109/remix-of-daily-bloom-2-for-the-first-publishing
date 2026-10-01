@@ -72,6 +72,8 @@ enum PlanTransferTarget: String, CaseIterable, Identifiable, Hashable {
     case monthlyEvent
     case weeklyTask
     case weeklyEvent
+    case dailyTask
+    case dailyEvent
 
     var id: String { rawValue }
 
@@ -81,13 +83,15 @@ enum PlanTransferTarget: String, CaseIterable, Identifiable, Hashable {
         case .monthlyEvent: "Monthly 予定"
         case .weeklyTask: "Weekly ToDo"
         case .weeklyEvent: "Weekly 予定"
+        case .dailyTask: "Daily ToDo"
+        case .dailyEvent: "Daily 予定"
         }
     }
 
     var kind: PlanningItemKind {
         switch self {
-        case .monthlyTask, .weeklyTask: .task
-        case .monthlyEvent, .weeklyEvent: .event
+        case .monthlyTask, .weeklyTask, .dailyTask: .task
+        case .monthlyEvent, .weeklyEvent, .dailyEvent: .event
         }
     }
 
@@ -95,6 +99,7 @@ enum PlanTransferTarget: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .monthlyTask, .monthlyEvent: .monthly
         case .weeklyTask, .weeklyEvent: .weekly
+        case .dailyTask, .dailyEvent: .daily
         }
     }
 }
@@ -174,6 +179,12 @@ struct PlanningNode: Identifiable, Hashable {
     var eventID: UUID?
     /// Shared with Today when this node is a Daily task.
     var todayTaskID: UUID?
+    var iconSymbol: String
+    var colorID: String
+    var startDay: Int?
+    var endDay: Int?
+    var startMinutes: Int?
+    var endMinutes: Int?
 
     init(
         id: UUID = UUID(),
@@ -186,11 +197,21 @@ struct PlanningNode: Identifiable, Hashable {
         completed: Bool = false,
         reflectionDisposition: ReflectionDisposition? = nil,
         eventID: UUID? = nil,
-        todayTaskID: UUID? = nil
+        todayTaskID: UUID? = nil,
+        iconSymbol: String = "circle",
+        colorID: String = "sand",
+        startDay: Int? = nil,
+        endDay: Int? = nil,
+        startMinutes: Int? = nil,
+        endMinutes: Int? = nil
     ) {
         self.id = id
         self.title = title
-        self.children = children
+        self.children = children.map { child in
+            var clipped = child
+            clipped.children = []
+            return clipped
+        }
         self.kind = kind
         self.bucket = bucket
         self.periodKey = periodKey
@@ -199,6 +220,12 @@ struct PlanningNode: Identifiable, Hashable {
         self.reflectionDisposition = reflectionDisposition
         self.eventID = eventID
         self.todayTaskID = todayTaskID
+        self.iconSymbol = iconSymbol
+        self.colorID = colorID
+        self.startDay = startDay
+        self.endDay = endDay
+        self.startMinutes = startMinutes
+        self.endMinutes = endMinutes
     }
 }
 
@@ -238,7 +265,10 @@ struct PlanningEventRecord: Identifiable, Hashable {
     var startDay: Int
     var endDay: Int?
     var timeMinutes: Int?
+    var endTimeMinutes: Int?
     var sourceEventID: UUID?
+    var iconSymbol: String
+    var colorID: String
 
     init(
         id: UUID = UUID(),
@@ -248,7 +278,10 @@ struct PlanningEventRecord: Identifiable, Hashable {
         startDay: Int,
         endDay: Int? = nil,
         timeMinutes: Int? = nil,
-        sourceEventID: UUID? = nil
+        endTimeMinutes: Int? = nil,
+        sourceEventID: UUID? = nil,
+        iconSymbol: String = "calendar",
+        colorID: String = "lilac"
     ) {
         self.id = id
         self.title = title
@@ -257,7 +290,10 @@ struct PlanningEventRecord: Identifiable, Hashable {
         self.startDay = startDay
         self.endDay = endDay
         self.timeMinutes = timeMinutes
+        self.endTimeMinutes = endTimeMinutes
         self.sourceEventID = sourceEventID
+        self.iconSymbol = iconSymbol
+        self.colorID = colorID
     }
 }
 
@@ -305,7 +341,7 @@ struct ReflectionObligation: Identifiable, Hashable {
 }
 
 enum PlanningRules {
-    static let maximumDepth = 3
+    static let maximumDepth = 2
     static let maximumBadgeCount = 99
     static let monthCount = 12
     static let reflectionHistoryLimit = 5
@@ -313,7 +349,7 @@ enum PlanningRules {
     static let transferExplanation = """
     プラン全体を移動する必要はありません。
     必要な1項目だけ、まとまりだけ、または全体を選んで
-    Monthly / Weekly のToDo・予定へ反映できます。
+    Monthly / Weekly / Daily のタスク・予定へコピーできます。
     """
 
     static func visibleIndex(weeklyEnabled: Bool) -> [PlanningSection] {
@@ -412,6 +448,9 @@ final class PlanningSession: ObservableObject {
     init(year: Int = Calendar.current.component(.year, from: Date())) {
         selectedYear = year
         years = [PlanningRules.makeYear(year)]
+        if TemporaryPlanningSamples.enabled {
+            TemporaryPlanningSamples.install(self)
+        }
     }
 
     var index: [PlanningSection] {
@@ -487,10 +526,30 @@ final class PlanningSession: ObservableObject {
 
     func transfer(planID: UUID, bulletIDs: Set<UUID>, includeChildren: Bool, to target: PlanTransferTarget) {
         guard let plan = plans.first(where: { $0.id == planID }) else { return }
-        let selected = selectedBullets(in: plan.bullets, ids: bulletIDs, includeChildren: includeChildren, force: false)
         let key = periodKey(for: target.bucket)
-        periodItems.append(contentsOf: selected.map { node(from: $0, target: target, periodKey: key) })
-        markActivity(bucket: target.bucket, periodKey: key)
+        var copies: [PlanningNode] = []
+        for bullet in plan.bullets {
+            let kids = bullet.children.filter { includeChildren || bulletIDs.contains($0.id) }
+            if bulletIDs.contains(bullet.id) {
+                guard !copiedAlready(bullet.id, target: target, key: key) else { continue }
+                let source = PlanBullet(id: bullet.id, text: bullet.text, children: kids)
+                copies.append(node(from: source, target: target, periodKey: key, selectedChildIDs: nil))
+            } else {
+                for child in kids where !copiedAlready(child.id, target: target, key: key) {
+                    copies.append(node(from: PlanBullet(id: child.id, text: child.text), target: target, periodKey: key, selectedChildIDs: []))
+                }
+            }
+        }
+        periodItems.append(contentsOf: copies)
+        if !copies.isEmpty {
+            markActivity(bucket: target.bucket, periodKey: key)
+        }
+    }
+
+    private func copiedAlready(_ logicalID: UUID, target: PlanTransferTarget, key: String) -> Bool {
+        periodItems.contains {
+            $0.logicalID == logicalID && $0.bucket == target.bucket && $0.periodKey == key && $0.kind == target.kind
+        }
     }
 
     func movePostponed(_ id: UUID, to bucket: PlanningBucket) {
@@ -572,18 +631,24 @@ final class PlanningSession: ObservableObject {
         }
     }
 
-    private func node(from bullet: PlanBullet, target: PlanTransferTarget, periodKey: String) -> PlanningNode {
+    private func node(from bullet: PlanBullet, target: PlanTransferTarget, periodKey: String, selectedChildIDs: Set<UUID>?) -> PlanningNode {
         let eventID = target.kind == .event ? UUID() : nil
-        let logicalID = UUID()
+        let childNodes = bullet.children.filter { selectedChildIDs?.contains($0.id) ?? true }.map {
+            node(from: $0, target: target, periodKey: periodKey, selectedChildIDs: [])
+        }
         return PlanningNode(
             title: bullet.text,
-            children: bullet.children.map { node(from: $0, target: target, periodKey: periodKey) },
+            children: childNodes.map { child in
+                var clipped = child
+                clipped.children = []
+                return clipped
+            },
             kind: target.kind,
             bucket: target.bucket,
             periodKey: periodKey,
-            logicalID: logicalID,
+            logicalID: bullet.id,
             eventID: eventID,
-            todayTaskID: target.bucket == .daily && target.kind == .task ? logicalID : nil
+            todayTaskID: target.bucket == .daily && target.kind == .task ? bullet.id : nil
         )
     }
 }
