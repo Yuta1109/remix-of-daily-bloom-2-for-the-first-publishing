@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlanningRootView: View {
-    var body: some View { NativeFeaturePlaceholder(tab: .planning) }
+    var body: some View { PlanningShell() }
 }
 
 struct TodayRootView: View {

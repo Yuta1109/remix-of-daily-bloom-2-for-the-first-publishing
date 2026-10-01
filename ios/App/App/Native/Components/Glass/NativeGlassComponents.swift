@@ -7,6 +7,7 @@ enum NativeGlassIcon: String {
     case user = "person.crop.circle"
     case help = "questionmark"
     case search = "magnifyingglass"
+    case postpone = "tray"
 }
 
 struct NativeGlassIconButton: View {

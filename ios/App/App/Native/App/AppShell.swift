@@ -26,6 +26,7 @@ private struct NativeTabRoot: View {
     var body: some View {
         NavigationStack(path: $navigation.path) {
             nativeFeatureRoot(for: tab)
+                .environmentObject(navigation)
         }
     }
 }
