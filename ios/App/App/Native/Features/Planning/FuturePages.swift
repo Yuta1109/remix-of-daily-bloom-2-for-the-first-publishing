@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FutureYearPage: View {
     @ObservedObject var session: PlanningSession
+    @EnvironmentObject private var navigation: TabNavigationState
     @State private var showingYearPicker = false
     @State private var selectedMonth: Int?
 
@@ -33,6 +34,16 @@ struct FutureYearPage: View {
                     Spacer()
                 }
                 .buttonStyle(.plain)
+                let futureScope = ReflectionScope.future(session.selectedYear)
+                if session.futureReflections.first(where: { $0.year == session.selectedYear })?.reflectionCompleted == true {
+                    ReflectionResultView(session: session, scope: futureScope)
+                } else if session.isActivePrompt(futureScope) {
+                    Button("振り返りを始めますか？") {
+                        session.refreshDue(futureScope)
+                        navigation.path.append(PlanningRoute.reflection(futureScope))
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
                     ForEach(year.months) { month in
                         Button {

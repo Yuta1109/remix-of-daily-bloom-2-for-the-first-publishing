@@ -23,14 +23,12 @@ struct PeriodPlannerPage: View {
                 if bucket == .monthly {
                     monthlyGoal
                 }
-                if session.isReflectionComplete(bucket: bucket, periodKey: periodKey) {
-                    ReflectionResultSummary(session: session, bucket: bucket, periodKey: periodKey)
-                } else {
-                    itemSection(.task)
-                    itemSection(.event)
-                }
+                periodBody
             }
             .padding(16)
+        }
+        .onAppear {
+            session.refreshDue(ReflectionScope.period(bucket, periodKey))
         }
         .gesture(
             DragGesture(minimumDistance: 24)
@@ -83,6 +81,30 @@ struct PeriodPlannerPage: View {
             Spacer(minLength: 0)
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var periodBody: some View {
+        let scope = ReflectionScope.period(bucket, periodKey)
+        let reflected = session.isReflectionComplete(bucket: bucket, periodKey: periodKey)
+        let editing = session.isExplicitEdit(bucket: bucket, periodKey: periodKey)
+        if reflected {
+            ReflectionResultView(session: session, scope: scope)
+        }
+        if !reflected || editing {
+            if !reflected, !session.existingRecord(bucket: bucket, periodKey: periodKey).hasMeaningfulActivity {
+                NoActivityMemorySection(session: session, scope: scope)
+            }
+            if !reflected, session.isActivePrompt(scope) {
+                Button("振り返りを始めますか？") {
+                    session.refreshDue(scope)
+                    navigation.path.append(PlanningRoute.reflection(scope))
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            itemSection(.task)
+            itemSection(.event)
+        }
     }
 
     private var monthlyGoal: some View {
@@ -204,44 +226,6 @@ private struct PeriodTypeGlyph: View {
     }
 }
 
-private struct ReflectionResultSummary: View {
-    @ObservedObject var session: PlanningSession
-    let bucket: PlanningBucket
-    let periodKey: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("振り返り結果")
-                .font(.title3.weight(.semibold))
-            Text("完了状態と、維持・先送り・終了は別々です。")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            ForEach(session.nodes(bucket: bucket, periodKey: periodKey, kind: .task) + session.nodes(bucket: bucket, periodKey: periodKey, kind: .event)) { node in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(node.title)
-                    Text(node.completed ? "完了" : "未完了")
-                        .font(.caption)
-                    Text(dispositionText(node.reflectionDisposition))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
-    private func dispositionText(_ value: ReflectionDisposition?) -> String {
-        switch value {
-        case .keep: "維持"
-        case .postpone: "先送り"
-        case .stop: "終了"
-        case nil: "分類なし"
-        }
-    }
-}
-
 private struct PeriodPickerSheet: View {
     @ObservedObject var session: PlanningSession
     let bucket: PlanningBucket
@@ -261,9 +245,10 @@ private struct PeriodPickerSheet: View {
                         .padding()
                 }
             }
-            .onAppear {
-                pickedDate = PeriodCalendar.date(from: session.periodKey(for: bucket)) ?? Date()
-            }
+        .onAppear {
+            session.refreshDue(ReflectionScope.period(bucket, session.periodKey(for: bucket)))
+            pickedDate = PeriodCalendar.date(from: session.periodKey(for: bucket)) ?? Date()
+        }
         }
     }
 

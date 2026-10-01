@@ -27,8 +27,14 @@ struct PlanningShell: View {
                 PostponeBoxPage(session: session)
             case .planEditor(let id):
                 PlanEditorPage(session: session, planID: id)
-            case .reflectionSettings, .weeklySettings:
+            case .reflectionSettings:
+                ReflectionSettingsPage(session: session)
+            case .weeklySettings:
                 PlanningLinkPlaceholder(session: session, route: route)
+            case .reflection(let scope):
+                ReflectionFlowPage(session: session, scope: scope)
+            case .reflectionHistory:
+                ReflectionHistoryPage(session: session)
             }
         }
         .onAppear {

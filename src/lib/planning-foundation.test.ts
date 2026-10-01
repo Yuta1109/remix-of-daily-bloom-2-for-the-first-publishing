@@ -172,7 +172,7 @@ describe("planning period pages", () => {
     expect(periodBadge(false, true, false)).toBe(0);
     expect(periodBadge(true, true, false)).toBe(1);
     expect(periodBadge(true, true, true)).toBe(0);
-    expect(periodPage).toContain("振り返り結果");
+    expect(periodPage).toContain("ReflectionResultView");
     expect(periodPage).toContain("isReflectionComplete");
     expect(periodPage).not.toContain("今月の進捗");
     expect(models).toContain("var reflectionDisposition");
@@ -180,5 +180,51 @@ describe("planning period pages", () => {
     expect(periodPage).toContain("Weeklyをなくす");
     expect(periodPage).toContain("PlanningRoute.weeklySettings");
     expect(models).toContain("static let maximumDepth = 3");
+  });
+});
+
+const reflection = readFileSync(`${planningRoot}/ReflectionFlow.swift`, "utf8");
+const reflectionPage = readFileSync(`${planningRoot}/ReflectionPages.swift`, "utf8");
+
+function activePrompt(activity: boolean, due: boolean, completed: boolean, skipped: boolean): boolean {
+  return activity && due && !completed && !skipped;
+}
+
+function badge(activity: boolean, outstanding: boolean, completed: boolean, skipped: boolean): number {
+  return outstanding && activity && !completed && !skipped ? 1 : 0;
+}
+
+describe("planning reflection", () => {
+  it("requires activity, ignores skips, and caps the badge", () => {
+    expect(activePrompt(false, true, false, false)).toBe(false);
+    expect(badge(false, true, false, false)).toBe(0);
+    expect(badge(true, true, false, true)).toBe(0);
+    expect(badge(true, true, true, false)).toBe(0);
+    expect(Math.min(99, 120)).toBe(99);
+    expect(reflection).toContain("hasMeaningfulActivity && due && !completed && !skipped");
+    expect(reflection).toContain("historyLimit = 5");
+  });
+
+  it("keeps completion separate and reconciles keep, postpone, and stop", () => {
+    expect(reflection).toContain("var completed: Bool");
+    expect(reflection).toContain("disposition: ReflectionDisposition");
+    expect(reflection).toContain("ensureContinuation");
+    expect(reflection).toContain("ensurePostpone");
+    expect(reflection).toContain("case .stop");
+    expect(reflection).toContain("sourceEventID");
+    expect(reflection).toContain("matchesPostpone");
+    expect(reflectionPage).not.toContain("今月の進捗");
+    expect(reflectionPage).toContain("達成");
+    expect(reflectionPage).toContain("振り返り結果");
+    expect(reflectionPage).toContain("Button(\"Replan\")");
+    expect(reflectionPage).toContain("写真＋一言");
+    expect(reflectionPage).toContain("日記形式で書いてみる");
+    expect(reflectionPage).toContain("addMemory");
+    expect(reflectionPage).toContain("updateHistoricalDecision");
+    expect(reflectionPage).toContain("振り返りを始めますか？");
+    expect(reflectionPage).toContain("今日はやめとく");
+    expect(reflectionPage).toContain("今週はやめとく");
+    expect(reflectionPage).toContain("今月はやめとく");
+    expect(reflectionPage).toContain("今年はやめとく");
   });
 });

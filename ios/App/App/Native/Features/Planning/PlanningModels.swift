@@ -105,6 +105,8 @@ enum PlanningRoute: Hashable {
     case planEditor(UUID)
     case reflectionSettings
     case weeklySettings
+    case reflection(ReflectionScope)
+    case reflectionHistory
 }
 
 struct PlanBullet: Identifiable, Hashable {
@@ -207,6 +209,7 @@ struct PostponedEntry: Identifiable, Hashable {
     var bucket: PlanningBucket
     var eventID: UUID?
     var todayTaskID: UUID?
+    var logicalID: UUID?
 
     init(
         id: UUID = UUID(),
@@ -214,7 +217,8 @@ struct PostponedEntry: Identifiable, Hashable {
         kind: PlanningItemKind,
         bucket: PlanningBucket,
         eventID: UUID? = nil,
-        todayTaskID: UUID? = nil
+        todayTaskID: UUID? = nil,
+        logicalID: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -222,6 +226,7 @@ struct PostponedEntry: Identifiable, Hashable {
         self.bucket = bucket
         self.eventID = eventID
         self.todayTaskID = todayTaskID
+        self.logicalID = logicalID
     }
 }
 
@@ -233,6 +238,7 @@ struct PlanningEventRecord: Identifiable, Hashable {
     var startDay: Int
     var endDay: Int?
     var timeMinutes: Int?
+    var sourceEventID: UUID?
 
     init(
         id: UUID = UUID(),
@@ -241,7 +247,8 @@ struct PlanningEventRecord: Identifiable, Hashable {
         month: Int,
         startDay: Int,
         endDay: Int? = nil,
-        timeMinutes: Int? = nil
+        timeMinutes: Int? = nil,
+        sourceEventID: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -250,6 +257,7 @@ struct PlanningEventRecord: Identifiable, Hashable {
         self.startDay = startDay
         self.endDay = endDay
         self.timeMinutes = timeMinutes
+        self.sourceEventID = sourceEventID
     }
 }
 
@@ -258,6 +266,7 @@ struct FutureMonthModel: Identifiable, Hashable {
     /// Exactly one goal. This is the Monthly page goal for the same month.
     var goal: String
     var outlook: [String]
+    var goalItemID = UUID()
 
     var id: Int { month }
 }
@@ -395,6 +404,10 @@ final class PlanningSession: ObservableObject {
     @Published var weeklyPeriodKey = ""
     @Published var dailyPeriodKey = ""
     @Published var periodRecords: [PeriodReflectionRecord] = []
+    @Published var futureReflections: [FutureReflectionRecord] = []
+    @Published var memoryEntries: [PlanningMemoryEntry] = []
+    @Published var reflectionSchedule = ReflectionSchedule()
+    @Published var reflectionDraft: ReflectionDraft?
 
     init(year: Int = Calendar.current.component(.year, from: Date())) {
         selectedYear = year
@@ -406,16 +419,12 @@ final class PlanningSession: ObservableObject {
     }
 
     func badgeCount(for section: PlanningSection) -> Int {
-        let base = PlanningRules.displayedReflectionBadge(section: section, obligations: obligations)
-        let extra = periodRecords.reduce(0) { partial, record in
-            guard record.bucket.section == section else { return partial }
-            return partial + PeriodCalendar.periodBadge(
-                hasMeaningfulActivity: record.hasMeaningfulActivity,
-                outstanding: record.reflectionOutstanding,
-                completed: record.reflectionCompleted
-            )
+        let fromRecords = reflectionBadgeUnits(for: section)
+        let hasRecords = periodRecords.contains { $0.bucket.section == section } || (section == .future && !futureReflections.isEmpty)
+        if hasRecords {
+            return min(PlanningRules.maximumBadgeCount, fromRecords)
         }
-        return min(PlanningRules.maximumBadgeCount, base + extra)
+        return PlanningRules.displayedReflectionBadge(section: section, obligations: obligations)
     }
 
     func select(_ section: PlanningSection) {

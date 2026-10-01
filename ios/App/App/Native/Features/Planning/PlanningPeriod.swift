@@ -26,6 +26,10 @@ struct PeriodReflectionRecord: Identifiable, Hashable {
     var hasMeaningfulActivity: Bool
     var reflectionOutstanding: Bool
     var reflectionCompleted: Bool
+    var skipped = false
+    var completedAt: Date?
+    var decisions: [StoredReflectionDecision] = []
+    var explicitEdit = false
 
     var id: String { "\(bucket.rawValue):\(periodKey)" }
 }
@@ -110,8 +114,8 @@ enum PeriodCalendar {
         bucket != .daily
     }
 
-    static func periodBadge(hasMeaningfulActivity: Bool, outstanding: Bool, completed: Bool) -> Int {
-        guard outstanding, hasMeaningfulActivity, !completed else { return 0 }
+    static func periodBadge(hasMeaningfulActivity: Bool, outstanding: Bool, completed: Bool, skipped: Bool = false) -> Int {
+        guard outstanding, hasMeaningfulActivity, !completed, !skipped else { return 0 }
         return 1
     }
 
@@ -373,7 +377,7 @@ extension PlanningSession {
         }
     }
 
-    private func existingRecord(bucket: PlanningBucket, periodKey: String) -> PeriodReflectionRecord {
+    func existingRecord(bucket: PlanningBucket, periodKey: String) -> PeriodReflectionRecord {
         periodRecords.first { $0.bucket == bucket && $0.periodKey == periodKey }
             ?? PeriodReflectionRecord(
                 bucket: bucket,
@@ -384,7 +388,7 @@ extension PlanningSession {
             )
     }
 
-    private func store(_ record: PeriodReflectionRecord) {
+    func store(_ record: PeriodReflectionRecord) {
         if let index = periodRecords.firstIndex(where: { $0.id == record.id }) {
             periodRecords[index] = record
         } else {
@@ -404,7 +408,7 @@ extension PlanningSession {
         )
     }
 
-    private func copied(_ node: PlanningNode, bucket: PlanningBucket, periodKey: String) -> PlanningNode {
+    func copied(_ node: PlanningNode, bucket: PlanningBucket, periodKey: String) -> PlanningNode {
         PlanningNode(
             title: node.title,
             children: node.children.map { copied($0, bucket: bucket, periodKey: periodKey) },
@@ -428,7 +432,7 @@ extension PlanningSession {
         return copy
     }
 
-    private func findNode(_ id: UUID, in nodes: [PlanningNode]? = nil) -> PlanningNode? {
+    func findNode(_ id: UUID, in nodes: [PlanningNode]? = nil) -> PlanningNode? {
         for node in nodes ?? periodItems {
             if node.id == id { return node }
             if let found = findNode(id, in: node.children) { return found }
@@ -445,7 +449,7 @@ extension PlanningSession {
     }
 
     @discardableResult
-    private func updateNode(_ id: UUID, change: (inout PlanningNode) -> Void) -> Bool {
+    func updateNode(_ id: UUID, change: (inout PlanningNode) -> Void) -> Bool {
         let result = replacing(id, in: periodItems, change: change)
         periodItems = result.nodes
         return result.found
