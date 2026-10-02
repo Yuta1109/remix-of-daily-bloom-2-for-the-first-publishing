@@ -32,6 +32,12 @@ name: iOS Release (App Store / TestFlight)
 on:
   workflow_dispatch:
 
+# One release at a time. A run already archiving is not cancelled.
+# A newer queued request replaces an older one that has not started.
+concurrency:
+  group: ios-release-com.confast.essences
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: macos-15
@@ -177,6 +183,93 @@ jobs:
           </plist>
           EOF
 
+      - name: Resolve next TestFlight build number
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          node <<'NODE'
+          const crypto = require("crypto");
+          const fs = require("fs");
+
+          const keyId = process.env.KEY_ID;
+          const issuerId = process.env.ISSUER_ID;
+          const keyPath = `${process.env.HOME}/private_keys/AuthKey_${keyId}.p8`;
+          const bundleId = "com.confast.essences";
+          const pbx = fs.readFileSync("ios/App/App.xcodeproj/project.pbxproj", "utf8");
+          const release = pbx.split("isa = XCBuildConfiguration").find((block) =>
+            block.includes("PRODUCT_BUNDLE_IDENTIFIER = com.confast.essences") &&
+            block.includes("name = Release")
+          );
+          const versionMatch = release && release.match(/MARKETING_VERSION = ([^;]+);/);
+          if (!versionMatch) {
+            console.error("Could not read App Release MARKETING_VERSION");
+            process.exit(1);
+          }
+          const marketingVersion = versionMatch[1].trim().replace(/^"|"$/g, "");
+
+          function b64url(value) {
+            return Buffer.from(value).toString("base64url");
+          }
+          const now = Math.floor(Date.now() / 1000);
+          const header = b64url(JSON.stringify({ alg: "ES256", kid: keyId, typ: "JWT" }));
+          const payload = b64url(JSON.stringify({
+            iss: issuerId,
+            iat: now,
+            exp: now + 19 * 60,
+            aud: "appstoreconnect-v1",
+          }));
+          const signingInput = `${header}.${payload}`;
+          const signature = crypto.sign("SHA256", Buffer.from(signingInput), {
+            key: fs.readFileSync(keyPath),
+            dsaEncoding: "ieee-p1363",
+          });
+          const token = `${signingInput}.${b64url(signature)}`;
+
+          async function asc(url) {
+            const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+            const body = await response.text();
+            if (!response.ok) {
+              console.error(`App Store Connect API ${response.status} for ${url.split("?")[0]}`);
+              console.error(body.slice(0, 500));
+              process.exit(1);
+            }
+            return JSON.parse(body);
+          }
+
+          (async () => {
+            const apps = await asc(`https://api.appstoreconnect.apple.com/v1/apps?filter[bundleId]=${encodeURIComponent(bundleId)}&limit=1`);
+            const app = apps.data && apps.data[0];
+            if (!app) {
+              console.error(`No App Store Connect app for ${bundleId}`);
+              process.exit(1);
+            }
+            let url = `https://api.appstoreconnect.apple.com/v1/builds?filter[app]=${app.id}&filter[preReleaseVersion.version]=${encodeURIComponent(marketingVersion)}&limit=200&fields[builds]=version`;
+            let highest = 0;
+            let found = false;
+            while (url) {
+              const page = await asc(url);
+              for (const build of page.data || []) {
+                const raw = build.attributes && build.attributes.version;
+                if (!/^[0-9]+$/.test(raw || "")) {
+                  console.error(`Unexpected build number from App Store Connect: ${raw}`);
+                  process.exit(1);
+                }
+                found = true;
+                highest = Math.max(highest, Number(raw));
+              }
+              url = page.links && page.links.next;
+            }
+            const next = found ? highest + 1 : 1;
+            fs.appendFileSync(process.env.GITHUB_ENV, `MARKETING_VERSION=${marketingVersion}\nCURRENT_PROJECT_VERSION=${next}\n`);
+            console.log(`Marketing version ${marketingVersion}`);
+            console.log(found ? `Highest registered build ${highest}; next build ${next}` : `No builds for ${marketingVersion}; next build 1`);
+          })().catch((error) => {
+            console.error(error.message || error);
+            process.exit(1);
+          });
+          NODE
+
       - name: Archive (unsigned — no Development cert churn)
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -195,7 +288,10 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGN_ENTITLEMENTS="App/App.entitlements"
+            CODE_SIGN_ENTITLEMENTS="App/App.entitlements" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION"
+          echo "archive=succeeded" >> "$GITHUB_ENV"
 
       - name: Inject aps-environment into archived app (ad-hoc codesign)
         run: |
@@ -232,6 +328,7 @@ jobs:
             -authenticationKeyIssuerID "$ISSUER_ID" \
             -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
             DEVELOPMENT_TEAM="$TEAM_ID"
+          echo "export=succeeded" >> "$GITHUB_ENV"
 
       - name: Verify IPA contains aps-environment entitlement
         run: |
@@ -246,16 +343,68 @@ jobs:
           grep -q 'aps-environment' "$RUNNER_TEMP/entitlements.xml" \
             || { echo "FATAL: exported IPA is missing aps-environment — Push/FCM will fail on device"; exit 1; }
           echo "aps-environment OK in IPA"
+          python3 - "$APP" "$MARKETING_VERSION" "$CURRENT_PROJECT_VERSION" <<'PY'
+          import plistlib, sys
+          from pathlib import Path
+          app, marketing, build = sys.argv[1:]
+          root = Path(app)
+          plists = [root / "Info.plist", *root.glob("PlugIns/*.appex/Info.plist")]
+          if len(plists) < 2:
+              sys.exit("Widget extension Info.plist was not found in the IPA")
+          for path in plists:
+              with path.open("rb") as handle:
+                  info = plistlib.load(handle)
+              short = str(info.get("CFBundleShortVersionString", ""))
+              version = str(info.get("CFBundleVersion", ""))
+              print(f"{path.parent.name}: {short} ({version})")
+              if short != marketing or version != build:
+                  sys.exit(f"{path} is {short} ({version}), expected {marketing} ({build})")
+          print("IPA version metadata matches the resolved build")
+          PY
 
       - name: Upload to TestFlight
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
+          LOG="$RUNNER_TEMP/altool-upload.log"
+          set +e
           xcrun altool --upload-app -f "$RUNNER_TEMP/export/App.ipa" \
             -t ios \
             --apiKey "$KEY_ID" \
-            --apiIssuer "$ISSUER_ID"
+            --apiIssuer "$ISSUER_ID" \
+            >"$LOG" 2>&1
+          status=$?
+          set -e
+          cat "$LOG"
+          if grep -E -q 'ERROR:|agreement is missing|has expired|\(403\)' "$LOG"; then
+            echo "UPLOAD_RESULT=rejected" >> "$GITHUB_ENV"
+            echo "Apple rejected the upload"
+            exit 1
+          fi
+          if [ "$status" -ne 0 ]; then
+            echo "UPLOAD_RESULT=failed" >> "$GITHUB_ENV"
+            echo "altool exited $status"
+            exit "$status"
+          fi
+          if ! grep -q 'UPLOAD SUCCEEDED' "$LOG"; then
+            echo "UPLOAD_RESULT=unconfirmed" >> "$GITHUB_ENV"
+            echo "Apple did not confirm the upload"
+            exit 1
+          fi
+          echo "UPLOAD_RESULT=accepted" >> "$GITHUB_ENV"
+          echo "Upload accepted. TestFlight processing continues after this workflow."
+
+      - name: Release diagnostics
+        if: always()
+        run: |
+          echo "branch=${GITHUB_REF_NAME}"
+          echo "commit=${GITHUB_SHA}"
+          echo "marketing version=${MARKETING_VERSION:-unresolved}"
+          echo "resolved build=${CURRENT_PROJECT_VERSION:-unresolved}"
+          echo "archive=${archive:-not recorded}"
+          echo "export=${export:-not recorded}"
+          echo "upload=${UPLOAD_RESULT:-not accepted}"
 
       - name: Upload .ipa artifact
         uses: actions/upload-artifact@v4
