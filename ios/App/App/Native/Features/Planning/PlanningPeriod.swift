@@ -307,7 +307,8 @@ extension PlanningSession {
         guard let start = PeriodCalendar.date(from: weekKey) else { return [] }
         let end = PeriodCalendar.calendar.date(byAdding: .day, value: 6, to: start) ?? start
         return events.filter { record in
-            guard let date = PeriodCalendar.calendar.date(from: DateComponents(year: record.year, month: record.month, day: record.startDay)) else {
+            guard let day = record.startDay,
+                  let date = PeriodCalendar.calendar.date(from: DateComponents(year: record.year, month: record.month, day: day)) else {
                 return false
             }
             return date >= start && date <= end

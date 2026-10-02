@@ -65,12 +65,35 @@ enum PlanningTokens {
         static let fieldHeight: CGFloat = 46
         static let iconCell: CGFloat = 44
         static let parentRowHeight: CGFloat = 40
+        static let parentBulletInset: CGFloat = 6
         static let subtaskIndent: CGFloat = 28
+        static let subpageTopGap: CGFloat = 8
+        static let colorCell: CGFloat = 44
+        static let colorGap: CGFloat = 9
         static let memoMinHeight: CGFloat = 90
         static let ctaHeight: CGFloat = 51
         static let ctaCorner: CGFloat = 15
         static let ctaInset: CGFloat = 16
         static let sectionGap: CGFloat = 20
+    }
+
+    enum Future {
+        static let titleSize: CGFloat = 21.5
+        static let iconGap: CGFloat = 10
+        static let descriptionGap: CGFloat = 11
+        static let descriptionSize: CGFloat = 15
+        static let descriptionLineSpacing: CGFloat = 3.5
+        static let yearGap: CGFloat = 20
+        static let columnGap: CGFloat = 7.5
+        static let rowGap: CGFloat = 8
+        static let cardHeight: CGFloat = 111
+        static let cardRadius: CGFloat = 11.5
+        static let trailingInset: CGFloat = 9
+        static let monthFont: CGFloat = 14.5
+        static let weekdayFont: CGFloat = 7.5
+        static let dateFont: CGFloat = 8.5
+        static let sheetTopGap: CGFloat = 20
+        static let goalMinHeight: CGFloat = 74
     }
 
     enum Sheet {

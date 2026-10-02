@@ -18,6 +18,7 @@ struct PeriodPlannerPage: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .background(PlanningPalette.paper)
+        .background(PlanningIndexSurface())
         .onAppear {
             session.refreshDue(ReflectionScope.period(bucket, periodKey))
         }
@@ -52,7 +53,6 @@ struct PeriodPlannerPage: View {
     private func periodPage(_ key: String) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                periodBar(key)
                 if bucket == .weekly {
                     Button("Weeklyをなくす") {
                         navigation.path.append(PlanningRoute.weeklySettings)
@@ -68,6 +68,9 @@ struct PeriodPlannerPage: View {
         }
         .planningScroll()
         .planningKeyboardDismiss()
+        .planningFixedHeader {
+            periodBar(key).padding(.horizontal, 16)
+        }
         .background(PlanningPalette.paper)
     }
 

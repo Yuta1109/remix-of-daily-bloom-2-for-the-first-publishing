@@ -8,16 +8,6 @@ struct PostponeBoxPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    navigation.pop()
-                }
-                Text("Postpone Box")
-                    .font(.title2.bold())
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
             Picker("Kind", selection: $kind) {
                 Text("Tasks").tag(PlanningItemKind.task)
                 Text("Events").tag(PlanningItemKind.event)
@@ -69,6 +59,11 @@ struct PostponeBoxPage: View {
         }
         .planningScroll()
         .planningKeyboardDismiss()
+        .planningFixedHeader {
+            PlanningTranslucentHeader(title: "Postpone Box", onBack: { navigation.pop() }) {
+                EmptyView()
+            }
+        }
         .background(PlanningPalette.paper)
         .navigationBarHidden(true)
         .nativeSheet(isPresented: Binding(

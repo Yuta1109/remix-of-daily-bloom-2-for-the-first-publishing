@@ -44,30 +44,8 @@ private enum PlanDateText {
     }
 }
 
-/// Top bar for full-screen Plan pages: back on the left, centered title, optional trailing action.
-private struct PlanPageBar<Trailing: View>: View {
-    let title: String
-    let onBack: () -> Void
-    @ViewBuilder var trailing: () -> Trailing
-
-    var body: some View {
-        ZStack {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(PlanningPalette.ink)
-                .lineLimit(1)
-                .padding(.horizontal, 64)
-                .allowsHitTesting(false)
-            HStack {
-                NativeGlassIconButton(icon: .back, accessibilityLabel: "Back", action: onBack)
-                Spacer()
-                trailing()
-            }
-        }
-        .padding(.horizontal, PlanningTokens.contentInset)
-        .frame(height: 52)
-    }
-}
+/// Plan subpage bars use the shared translucent header.
+private typealias PlanPageBar = PlanningTranslucentHeader
 
 private struct PlanCtaButton: View {
     let title: String
@@ -107,7 +85,7 @@ private struct PlanCardRow: View {
             HStack(spacing: 12) {
                 Image(systemName: PlanIconCatalog.symbol(for: plan.resolvedIconID) ?? "leaf")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(PlanningPalette.ink)
+                    .foregroundStyle(PlanIconColor.resolved(plan.resolvedIconColorID).color)
                     .frame(width: PlanningTokens.PlanMain.cardIcon, height: PlanningTokens.PlanMain.cardIcon)
                     .background(PlanningPalette.plan.opacity(0.6), in: Circle())
                 VStack(alignment: .leading, spacing: 3) {
@@ -218,13 +196,26 @@ struct PlanListPage: View {
                     .foregroundStyle(PlanningPalette.muted)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 22)
-            } else {
-                ForEach(previews) { plan in
-                    PlanCardRow(plan: plan) {
-                        navigation.path.append(PlanningRoute.planEditor(plan.id))
+                } else {
+                    ForEach(previews) { plan in
+                        PlanCardRow(plan: plan) {
+                            navigation.path.append(PlanningRoute.planEditor(plan.id))
+                        }
+                    }
+                    let remaining = session.savedPlansNewestFirst.count - previews.count
+                    if remaining > 0 {
+                        Button {
+                            navigation.path.append(PlanningRoute.planList)
+                        } label: {
+                            Text(PlanningText.morePlans(remaining))
+                                .font(.system(size: 14))
+                                .foregroundStyle(PlanningPalette.muted)
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 36)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-            }
         }
         .padding(PlanningTokens.PlanMain.listPadding)
         .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: PlanningTokens.PlanMain.listCorner, style: .continuous))
@@ -245,7 +236,6 @@ struct PlanFullListPage: View {
     var body: some View {
         let plans = PlanSearch.filter(session.savedPlansNewestFirst, query: query)
         VStack(spacing: 0) {
-            PlanPageBar(title: PlanningText.string(.planListTitle), onBack: { navigation.pop() }) { EmptyView() }
             searchField
                 .padding(.horizontal, PlanningTokens.Search.inset)
                 .padding(.bottom, 10)
@@ -269,6 +259,9 @@ struct PlanFullListPage: View {
                 .padding(.bottom, 24)
             }
             .planningScroll()
+        }
+        .planningFixedHeader {
+            PlanPageBar(title: PlanningText.string(.planListTitle), onBack: { navigation.pop() }) { EmptyView() }
         }
         .planningKeyboardDismiss()
         .background(PlanningPalette.paper)
@@ -308,6 +301,7 @@ struct PlanEditorPage: View {
 
     @State private var title = ""
     @State private var iconID = PlanIconCatalog.defaultID
+    @State private var iconColorID = PlanIconColor.defaultID
     @State private var bullets: [PlanBullet] = [PlanBullet()]
     @State private var memo = ""
     @State private var isNewPlan = true
@@ -317,33 +311,27 @@ struct PlanEditorPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: PlanningTokens.Editor.sectionGap) {
+                    titleSection
+                    iconSection
+                    colorSection
+                    bulletsSection
+                    memoSection
+                }
+                .padding(.horizontal, PlanningTokens.contentInset)
+                .padding(.top, PlanningTokens.Editor.subpageTopGap)
+                .padding(.bottom, 20)
+            }
+            .planningScroll()
+            PlanCtaButton(title: PlanningText.string(.reflectToItems), action: reflect)
+        }
+        .planningFixedHeader {
             PlanPageBar(
                 title: PlanningText.string(isNewPlan ? .newPlan : .editPlan),
                 onBack: requestClose
             ) {
                 NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true, action: save)
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: PlanningTokens.Editor.sectionGap) {
-                    titleSection
-                    iconSection
-                    bulletsSection
-                    memoSection
-                }
-                .padding(.horizontal, PlanningTokens.contentInset)
-                .padding(.top, 6)
-                .padding(.bottom, 20)
-            }
-            .planningScroll()
-            VStack(spacing: 2) {
-                PlanCtaButton(title: PlanningText.string(.reflectToItems), action: reflect)
-                    .disabled(!canTransfer)
-                if !canTransfer {
-                    Text(PlanningText.string(.saveBeforeReflect))
-                        .font(.system(size: 12))
-                        .foregroundStyle(PlanningPalette.muted)
-                        .padding(.bottom, 6)
-                }
             }
         }
         .planningKeyboardDismiss()
@@ -353,6 +341,7 @@ struct PlanEditorPage: View {
         .onAppear(perform: load)
         .alert(PlanningText.string(.discardTitle), isPresented: $confirmDiscard) {
             Button(PlanningText.string(.cancel), role: .cancel) {}
+                .tint(PlanningPalette.ink)
             Button(PlanningText.string(.discard), role: .destructive) { leave() }
         }
     }
@@ -405,6 +394,34 @@ struct PlanEditorPage: View {
         }
     }
 
+    private var colorSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel(.colorLabel)
+            HStack(spacing: PlanningTokens.Editor.colorGap) {
+                ForEach(PlanIconColor.allCases) { choice in
+                    Button {
+                        iconColorID = choice.rawValue
+                    } label: {
+                        Circle()
+                            .fill(choice.color)
+                            .frame(width: PlanningTokens.Editor.colorCell - 8, height: PlanningTokens.Editor.colorCell - 8)
+                            .frame(width: PlanningTokens.Editor.colorCell, height: PlanningTokens.Editor.colorCell)
+                            .overlay(
+                                Circle().stroke(
+                                    iconColorID == choice.rawValue ? PlanningPalette.ink.opacity(0.55) : Color.clear,
+                                    lineWidth: 2
+                                )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(choice.rawValue)
+                    .accessibilityAddTraits(iconColorID == choice.rawValue ? .isSelected : [])
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
     private var bulletsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionLabel(.bulletsLabel)
@@ -412,11 +429,12 @@ struct PlanEditorPage: View {
                 ForEach($bullets) { $bullet in
                     HStack(spacing: 10) {
                         Circle().fill(PlanningPalette.ink).frame(width: 7, height: 7)
+                            .padding(.leading, PlanningTokens.Editor.parentBulletInset)
                         TextField(PlanningText.string(.parentPlaceholder), text: $bullet.text)
                             .font(.system(size: 16))
                             .focused($focusedID, equals: bullet.id)
                             .submitLabel(.next)
-                            .onSubmit { appendParent(after: bullet) }
+                            .onSubmit { apply(PlanBulletReturn.parent(bullets: bullets, parentID: bullet.id)) }
                     }
                     .frame(minHeight: PlanningTokens.Editor.parentRowHeight)
                     ForEach($bullet.children) { $child in
@@ -428,7 +446,7 @@ struct PlanEditorPage: View {
                                 .font(.system(size: 15))
                                 .focused($focusedID, equals: child.id)
                                 .submitLabel(.next)
-                                .onSubmit { appendChild(of: bullet.id, after: child) }
+                                .onSubmit { apply(PlanBulletReturn.child(bullets: bullets, parentID: bullet.id, childID: child.id)) }
                         }
                         .padding(.leading, PlanningTokens.Editor.subtaskIndent)
                         .frame(minHeight: PlanningTokens.Editor.parentRowHeight)
@@ -461,27 +479,41 @@ struct PlanEditorPage: View {
         guard let plan = session.plans.first(where: { $0.id == planID }) else { return }
         title = plan.title
         iconID = plan.resolvedIconID
+        iconColorID = plan.resolvedIconColorID
         bullets = clamped(plan.bullets)
         memo = plan.memo
         isNewPlan = !plan.hasBeenSaved
         savedSnapshot = snapshot()
     }
 
-    /// Transfer is allowed only from the last saved plan, never from a dirty draft.
-    private var canTransfer: Bool {
-        !isNewPlan && snapshot() == savedSnapshot
+    private var transferIsValid: Bool {
+        let titled = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasItem = bullets.contains {
+            !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || $0.children.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
+        return titled || hasItem
     }
 
-    /// The only place a plan is saved. One save, then exactly one return.
+    /// Check mark: save once, then exactly one return. Transfer must not call this.
     private func save() {
         bullets = clamped(bullets)
-        session.save(planID: planID, title: title, bullets: bullets, memo: memo, iconID: iconID)
+        session.save(planID: planID, title: title, bullets: bullets, memo: memo, iconID: iconID, iconColorID: iconColorID)
         navigation.pop()
     }
 
+    /// Saves the current editor state only when it differs from the last save, then opens selection.
     private func reflect() {
-        guard canTransfer, let plan = session.plans.first(where: { $0.id == planID }), plan.hasBeenSaved else { return }
-        session.transferSource = PlanTransferSource(planID: planID, bullets: PlanBulletFilter.reflectable(plan.bullets))
+        bullets = clamped(bullets)
+        guard transferIsValid else { return }
+        let needsSave = isNewPlan || snapshot() != savedSnapshot
+        if needsSave {
+            session.save(planID: planID, title: title, bullets: bullets, memo: memo, iconID: iconID, iconColorID: iconColorID)
+            isNewPlan = false
+            savedSnapshot = snapshot()
+        }
+        let saved = session.plans.first { $0.id == planID }?.bullets ?? bullets
+        session.transferSource = PlanTransferSource(planID: planID, bullets: PlanBulletFilter.reflectable(saved))
         navigation.path.append(PlanningRoute.planTransfer(planID))
     }
 
@@ -500,7 +532,7 @@ struct PlanEditorPage: View {
     }
 
     private func snapshot() -> String {
-        iconID + "\n" + title + "\n" + memo + "\n"
+        iconID + "\n" + iconColorID + "\n" + title + "\n" + memo + "\n"
             + bullets.map { "\($0.id)\($0.text)" + $0.children.map { "\($0.id)\($0.text)" }.joined() }.joined()
     }
 
@@ -508,22 +540,53 @@ struct PlanEditorPage: View {
         nodes.map { PlanBullet(id: $0.id, text: $0.text, children: $0.children.map { PlanBullet(id: $0.id, text: $0.text) }) }
     }
 
-    private func appendParent(after bullet: PlanBullet) {
-        guard PlanningRowEntry.shouldAppendNextRow(bullet.text), let index = bullets.firstIndex(where: { $0.id == bullet.id }) else { return }
-        let next = PlanBullet()
-        if bullets[index].children.isEmpty {
-            bullets[index].children.append(next)
-        } else {
-            bullets.insert(next, at: index + 1)
+    private func apply(_ result: PlanBulletReturn.Result) {
+        switch result {
+        case .unchanged:
+            break
+        case .focus(let id):
+            focusedID = id
+        case .replaced(let next, let focus):
+            bullets = next
+            focusedID = focus
         }
-        focusedID = next.id
+    }
+}
+
+enum PlanBulletReturn {
+    enum Result {
+        case unchanged
+        case focus(UUID)
+        case replaced([PlanBullet], focus: UUID)
     }
 
-    private func appendChild(of parentID: UUID, after child: PlanBullet) {
-        guard PlanningRowEntry.shouldAppendNextRow(child.text), let index = bullets.firstIndex(where: { $0.id == parentID }) else { return }
-        let next = PlanBullet()
-        bullets[index].children.append(next)
-        focusedID = next.id
+    /// Non-empty parent creates its first child, or focuses that child if it already exists.
+    static func parent(bullets: [PlanBullet], parentID: UUID) -> Result {
+        guard let index = bullets.firstIndex(where: { $0.id == parentID }) else { return .unchanged }
+        guard PlanningRowEntry.shouldAppendNextRow(bullets[index].text) else { return .unchanged }
+        if let first = bullets[index].children.first {
+            return .focus(first.id)
+        }
+        var next = bullets
+        let child = PlanBullet()
+        next[index].children.append(child)
+        return .replaced(next, focus: child.id)
+    }
+
+    /// Non-empty child inserts another child. An empty child becomes the next parent.
+    static func child(bullets: [PlanBullet], parentID: UUID, childID: UUID) -> Result {
+        guard let parentIndex = bullets.firstIndex(where: { $0.id == parentID }),
+              let childIndex = bullets[parentIndex].children.firstIndex(where: { $0.id == childID }) else { return .unchanged }
+        var next = bullets
+        if PlanningRowEntry.shouldAppendNextRow(next[parentIndex].children[childIndex].text) {
+            let created = PlanBullet()
+            next[parentIndex].children.insert(created, at: childIndex + 1)
+            return .replaced(next, focus: created.id)
+        }
+        next[parentIndex].children.remove(at: childIndex)
+        let parent = PlanBullet()
+        next.insert(parent, at: parentIndex + 1)
+        return .replaced(next, focus: parent.id)
     }
 }
 
@@ -561,11 +624,6 @@ struct PlanTransferSelectionPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PlanPageBar(title: PlanningText.string(.selectItemsTitle), onBack: { navigation.pop() }) {
-                NativeGlassIconButton(icon: .check, accessibilityLabel: "Choose destination", prominent: true, action: openDestination)
-                    .disabled(selected.isEmpty)
-                    .opacity(selected.isEmpty ? 0.4 : 1)
-            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     selectRow(
@@ -591,13 +649,20 @@ struct PlanTransferSelectionPage: View {
                 .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
                 .padding(.horizontal, PlanningTokens.contentInset)
-                .padding(.top, 6)
+                .padding(.top, PlanningTokens.Editor.subpageTopGap)
                 .padding(.bottom, 20)
             }
             .planningScroll()
             // Mandatory persistent bottom action.
             PlanCtaButton(title: PlanningText.string(.chooseDestination), action: openDestination)
                 .disabled(selected.isEmpty)
+        }
+        .planningFixedHeader {
+            PlanPageBar(title: PlanningText.string(.selectItemsTitle), onBack: { navigation.pop() }) {
+                NativeGlassIconButton(icon: .check, accessibilityLabel: "Choose destination", prominent: true, action: openDestination)
+                    .disabled(selected.isEmpty)
+                    .opacity(selected.isEmpty ? 0.4 : 1)
+            }
         }
         .background(PlanningPalette.paper)
         .navigationBarHidden(true)
@@ -751,6 +816,38 @@ private struct PlanDestinationSheet: View {
     }
 }
 
+enum PlanTransferCalendar {
+    static func years(now: Date = Date()) -> [Int] {
+        let year = PeriodCalendar.calendar.component(.year, from: now)
+        return Array(year...(year + 10))
+    }
+
+    static func months(in year: Int, now: Date = Date()) -> [Int] {
+        let parts = PeriodCalendar.calendar.dateComponents([.year, .month], from: now)
+        let start = year == parts.year ? (parts.month ?? 1) : 1
+        return Array(start...12)
+    }
+
+    static func weeks(now: Date = Date(), count: Int = 60) -> [String] {
+        let start = PeriodCalendar.currentKey(.weekly, now: now)
+        return (0..<count).map { PeriodCalendar.shift(start, bucket: .weekly, by: $0) }
+    }
+
+    static func earliestDay(now: Date = Date()) -> Date {
+        PeriodCalendar.calendar.startOfDay(for: now)
+    }
+
+    static func clampDay(_ date: Date, now: Date = Date()) -> Date {
+        max(date, earliestDay(now: now))
+    }
+
+    /// Past keys sort before the current key because every key is zero-padded.
+    static func clamp(bucket: PlanningBucket, key: String, now: Date = Date()) -> String {
+        let current = PeriodCalendar.currentKey(bucket, now: now)
+        return key < current ? current : key
+    }
+}
+
 /// Native compact picker opened from the period row. No custom arrow buttons.
 private struct PlanPeriodPickerSheet: View {
     let bucket: PlanningBucket
@@ -767,23 +864,19 @@ private struct PlanPeriodPickerSheet: View {
         self.bucket = bucket
         self.initialKey = initialKey
         self.onPick = onPick
-        let parts = PeriodCalendar.monthParts(initialKey)
+        let clamped = PlanTransferCalendar.clamp(bucket: bucket, key: initialKey)
+        let parts = PeriodCalendar.monthParts(clamped)
         _year = State(initialValue: parts.year)
         _month = State(initialValue: parts.month)
-        _weekKey = State(initialValue: initialKey)
-        _day = State(initialValue: PeriodCalendar.date(from: initialKey) ?? Date())
+        _weekKey = State(initialValue: bucket == .weekly ? clamped : PlanTransferCalendar.weeks().first ?? clamped)
+        _day = State(initialValue: PlanTransferCalendar.clampDay(PeriodCalendar.date(from: initialKey) ?? Date()))
     }
 
-    private var years: [Int] {
-        let base = Calendar.current.component(.year, from: Date())
-        let low = min(base - 2, year)
-        let high = max(base + 10, year)
-        return Array(low...high)
-    }
+    private var years: [Int] { PlanTransferCalendar.years() }
 
-    private var weekKeys: [String] {
-        (-26...52).map { PeriodCalendar.shift(initialKey, bucket: .weekly, by: $0) }
-    }
+    private var months: [Int] { PlanTransferCalendar.months(in: year) }
+
+    private var weekKeys: [String] { PlanTransferCalendar.weeks() }
 
     var body: some View {
         PlanningSystemSheetChrome(
@@ -799,8 +892,12 @@ private struct PlanPeriodPickerSheet: View {
                             ForEach(years, id: \.self) { Text("\($0)年").tag($0) }
                         }
                         .pickerStyle(.wheel)
+                        .onChange(of: year) { _, newYear in
+                            let allowed = PlanTransferCalendar.months(in: newYear)
+                            if !allowed.contains(month) { month = allowed[0] }
+                        }
                         Picker("Month", selection: $month) {
-                            ForEach(1...12, id: \.self) { Text("\($0)月").tag($0) }
+                            ForEach(months, id: \.self) { Text("\($0)月").tag($0) }
                         }
                         .pickerStyle(.wheel)
                     }
@@ -812,7 +909,7 @@ private struct PlanPeriodPickerSheet: View {
                     }
                     .pickerStyle(.wheel)
                 case .daily:
-                    DatePicker("Date", selection: $day, displayedComponents: .date)
+                    DatePicker("Date", selection: $day, in: PlanTransferCalendar.earliestDay()..., displayedComponents: .date)
                         .datePickerStyle(.wheel)
                         .labelsHidden()
                         .environment(\.calendar, PeriodCalendar.calendar)

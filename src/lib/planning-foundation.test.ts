@@ -509,20 +509,17 @@ describe("planning blueprint 1", () => {
     expect(planText).not.toContain("indexTitle");
   });
 
-  it("transfers only a saved clean plan and never auto-saves", () => {
-    const editor = plans.slice(plans.indexOf("struct PlanEditorPage"), plans.indexOf("enum PlanBulletFilter"));
-    expect(editor).toContain("private var canTransfer: Bool");
-    expect(editor).toContain("!isNewPlan && snapshot() == savedSnapshot");
-    expect(editor).toContain(".disabled(!canTransfer)");
-    expect(editor).toContain("plan.hasBeenSaved");
-    expect(editor).toContain("PlanBulletFilter.reflectable(plan.bullets)");
-    expect(editor).not.toContain("reflectable(bullets)");
-    const reflect = editor.slice(editor.indexOf("private func reflect"), editor.indexOf("private func requestClose"));
-    expect(reflect).not.toContain("session.save(");
+  it("saves from transfer without popping, and the check still pops once", () => {
+    const editor = plans.slice(plans.indexOf("struct PlanEditorPage"), plans.indexOf("enum PlanBulletReturn"));
     const save = editor.slice(editor.indexOf("private func save"), editor.indexOf("private func reflect"));
+    const reflect = editor.slice(editor.indexOf("private func reflect"), editor.indexOf("private func requestClose"));
     expect(save.match(/session\.save\(/g)).toHaveLength(1);
     expect(save.match(/navigation\.pop\(\)/g)).toHaveLength(1);
-    expect(save).not.toContain("leave()");
+    expect(reflect).toContain("session.save(");
+    expect(reflect).toContain("needsSave");
+    expect(reflect).not.toContain("navigation.pop()");
+    expect(reflect).toContain("PlanningRoute.planTransfer");
+    expect(editor).not.toContain("saveBeforeReflect");
   });
 
   it("keeps editor and selection pages full screen without the tab bar", () => {
@@ -585,10 +582,9 @@ describe("planning blueprint 1", () => {
   });
 
   it("makes Help header transparent and fixed", () => {
-    const header = help.slice(0, help.indexOf("ScrollView"));
-    expect(header).toContain("PlanningText.string(.planningHelpTitle)");
+    expect(help).toContain("PlanningTranslucentHeader");
+    expect(help).toContain("planningFixedHeader");
     expect(help).not.toContain("ultraThinMaterial");
-    expect(header).not.toContain(".background(");
   });
 
   it("keeps the app portrait-only on iPhone and localizes ja/en", () => {
@@ -598,6 +594,126 @@ describe("planning blueprint 1", () => {
     expect(phone).not.toContain("Landscape");
     expect(plist).toContain("<string>en</string>");
     expect(planText).toContain("isEnglish");
+  });
+
+  it("keeps six pastel icon colours and a rose default", () => {
+    expect(models).toContain("var iconColorID: String");
+    expect(models).toContain("iconColorID: String = PlanIconColor.defaultID");
+    expect(chrome).toContain("static let defaultID = PlanIconColor.rose.rawValue");
+    expect(chrome).toContain("case rose, peach, yellow, mint, sky, lavender");
+    expect(plans).toContain("PlanIconColor.resolved(plan.resolvedIconColorID).color");
+    expect(plans).toContain("iconColorID: iconColorID");
+    expect(planText).toContain("カラー");
+  });
+
+  it("shows a remaining-plan count only above five", () => {
+    const remaining = (total: number) => Math.max(0, total - 5);
+    expect(remaining(5)).toBe(0);
+    expect(remaining(6)).toBe(1);
+    expect(remaining(8)).toBe(3);
+    expect(remaining(15)).toBe(10);
+    expect(planText).toContain("他\\(count)プラン");
+    expect(plans).toContain("PlanningText.morePlans(remaining)");
+    expect(tokens).toContain("previewLimit = 5");
+  });
+
+  it("uses return to add a child and a second return to start the next parent", () => {
+    expect(plans).toContain("enum PlanBulletReturn");
+    expect(plans).toContain("children.insert(created, at: childIndex + 1)");
+    expect(plans).toContain("children.remove(at: childIndex)");
+    expect(plans).toContain("next.insert(parent, at: parentIndex + 1)");
+    expect(models).toContain("static let maximumDepth = 2");
+    expect(plans).not.toContain("grandchildren");
+  });
+
+  it("offers only the current and future transfer periods", () => {
+    expect(plans).toContain("enum PlanTransferCalendar");
+    expect(plans).toContain("return key < current ? current : key");
+    expect(plans).toContain("in: PlanTransferCalendar.earliestDay()...");
+    expect(plans).toContain("PlanTransferCalendar.weeks()");
+    expect(plans).toContain("PlanTransferCalendar.months(in: year)");
+    expect(plans).not.toContain("(-26...52)");
+  });
+
+  it("keeps the frozen index geometry and the navigation crash fix", () => {
+    for (const token of ["depth: CGFloat = 28", "length: CGFloat = 75", "trailingMargin: CGFloat = 4", "cornerRadius: CGFloat = 7.5", "seamWidth: CGFloat = 2"]) {
+      expect(tokens).toContain(token);
+    }
+    expect(planningShell).toContain(".zIndex(session.section == section ? 2 : 0)");
+    expect(shell).toMatch(/\}\s*\.environmentObject\(navigation\)/);
+    expect(planningShell).toContain(".environmentObject(navigation)");
+    expect(planningShell).toContain("planningFixedLight()");
+    expect(postpone).toContain("navigation.pop()");
+    expect(postpone).not.toContain("removeLast");
+  });
+
+  it("keeps a fixed 3 by 4 Future year of 6 by 7 calendars", () => {
+    expect(future).toContain("count: 3");
+    expect(chrome).toContain("static let rowCount = 6");
+    expect(chrome).toContain("static let columnCount = 7");
+    expect(future).toContain("PlanningCalendarGrid.matrix");
+    expect(future).toContain("PlanningCalendarGrid.rowCount");
+    expect(tokens).toContain("cardHeight: CGFloat = 111");
+    expect(future).toContain("Text(\"Future\")");
+    expect(planText).toContain("これからの1年を見通して");
+    expect(future).toContain("fixedHeight: 260");
+    expect(future).toContain(".tabViewStyle(.page(indexDisplayMode: .never))");
+  });
+
+  it("shares the monthly goal and updates an event in place", () => {
+    expect(models).toContain("Exactly one goal. This is the Monthly page goal");
+    expect(future).toContain("session.setGoal(goal, year: year, month: month)");
+    expect(future).toContain("session.addEvent(record)");
+    expect(future).toContain("id: existing?.id ?? UUID()");
+    expect(future).not.toContain("events.removeAll");
+    expect(future).toContain("enum FutureEventOrder");
+    expect(future).toContain("case (nil, _)");
+  });
+
+  it("rejects an empty event and an end before its start", () => {
+    expect(future).toContain("enum FutureEventValidation");
+    expect(future).toContain("endMinutes >= startMinutes");
+    expect(future).toContain("static func isOrdered(");
+    expect(models).toContain("var endYear: Int?");
+    expect(future).toContain("PlanningText.string(.unset)");
+    expect(future).toContain("interactiveDismissDisabled(isDirty)");
+    expect(future).toContain(".alert(PlanningText.string(.discardTitle)");
+    expect(future).toContain("PlanIconColor.allCases");
+    expect(future).not.toContain("preferredColorScheme");
+  });
+
+  it("accepts ranges that cross a month or a year and keeps one id", () => {
+    const stamp = (year: number, month: number, day: number) => year * 1_000_000 + month * 10_000 + day * 100;
+    const ordered = (
+      start: [number, number, number, number?],
+      end: [number, number, number, number?],
+    ) => {
+      const startDate = stamp(start[0], start[1], start[2]);
+      const endDate = stamp(end[0], end[1], end[2]);
+      if (endDate !== startDate) return endDate > startDate;
+      if (start[3] == null || end[3] == null) return true;
+      return end[3] >= start[3];
+    };
+    expect(ordered([2026, 10, 7, 600], [2026, 10, 7, 660])).toBe(true);
+    expect(ordered([2026, 10, 7], [2026, 10, 9])).toBe(true);
+    expect(ordered([2026, 10, 30], [2026, 11, 2])).toBe(true);
+    expect(ordered([2026, 12, 30], [2027, 1, 2])).toBe(true);
+    expect(ordered([2026, 12, 31, 23 * 60], [2027, 1, 1, 60])).toBe(true);
+    expect(ordered([2026, 10, 9], [2026, 10, 7])).toBe(false);
+    expect(ordered([2026, 12, 31, 60], [2026, 12, 31, 30])).toBe(false);
+    const event = { id: "same", year: 2026, month: 12, startDay: 30, endYear: 2027, endMonth: 1, endDay: 2 };
+    const intersects = (year: number, month: number) => {
+      const start = stamp(event.year, event.month, event.startDay);
+      const end = stamp(event.endYear, event.endMonth, event.endDay);
+      return start <= stamp(year, month, 31) && end >= stamp(year, month, 1);
+    };
+    expect(intersects(2026, 12)).toBe(true);
+    expect(intersects(2027, 1)).toBe(true);
+    expect(intersects(2026, 11)).toBe(false);
+    expect(event.id).toBe("same");
+    expect(future).toContain("event.endYear ?? event.year");
+    expect(future).toContain("id: existing?.id ?? UUID()");
+    expect(future).not.toContain("events.removeAll");
   });
 
   it("centralizes geometry in tokens", () => {

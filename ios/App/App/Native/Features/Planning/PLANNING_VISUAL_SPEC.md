@@ -56,6 +56,38 @@ Reference device: iPhone 13, 390 x 844 pt, portrait only. All values are mirrore
 
 - No overlay above the UI. One window-level tap recogniser with `cancelsTouchesInView = false`.
 
+## Fixed light
+
+Planning uses `.preferredColorScheme(.light)` once on the Planning root and once on the shared destination container. The rest of Essences keeps the system appearance.
+
+## Plan icon colour
+
+`iconColorID` is one of rose, peach, yellow, mint, sky, lavender. Missing values resolve to rose. Only the icon uses the colour.
+
+## Return key
+
+A non-empty parent creates or focuses its first child. A non-empty child inserts the next child. Return on an empty child removes it and creates the next parent. Depth stays at two.
+
+## Preview remainder
+
+At most five cards. When more exist, the same container shows centered `他Nプラン` (N = total − 5) and opens the full list.
+
+## Transfer
+
+`タスク・予定に反映` saves the current editor state when it is new or dirty, then opens selection without popping. A clean saved plan is not saved again. The top-right check still saves once and pops once. Destination periods start at the current month, week, or day.
+
+## Transparent header
+
+The index has no fill, so the shell paper shows through its gaps. `PlanningTranslucentHeader` and `planningFixedHeader` use that same rule: no opaque header fill, scroll content moves underneath, controls stay in the header.
+
+## Future
+
+Title row: temporary calendar symbol, 28 pt slot, then English `Future` at 21.5 pt. Description follows at 15 pt. Year controls sit about 20 pt below and keep the existing year sheet (`fixedHeight: 260`). Years page with the native page TabView.
+
+The year is a 3 by 4 grid. Every month card is 111 pt tall with radius 11.5 and a fixed 6 by 7 date grid.
+
+The month sheet is a large native sheet on the system surface. It edits the one monthly goal through `setGoal`, shared with Monthly. Events open one add/edit sheet. Icon colours are `PlanIconColor`. Start and end are optional. An end before the start is not saved. × on a dirty sheet uses the standard discard alert and blocks swipe dismissal.
+
 ## Navigation contract
 
 - `TabNavigationState` is injected on the `NavigationStack` and on each destination. Every Back uses `navigation.pop()`.

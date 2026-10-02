@@ -144,9 +144,15 @@ struct PlanDocument: Identifiable, Hashable {
     var hasBeenSaved: Bool
     /// Stable icon identifier. Plans created before icons existed use the default.
     var iconID: String
+    /// Stable pastel id. Plans created before colours existed use rose.
+    var iconColorID: String
 
     var resolvedIconID: String {
         PlanIconCatalog.symbol(for: iconID) == nil ? PlanIconCatalog.defaultID : iconID
+    }
+
+    var resolvedIconColorID: String {
+        PlanIconColor.resolved(iconColorID).rawValue
     }
 
     init(
@@ -158,9 +164,11 @@ struct PlanDocument: Identifiable, Hashable {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         hasBeenSaved: Bool = false,
-        iconID: String = PlanIconCatalog.defaultID
+        iconID: String = PlanIconCatalog.defaultID,
+        iconColorID: String = PlanIconColor.defaultID
     ) {
         self.iconID = iconID
+        self.iconColorID = iconColorID
         self.id = id
         self.title = title
         self.bullets = bullets
@@ -277,8 +285,11 @@ struct PlanningEventRecord: Identifiable, Hashable {
     var title: String
     var year: Int
     var month: Int
-    var startDay: Int
+    var startDay: Int?
     var endDay: Int?
+    /// Nil keeps the end inside `month` / `year`.
+    var endMonth: Int?
+    var endYear: Int?
     var timeMinutes: Int?
     var endTimeMinutes: Int?
     var sourceEventID: UUID?
@@ -290,8 +301,10 @@ struct PlanningEventRecord: Identifiable, Hashable {
         title: String,
         year: Int,
         month: Int,
-        startDay: Int,
+        startDay: Int? = nil,
         endDay: Int? = nil,
+        endMonth: Int? = nil,
+        endYear: Int? = nil,
         timeMinutes: Int? = nil,
         endTimeMinutes: Int? = nil,
         sourceEventID: UUID? = nil,
@@ -304,6 +317,8 @@ struct PlanningEventRecord: Identifiable, Hashable {
         self.month = month
         self.startDay = startDay
         self.endDay = endDay
+        self.endMonth = endMonth
+        self.endYear = endYear
         self.timeMinutes = timeMinutes
         self.endTimeMinutes = endTimeMinutes
         self.sourceEventID = sourceEventID
@@ -543,12 +558,13 @@ final class PlanningSession: ObservableObject {
         plans.removeAll { $0.id == id && !$0.hasBeenSaved }
     }
 
-    func save(planID: UUID, title: String, bullets: [PlanBullet], memo: String, iconID: String) {
+    func save(planID: UUID, title: String, bullets: [PlanBullet], memo: String, iconID: String, iconColorID: String) {
         guard let index = plans.firstIndex(where: { $0.id == planID }) else { return }
         if plans[index].hasBeenSaved {
             plans[index].replanCount += 1
         }
         plans[index].iconID = iconID
+        plans[index].iconColorID = PlanIconColor.resolved(iconColorID).rawValue
         plans[index].title = title
         plans[index].bullets = bullets
         plans[index].memo = memo

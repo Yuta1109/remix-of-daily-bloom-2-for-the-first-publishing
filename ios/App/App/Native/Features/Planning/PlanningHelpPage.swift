@@ -4,26 +4,15 @@ struct PlanningHelpPage: View {
     @EnvironmentObject private var navigation: TabNavigationState
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Fixed, transparent header: no fill, no material, outside the scroll view.
-            HStack(alignment: .center, spacing: 8) {
-                NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    navigation.pop()
-                }
-                Text(PlanningText.string(.planningHelpTitle))
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(PlanningPalette.ink)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+        ScrollView {
+            helpBody
+        }
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+        .planningFixedHeader {
+            PlanningTranslucentHeader(title: PlanningText.string(.planningHelpTitle), onBack: { navigation.pop() }) {
+                EmptyView()
             }
-            .padding(.horizontal, PlanningTokens.contentInset)
-            .frame(height: 52)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            ScrollView {
-                helpBody
-            }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
         }
         .planningKeyboardDismiss()
         .background(PlanningPalette.paper)

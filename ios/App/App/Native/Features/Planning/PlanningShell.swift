@@ -18,6 +18,7 @@ struct PlanningShell: View {
             }
         }
         .background(PlanningPalette.paper)
+        .planningFixedLight()
         .planningKeyboardDismiss()
         .navigationBarHidden(true)
         .navigationDestination(for: PlanningRoute.self) { route in
@@ -46,6 +47,7 @@ struct PlanningShell: View {
                 }
             }
             .environmentObject(navigation)
+            .planningFixedLight()
         }
         .onAppear {
             guard !didRestore else { return }
@@ -81,7 +83,6 @@ private struct PlanningHeader: View {
         .padding(.horizontal, PlanningTokens.contentInset)
         .frame(maxWidth: .infinity)
         .frame(height: PlanningTokens.Header.height)
-        .background(PlanningPalette.paper)
     }
 }
 
