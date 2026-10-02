@@ -10,7 +10,7 @@ struct PostponeBoxPage: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    if !navigation.path.isEmpty { navigation.pop() }
+                    navigation.pop()
                 }
                 Text("Postpone Box")
                     .font(.title2.bold())

@@ -24,9 +24,12 @@ private struct NativeTabRoot: View {
     @ObservedObject var navigation: TabNavigationState
 
     var body: some View {
+        // The environment object must wrap the NavigationStack itself.
+        // Pushed destinations do not inherit objects applied to the root content,
+        // which crashed Planning Back buttons with a missing EnvironmentObject.
         NavigationStack(path: $navigation.path) {
             nativeFeatureRoot(for: tab)
-                .environmentObject(navigation)
         }
+        .environmentObject(navigation)
     }
 }

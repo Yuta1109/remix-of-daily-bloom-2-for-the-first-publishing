@@ -70,27 +70,76 @@ final class PlanningPassThroughView: UIView, UIGestureRecognizerDelegate {
     }
 }
 
+/// Index tab: a rectangle with square left corners and rounded right corners.
+/// It is deliberately not a trapezoid.
 struct PlanningIndexTabShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let inset: CGFloat = 9
-        let radius: CGFloat = 6
+        let radius = PlanningTokens.Index.cornerRadius
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY + radius))
-        path.addQuadCurve(to: CGPoint(x: rect.minX + radius, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY + inset))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: rect.minY + inset + radius),
-            control: CGPoint(x: rect.maxX, y: rect.minY + inset)
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - radius, y: rect.minY + radius),
+            radius: radius, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false
         )
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - inset - radius))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX - radius, y: rect.maxY - inset),
-            control: CGPoint(x: rect.maxX, y: rect.maxY - inset)
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
+            radius: radius, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false
         )
-        path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - radius), control: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         path.closeSubpath()
         return path
+    }
+}
+
+/// Open outline for the selected tab: top, rounded right side, bottom. No left edge,
+/// so the tab flows into the page without a line at the seam.
+struct PlanningIndexTabOutline: Shape {
+    func path(in rect: CGRect) -> Path {
+        let radius = PlanningTokens.Index.cornerRadius
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - radius, y: rect.minY + radius),
+            radius: radius, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
+            radius: radius, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        return path
+    }
+}
+
+/// Chrome for native sheets and popups. Uses the system sheet surface
+/// (not the Planning paper colour) and a fixed detent.
+struct PlanningSystemSheetChrome<Content: View>: View {
+    let height: CGFloat
+    let onClose: () -> Void
+    let onConfirm: () -> Void
+    var confirmEnabled: Bool = true
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: onClose)
+                Spacer()
+                NativeGlassIconButton(icon: .check, accessibilityLabel: "Confirm", prominent: true, action: onConfirm)
+                    .disabled(!confirmEnabled)
+                    .opacity(confirmEnabled ? 1 : 0.4)
+            }
+            .padding(.horizontal, PlanningTokens.Sheet.horizontalInset)
+            .padding(.top, 8)
+            content()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .presentationDetents([.height(height)])
+        .presentationDragIndicator(.hidden)
     }
 }
 

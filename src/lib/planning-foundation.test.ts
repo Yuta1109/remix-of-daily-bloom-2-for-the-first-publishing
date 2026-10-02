@@ -8,6 +8,9 @@ const planningShell = readFileSync(`${planningRoot}/PlanningShell.swift`, "utf8"
 const plans = readFileSync(`${planningRoot}/PlanPages.swift`, "utf8");
 const future = readFileSync(`${planningRoot}/FuturePages.swift`, "utf8");
 const help = readFileSync(`${planningRoot}/PlanningHelpPage.swift`, "utf8");
+const planText = readFileSync(`${planningRoot}/PlanningText.swift`, "utf8");
+const tokens = readFileSync(`${planningRoot}/PlanningDesignTokens.swift`, "utf8");
+const helpText = planText;
 const postpone = readFileSync(`${planningRoot}/PostponeBoxPage.swift`, "utf8");
 
 type Section = "plan" | "future" | "monthly" | "weekly" | "daily" | "plus";
@@ -79,13 +82,13 @@ describe("planning foundation rules", () => {
     expect(planningShell).toContain("次回のアップデートをお楽しみに");
     expect(planningShell).toContain("navigationDestination(for: PlanningRoute.self)");
     expect(shell).toContain("NavigationStack(path: $navigation.path)");
-    expect(help).toContain("Planning の使い方");
+    expect(helpText).toContain("Planning の使い方");
+    expect(help).toContain("PlanningText.string(.planningHelpTitle)");
     expect(postpone).toContain("Tasks");
     expect(postpone).toContain("Events");
-    expect(plans).toContain("プランを新規作成");
+    expect(planText).toContain("プランを新規作成");
     expect(plans).toContain("PlanningRoute.planEditor");
-    expect(plans).toContain("タスク・予定に反映");
-    expect(plans).toContain("PlanningRules.transferExplanation");
+    expect(planText).toContain("タスク・予定に反映");
     expect(models).toContain("プラン全体を移動する必要はありません。");
     expect(future).toContain("count: 3");
     expect(future).toContain("presentationDetents([.large])");
@@ -330,7 +333,8 @@ describe("planning item editor", () => {
     expect(models).toContain("static let maximumDepth = 2");
     expect(plans).toContain("clamped");
     expect(plans).toContain("icon: .check");
-    expect(plans).toContain("session.plans[index].bullets = before");
+    expect(plans).not.toContain("session.plans[index].bullets = before");
+    expect(plans).toContain("includeChildren: false");
     expect(plans).toContain("Text(\"Daily\")");
     expect(models).toContain("copiedAlready");
     expect(plans).not.toContain("字下げ");
@@ -377,5 +381,228 @@ describe("planning item editor", () => {
     expect(symbols.split(",").length).toBeGreaterThanOrEqual(20);
     expect(itemSheets).toContain("shouldAppendNextRow");
     expect(plans).toContain("shouldAppendNextRow");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Planning Blueprint 1
+// ---------------------------------------------------------------------------
+
+interface MirrorPlan {
+  id: string;
+  title: string;
+  memo: string;
+  bullets: string[];
+  updatedAt: number;
+  hasBeenSaved: boolean;
+  iconID?: string;
+}
+
+const ICONS = ["leaf", "book", "house", "heart", "airplane", "briefcase"];
+
+const savedNewestFirst = (plans: MirrorPlan[]) =>
+  plans.filter((plan) => plan.hasBeenSaved).sort((a, b) => b.updatedAt - a.updatedAt);
+const previewPlans = (plans: MirrorPlan[]) => savedNewestFirst(plans).slice(0, 5);
+const resolvedIcon = (plan: MirrorPlan) => (plan.iconID && ICONS.includes(plan.iconID) ? plan.iconID : "leaf");
+const searchPlans = (plans: MirrorPlan[], query: string) => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return plans;
+  return plans.filter((plan) => [plan.title, plan.memo, ...plan.bullets].some((text) => text.toLowerCase().includes(needle)));
+};
+
+const makePlans = (count: number): MirrorPlan[] =>
+  Array.from({ length: count }, (_, index) => ({
+    id: `p${index}`,
+    title: `Plan ${index}`,
+    memo: "",
+    bullets: [],
+    updatedAt: index,
+    hasBeenSaved: true,
+  }));
+
+describe("planning blueprint 1", () => {
+  it("fixes the real Back crash: environment object wraps the NavigationStack", () => {
+    const tabRoot = shell.slice(shell.indexOf("private struct NativeTabRoot"));
+    const stackEnd = tabRoot.indexOf("NavigationStack(path: $navigation.path)");
+    expect(stackEnd).toBeGreaterThan(-1);
+    // `.environmentObject(navigation)` must come after the stack's closing brace, not inside its content.
+    const afterStack = tabRoot.slice(stackEnd);
+    expect(afterStack.indexOf("nativeFeatureRoot(for: tab)")).toBeLessThan(afterStack.indexOf(".environmentObject(navigation)"));
+    expect(afterStack).toMatch(/\}\s*\.environmentObject\(navigation\)/);
+    expect(planningShell).toContain(".environmentObject(navigation)");
+    expect(planningShell).toContain("case .planList:");
+    expect(planningShell).toContain("case .planTransfer");
+  });
+
+  it("uses one pop contract for every Blueprint Back button", () => {
+    expect(postpone).not.toContain("path.isEmpty");
+    expect(postpone).toContain("navigation.pop()");
+    expect(plans).toContain("navigation.pop()");
+    expect(plans).not.toContain("removeLast");
+    expect(plans).not.toContain("dismiss()\n        navigation.pop()");
+  });
+
+  it("asks before discarding with a standard alert and no navigation change first", () => {
+    expect(plans).toContain(".alert(PlanningText.string(.discardTitle)");
+    expect(plans).not.toContain("confirmationDialog");
+    expect(planText).toContain("この変更を破棄しますか？");
+    expect(planText).toContain("キャンセル");
+    const request = plans.slice(plans.indexOf("private func requestClose"), plans.indexOf("private func leave"));
+    expect(request).toContain("confirmDiscard = true");
+    expect(request.indexOf("confirmDiscard = true")).toBeLessThan(request.indexOf("leave()"));
+  });
+
+  it("shows at most five newest plans and keeps the list visible when empty", () => {
+    const plans12 = makePlans(12);
+    const preview = previewPlans(plans12);
+    expect(preview).toHaveLength(5);
+    expect(preview.map((plan) => plan.id)).toEqual(["p11", "p10", "p9", "p8", "p7"]);
+    expect(previewPlans([])).toEqual([]);
+    expect(previewPlans([{ ...makePlans(1)[0], hasBeenSaved: false }])).toEqual([]);
+    expect(plans).toContain("planListContainer");
+    expect(plans).toContain("PlanningText.string(.noPlans)");
+    expect(plans).toContain("PlanningText.string(.planListTitle)");
+    expect(models).toContain("prefix(PlanningTokens.PlanMain.previewLimit)");
+    expect(tokens).toContain("previewLimit = 5");
+  });
+
+  it("opens the list from the header chevron and the editor from the whole card", () => {
+    expect(plans).toContain("PlanningRoute.planList");
+    expect(plans).toContain("PlanCardRow");
+    expect(plans).not.toContain("ellipsis");
+    expect(plans).not.toContain("Menu {");
+    const card = plans.slice(plans.indexOf("private struct PlanCardRow"), plans.indexOf("// MARK: - Plan main page"));
+    expect(card).toContain("Button(action: onOpen)");
+    expect(card).not.toContain("chevron");
+  });
+
+  it("persists the icon with a safe default for old plans", () => {
+    expect(resolvedIcon({ ...makePlans(1)[0] })).toBe("leaf");
+    expect(resolvedIcon({ ...makePlans(1)[0], iconID: "unknown" })).toBe("leaf");
+    expect(resolvedIcon({ ...makePlans(1)[0], iconID: "book" })).toBe("book");
+    expect(models).toContain("var iconID: String");
+    expect(models).toContain("iconID: String = PlanIconCatalog.defaultID");
+    expect(plans).toContain("iconID: iconID");
+  });
+
+  it("searches title, memo, and bullets on the list page", () => {
+    const list: MirrorPlan[] = [
+      { ...makePlans(1)[0], title: "旅行", bullets: ["ホテル"] },
+      { ...makePlans(2)[1], title: "仕事", memo: "資料" },
+    ];
+    expect(searchPlans(list, "旅")).toHaveLength(1);
+    expect(searchPlans(list, "ホテル")).toHaveLength(1);
+    expect(searchPlans(list, "資料")).toHaveLength(1);
+    expect(searchPlans(list, "")).toHaveLength(2);
+    expect(planText).toContain("プランを検索…");
+  });
+
+  it("renders the index as rectangles with real z-order and English labels", () => {
+    expect(chrome).not.toContain("inset: CGFloat = 9");
+    expect(chrome).toContain("struct PlanningIndexTabOutline");
+    expect(planningShell).toContain(".zIndex(1)");
+    expect(planningShell).toContain(".zIndex(session.section == section ? 2 : 0)");
+    expect(planningShell).toContain("PlanningTokens.Index");
+    for (const label of ["Plan", "Future", "Monthly", "Weekly", "Daily"]) {
+      expect(models).toContain(`"${label}"`);
+    }
+    expect(planText).not.toContain("indexTitle");
+  });
+
+  it("transfers only a saved clean plan and never auto-saves", () => {
+    const editor = plans.slice(plans.indexOf("struct PlanEditorPage"), plans.indexOf("enum PlanBulletFilter"));
+    expect(editor).toContain("private var canTransfer: Bool");
+    expect(editor).toContain("!isNewPlan && snapshot() == savedSnapshot");
+    expect(editor).toContain(".disabled(!canTransfer)");
+    expect(editor).toContain("plan.hasBeenSaved");
+    expect(editor).toContain("PlanBulletFilter.reflectable(plan.bullets)");
+    expect(editor).not.toContain("reflectable(bullets)");
+    const reflect = editor.slice(editor.indexOf("private func reflect"), editor.indexOf("private func requestClose"));
+    expect(reflect).not.toContain("session.save(");
+    const save = editor.slice(editor.indexOf("private func save"), editor.indexOf("private func reflect"));
+    expect(save.match(/session\.save\(/g)).toHaveLength(1);
+    expect(save.match(/navigation\.pop\(\)/g)).toHaveLength(1);
+    expect(save).not.toContain("leave()");
+  });
+
+  it("keeps editor and selection pages full screen without the tab bar", () => {
+    const editor = plans.slice(plans.indexOf("struct PlanEditorPage"), plans.indexOf("enum PlanBulletFilter"));
+    const selection = plans.slice(plans.indexOf("struct PlanTransferSelectionPage"), plans.indexOf("// MARK: - Destination sheet"));
+    expect(editor).toContain(".toolbar(.hidden, for: .tabBar)");
+    expect(selection).toContain(".toolbar(.hidden, for: .tabBar)");
+    const list = plans.slice(plans.indexOf("struct PlanFullListPage"), plans.indexOf("// MARK: - Plan new / edit page"));
+    expect(list).not.toContain(".toolbar(.hidden, for: .tabBar)");
+    expect(editor).toContain("session.save(");
+    expect(selection).not.toContain("session.save(");
+  });
+
+  it("selects parents with subtasks and requires the persistent destination button", () => {
+    expect(toggleSelection("p", [{ id: "p", children: ["c"] }], [])).toEqual(expect.arrayContaining(["p", "c"]));
+    expect(plans).toContain("PlanningText.string(.chooseDestination)");
+    expect(planText).toContain("反映先を選ぶ");
+    expect(planText).toContain("反映する項目を選択");
+    expect(plans).toContain(".disabled(selected.isEmpty)");
+    expect(plans).toContain("showingDestination = true");
+    expect(plans).toContain("PlanningSelection.afterToggle");
+  });
+
+  it("builds the destination sheet with a native sheet, three sections, and no chevrons", () => {
+    const sheet = plans.slice(plans.indexOf("private struct PlanDestinationSheet"));
+    expect(sheet).toContain("PlanningSystemSheetChrome");
+    expect(sheet).not.toContain("PlanningSheetChrome(");
+    expect(sheet).not.toContain("chevron");
+    expect(sheet).not.toContain("presentationBackground");
+    expect(planText).toContain("1. 反映先の種類");
+    expect(planText).toContain("2. 反映先のスコープ");
+    expect(planText).toContain("3. 期間を選択");
+    expect(sheet).toContain(".pickerStyle(.wheel)");
+    expect(chrome).toContain("struct PlanningSystemSheetChrome");
+    expect(chrome).toContain("presentationDetents([.height(height)])");
+    expect(plans).toContain("onDismiss");
+    expect(plans).toContain("popAfterDismiss");
+  });
+
+  it("copies with stable identity and explicit period keys", () => {
+    expect(models).toContain("periodKey explicitKey: String? = nil");
+    expect(models).toContain("copiedAlready");
+    expect(models).toContain("logicalID");
+    expect(models).not.toMatch(/plans\.removeAll \{[^}]*bullet/);
+  });
+
+  it("never adds a transparent full-screen overlay for the keyboard", () => {
+    expect(chrome).toContain("background(PlanningKeyboardDismissInstaller().allowsHitTesting(false))");
+    expect(chrome).toContain("cancelsTouchesInView = false");
+    for (const source of [planningShell, plans, help, periodPage, future]) {
+      expect(source).not.toContain("PlanningDismissKeyboard");
+      expect(source).not.toMatch(/Color\.clear\s*\.ignoresSafeArea/);
+      expect(source).not.toMatch(/\.overlay\s*\{\s*Color\.clear/);
+    }
+  });
+
+  it("hides scroll indicators on the Plan pages", () => {
+    expect(chrome).toContain("scrollIndicators(.hidden)");
+    expect((plans.match(/\.planningScroll\(\)/g) ?? []).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("makes Help header transparent and fixed", () => {
+    const header = help.slice(0, help.indexOf("ScrollView"));
+    expect(header).toContain("PlanningText.string(.planningHelpTitle)");
+    expect(help).not.toContain("ultraThinMaterial");
+    expect(header).not.toContain(".background(");
+  });
+
+  it("keeps the app portrait-only on iPhone and localizes ja/en", () => {
+    const plist = readFileSync("ios/App/App/Info.plist", "utf8");
+    const phone = plist.slice(plist.indexOf("<key>UISupportedInterfaceOrientations</key>"), plist.indexOf("<key>UISupportedInterfaceOrientations~ipad</key>"));
+    expect(phone).toContain("UIInterfaceOrientationPortrait");
+    expect(phone).not.toContain("Landscape");
+    expect(plist).toContain("<string>en</string>");
+    expect(planText).toContain("isEnglish");
+  });
+
+  it("centralizes geometry in tokens", () => {
+    for (const token of ["height: CGFloat = 72", "titleSize: CGFloat = 34", "depth: CGFloat = 28", "trailingMargin: CGFloat = 4", "seamWidth: CGFloat = 2", "buttonHeight: CGFloat = 52"]) {
+      expect(tokens).toContain(token);
+    }
   });
 });

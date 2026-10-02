@@ -4,6 +4,20 @@ Canonical source of truth for the native Planning tab. Later phases must follow 
 
 Phase 2-A implements the shell, header, index, Help, Postpone Box, Plan list, Plan editor, Future year, and Future month sheet, plus the models those later pages need. Monthly, Weekly, Daily, and Reflection screens are specified here and are not fully built yet.
 
+## Blueprint 1 overrides
+
+Geometry lives in `PLANNING_VISUAL_SPEC.md` and `PlanningDesignTokens.swift`. These rules supersede conflicting older rules.
+
+- Navigation: the `TabNavigationState` environment object wraps the `NavigationStack` (and is re-injected on every Planning destination). Every Back button calls `navigation.pop()`.
+- Plan main page shows at most 5 saved plans, newest `updatedAt` first, inside one always-visible "プランの一覧" container. The header chevron opens the Plan List page; a whole card opens the editor. No per-card menu or chevron.
+- Plan List page: system tab bar visible, no index, search over title, memo, bullets.
+- Plan editor and selection page are full screen with no index and no tab bar. Back with unsaved changes shows a standard alert (キャンセル / 破棄); nothing navigates before the user answers.
+- Plans have a stable `iconID` (default `leaf`).
+- `タスク・予定に反映` opens the selection page. The persistent bottom button `反映先を選ぶ` (disabled at zero selection) opens the destination sheet; the sheet's check copies and returns to the editor.
+- Index tabs are rectangles with rounded right corners. Labels stay English in every language.
+- Planning pages keep the paper palette. Sheets and popups use native system surfaces.
+- The app is portrait-only on iPhone.
+
 ## Phase 2-D2 overrides
 
 - Hierarchy stays parent plus subtask. No third level.

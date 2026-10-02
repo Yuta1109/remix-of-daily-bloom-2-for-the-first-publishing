@@ -107,11 +107,18 @@ enum PlanTransferTarget: String, CaseIterable, Identifiable, Hashable {
 enum PlanningRoute: Hashable {
     case help
     case postponeBox
+    case planList
     case planEditor(UUID)
+    case planTransfer(UUID)
     case reflectionSettings
     case weeklySettings
     case reflection(ReflectionScope)
     case reflectionHistory
+}
+
+struct PlanTransferSource: Hashable {
+    var planID: UUID
+    var bullets: [PlanBullet]
 }
 
 struct PlanBullet: Identifiable, Hashable {
@@ -135,6 +142,12 @@ struct PlanDocument: Identifiable, Hashable {
     var createdAt: Date
     var updatedAt: Date
     var hasBeenSaved: Bool
+    /// Stable icon identifier. Plans created before icons existed use the default.
+    var iconID: String
+
+    var resolvedIconID: String {
+        PlanIconCatalog.symbol(for: iconID) == nil ? PlanIconCatalog.defaultID : iconID
+    }
 
     init(
         id: UUID = UUID(),
@@ -144,8 +157,10 @@ struct PlanDocument: Identifiable, Hashable {
         replanCount: Int = 0,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        hasBeenSaved: Bool = false
+        hasBeenSaved: Bool = false,
+        iconID: String = PlanIconCatalog.defaultID
     ) {
+        self.iconID = iconID
         self.id = id
         self.title = title
         self.bullets = bullets
@@ -444,6 +459,8 @@ final class PlanningSession: ObservableObject {
     @Published var memoryEntries: [PlanningMemoryEntry] = []
     @Published var reflectionSchedule = ReflectionSchedule()
     @Published var reflectionDraft: ReflectionDraft?
+    /// Editor draft handed to the selection page (session only, never persisted).
+    @Published var transferSource: PlanTransferSource?
 
     init(year: Int = Calendar.current.component(.year, from: Date())) {
         selectedYear = year
@@ -512,11 +529,26 @@ final class PlanningSession: ObservableObject {
         return plan.id
     }
 
-    func save(planID: UUID, title: String, bullets: [PlanBullet], memo: String) {
+    /// Saved plans, newest `updatedAt` first. Unsaved drafts are never listed.
+    var savedPlansNewestFirst: [PlanDocument] {
+        plans.filter(\.hasBeenSaved).sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Plans shown on the Plan main page (at most `PlanningTokens.PlanMain.previewLimit`).
+    var previewPlans: [PlanDocument] {
+        Array(savedPlansNewestFirst.prefix(PlanningTokens.PlanMain.previewLimit))
+    }
+
+    func discardUnsavedPlan(_ id: UUID) {
+        plans.removeAll { $0.id == id && !$0.hasBeenSaved }
+    }
+
+    func save(planID: UUID, title: String, bullets: [PlanBullet], memo: String, iconID: String) {
         guard let index = plans.firstIndex(where: { $0.id == planID }) else { return }
         if plans[index].hasBeenSaved {
             plans[index].replanCount += 1
         }
+        plans[index].iconID = iconID
         plans[index].title = title
         plans[index].bullets = bullets
         plans[index].memo = memo
@@ -524,11 +556,21 @@ final class PlanningSession: ObservableObject {
         plans[index].hasBeenSaved = true
     }
 
-    func transfer(planID: UUID, bulletIDs: Set<UUID>, includeChildren: Bool, to target: PlanTransferTarget) {
-        guard let plan = plans.first(where: { $0.id == planID }) else { return }
-        let key = periodKey(for: target.bucket)
+    /// Copies (never moves) plan bullets into a period. `bullets` lets the caller pass the
+    /// editor draft so unsaved text can be reflected without saving the plan.
+    func transfer(
+        planID: UUID,
+        bullets sourceBullets: [PlanBullet]? = nil,
+        bulletIDs: Set<UUID>,
+        includeChildren: Bool,
+        to target: PlanTransferTarget,
+        periodKey explicitKey: String? = nil
+    ) {
+        let bullets = sourceBullets ?? plans.first(where: { $0.id == planID })?.bullets
+        guard let bullets else { return }
+        let key = explicitKey ?? periodKey(for: target.bucket)
         var copies: [PlanningNode] = []
-        for bullet in plan.bullets {
+        for bullet in bullets {
             let kids = bullet.children.filter { includeChildren || bulletIDs.contains($0.id) }
             if bulletIDs.contains(bullet.id) {
                 guard !copiedAlready(bullet.id, target: target, key: key) else { continue }

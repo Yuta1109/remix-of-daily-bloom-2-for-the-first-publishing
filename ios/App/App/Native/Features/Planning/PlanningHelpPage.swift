@@ -4,19 +4,34 @@ struct PlanningHelpPage: View {
     @EnvironmentObject private var navigation: TabNavigationState
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(alignment: .center, spacing: 8) {
-                    NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                        navigation.pop()
-                    }
-                    Text("Planning の使い方")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(PlanningPalette.ink)
+        VStack(spacing: 0) {
+            // Fixed, transparent header: no fill, no material, outside the scroll view.
+            HStack(alignment: .center, spacing: 8) {
+                NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
+                    navigation.pop()
                 }
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.ultraThinMaterial)
+                Text(PlanningText.string(.planningHelpTitle))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(PlanningPalette.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, PlanningTokens.contentInset)
+            .frame(height: 52)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView {
+                helpBody
+            }
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
+        .navigationBarHidden(true)
+    }
+
+    private var helpBody: some View {
+            VStack(alignment: .leading, spacing: 22) {
                 Text("EssencesのPlanningは、頭の中にあることを整理し、「いつやるか」「次にどうするか」を少しずつ決めていく場所です。")
                 Text("バレットジャーナルの考え方を参考にしていますが、すべてのページを毎日使う必要はありません。自分に必要なページだけ使ってください。")
                 helpSection("Plan", "まずは考えていることを自由に箇条書きします。親項目と、その下のサブタスクまで整理できます。\n\n書いた項目は、1項目だけでも、まとまりでも、必要なら全体でもMonthly / Weekly / Dailyへコピーできます。コピーしても、Planに書いた内容は残り続けます。")
@@ -32,12 +47,6 @@ struct PlanningHelpPage: View {
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollIndicators(.hidden)
-        .scrollDismissesKeyboard(.interactively)
-        .planningKeyboardDismiss()
-        .background(PlanningPalette.paper)
-        .navigationBarHidden(true)
     }
 
     private func helpSection(_ title: String, _ body: String) -> some View {

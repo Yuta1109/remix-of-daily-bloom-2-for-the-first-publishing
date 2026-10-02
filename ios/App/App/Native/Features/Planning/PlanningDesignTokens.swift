@@ -1,0 +1,82 @@
+import SwiftUI
+
+/// Single source of truth for Planning Blueprint 1 geometry.
+/// Reference device: iPhone 13, 390 x 844 pt. See PLANNING_VISUAL_SPEC.md.
+/// Do not scatter these numbers through views.
+enum PlanningTokens {
+    /// Content inset shared by every Planning page body.
+    static let contentInset: CGFloat = 16
+
+    enum Header {
+        static let height: CGFloat = 72
+        static let titleSize: CGFloat = 34
+        static let buttonVisual: CGFloat = 30
+        static let buttonHit: CGFloat = 44
+        /// Visual gap between the 30pt circles.
+        static let buttonGap: CGFloat = 10
+        /// Stack spacing that yields `buttonGap` between visual circles.
+        static let buttonStackSpacing: CGFloat = buttonGap - (buttonHit - buttonVisual)
+    }
+
+    enum Index {
+        static let trailingMargin: CGFloat = 4
+        static let depth: CGFloat = 28
+        static let length: CGFloat = 75
+        static let gap: CGFloat = 2
+        static let topGap: CGFloat = 2
+        static let cornerRadius: CGFloat = 7.5
+        static let fontSize: CGFloat = 13.5
+        static let seamWidth: CGFloat = 2
+        static let outlineWidth: CGFloat = 1.5
+        static var columnWidth: CGFloat { depth + trailingMargin }
+    }
+
+    enum PlanMain {
+        static let titleTop: CGFloat = 35
+        static let iconSlot: CGFloat = 28
+        static let iconGap: CGFloat = 10
+        static let titleSize: CGFloat = 20
+        static let titleToParagraph: CGFloat = 17.5
+        static let paragraphSize: CGFloat = 15.5
+        static let paragraphLineSpacing: CGFloat = 4.5
+        static let paragraphToButton: CGFloat = 31
+        static let buttonHeight: CGFloat = 52
+        static let buttonCorner: CGFloat = 14
+        static let buttonFontSize: CGFloat = 17
+        static let buttonToList: CGFloat = 39
+        static let listCorner: CGFloat = 15.5
+        static let listPadding: CGFloat = 10
+        static let listHeaderSize: CGFloat = 17
+        static let previewLimit = 5
+        static let cardMinHeight: CGFloat = 75
+        static let cardCorner: CGFloat = 11.5
+        static let cardGap: CGFloat = 6
+        static let cardInset: CGFloat = 9
+        static let cardIcon: CGFloat = 44
+        static let chevronHit: CGFloat = 44
+    }
+
+    enum Search {
+        static let height: CGFloat = 38
+        static let inset: CGFloat = 16
+    }
+
+    enum Editor {
+        static let fieldHeight: CGFloat = 46
+        static let iconCell: CGFloat = 44
+        static let parentRowHeight: CGFloat = 40
+        static let subtaskIndent: CGFloat = 28
+        static let memoMinHeight: CGFloat = 90
+        static let ctaHeight: CGFloat = 51
+        static let ctaCorner: CGFloat = 15
+        static let ctaInset: CGFloat = 16
+        static let sectionGap: CGFloat = 20
+    }
+
+    enum Sheet {
+        static let horizontalInset: CGFloat = 16
+        static let destinationHeight: CGFloat = 430
+        static let periodPickerHeight: CGFloat = 330
+        static let rowHeight: CGFloat = 46
+    }
+}
