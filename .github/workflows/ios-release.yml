@@ -198,7 +198,7 @@ jobs:
           const bundleId = "com.confast.essences";
           const pbx = fs.readFileSync("ios/App/App.xcodeproj/project.pbxproj", "utf8");
           const release = pbx.split("isa = XCBuildConfiguration").find((block) =>
-            block.includes("PRODUCT_BUNDLE_IDENTIFIER = com.confast.essences") &&
+            block.split("\n").some((line) => line.trim() === "PRODUCT_BUNDLE_IDENTIFIER = com.confast.essences;") &&
             block.includes("name = Release")
           );
           const versionMatch = release && release.match(/MARKETING_VERSION = ([^;]+);/);

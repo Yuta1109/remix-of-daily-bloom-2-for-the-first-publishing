@@ -162,8 +162,9 @@ widget_target.build_configurations.each do |cfg|
   end
   bs["GENERATE_INFOPLIST_FILE"] = "NO"
   bs["SKIP_INSTALL"] = "YES"
-  bs["CURRENT_PROJECT_VERSION"] = "1"
-  bs["MARKETING_VERSION"] = "1.0"
+  app_cfg = app_target.build_configurations.find { |item| item.name == cfg.name }
+  bs["CURRENT_PROJECT_VERSION"] = app_cfg&.build_settings&.[]("CURRENT_PROJECT_VERSION") || "1"
+  bs["MARKETING_VERSION"] = app_cfg&.build_settings&.[]("MARKETING_VERSION") || "2.0"
   bs["LD_RUNPATH_SEARCH_PATHS"] = [
     "$(inherited)",
     "@executable_path/Frameworks",
