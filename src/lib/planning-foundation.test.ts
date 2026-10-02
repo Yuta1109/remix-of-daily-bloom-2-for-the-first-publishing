@@ -73,7 +73,7 @@ describe("planning foundation rules", () => {
     expect(planningShell).toContain("icon: .help");
     expect(planningShell).toContain("icon: .user");
     expect(planningShell).toContain("PlanningPalette.paper");
-    expect(planningShell).toContain(".rotationEffect(.degrees(-90))");
+    expect(planningShell).toContain(".rotationEffect(.degrees(90))");
     expect(planningShell.indexOf("PlanningHeader(")).toBeLessThan(planningShell.indexOf("PlanningIndex("));
     expect(planningShell).not.toContain("ultraThinMaterial");
     expect(planningShell).toContain("次回のアップデートをお楽しみに");
@@ -266,7 +266,7 @@ describe("planning blueprint fidelity", () => {
 
   it("places the header above a rotated index and uses the fixed paper palette", () => {
     expect(planningShell.indexOf("PlanningHeader(")).toBeLessThan(planningShell.indexOf("HStack(alignment: .top"));
-    expect(planningShell).toContain(".rotationEffect(.degrees(-90))");
+    expect(planningShell).toContain(".rotationEffect(.degrees(90))");
     expect(chrome).toContain("enum PlanningPalette");
     expect(planningShell).not.toContain("PlanningGlyph");
     expect(periodPage).not.toContain("PlanningGlyph");

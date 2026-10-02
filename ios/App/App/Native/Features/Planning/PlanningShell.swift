@@ -78,7 +78,18 @@ private struct PlanningIndex: View {
     @ObservedObject var session: PlanningSession
 
     var body: some View {
-        VStack(spacing: 6) {
+        ZStack(alignment: .leading) {
+            Rectangle()
+                .fill(PlanningPalette.rail)
+                .frame(width: 2)
+                .frame(maxHeight: .infinity)
+                .allowsHitTesting(false)
+            tabColumn
+        }
+    }
+
+    private var tabColumn: some View {
+        VStack(spacing: 2) {
             ForEach(session.index) { section in
                 Button {
                     session.select(section)
@@ -87,13 +98,21 @@ private struct PlanningIndex: View {
                         Text(section.indexTitle)
                             .font(.system(size: 11, weight: session.section == section ? .bold : .medium))
                             .foregroundStyle(PlanningPalette.ink)
-                            .rotationEffect(.degrees(-90))
-                            .frame(width: 28, height: 64)
-                            .background(indexBackground(section), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(session.section == section ? PlanningPalette.ink : Color.clear, lineWidth: 1.5)
-                            )
+                            .lineLimit(1)
+                            .fixedSize()
+                            .rotationEffect(.degrees(90))
+                            .frame(width: 31, height: 90)
+                            .background(indexBackground(section), in: PlanningIndexTabShape())
+                            .overlay {
+                                PlanningIndexTabShape()
+                                    .stroke(session.section == section ? indexOutline(section) : Color.clear, lineWidth: 1.5)
+                                    .mask {
+                                        HStack(spacing: 0) {
+                                            Color.clear.frame(width: 3)
+                                            Rectangle()
+                                        }
+                                    }
+                            }
                         let count = session.badgeCount(for: section)
                         if count > 0 {
                             Text(count > 99 ? "99" : "\(count)")
@@ -102,7 +121,7 @@ private struct PlanningIndex: View {
                                 .padding(.horizontal, 4)
                                 .frame(minWidth: 16, minHeight: 16)
                                 .background(Color.red, in: Capsule())
-                                .offset(x: 4, y: -4)
+                                .offset(x: 2, y: -2)
                         }
                     }
                 }
@@ -112,9 +131,8 @@ private struct PlanningIndex: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.top, 8)
-        .padding(.trailing, 6)
-        .background(PlanningPalette.paper)
+        .padding(.top, 2)
+        .padding(.trailing, 2)
     }
 
     private func indexBackground(_ section: PlanningSection) -> Color {
@@ -125,6 +143,17 @@ private struct PlanningIndex: View {
         case .weekly: return PlanningPalette.weekly
         case .daily: return PlanningPalette.daily
         case .plus: return PlanningPalette.plus
+        }
+    }
+
+    private func indexOutline(_ section: PlanningSection) -> Color {
+        switch section {
+        case .plan: return Color(red: 0.72, green: 0.45, blue: 0.40)
+        case .future: return Color(red: 0.42, green: 0.58, blue: 0.44)
+        case .monthly: return Color(red: 0.42, green: 0.52, blue: 0.68)
+        case .weekly: return Color(red: 0.68, green: 0.55, blue: 0.36)
+        case .daily: return Color(red: 0.70, green: 0.48, blue: 0.40)
+        case .plus: return Color(red: 0.58, green: 0.50, blue: 0.42)
         }
     }
 }

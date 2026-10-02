@@ -15,6 +15,7 @@ enum PlanningPalette {
     static let plus = Color(red: 0.870, green: 0.835, blue: 0.790)
     static let todo = Color(red: 0.980, green: 0.945, blue: 0.780)
     static let event = Color(red: 0.875, green: 0.855, blue: 0.945)
+    static let rail = Color(red: 0.55, green: 0.42, blue: 0.32)
 }
 
 extension View {
@@ -24,28 +25,80 @@ extension View {
     }
 
     func planningKeyboardDismiss() -> some View {
-        overlay(PlanningDismissKeyboard())
+        background(PlanningKeyboardDismissInstaller().allowsHitTesting(false))
     }
 }
 
-struct PlanningDismissKeyboard: UIViewRepresentable {
+struct PlanningKeyboardDismissInstaller: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .clear
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.dismiss))
-        tap.cancelsTouchesInView = false
-        view.addGestureRecognizer(tap)
+        let view = PlanningPassThroughView()
+        view.isUserInteractionEnabled = false
         return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {}
+}
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+final class PlanningPassThroughView: UIView, UIGestureRecognizerDelegate {
+    private static var installed = false
 
-    final class Coordinator: NSObject {
-        @objc func dismiss() {
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard let window, !Self.installed else { return }
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        tap.cancelsTouchesInView = false
+        tap.delegate = self
+        window.addGestureRecognizer(tap)
+        Self.installed = true
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        nil
+    }
+
+    @objc private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        var view = touch.view
+        while let current = view {
+            if current is UIControl || current is UITextView { return false }
+            view = current.superview
         }
+        return true
+    }
+}
+
+struct PlanningIndexTabShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let inset: CGFloat = 9
+        let radius: CGFloat = 6
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + radius, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY + inset))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + inset + radius),
+            control: CGPoint(x: rect.maxX, y: rect.minY + inset)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - inset - radius))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX - radius, y: rect.maxY - inset),
+            control: CGPoint(x: rect.maxX, y: rect.maxY - inset)
+        )
+        path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - radius), control: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+struct PlanningHeadingIconSlot: View {
+    var body: some View {
+        Color.clear
+            .frame(width: 28, height: 28)
+            .accessibilityHidden(true)
     }
 }
 

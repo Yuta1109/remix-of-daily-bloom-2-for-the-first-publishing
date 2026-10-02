@@ -73,6 +73,7 @@ struct PeriodPlannerPage: View {
 
     private func periodBar(_ key: String) -> some View {
         HStack(spacing: 8) {
+            PlanningHeadingIconSlot()
             Button {
                 session.shiftPeriod(bucket, by: -1)
             } label: {

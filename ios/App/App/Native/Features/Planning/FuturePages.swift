@@ -50,6 +50,7 @@ struct FutureYearPage: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 8) {
+                    PlanningHeadingIconSlot()
                     Button { session.shiftYear(by: -1) } label: {
                         Image(systemName: "chevron.left").frame(width: 44, height: 44)
                     }

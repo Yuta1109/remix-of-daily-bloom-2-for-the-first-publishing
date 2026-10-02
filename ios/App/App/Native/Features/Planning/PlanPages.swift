@@ -7,15 +7,40 @@ struct PlanListPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("まずは今考えていることを箇条書きで書いてみましょう。そうしている内にやるべきことがわかってきます。")
-                    .font(.subheadline)
-                    .foregroundStyle(PlanningPalette.muted)
-                Button("プランを新規作成") {
+                HStack(alignment: .top, spacing: 10) {
+                    PlanningHeadingIconSlot()
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("今、考えていることを整理しよう")
+                            .font(.headline)
+                            .foregroundStyle(PlanningPalette.ink)
+                        Text("まずは今考えていることを箇条書きで書いてみましょう。そうしている内にやるべきことがわかってきます。")
+                            .font(.subheadline)
+                            .foregroundStyle(PlanningPalette.muted)
+                    }
+                }
+                Button {
                     let id = session.beginPlan()
                     navigation.path.append(PlanningRoute.planEditor(id))
+                } label: {
+                    Text("+  プランを新規作成")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(PlanningPalette.ink)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
                 }
-                .buttonStyle(.borderedProminent)
-                .frame(maxWidth: .infinity)
+                .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("プランの一覧")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PlanningPalette.ink)
+                    if session.plans.filter(\.hasBeenSaved).isEmpty {
+                        Text("まだプランはありません")
+                            .font(.subheadline)
+                            .foregroundStyle(PlanningPalette.muted)
+                    }
+                }
                 ForEach(session.plans.filter(\.hasBeenSaved)) { plan in
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
