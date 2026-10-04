@@ -49,6 +49,11 @@ describe("native iOS foundation", () => {
     const project = readFileSync("ios/App/App.xcodeproj/project.pbxproj", "utf8");
     const setup = readFileSync("ios/scripts/setup_widget.rb", "utf8");
 
+    const plist = readFileSync("ios/App/App/Info.plist", "utf8");
+    const root = readFileSync(`${nativeRoot}/App/NativeAppRoot.swift`, "utf8");
+    expect(plist).toContain("<key>UIUserInterfaceStyle</key>");
+    expect(plist).toContain("<string>Light</string>");
+    expect(root).toContain(".preferredColorScheme(.light)");
     expect(project).toContain("IPHONEOS_DEPLOYMENT_TARGET = 17.2");
     expect(setup).toContain('App/Native');
     expect(setup).toContain('Dir.glob(File.join(native_root_path, "**", "*.swift"))');

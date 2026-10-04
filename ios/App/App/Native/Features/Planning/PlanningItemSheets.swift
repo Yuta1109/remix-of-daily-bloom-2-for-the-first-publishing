@@ -404,9 +404,10 @@ struct PlanningItemEditorSheet: View {
             if draft.subtasks.isEmpty { draft.subtasks = [PlanningSubtaskDraft()] }
             original = draft
         }
-        .confirmationDialog("この変更を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button("破棄", role: .destructive) { onClose() }
-            Button("キャンセル", role: .cancel) {}
+        .onChange(of: confirmDiscard) { _, show in
+            guard show else { return }
+            confirmDiscard = false
+            PlanningDiscardConfirmation.present { onClose() }
         }
     }
 

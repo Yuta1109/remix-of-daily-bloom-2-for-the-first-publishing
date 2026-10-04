@@ -6,19 +6,19 @@ struct PlanningShell: View {
     @State private var didRestore = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
+            PlanningSectionPage(session: session)
+            PlanningIndex(session: session)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .planningFixedHeader {
             PlanningHeader(
                 onPostpone: { navigation.path.append(PlanningRoute.postponeBox) },
                 onHelp: { navigation.path.append(PlanningRoute.help) },
                 onUser: {}
             )
-            HStack(alignment: .top, spacing: 0) {
-                PlanningSectionPage(session: session)
-                PlanningIndex(session: session)
-            }
         }
         .background(PlanningPalette.paper)
-        .planningFixedLight()
         .planningKeyboardDismiss()
         .navigationBarHidden(true)
         .navigationDestination(for: PlanningRoute.self) { route in
@@ -47,7 +47,6 @@ struct PlanningShell: View {
                 }
             }
             .environmentObject(navigation)
-            .planningFixedLight()
         }
         .onAppear {
             guard !didRestore else { return }
@@ -109,6 +108,7 @@ private struct PlanningIndex: View {
         }
         .frame(width: PlanningTokens.Index.columnWidth)
         .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color.clear)
     }
 
     private func tab(_ section: PlanningSection) -> some View {
@@ -176,23 +176,25 @@ private struct PlanningSectionPage: View {
     @ObservedObject var session: PlanningSession
 
     var body: some View {
-        switch session.section {
-        case .plan:
-            PlanListPage(session: session)
-        case .future:
-            FutureYearPage(session: session)
-        case .plus:
-            Text("次回のアップデートをお楽しみに")
-                .font(.body)
-                .foregroundStyle(Color.primary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(24)
-        case .monthly:
-            PeriodPlannerPage(session: session, bucket: .monthly)
-        case .weekly:
-            PeriodPlannerPage(session: session, bucket: .weekly)
-        case .daily:
-            PeriodPlannerPage(session: session, bucket: .daily)
+        PlanningIndexHost {
+            switch session.section {
+            case .plan:
+                PlanListPage(session: session)
+            case .future:
+                FutureYearPage(session: session)
+            case .plus:
+                Text("次回のアップデートをお楽しみに")
+                    .font(.body)
+                    .foregroundStyle(Color.primary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(24)
+            case .monthly:
+                PeriodPlannerPage(session: session, bucket: .monthly)
+            case .weekly:
+                PeriodPlannerPage(session: session, bucket: .weekly)
+            case .daily:
+                PeriodPlannerPage(session: session, bucket: .daily)
+            }
         }
     }
 }

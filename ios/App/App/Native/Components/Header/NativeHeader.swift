@@ -19,8 +19,6 @@ struct NativeHeader: View {
     var trailing: [NativeHeaderAction] = []
     var backgroundStyle: NativeHeaderBackgroundStyle = .clear
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         ZStack {
             if let title {
@@ -42,7 +40,7 @@ struct NativeHeader: View {
             if backgroundStyle == .translucent {
                 ZStack {
                     Rectangle()
-                        .fill(colorScheme == .dark ? Color.black : Color.white)
+                        .fill(Color.white)
                     Rectangle()
                         .fill(.ultraThinMaterial)
                 }

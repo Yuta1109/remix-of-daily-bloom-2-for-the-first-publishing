@@ -9,12 +9,12 @@ Reference device: iPhone 13, 390 x 844 pt, portrait only. All values are mirrore
 
 ## Header (Plan main)
 
-- Height 72 below the safe area. Title "Planning" 34 pt bold.
-- Buttons: 30 pt visual circles, 44 pt hit targets, 10 pt visual gap, 16 pt horizontal inset.
+- Height 72 below the safe area. Title "Planning" 34 pt bold, left. Postpone, Help, and User stay on the right.
+- The row is a system safe-area bar (`planningFixedHeader` / `safeAreaBar` on iOS 26, material inset on iOS 17.2–25). It does not paint a cream rectangle. Scroll content can move underneath; the index starts below this bar.
 
 ## Index (right edge)
 
-- Trailing margin 4, tab depth 28, tab length 75, gap 2, first tab 2 below the header.
+- Trailing margin stays 4. Tab depth is 30.8 (28 × 1.10) and tab length is 90 (75 × 1.20). The extra width grows inward; the screen-edge gap does not move. Gap 2, first tab 2 below the header. Every tab, including +, uses these sizes. The hit target is the enlarged tab.
 - Tab shape: rectangle, square left corners, 7.5 pt right corners. Not a trapezoid.
 - Label 13.5 pt semibold, rotated 90 degrees clockwise, one line, English always (Plan / Future / Monthly / Weekly / Daily / +).
 - One continuous 2 pt brown seam. Real z-order: unselected tabs (0) < seam (1) < selected tab (2).
@@ -32,33 +32,38 @@ Reference device: iPhone 13, 390 x 844 pt, portrait only. All values are mirrore
 
 ## Plan List page
 
-- Visible system tab bar, no index. Back, centered "プランの一覧", search "プランを検索…" (16 inset, 38 tall), cards newest first.
+- Visible system tab bar, no index. Back, centered "プランの一覧", then 10 pt before the search field "プランを検索…" (16 inset, 38 tall). Cards stay where they are.
 
 ## Plan new / edit page
 
-- Full screen, no index, no tab bar. Top row: back, centered "新規プラン" / "プランを編集", check.
+- Full screen, no index, no tab bar. System toolbar: back, centered "新規プラン" / "プランを編集", trailing `保存` capsule (about 30 pt tall, 44 pt hit, 15.5 pt semibold, orange, white text). iOS 26 uses prominent glass with an orange tint.
 - Sections: タイトル (46 tall field), アイコン (44 pt cells, 6 icons), やること・考えていること (parent rows 40, subtask indent 28 with hollow marker), メモ (min 90).
-- Bottom button "タスク・予定に反映": 51 tall, 15 radius, 16 inset. Save only via the top-right check.
+- Bottom button "タスク・予定に反映": 51 tall, 15 radius, 16 inset, pinned with `safeAreaInset` just above the keyboard. The editor scroll view keeps 44 pt of extra bottom room, and a focused row scrolls above that button with the same 44 pt of clearance under the focused row. Save only via `保存`: one save, one `navigation.pop()`.
 
 ## Selection page
 
-- Full screen, no index, no tab bar. Back, centered "反映する項目を選択", check (same action as bottom button).
+- Full screen, no index, no tab bar. Back, centered "反映する項目を選択", no top check.
 - "全体を選択", parent rows, indented subtasks. Parent toggles its subtasks; a subtask toggles alone.
 - Persistent bottom button "反映先を選ぶ", disabled with zero selection.
 
 ## Destination sheet
 
-- Native `.sheet`, fixed detent (430), system background, close and check (30 visual / 44 hit, 16 inset), no title.
-- 1. 反映先の種類 (タスク / 予定), 2. 反映先のスコープ (Monthly / Weekly / Daily), 3. 期間を選択 (row opens a native wheel picker: year+month, week, date).
+- Native `.sheet` sized to its content (`presentationSizing(.fitted)` on iOS 18+, a measured height detent on earlier systems). No medium, large, or 430 pt detent. System background, close and check (30 visual / 44 hit, 16 inset), no title. About 18 pt top padding, 22 pt between sections, 20 pt after the note, plus the Home indicator.
+- 1. 反映先の種類 (タスク / 予定), 2. 反映先のスコープ (Monthly / Weekly / Daily), 3. 期間を選択 (row opens a native wheel picker: year+month, week, date). Each picker sheet uses the same fitted chrome and ends after the wheel plus the 20 pt bottom inset.
 - Check copies (never moves), closes the sheet, then pops back to the editor after the sheet has dismissed.
 
 ## Keyboard
 
 - No overlay above the UI. One window-level tap recogniser with `cancelsTouchesInView = false`.
+- `タスク・予定に反映` clears editor focus and waits one run loop before saving and pushing Transfer selection. Returning does not restore that focus.
 
-## Fixed light
+## Appearance
 
-Planning uses `.preferredColorScheme(.light)` once on the Planning root and once on the shared destination container. The rest of Essences keeps the system appearance.
+Essences iOS uses a fixed Light appearance across the entire application. `UIUserInterfaceStyle` is `Light` in the app Info.plist, and `NativeAppRoot` sets `.preferredColorScheme(.light)` once. System Light/Dark settings do not alter Essences UI. Planning does not add its own color-scheme or toolbar color-scheme modifier.
+
+## Discard confirmation
+
+Planning dirty dismiss uses `PlanningDiscardConfirmation`, a `UIAlertController` whose view tint is `.label`. Cancel is therefore black. Discard stays destructive red. The app accent is unchanged.
 
 ## Plan icon colour
 
@@ -74,19 +79,23 @@ At most five cards. When more exist, the same container shows centered `他Nプ�
 
 ## Transfer
 
-`タスク・予定に反映` saves the current editor state when it is new or dirty, then opens selection without popping. A clean saved plan is not saved again. The top-right check still saves once and pops once. Destination periods start at the current month, week, or day.
+`タスク・予定に反映` saves the current editor state when it is new or dirty, then opens selection without popping. A clean saved plan is not saved again. `保存` saves once and pops once. Destination periods start at the current month, week, or day.
 
-## Transparent header
+## Shared header chrome
 
-The index has no fill, so the shell paper shows through its gaps. `PlanningTranslucentHeader` and `planningFixedHeader` use that same rule: no opaque header fill, scroll content moves underneath, controls stay in the header.
+Pushed pages (Plan List, New/Edit Plan, Transfer selection, Postpone, Help) use `planningPageChrome`: the system navigation bar, a back button, a centered title, and a trailing control only when the page has one. iOS 26 uses the system Liquid Glass toolbar. iOS 17.2–25 uses an ultra-thin material toolbar. The Planning root and the Monthly / Weekly / Daily period bars use `planningFixedHeader` (`safeAreaBar` on iOS 26, material inset before that). Neither paints a cream header block. Appearance is the app-wide Light setting, not a Planning-only modifier.
+
+## Index host
+
+`PlanningIndexHost` wraps Plan, Future, Monthly, Weekly, and Daily. The host and the index column are clear. Tabs and the seam paint themselves. There is no period-coloured or material fill behind the index column. The shell paper shows through the gaps.
 
 ## Future
 
-Title row: temporary calendar symbol, 28 pt slot, then English `Future` at 21.5 pt. Description follows at 15 pt. Year controls sit about 20 pt below and keep the existing year sheet (`fixedHeight: 260`). Years page with the native page TabView.
+The Future title and description use `PlanningSectionIntro`, the same `PlanMain.titleTop` and `titleToParagraph` rhythm as Plan. Monthly, Weekly, and Daily place their icon/title row with that same `titleTop`. Year controls sit about 20 pt below and keep the existing year sheet (`fixedHeight: 260`). Years page with the native page TabView.
 
-The year is a 3 by 4 grid. Every month card is 111 pt tall with radius 11.5 and a fixed 6 by 7 date grid.
+The year is a 3 by 4 grid. Every month card is 120 pt tall with radius 11.5 and a fixed 6 by 7 date grid. A one-day event draws a 4 pt dot at the top-trailing of that date, in the event's Planning colour. A multi-day event draws a 0.26 opacity band behind the numbers, with a leading cap, middle segments, and a trailing cap per week row. The first event in repository order wins when dates overlap. The same event id is not copied across weeks, months, or years.
 
-The month sheet is a large native sheet on the system surface. It edits the one monthly goal through `setGoal`, shared with Monthly. Events open one add/edit sheet. Icon colours are `PlanIconColor`. Start and end are optional. An end before the start is not saved. × on a dirty sheet uses the standard discard alert and blocks swipe dismissal.
+The month editor, event editor, and date/time editor use `PlanningSystemSheetChrome`: one fitted height, system surface, the same × and ✓ row. The month goal is one line at the editor field height. Long lists scroll inside `maximumBody`. The date sheet shows the calendar, then the Time toggle, then the time wheel only while Time is on. Turning Time on remeasures that one height. A child sheet hides the parent × / ✓ while it is presented.
 
 ## Navigation contract
 

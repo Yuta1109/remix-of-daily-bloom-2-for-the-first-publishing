@@ -18,7 +18,6 @@ struct PeriodPlannerPage: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .background(PlanningPalette.paper)
-        .background(PlanningIndexSurface())
         .onAppear {
             session.refreshDue(ReflectionScope.period(bucket, periodKey))
         }
@@ -69,7 +68,9 @@ struct PeriodPlannerPage: View {
         .planningScroll()
         .planningKeyboardDismiss()
         .planningFixedHeader {
-            periodBar(key).padding(.horizontal, 16)
+            periodBar(key)
+                .padding(.horizontal, 16)
+                .padding(.top, PlanningTokens.PlanMain.titleTop)
         }
         .background(PlanningPalette.paper)
     }

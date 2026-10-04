@@ -59,13 +59,8 @@ struct PostponeBoxPage: View {
         }
         .planningScroll()
         .planningKeyboardDismiss()
-        .planningFixedHeader {
-            PlanningTranslucentHeader(title: "Postpone Box", onBack: { navigation.pop() }) {
-                EmptyView()
-            }
-        }
+        .planningPageChrome(title: "Postpone Box", onBack: { navigation.pop() })
         .background(PlanningPalette.paper)
-        .navigationBarHidden(true)
         .nativeSheet(isPresented: Binding(
             get: { editing != nil },
             set: { if !$0 { editing = nil } }

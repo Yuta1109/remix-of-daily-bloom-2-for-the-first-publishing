@@ -12,7 +12,7 @@ enum PlanningText {
         case newPlan, editPlan
         case titleLabel, titlePlaceholder, iconLabel, colorLabel, bulletsLabel, memoLabel
         case parentPlaceholder, subtaskPlaceholder
-        case reflectToItems, selectItemsTitle, selectAll, chooseDestination
+        case reflectToItems, save, selectItemsTitle, selectAll, chooseDestination
         case discardTitle, cancel, discard
         case destinationKind, destinationScope, destinationPeriod
         case task, event
@@ -46,6 +46,7 @@ enum PlanningText {
         .parentPlaceholder: ("やること・考えていること", "Something to do or think about"),
         .subtaskPlaceholder: ("サブタスク", "Subtask"),
         .reflectToItems: ("タスク・予定に反映", "Reflect to tasks / events"),
+        .save: ("保存", "Save"),
         .selectItemsTitle: ("反映する項目を選択", "Select items to reflect"),
         .selectAll: ("全体を選択", "Select all"),
         .chooseDestination: ("反映先を選ぶ", "Choose destination"),

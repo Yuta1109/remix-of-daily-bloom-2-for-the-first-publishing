@@ -9,14 +9,9 @@ struct PlanningHelpPage: View {
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.interactively)
-        .planningFixedHeader {
-            PlanningTranslucentHeader(title: PlanningText.string(.planningHelpTitle), onBack: { navigation.pop() }) {
-                EmptyView()
-            }
-        }
+        .planningPageChrome(title: PlanningText.string(.planningHelpTitle), onBack: { navigation.pop() })
         .planningKeyboardDismiss()
         .background(PlanningPalette.paper)
-        .navigationBarHidden(true)
     }
 
     private var helpBody: some View {

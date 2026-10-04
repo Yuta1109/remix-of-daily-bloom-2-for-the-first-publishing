@@ -75,5 +75,7 @@
 	<string>読み取った写真を保存する場合にフォトライブラリへアクセスします。</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 </dict>
 </plist>

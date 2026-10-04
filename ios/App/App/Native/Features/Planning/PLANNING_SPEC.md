@@ -33,7 +33,7 @@ Geometry lives in `PLANNING_VISUAL_SPEC.md` and `PlanningDesignTokens.swift`. Th
 These rules supersede any older Planning UI rule in this file that conflicts with them.
 
 - Blueprint fidelity is primary. Reproduce the attached Blueprint at about 90%. Screen map: 1st phone Plan, 2nd Future, 3rd Monthly, 4th Daily. Weekly is not in the Blueprint and uses the Monthly visual language with Weekly content. Daily keeps the 4th-screen design and must not look identical to Monthly or Weekly.
-- Planning uses one fixed paper palette (`PlanningPalette`) in both Light and Dark. Do not recolor Planning with the system appearance. Do not force the app or system TabView into Light mode.
+- Essences iOS is Light only. `Info.plist` sets `UIUserInterfaceStyle` to `Light`, and the SwiftUI root sets `.preferredColorScheme(.light)` once. System Dark Mode does not change Planning, the tab bar, or other native screens. Planning keeps its paper palette and does not add a separate appearance modifier.
 - Layout: full-width Planning header, then content beside the right-edge index. The index starts below the header.
 - Index labels are rotated 90 degrees. Selected tab is visually distinct. Reflection badges stay, maximum 99. One `+`.
 - Section header glyphs for Plan, Future, Monthly, Weekly, and Daily are removed. Item-level Task and Event marks may remain.

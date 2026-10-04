@@ -77,7 +77,8 @@ describe("planning foundation rules", () => {
     expect(planningShell).toContain("icon: .user");
     expect(planningShell).toContain("PlanningPalette.paper");
     expect(planningShell).toContain(".rotationEffect(.degrees(90))");
-    expect(planningShell.indexOf("PlanningHeader(")).toBeLessThan(planningShell.indexOf("PlanningIndex("));
+    expect(planningShell).toContain(".planningFixedHeader");
+    expect(chrome).toContain("safeAreaBar(edge: .top");
     expect(planningShell).not.toContain("ultraThinMaterial");
     expect(planningShell).toContain("次回のアップデートをお楽しみに");
     expect(planningShell).toContain("navigationDestination(for: PlanningRoute.self)");
@@ -91,7 +92,8 @@ describe("planning foundation rules", () => {
     expect(planText).toContain("タスク・予定に反映");
     expect(models).toContain("プラン全体を移動する必要はありません。");
     expect(future).toContain("count: 3");
-    expect(future).toContain("presentationDetents([.large])");
+    expect(future).toContain("PlanningSystemSheetChrome");
+    expect(future).not.toContain("presentationDetents([.large])");
     expect(future).toContain(".tabViewStyle(.page(indexDisplayMode: .never))");
     expect(future).toContain("目標は1つ");
   });
@@ -268,7 +270,8 @@ describe("planning blueprint fidelity", () => {
   });
 
   it("places the header above a rotated index and uses the fixed paper palette", () => {
-    expect(planningShell.indexOf("PlanningHeader(")).toBeLessThan(planningShell.indexOf("HStack(alignment: .top"));
+    expect(planningShell).toContain(".planningFixedHeader");
+    expect(chrome).toContain("safeAreaBar(edge: .top");
     expect(planningShell).toContain(".rotationEffect(.degrees(90))");
     expect(chrome).toContain("enum PlanningPalette");
     expect(planningShell).not.toContain("PlanningGlyph");
@@ -332,7 +335,7 @@ describe("planning item editor", () => {
   it("keeps two levels and copies a plan instead of moving it", () => {
     expect(models).toContain("static let maximumDepth = 2");
     expect(plans).toContain("clamped");
-    expect(plans).toContain("icon: .check");
+    expect(plans).toContain("PlanningSavePill(action: save)");
     expect(plans).not.toContain("session.plans[index].bullets = before");
     expect(plans).toContain("includeChildren: false");
     expect(plans).toContain("Text(\"Daily\")");
@@ -443,13 +446,13 @@ describe("planning blueprint 1", () => {
   });
 
   it("asks before discarding with a standard alert and no navigation change first", () => {
-    expect(plans).toContain(".alert(PlanningText.string(.discardTitle)");
+    expect(plans).toContain("PlanningDiscardConfirmation.present");
     expect(plans).not.toContain("confirmationDialog");
     expect(planText).toContain("この変更を破棄しますか？");
     expect(planText).toContain("キャンセル");
     const request = plans.slice(plans.indexOf("private func requestClose"), plans.indexOf("private func leave"));
-    expect(request).toContain("confirmDiscard = true");
-    expect(request.indexOf("confirmDiscard = true")).toBeLessThan(request.indexOf("leave()"));
+    expect(request).toContain("PlanningDiscardConfirmation.present { leave() }");
+    expect(request.indexOf("PlanningDiscardConfirmation.present")).toBeLessThan(request.indexOf("leave()"));
   });
 
   it("shows at most five newest plans and keeps the list visible when empty", () => {
@@ -554,7 +557,8 @@ describe("planning blueprint 1", () => {
     expect(planText).toContain("3. 期間を選択");
     expect(sheet).toContain(".pickerStyle(.wheel)");
     expect(chrome).toContain("struct PlanningSystemSheetChrome");
-    expect(chrome).toContain("presentationDetents([.height(height)])");
+    expect(chrome).toContain("presentationSizing(.fitted)");
+    expect(chrome).toContain("presentationDetents([.height(max(height, 1))])");
     expect(plans).toContain("onDismiss");
     expect(plans).toContain("popAfterDismiss");
   });
@@ -581,10 +585,11 @@ describe("planning blueprint 1", () => {
     expect((plans.match(/\.planningScroll\(\)/g) ?? []).length).toBeGreaterThanOrEqual(4);
   });
 
-  it("makes Help header transparent and fixed", () => {
-    expect(help).toContain("PlanningTranslucentHeader");
-    expect(help).toContain("planningFixedHeader");
+  it("makes Help use the shared Planning toolbar chrome", () => {
+    expect(help).toContain("planningPageChrome");
+    expect(help).toContain("navigation.pop()");
     expect(help).not.toContain("ultraThinMaterial");
+    expect(help).not.toContain("PlanningTranslucentHeader");
   });
 
   it("keeps the app portrait-only on iPhone and localizes ja/en", () => {
@@ -636,13 +641,15 @@ describe("planning blueprint 1", () => {
   });
 
   it("keeps the frozen index geometry and the navigation crash fix", () => {
-    for (const token of ["depth: CGFloat = 28", "length: CGFloat = 75", "trailingMargin: CGFloat = 4", "cornerRadius: CGFloat = 7.5", "seamWidth: CGFloat = 2"]) {
+    for (const token of ["depth: CGFloat = 30.8", "length: CGFloat = 90", "trailingMargin: CGFloat = 4", "cornerRadius: CGFloat = 7.5", "seamWidth: CGFloat = 2"]) {
       expect(tokens).toContain(token);
     }
     expect(planningShell).toContain(".zIndex(session.section == section ? 2 : 0)");
     expect(shell).toMatch(/\}\s*\.environmentObject\(navigation\)/);
     expect(planningShell).toContain(".environmentObject(navigation)");
-    expect(planningShell).toContain("planningFixedLight()");
+    expect(shell).not.toContain("PlanningNavigationAppearance");
+    expect(chrome).not.toContain("planningFixedLight()");
+    expect(planningShell).not.toContain("preferredColorScheme");
     expect(postpone).toContain("navigation.pop()");
     expect(postpone).not.toContain("removeLast");
   });
@@ -653,8 +660,8 @@ describe("planning blueprint 1", () => {
     expect(chrome).toContain("static let columnCount = 7");
     expect(future).toContain("PlanningCalendarGrid.matrix");
     expect(future).toContain("PlanningCalendarGrid.rowCount");
-    expect(tokens).toContain("cardHeight: CGFloat = 111");
-    expect(future).toContain("Text(\"Future\")");
+    expect(tokens).toContain("cardHeight: CGFloat = 120");
+    expect(future).toContain("PlanningSectionIntro(title: \"Future\"");
     expect(planText).toContain("これからの1年を見通して");
     expect(future).toContain("fixedHeight: 260");
     expect(future).toContain(".tabViewStyle(.page(indexDisplayMode: .never))");
@@ -677,7 +684,7 @@ describe("planning blueprint 1", () => {
     expect(models).toContain("var endYear: Int?");
     expect(future).toContain("PlanningText.string(.unset)");
     expect(future).toContain("interactiveDismissDisabled(isDirty)");
-    expect(future).toContain(".alert(PlanningText.string(.discardTitle)");
+    expect(future).toContain("PlanningDiscardConfirmation.present");
     expect(future).toContain("PlanIconColor.allCases");
     expect(future).not.toContain("preferredColorScheme");
   });
@@ -717,8 +724,191 @@ describe("planning blueprint 1", () => {
   });
 
   it("centralizes geometry in tokens", () => {
-    for (const token of ["height: CGFloat = 72", "titleSize: CGFloat = 34", "depth: CGFloat = 28", "trailingMargin: CGFloat = 4", "seamWidth: CGFloat = 2", "buttonHeight: CGFloat = 52"]) {
+    for (const token of ["height: CGFloat = 72", "titleSize: CGFloat = 34", "depth: CGFloat = 30.8", "trailingMargin: CGFloat = 4", "seamWidth: CGFloat = 2", "buttonHeight: CGFloat = 52"]) {
       expect(tokens).toContain(token);
     }
+  });
+});
+
+describe("planning TestFlight header, sheets, and index", () => {
+  it("removes the transfer selection top check", () => {
+    const selection = plans.slice(
+      plans.indexOf("struct PlanTransferSelectionPage"),
+      plans.indexOf("// MARK: - Destination sheet"),
+    );
+    expect(selection).not.toContain("NativeGlassIconButton");
+    expect(selection).not.toContain("icon: .check");
+    expect(selection).toContain("planningPageChrome(title: PlanningText.string(.selectItemsTitle)");
+    expect(selection).toContain("PlanningText.string(.chooseDestination)");
+    expect(planText).toContain("反映する項目を選択");
+  });
+
+  it("labels Plan save as 保存 and still saves once then pops once", () => {
+    expect(planText).toContain('.save: ("保存", "Save")');
+    expect(plans).toContain("PlanningSavePill(action: save)");
+    const editor = plans.slice(plans.indexOf("struct PlanEditorPage"), plans.indexOf("enum PlanBulletReturn"));
+    const save = editor.slice(editor.indexOf("private func save"), editor.indexOf("private func reflect"));
+    expect(save.match(/session\.save\(/g)).toHaveLength(1);
+    expect(save.match(/navigation\.pop\(\)/g)).toHaveLength(1);
+    expect(editor).not.toContain("icon: .check");
+  });
+
+  it("enlarges every index tab inward and keeps the screen-edge gap", () => {
+    expect(tokens).toContain("static let depth: CGFloat = 30.8");
+    expect(tokens).toContain("static let length: CGFloat = 90");
+    expect(tokens).toContain("static let trailingMargin: CGFloat = 4");
+    expect(tokens).toContain("static var columnWidth: CGFloat { depth + trailingMargin }");
+    expect(planningShell).toContain("frame(width: PlanningTokens.Index.depth, height: PlanningTokens.Index.length)");
+    expect(planningShell).toContain(".zIndex(1)");
+    expect(planningShell).toContain(".zIndex(session.section == section ? 2 : 0)");
+    expect(chrome).toContain("struct PlanningIndexTabShape");
+  });
+
+  it("shares one clear index host and does not paint a period column", () => {
+    expect(chrome).toContain("struct PlanningIndexHost");
+    expect(planningShell).toContain("PlanningIndexHost");
+    expect(planningShell).toContain(".background(Color.clear)");
+    for (const page of ["PlanListPage", "FutureYearPage"]) {
+      expect(planningShell).toContain(page);
+    }
+    expect(planningShell).toContain("bucket: .monthly");
+    expect(planningShell).toContain("bucket: .weekly");
+    expect(planningShell).toContain("bucket: .daily");
+    expect(future).not.toContain("PlanningIndexSurface");
+    expect(periodPage).not.toContain("PlanningIndexSurface");
+    expect(future).not.toContain(".background(PlanningPalette.future)");
+    expect(periodPage).not.toContain(".background(PlanningPalette.monthly)");
+    expect(periodPage).not.toContain(".background(PlanningPalette.weekly)");
+    expect(periodPage).not.toContain(".background(PlanningPalette.daily)");
+  });
+
+  it("fits destination and period-picker sheets to their content", () => {
+    const system = chrome.slice(
+      chrome.indexOf("struct PlanningSystemSheetChrome"),
+      chrome.indexOf("struct PlanningHeadingIconSlot"),
+    );
+    expect(chrome).toContain("presentationSizing(.fitted)");
+    expect(system).toContain("PlanningFittedSheet(height: resolvedHeight + bottomSafeArea)");
+    expect(system).toContain(".fixedSize(horizontal: false, vertical: true)");
+    expect(system).not.toContain(".medium");
+    expect(system).not.toContain(".large");
+    expect(system).not.toContain("maxHeight: .infinity");
+    expect(system).not.toContain("430");
+    const destination = plans.slice(
+      plans.indexOf("private struct PlanDestinationSheet"),
+      plans.indexOf("enum PlanTransferCalendar"),
+    );
+    expect(destination).not.toContain("Spacer(");
+    expect(destination).toContain("PlanningSystemSheetChrome(");
+    const picker = plans.slice(plans.indexOf("private struct PlanPeriodPickerSheet"));
+    expect(picker).toContain("case .monthly:");
+    expect(picker).toContain("case .weekly:");
+    expect(picker).toContain("case .daily:");
+    expect(picker).toContain("PlanningSystemSheetChrome(");
+    expect(picker).not.toContain("periodPickerHeight");
+    expect(picker).not.toContain(".medium");
+    expect(future).toContain("fixedHeight: 260");
+  });
+
+  it("keeps Back on navigation.pop and the shared header chrome", () => {
+    expect(shell).toMatch(/\}\s*\.environmentObject\(navigation\)/);
+    expect(planningShell).toContain(".environmentObject(navigation)");
+    for (const source of [plans, help, postpone]) {
+      expect(source).toContain("navigation.pop()");
+      expect(source).not.toContain("removeLast");
+    }
+    expect(future).not.toContain("removeLast");
+    expect(chrome).toContain("safeAreaBar(edge: .top");
+    expect(chrome).toContain("toolbarBackground(.ultraThinMaterial, for: .navigationBar)");
+    expect(shell).not.toContain("preferredColorScheme");
+    expect(planningShell).not.toContain("preferredColorScheme");
+    expect(chrome).toContain("struct PlanningPageChrome");
+    expect(plans).toContain("planningPageChrome");
+    expect(help).toContain("planningPageChrome");
+    expect(postpone).toContain("planningPageChrome");
+    expect(periodPage).toContain("planningFixedHeader");
+    expect(tokens).toContain("static let topGap: CGFloat = 10");
+    expect(plans).toContain("PlanningTokens.Search.topGap");
+    expect(plans).toContain("proxy.scrollTo(id, anchor: .bottom)");
+    expect(tokens).toContain("static let focusClearance: CGFloat = 44");
+  });
+});
+
+describe("planning TestFlight future, discard, and flicker", () => {
+  it("reuses Plan intro spacing for Future and the period title row", () => {
+    expect(chrome).toContain("struct PlanningSectionIntro");
+    expect(chrome).toContain("PlanningTokens.PlanMain.titleTop");
+    expect(chrome).toContain("PlanningTokens.PlanMain.titleToParagraph");
+    expect(future).toContain("PlanningSectionIntro(title: \"Future\"");
+    expect(plans).toContain("PlanningSectionIntro(");
+    expect(periodPage).toContain("PlanningTokens.PlanMain.titleTop");
+  });
+
+  it("marks one day beside the number and bands a range in event colour", () => {
+    expect(tokens).toContain("cardHeight: CGFloat = 120");
+    expect(future).toContain("alignment: .topTrailing");
+    expect(future).toContain("PlanIconColor.resolved(event.colorID).color");
+    expect(future).not.toContain("PlanningPalette.future");
+    expect(future).toContain("opacity(0.26)");
+    expect(future).toContain("enum FutureCalendarMarks");
+    expect(future).toContain("events.first { covers($0, year: year, month: month, day: day) }");
+    const stamp = (year: number, month: number, day: number) => year * 10_000 + month * 100 + day;
+    const covers = (start: [number, number, number], end: [number, number, number], day: [number, number, number]) =>
+      stamp(...start) <= stamp(...day) && stamp(...day) <= stamp(...end);
+    const october = [7, 8, 9, 10].every((day) => covers([2026, 10, 7], [2026, 10, 10], [2026, 10, day]));
+    expect(october).toBe(true);
+    expect(covers([2026, 9, 29], [2026, 10, 3], [2026, 10, 1])).toBe(true);
+    expect(covers([2026, 9, 29], [2026, 10, 3], [2026, 9, 28])).toBe(false);
+    expect(covers([2026, 12, 30], [2027, 1, 2], [2027, 1, 2])).toBe(true);
+    const winners = ["later", "earlier"];
+    const first = winners.find((event) => event === "earlier" || event === "later");
+    expect(first).toBe("later");
+    const ordered = [
+      { id: "first", covers: true },
+      { id: "second", covers: true },
+    ];
+    expect(ordered.find((event) => event.covers)?.id).toBe("first");
+    const row = ["range", "range", "range", null];
+    const role = (column: number) => {
+      const previous = column > 0 ? row[column - 1] : null;
+      const next = column < row.length - 1 ? row[column + 1] : null;
+      const starts = previous !== "range";
+      const ends = next !== "range";
+      if (starts && ends) return "both";
+      if (starts) return "leading";
+      if (ends) return "trailing";
+      return "middle";
+    };
+    expect(role(0)).toBe("leading");
+    expect(role(1)).toBe("middle");
+    expect(role(2)).toBe("trailing");
+    expect(role(0)).not.toBe(role(2));
+  });
+
+  it("uses one sheet chrome, a one-line goal, and a single date-sheet height", () => {
+    expect(future).toContain(".lineLimit(1)");
+    expect(future).toContain("PlanningTokens.Editor.fieldHeight");
+    expect(future).toContain("showsControls: editingEventID == nil");
+    expect(future).toContain("showsControls: !pickingStart && !pickingEnd");
+    expect(future).toContain("displayedComponents: .date");
+    expect(future).toContain("displayedComponents: .hourAndMinute");
+    expect(future).toContain("if includesTime");
+    expect(future).toContain("PlanningTokens.Sheet.timeWheelHeight");
+    expect(future).not.toContain("presentationDetents([.medium, .large])");
+    expect(chrome).toContain("presentationDetents([.height(max(height, 1))])");
+    expect(chrome).toContain("view.tintColor = .label");
+    expect(chrome).toContain("style: .cancel");
+    expect(chrome).toContain("style: .destructive");
+  });
+
+  it("clears editor focus before transfer and keeps the index and Back contract", () => {
+    const reflect = plans.slice(plans.indexOf("private func reflect"), plans.indexOf("private func requestClose"));
+    expect(reflect.indexOf("focusedID = nil")).toBeLessThan(reflect.indexOf("navigation.path.append"));
+    expect(reflect).toContain("DispatchQueue.main.async");
+    expect(shell).toContain(".environmentObject(navigation)");
+    expect(plans).not.toContain("removeLast");
+    expect(tokens).toContain("depth: CGFloat = 30.8");
+    expect(tokens).toContain("length: CGFloat = 90");
+    expect(tokens).toContain("trailingMargin: CGFloat = 4");
   });
 });

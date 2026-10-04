@@ -16,7 +16,6 @@ struct FutureYearPage: View {
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .background(PlanningIndexSurface())
         .onChange(of: session.selectedYear) { _, _ in
             session.ensureSelectedYear()
         }
@@ -50,21 +49,12 @@ struct FutureYearPage: View {
         let model = session.years.first(where: { $0.year == year }) ?? PlanningRules.makeYear(year)
         return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: PlanningTokens.Future.iconGap) {
+                PlanningSectionIntro(title: "Future", message: PlanningText.string(.futureDescription)) {
                     Image(systemName: "calendar")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PlanningPalette.ink)
                         .frame(width: PlanningTokens.PlanMain.iconSlot, height: PlanningTokens.PlanMain.iconSlot)
-                    Text("Future")
-                        .font(.system(size: PlanningTokens.Future.titleSize, weight: .semibold))
-                        .foregroundStyle(PlanningPalette.ink)
                 }
-                Text(PlanningText.string(.futureDescription))
-                    .font(.system(size: PlanningTokens.Future.descriptionSize))
-                    .lineSpacing(PlanningTokens.Future.descriptionLineSpacing)
-                    .foregroundStyle(PlanningPalette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, PlanningTokens.Future.descriptionGap)
 
                 yearControls(year)
                     .padding(.top, PlanningTokens.Future.yearGap)
@@ -101,7 +91,7 @@ struct FutureYearPage: View {
             }
             .padding(.leading, PlanningTokens.contentInset)
             .padding(.trailing, PlanningTokens.Future.trailingInset)
-            .padding(.vertical, 12)
+            .padding(.bottom, 12)
         }
         .planningScroll()
         .background(PlanningPalette.paper)
@@ -241,6 +231,57 @@ enum FutureEventText {
     }
 }
 
+/// Mini-calendar marks. Repository order is creation order: the first covering event wins.
+enum FutureCalendarMarks {
+    enum BandRole {
+        case leading, middle, trailing, both
+    }
+
+    static func dayStamp(year: Int, month: Int, day: Int) -> Int {
+        year * 10_000 + month * 100 + day
+    }
+
+    static func interval(_ event: PlanningEventRecord) -> (start: Int, end: Int)? {
+        guard let startDay = event.startDay else { return nil }
+        let start = dayStamp(year: event.year, month: event.month, day: startDay)
+        let end = dayStamp(
+            year: event.endYear ?? event.year,
+            month: event.endMonth ?? event.month,
+            day: event.endDay ?? startDay
+        )
+        return (min(start, end), max(start, end))
+    }
+
+    static func covers(_ event: PlanningEventRecord, year: Int, month: Int, day: Int) -> Bool {
+        guard let interval = interval(event) else { return false }
+        let day = dayStamp(year: year, month: month, day: day)
+        return interval.start <= day && day <= interval.end
+    }
+
+    static func isRange(_ event: PlanningEventRecord) -> Bool {
+        guard let interval = interval(event) else { return false }
+        return interval.end > interval.start
+    }
+
+    /// First event in repository order that covers the day.
+    static func winner(_ events: [PlanningEventRecord], year: Int, month: Int, day: Int) -> PlanningEventRecord? {
+        events.first { covers($0, year: year, month: month, day: day) }
+    }
+
+    /// Caps are per week row. A range that continues past Sunday starts again on Monday.
+    static func bandRole(column: Int, eventID: UUID?, rowWinners: [UUID?]) -> BandRole? {
+        guard let eventID, rowWinners[column] == eventID else { return nil }
+        let previous = column > 0 ? rowWinners[column - 1] : nil
+        let next = column < rowWinners.count - 1 ? rowWinners[column + 1] : nil
+        let starts = previous != eventID
+        let ends = next != eventID
+        if starts && ends { return .both }
+        if starts { return .leading }
+        if ends { return .trailing }
+        return .middle
+    }
+}
+
 private struct FutureMonthCell: View {
     let year: Int
     let month: Int
@@ -253,7 +294,7 @@ private struct FutureMonthCell: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             Text("\(month)月")
                 .font(.system(size: PlanningTokens.Future.monthFont, weight: .semibold))
                 .foregroundStyle(PlanningPalette.ink)
@@ -266,32 +307,73 @@ private struct FutureMonthCell: View {
                 }
             }
             let rows = PlanningCalendarGrid.matrix(year: year, month: month)
-            VStack(spacing: 0) {
+            VStack(spacing: 2) {
                 ForEach(0..<PlanningCalendarGrid.rowCount, id: \.self) { row in
+                    let winners: [UUID?] = (0..<PlanningCalendarGrid.columnCount).map { column in
+                        guard let day = rows[row][column] else { return nil }
+                        return FutureCalendarMarks.winner(events, year: year, month: month, day: day)?.id
+                    }
                     HStack(spacing: 0) {
                         ForEach(0..<PlanningCalendarGrid.columnCount, id: \.self) { column in
-                            let day = rows[row][column]
-                            VStack(spacing: 0) {
-                                Text(day.map(String.init) ?? " ")
-                                    .font(.system(size: PlanningTokens.Future.dateFont))
-                                    .foregroundStyle(PlanningPalette.ink)
-                                Circle()
-                                    .fill(day != nil && events.contains { $0.startDay == day } ? PlanningPalette.future : Color.clear)
-                                    .frame(width: 3, height: 3)
-                            }
-                            .frame(maxWidth: .infinity)
+                            dayCell(day: rows[row][column], column: column, winners: winners)
                         }
                     }
                 }
             }
         }
-        .padding(6)
+        .padding(.horizontal, 6)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
         .frame(height: PlanningTokens.Future.cardHeight)
         .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: PlanningTokens.Future.cardRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: PlanningTokens.Future.cardRadius, style: .continuous)
                 .stroke(PlanningPalette.line, lineWidth: 1)
+        )
+    }
+
+    private func dayCell(day: Int?, column: Int, winners: [UUID?]) -> some View {
+        let event = day.flatMap { FutureCalendarMarks.winner(events, year: year, month: month, day: $0) }
+        let ranged = event.map(FutureCalendarMarks.isRange) ?? false
+        let role = FutureCalendarMarks.bandRole(column: column, eventID: ranged ? event?.id : nil, rowWinners: winners)
+        return ZStack {
+            if let event, let role {
+                FutureRangeBand(role: role)
+                    .fill(PlanIconColor.resolved(event.colorID).color.opacity(0.26))
+                    .padding(.vertical, 1)
+            }
+            Text(day.map(String.init) ?? " ")
+                .font(.system(size: PlanningTokens.Future.dateFont))
+                .foregroundStyle(PlanningPalette.ink)
+            if let event, day != nil, !ranged {
+                Circle()
+                    .fill(PlanIconColor.resolved(event.colorID).color)
+                    .frame(width: 4, height: 4)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.top, 1)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct FutureRangeBand: Shape {
+    let role: FutureCalendarMarks.BandRole
+
+    func path(in rect: CGRect) -> Path {
+        let leading = role == .leading || role == .both
+        let trailing = role == .trailing || role == .both
+        let radius = min(rect.height / 2, 4)
+        return Path(
+            roundedRect: rect,
+            cornerRadii: RectangleCornerRadii(
+                topLeading: leading ? radius : 0,
+                bottomLeading: leading ? radius : 0,
+                bottomTrailing: trailing ? radius : 0,
+                topTrailing: trailing ? radius : 0
+            )
         )
     }
 }
@@ -334,7 +416,6 @@ struct FutureMonthSheet: View {
 
     @State private var goal = ""
     @State private var originalGoal = ""
-    @State private var confirmDiscard = false
     @State private var editingEventID: FutureEventRoute?
 
     private var events: [PlanningEventRecord] {
@@ -344,21 +425,19 @@ struct FutureMonthSheet: View {
     private var isDirty: Bool { goal != originalGoal }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: requestClose)
-                Spacer()
-                NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true, action: save)
-            }
-            .padding(.horizontal, PlanningTokens.contentInset)
-            ScrollView {
-                VStack(alignment: .leading, spacing: PlanningTokens.Future.sheetTopGap) {
+        PlanningSystemSheetChrome(
+            onClose: requestClose,
+            onConfirm: save,
+            showsControls: editingEventID == nil,
+            maximumBody: PlanningTokens.Sheet.maximumBody
+        ) {
+            VStack(alignment: .leading, spacing: PlanningTokens.Future.sheetTopGap) {
                     Text(PlanningText.string(.monthGoal))
                         .font(.system(size: 15, weight: .semibold))
-                    TextField("目標は1つ", text: $goal, axis: .vertical)
-                        .lineLimit(2...4)
-                        .padding(12)
-                        .frame(minHeight: PlanningTokens.Future.goalMinHeight, alignment: .topLeading)
+                    TextField("目標は1つ", text: $goal)
+                        .lineLimit(1)
+                        .padding(.horizontal, 12)
+                        .frame(height: PlanningTokens.Editor.fieldHeight)
                         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     HStack {
                         Text(PlanningText.string(.monthEvents))
@@ -392,20 +471,11 @@ struct FutureMonthSheet: View {
                     }
                 }
                 .padding(.horizontal, PlanningTokens.contentInset)
-                .padding(.top, PlanningTokens.Future.sheetTopGap)
-                .padding(.bottom, 24)
-            }
-            .planningScroll()
+                .padding(.top, PlanningTokens.Sheet.sectionSpacing)
+                .padding(.bottom, 8)
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.hidden)
         .interactiveDismissDisabled(isDirty)
         .onAppear(perform: load)
-        .alert(PlanningText.string(.discardTitle), isPresented: $confirmDiscard) {
-            Button(PlanningText.string(.cancel), role: .cancel) {}
-                .tint(PlanningPalette.ink)
-            Button(PlanningText.string(.discard), role: .destructive) { onClose() }
-        }
         .sheet(item: $editingEventID) { route in
             FutureEventSheet(
                 session: session,
@@ -456,7 +526,11 @@ struct FutureMonthSheet: View {
     }
 
     private func requestClose() {
-        if isDirty { confirmDiscard = true } else { onClose() }
+        if isDirty {
+            PlanningDiscardConfirmation.present { onClose() }
+        } else {
+            onClose()
+        }
     }
 
     private func save() {
@@ -484,7 +558,6 @@ private struct FutureEventSheet: View {
     @State private var endDay: Int?
     @State private var endMinutes: Int?
     @State private var snapshot = ""
-    @State private var confirmDiscard = false
     @State private var pickingStart = false
     @State private var pickingEnd = false
 
@@ -505,22 +578,15 @@ private struct FutureEventSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Text(PlanningText.string(isNew ? .addEvent : .editEvent))
-                    .font(.headline)
-                    .lineLimit(1)
-                HStack {
-                    NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: requestClose)
-                    Spacer()
-                    NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true, action: save)
-                        .disabled(!canSave)
-                        .opacity(canSave ? 1 : 0.4)
-                }
-            }
-            .padding(.horizontal, PlanningTokens.contentInset)
-            ScrollView {
-                VStack(alignment: .leading, spacing: PlanningTokens.Editor.sectionGap) {
+        PlanningSystemSheetChrome(
+            onClose: requestClose,
+            onConfirm: save,
+            confirmEnabled: canSave,
+            showsControls: !pickingStart && !pickingEnd,
+            centerTitle: PlanningText.string(isNew ? .addEvent : .editEvent),
+            maximumBody: PlanningTokens.Sheet.maximumBody
+        ) {
+            VStack(alignment: .leading, spacing: PlanningTokens.Editor.sectionGap) {
                     labeled(.titleLabel) {
                         TextField(PlanningText.string(.titlePlaceholder), text: $title)
                             .padding(.horizontal, 12)
@@ -533,20 +599,11 @@ private struct FutureEventSheet: View {
                     labeled(.endLabel) { momentButton(displayYear: endYear ?? (startYear == 0 ? year : startYear), displayMonth: endMonth ?? (startMonth == 0 ? month : startMonth), day: endDay, minutes: endMinutes) { pickingEnd = true } }
                 }
                 .padding(.horizontal, PlanningTokens.contentInset)
-                .padding(.top, PlanningTokens.Future.sheetTopGap)
-                .padding(.bottom, 24)
-            }
-            .planningScroll()
+                .padding(.top, PlanningTokens.Sheet.sectionSpacing)
+                .padding(.bottom, 8)
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.hidden)
         .interactiveDismissDisabled(isDirty)
         .onAppear(perform: load)
-        .alert(PlanningText.string(.discardTitle), isPresented: $confirmDiscard) {
-            Button(PlanningText.string(.cancel), role: .cancel) {}
-                .tint(PlanningPalette.ink)
-            Button(PlanningText.string(.discard), role: .destructive) { dismiss() }
-        }
         .sheet(isPresented: $pickingStart) {
             FutureMomentPicker(month: startMonth == 0 ? month : startMonth, year: startYear == 0 ? year : startYear, day: startDay, minutes: startMinutes) { pickedYear, pickedMonth, day, minutes in
                 startYear = pickedYear ?? year
@@ -645,7 +702,11 @@ private struct FutureEventSheet: View {
     }
 
     private func requestClose() {
-        if isDirty { confirmDiscard = true } else { dismiss() }
+        if isDirty {
+            PlanningDiscardConfirmation.present { dismiss() }
+        } else {
+            dismiss()
+        }
     }
 
     private func save() {
@@ -681,24 +742,33 @@ private struct FutureMomentPicker: View {
     @State private var includesTime = false
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Button(PlanningText.string(.unset)) {
-                    onPick(nil, nil, nil, nil)
-                    dismiss()
+        PlanningSystemSheetChrome(
+            onClose: { dismiss() },
+            onConfirm: commit,
+            centerTitle: PlanningText.string(.unset),
+            onCenter: {
+                onPick(nil, nil, nil, nil)
+                dismiss()
+            },
+            maximumBody: PlanningTokens.Sheet.maximumBody
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                DatePicker("Date", selection: $date, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .environment(\.calendar, PeriodCalendar.calendar)
+                    .frame(height: PlanningTokens.Sheet.calendarHeight)
+                    .padding(.horizontal, 8)
+                Toggle("Time", isOn: $includesTime)
+                    .padding(.horizontal, 16)
+                if includesTime {
+                    DatePicker("Time", selection: $date, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                        .environment(\.calendar, PeriodCalendar.calendar)
+                        .frame(height: PlanningTokens.Sheet.timeWheelHeight)
                 }
-                Spacer()
-                NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true, action: commit)
             }
-            .padding(.horizontal, 16)
-            DatePicker("Date", selection: $date, displayedComponents: includesTime ? [.date, .hourAndMinute] : [.date])
-                .datePickerStyle(.graphical)
-                .environment(\.calendar, PeriodCalendar.calendar)
-                .padding(.horizontal, 8)
-            Toggle(includesTime ? "Time" : "Time", isOn: $includesTime)
-                .padding(.horizontal, 16)
         }
-        .presentationDetents([.medium, .large])
         .onAppear {
             var parts = DateComponents()
             parts.year = year

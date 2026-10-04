@@ -269,12 +269,11 @@ final class NativeGlassMount {
     }
 
     func update(_ envelope: NativeGlassEnvelope) {
-        let style: UIUserInterfaceStyle = envelope.colorScheme == "dark" ? .dark : .light
-        overlay.overrideUserInterfaceStyle = style
-        shield.overrideUserInterfaceStyle = style
-        surfaceOverlay.overrideUserInterfaceStyle = style
-        controller?.overrideUserInterfaceStyle = style
-        surfaceController?.overrideUserInterfaceStyle = style
+        overlay.overrideUserInterfaceStyle = .light
+        shield.overrideUserInterfaceStyle = .light
+        surfaceOverlay.overrideUserInterfaceStyle = .light
+        controller?.overrideUserInterfaceStyle = .light
+        surfaceController?.overrideUserInterfaceStyle = .light
         if model.accentRaw != envelope.accent {
             model.accentRaw = envelope.accent
         }

@@ -44,9 +44,6 @@ private enum PlanDateText {
     }
 }
 
-/// Plan subpage bars use the shared translucent header.
-private typealias PlanPageBar = PlanningTranslucentHeader
-
 private struct PlanCtaButton: View {
     let title: String
     var fill: Color = PlanningPalette.plan
@@ -120,23 +117,12 @@ struct PlanListPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center, spacing: PlanningTokens.PlanMain.iconGap) {
+                PlanningSectionIntro(
+                    title: PlanningText.string(.planIntroTitle),
+                    message: PlanningText.string(.planIntroBody)
+                ) {
                     PlanningHeadingIconSlot()
-                    Text(PlanningText.string(.planIntroTitle))
-                        .font(.system(size: PlanningTokens.PlanMain.titleSize, weight: .semibold))
-                        .foregroundStyle(PlanningPalette.ink)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
                 }
-                .padding(.top, PlanningTokens.PlanMain.titleTop)
-
-                Text(PlanningText.string(.planIntroBody))
-                    .font(.system(size: PlanningTokens.PlanMain.paragraphSize))
-                    .lineSpacing(PlanningTokens.PlanMain.paragraphLineSpacing)
-                    .foregroundStyle(PlanningPalette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, PlanningTokens.PlanMain.titleToParagraph)
 
                 Button {
                     let id = session.beginPlan()
@@ -238,6 +224,7 @@ struct PlanFullListPage: View {
         VStack(spacing: 0) {
             searchField
                 .padding(.horizontal, PlanningTokens.Search.inset)
+                .padding(.top, PlanningTokens.Search.topGap)
                 .padding(.bottom, 10)
             ScrollView {
                 LazyVStack(spacing: PlanningTokens.PlanMain.cardGap) {
@@ -260,12 +247,9 @@ struct PlanFullListPage: View {
             }
             .planningScroll()
         }
-        .planningFixedHeader {
-            PlanPageBar(title: PlanningText.string(.planListTitle), onBack: { navigation.pop() }) { EmptyView() }
-        }
+        .planningPageChrome(title: PlanningText.string(.planListTitle), onBack: { navigation.pop() })
         .planningKeyboardDismiss()
         .background(PlanningPalette.paper)
-        .navigationBarHidden(true)
     }
 
     private var searchField: some View {
@@ -306,11 +290,10 @@ struct PlanEditorPage: View {
     @State private var memo = ""
     @State private var isNewPlan = true
     @State private var savedSnapshot = ""
-    @State private var confirmDiscard = false
     @FocusState private var focusedID: UUID?
 
     var body: some View {
-        VStack(spacing: 0) {
+        ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: PlanningTokens.Editor.sectionGap) {
                     titleSection
@@ -321,29 +304,31 @@ struct PlanEditorPage: View {
                 }
                 .padding(.horizontal, PlanningTokens.contentInset)
                 .padding(.top, PlanningTokens.Editor.subpageTopGap)
-                .padding(.bottom, 20)
+                .padding(.bottom, PlanningTokens.Editor.focusClearance)
             }
             .planningScroll()
+            .onChange(of: focusedID) { _, id in
+                guard let id else { return }
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo(id, anchor: .bottom)
+                    }
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             PlanCtaButton(title: PlanningText.string(.reflectToItems), action: reflect)
         }
-        .planningFixedHeader {
-            PlanPageBar(
-                title: PlanningText.string(isNewPlan ? .newPlan : .editPlan),
-                onBack: requestClose
-            ) {
-                NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true, action: save)
-            }
+        .planningPageChrome(
+            title: PlanningText.string(isNewPlan ? .newPlan : .editPlan),
+            onBack: requestClose
+        ) {
+            PlanningSavePill(action: save)
         }
         .planningKeyboardDismiss()
         .background(PlanningPalette.paper)
-        .navigationBarHidden(true)
         .toolbar(.hidden, for: .tabBar)
         .onAppear(perform: load)
-        .alert(PlanningText.string(.discardTitle), isPresented: $confirmDiscard) {
-            Button(PlanningText.string(.cancel), role: .cancel) {}
-                .tint(PlanningPalette.ink)
-            Button(PlanningText.string(.discard), role: .destructive) { leave() }
-        }
     }
 
     // MARK: Sections
@@ -437,6 +422,8 @@ struct PlanEditorPage: View {
                             .onSubmit { apply(PlanBulletReturn.parent(bullets: bullets, parentID: bullet.id)) }
                     }
                     .frame(minHeight: PlanningTokens.Editor.parentRowHeight)
+                    .padding(.bottom, focusedID == bullet.id ? PlanningTokens.Editor.focusClearance : 0)
+                    .id(bullet.id)
                     ForEach($bullet.children) { $child in
                         HStack(spacing: 10) {
                             Circle()
@@ -450,6 +437,8 @@ struct PlanEditorPage: View {
                         }
                         .padding(.leading, PlanningTokens.Editor.subtaskIndent)
                         .frame(minHeight: PlanningTokens.Editor.parentRowHeight)
+                        .padding(.bottom, focusedID == child.id ? PlanningTokens.Editor.focusClearance : 0)
+                        .id(child.id)
                     }
                 }
             }
@@ -495,15 +484,20 @@ struct PlanEditorPage: View {
         return titled || hasItem
     }
 
-    /// Check mark: save once, then exactly one return. Transfer must not call this.
+    /// Save once, then exactly one return. Transfer must not call this.
     private func save() {
         bullets = clamped(bullets)
         session.save(planID: planID, title: title, bullets: bullets, memo: memo, iconID: iconID, iconColorID: iconColorID)
         navigation.pop()
     }
 
-    /// Saves the current editor state only when it differs from the last save, then opens selection.
+    /// Dismiss the keyboard, then save if needed and open selection on the next turn.
     private func reflect() {
+        focusedID = nil
+        DispatchQueue.main.async { self.openTransfer() }
+    }
+
+    private func openTransfer() {
         bullets = clamped(bullets)
         guard transferIsValid else { return }
         let needsSave = isNewPlan || snapshot() != savedSnapshot
@@ -517,10 +511,10 @@ struct PlanEditorPage: View {
         navigation.path.append(PlanningRoute.planTransfer(planID))
     }
 
-    /// Back: if dirty show a standard alert first. Navigation is not touched until the user answers.
+    /// Back: if dirty show a native alert first. Navigation is not touched until the user answers.
     private func requestClose() {
         if snapshot() != savedSnapshot {
-            confirmDiscard = true
+            PlanningDiscardConfirmation.present { leave() }
         } else {
             leave()
         }
@@ -657,15 +651,8 @@ struct PlanTransferSelectionPage: View {
             PlanCtaButton(title: PlanningText.string(.chooseDestination), action: openDestination)
                 .disabled(selected.isEmpty)
         }
-        .planningFixedHeader {
-            PlanPageBar(title: PlanningText.string(.selectItemsTitle), onBack: { navigation.pop() }) {
-                NativeGlassIconButton(icon: .check, accessibilityLabel: "Choose destination", prominent: true, action: openDestination)
-                    .disabled(selected.isEmpty)
-                    .opacity(selected.isEmpty ? 0.4 : 1)
-            }
-        }
+        .planningPageChrome(title: PlanningText.string(.selectItemsTitle), onBack: { navigation.pop() })
         .background(PlanningPalette.paper)
-        .navigationBarHidden(true)
         .toolbar(.hidden, for: .tabBar)
         .sheet(isPresented: $showingDestination, onDismiss: {
             // Pop only after the sheet is fully gone, never in the same transaction.
@@ -741,11 +728,10 @@ private struct PlanDestinationSheet: View {
 
     var body: some View {
         PlanningSystemSheetChrome(
-            height: PlanningTokens.Sheet.destinationHeight,
             onClose: onClose,
             onConfirm: copy
         ) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: PlanningTokens.Sheet.sectionSpacing) {
                 label(.destinationKind)
                 Picker(PlanningText.string(.destinationKind), selection: $kind) {
                     Text(PlanningText.string(.task)).tag(PlanningItemKind.task)
@@ -753,7 +739,7 @@ private struct PlanDestinationSheet: View {
                 }
                 .pickerStyle(.segmented)
 
-                label(.destinationScope).padding(.top, 8)
+                label(.destinationScope)
                 Picker(PlanningText.string(.destinationScope), selection: $bucket) {
                     Text("Monthly").tag(PlanningBucket.monthly)
                     Text("Weekly").tag(PlanningBucket.weekly)
@@ -761,7 +747,7 @@ private struct PlanDestinationSheet: View {
                 }
                 .pickerStyle(.segmented)
 
-                label(.destinationPeriod).padding(.top, 8)
+                label(.destinationPeriod)
                 Button {
                     showingPeriodPicker = true
                 } label: {
@@ -780,10 +766,9 @@ private struct PlanDestinationSheet: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                     .padding(.top, 6)
-                Spacer(minLength: 0)
             }
             .padding(.horizontal, PlanningTokens.Sheet.horizontalInset)
-            .padding(.top, 14)
+            .padding(.top, PlanningTokens.Sheet.sectionSpacing)
         }
         .sheet(isPresented: $showingPeriodPicker) {
             PlanPeriodPickerSheet(bucket: bucket, initialKey: periodKey) { key in
@@ -880,7 +865,6 @@ private struct PlanPeriodPickerSheet: View {
 
     var body: some View {
         PlanningSystemSheetChrome(
-            height: PlanningTokens.Sheet.periodPickerHeight,
             onClose: { dismiss() },
             onConfirm: confirm
         ) {

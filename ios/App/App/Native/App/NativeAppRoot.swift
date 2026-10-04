@@ -8,7 +8,7 @@ struct NativeAppRoot: View {
         AppThemeReader { theme in
             AppShell()
                 .environmentObject(appState)
-                .preferredColorScheme(nil)
+                .preferredColorScheme(.light)
                 .background(theme.background)
         }
     }

@@ -20,8 +20,10 @@ enum PlanningTokens {
 
     enum Index {
         static let trailingMargin: CGFloat = 4
-        static let depth: CGFloat = 28
-        static let length: CGFloat = 75
+        /// 28 × 1.10. The extra width grows inward; `trailingMargin` stays the screen-edge gap.
+        static let depth: CGFloat = 30.8
+        /// 75 × 1.20. The 2 pt gap between tabs is unchanged.
+        static let length: CGFloat = 90
         static let gap: CGFloat = 2
         static let topGap: CGFloat = 2
         static let cornerRadius: CGFloat = 7.5
@@ -59,6 +61,7 @@ enum PlanningTokens {
     enum Search {
         static let height: CGFloat = 38
         static let inset: CGFloat = 16
+        static let topGap: CGFloat = 10
     }
 
     enum Editor {
@@ -75,6 +78,8 @@ enum PlanningTokens {
         static let ctaCorner: CGFloat = 15
         static let ctaInset: CGFloat = 16
         static let sectionGap: CGFloat = 20
+        /// Room for one more bullet row below the focused row, above the transfer button.
+        static let focusClearance: CGFloat = 44
     }
 
     enum Future {
@@ -86,7 +91,7 @@ enum PlanningTokens {
         static let yearGap: CGFloat = 20
         static let columnGap: CGFloat = 7.5
         static let rowGap: CGFloat = 8
-        static let cardHeight: CGFloat = 111
+        static let cardHeight: CGFloat = 120
         static let cardRadius: CGFloat = 11.5
         static let trailingInset: CGFloat = 9
         static let monthFont: CGFloat = 14.5
@@ -98,8 +103,13 @@ enum PlanningTokens {
 
     enum Sheet {
         static let horizontalInset: CGFloat = 16
-        static let destinationHeight: CGFloat = 430
-        static let periodPickerHeight: CGFloat = 330
+        static let topInset: CGFloat = 18
+        static let sectionSpacing: CGFloat = 22
+        static let bottomInset: CGFloat = 20
         static let rowHeight: CGFloat = 46
+        /// Tallest fitted Planning sheet. Content scrolls inside instead of growing to full screen.
+        static let maximumBody: CGFloat = 640
+        static let calendarHeight: CGFloat = 392
+        static let timeWheelHeight: CGFloat = 148
     }
 }

@@ -52,48 +52,134 @@ extension View {
         background(PlanningKeyboardDismissInstaller().allowsHitTesting(false))
     }
 
-    /// Planning is fixed-light. Apply once at the Planning root so destinations
-    /// inherit it before their transition, without forcing the rest of the app.
-    func planningFixedLight() -> some View {
-        preferredColorScheme(.light)
+    /// Custom header row (Planning title, period controls) in the system safe-area bar.
+    /// iOS 26 uses `safeAreaBar` so the platform draws Liquid Glass and the scroll edge.
+    /// Earlier systems use a material inset. The header view itself stays unpainted.
+    func planningFixedHeader<Header: View>(@ViewBuilder header: () -> Header) -> some View {
+        modifier(PlanningHeaderChrome(header: AnyView(header())))
     }
 
-    /// Pins a header that has no fill. Scroll content moves underneath it;
-    /// the first item still starts below the header via the safe-area inset.
-    func planningFixedHeader<Header: View>(@ViewBuilder header: () -> Header) -> some View {
-        safeAreaInset(edge: .top, spacing: 0) {
-            header()
+    /// Pushed Planning pages: system navigation bar, back, centered title, optional trailing control.
+    func planningPageChrome(title: String, onBack: @escaping () -> Void) -> some View {
+        modifier(PlanningPageChrome(title: title, onBack: onBack, trailing: nil))
+    }
+
+    func planningPageChrome<Trailing: View>(
+        title: String,
+        onBack: @escaping () -> Void,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        modifier(PlanningPageChrome(title: title, onBack: onBack, trailing: AnyView(trailing())))
+    }
+}
+
+/// One chrome foundation for every Planning header. No opaque cream bar.
+private struct PlanningHeaderChrome: ViewModifier {
+    let header: AnyView
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.safeAreaBar(edge: .top, spacing: 0) {
+                header
+            }
+        } else {
+            content.safeAreaInset(edge: .top, spacing: 0) {
+                header.background {
+                    Rectangle().fill(.ultraThinMaterial).allowsHitTesting(false)
+                }
+            }
         }
     }
 }
 
-/// Shared Planning subpage header. No opaque background: the page surface
-/// shows through, the same way the shell paper shows through the index gaps.
-struct PlanningTranslucentHeader<Trailing: View>: View {
+private struct PlanningPageChrome: ViewModifier {
     let title: String
-    var onBack: (() -> Void)?
-    @ViewBuilder var trailing: () -> Trailing
+    let onBack: () -> Void
+    let trailing: AnyView?
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
+            .navigationBarHidden(false)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onBack) {
+                        Image(systemName: "chevron.backward")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(PlanningPalette.ink)
+                    }
+                    .accessibilityLabel("Back")
+                }
+                if let trailing {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        trailing
+                    }
+                }
+            }
+            .modifier(PlanningToolbarMaterial())
+    }
+}
+
+/// iOS 26 keeps the system Liquid Glass toolbar. Earlier systems show material.
+private struct PlanningToolbarMaterial: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .toolbarBackground(.automatic, for: .navigationBar)
+        } else {
+            content
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        }
+    }
+}
+
+/// Orange capsule used by New / Edit Plan. iOS 26 uses prominent glass with an orange tint.
+struct PlanningSavePill: View {
+    let action: () -> Void
 
     var body: some View {
-        ZStack {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(PlanningPalette.ink)
-                .lineLimit(1)
-                .padding(.horizontal, 64)
-                .allowsHitTesting(false)
-            HStack {
-                if let onBack {
-                    NativeGlassIconButton(icon: .back, accessibilityLabel: "Back", action: onBack)
-                } else {
-                    Color.clear.frame(width: 44, height: 44)
-                }
-                Spacer()
-                trailing()
+        if #available(iOS 26.0, *) {
+            Button(action: action) {
+                Text(PlanningText.string(.save))
+                    .font(.system(size: 15.5, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 30)
             }
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.capsule)
+            .tint(Color.orange)
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityLabel(PlanningText.string(.save))
+        } else {
+            Button(action: action) {
+                Text(PlanningText.string(.save))
+                    .font(.system(size: 15.5, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 30)
+                    .background(Capsule().fill(Color.orange))
+            }
+            .buttonStyle(.plain)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+            .accessibilityLabel(PlanningText.string(.save))
         }
-        .padding(.horizontal, PlanningTokens.contentInset)
-        .frame(height: 52)
+    }
+}
+
+/// Clear host behind Plan, Future, Monthly, Weekly, and Daily.
+/// The column paints nothing; the shell paper shows through index gaps.
+struct PlanningIndexHost<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.clear)
+            .background(PlanningIndexSurface())
     }
 }
 
@@ -115,8 +201,9 @@ struct PlanningIndexSurface: UIViewRepresentable {
     }
 
     private func clearPagingBackground(_ view: UIView) {
-        if view is UIScrollView {
-            view.backgroundColor = .clear
+        if let scroll = view as? UIScrollView {
+            scroll.backgroundColor = .clear
+            scroll.isOpaque = false
         }
         view.subviews.forEach(clearPagingBackground)
     }
@@ -208,39 +295,218 @@ struct PlanningIndexTabOutline: Shape {
     }
 }
 
-/// Chrome for native sheets and popups. Uses the system sheet surface
-/// (not the Planning paper colour) and a fixed detent.
-struct PlanningSystemSheetChrome<Content: View>: View {
+private struct PlanningSheetMeasureKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Reads the window's bottom safe area so a fitted sheet can clear the Home indicator.
+private struct PlanningBottomSafeArea: UIViewRepresentable {
+    @Binding var inset: CGFloat
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        DispatchQueue.main.async {
+            let value = uiView.window?.safeAreaInsets.bottom ?? 0
+            if abs(value - inset) > 0.5 { inset = value }
+        }
+    }
+}
+
+/// Native discard alert. Cancel uses the alert's own label tint, so it stays black
+/// in Planning light mode without changing the app accent. Discard stays destructive red.
+enum PlanningDiscardConfirmation {
+    static func present(confirm: @escaping () -> Void) {
+        let alert = PlanningDiscardAlertController(
+            title: PlanningText.string(.discardTitle),
+            message: nil,
+            preferredStyle: .alert
+        )
+        alert.overrideUserInterfaceStyle = .light
+        alert.addAction(UIAlertAction(title: PlanningText.string(.cancel), style: .cancel))
+        alert.addAction(UIAlertAction(title: PlanningText.string(.discard), style: .destructive) { _ in
+            confirm()
+        })
+        guard let presenter = topViewController() else { return }
+        presenter.present(alert, animated: true)
+    }
+
+    private static func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.flatMap(\.windows).first
+        var controller = window?.rootViewController
+        while let presented = controller?.presentedViewController {
+            controller = presented
+        }
+        return controller
+    }
+}
+
+private final class PlanningDiscardAlertController: UIAlertController {
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        view.tintColor = .label
+    }
+}
+
+/// Content-sized sheet. iOS 18+ also asks for fitted presentation sizing.
+private struct PlanningFittedSheet: ViewModifier {
     let height: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content
+                .presentationDetents([.height(max(height, 1))])
+                .presentationSizing(.fitted)
+                .presentationDragIndicator(.hidden)
+        } else {
+            content
+                .presentationDetents([.height(max(height, 1))])
+                .presentationDragIndicator(.hidden)
+        }
+    }
+}
+
+/// Chrome for the destination sheet and the Monthly / Weekly / Daily period pickers.
+/// Height follows the content. No medium, large, or oversized fixed detent.
+struct PlanningSystemSheetChrome<Content: View>: View {
     let onClose: () -> Void
     let onConfirm: () -> Void
     var confirmEnabled: Bool = true
+    /// When a child sheet is up, the parent keeps this header's height and hides its buttons.
+    var showsControls: Bool = true
+    var centerTitle: String? = nil
+    var onCenter: (() -> Void)? = nil
+    /// Caps the body and scrolls it. Nil keeps the short transfer sheets intrinsic.
+    var maximumBody: CGFloat? = nil
     @ViewBuilder var content: () -> Content
+
+    @State private var contentHeight: CGFloat = 280
+    @State private var bodyHeight: CGFloat = 1
+    @State private var bottomSafeArea: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            controls
+            if let maximumBody {
+                ScrollView {
+                    content()
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: PlanningSheetMeasureKey.self, value: proxy.size.height)
+                            }
+                        }
+                }
+                .scrollIndicators(.hidden)
+                .frame(height: min(max(bodyHeight, 1), maximumBody))
+            } else {
+                content()
+            }
+            Color.clear.frame(height: PlanningTokens.Sheet.bottomInset)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .background {
+            if maximumBody == nil {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: PlanningSheetMeasureKey.self, value: proxy.size.height)
+                }
+            }
+        }
+        .onPreferenceChange(PlanningSheetMeasureKey.self) { value in
+            guard value > 1 else { return }
+            if maximumBody == nil {
+                if abs(value - contentHeight) > 0.5 { contentHeight = value }
+            } else if abs(value - bodyHeight) > 0.5 {
+                bodyHeight = value
+            }
+        }
+        .background(PlanningBottomSafeArea(inset: $bottomSafeArea))
+        .modifier(PlanningFittedSheet(height: resolvedHeight + bottomSafeArea))
+    }
+
+    private var resolvedHeight: CGFloat {
+        if maximumBody == nil { return contentHeight }
+        let controlsHeight: CGFloat = 44 + 18
+        return controlsHeight + min(max(bodyHeight, 1), maximumBody ?? bodyHeight) + PlanningTokens.Sheet.bottomInset
+    }
+
+    private var controls: some View {
+        HStack {
+            if showsControls {
                 NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: onClose)
-                Spacer()
+            } else {
+                Color.clear.frame(width: 44, height: 44)
+            }
+            Spacer(minLength: 0)
+            if let centerTitle {
+                if let onCenter {
+                    Button(centerTitle, action: onCenter)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color(uiColor: .label))
+                } else {
+                    Text(centerTitle)
+                        .font(.headline)
+                        .foregroundStyle(Color(uiColor: .label))
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            if showsControls {
                 NativeGlassIconButton(icon: .check, accessibilityLabel: "Confirm", prominent: true, action: onConfirm)
                     .disabled(!confirmEnabled)
                     .opacity(confirmEnabled ? 1 : 0.4)
+            } else {
+                Color.clear.frame(width: 44, height: 44)
             }
-            .padding(.horizontal, PlanningTokens.Sheet.horizontalInset)
-            .padding(.top, 8)
-            content()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .presentationDetents([.height(height)])
-        .presentationDragIndicator(.hidden)
+        .padding(.horizontal, PlanningTokens.Sheet.horizontalInset)
+        .padding(.top, 18)
     }
 }
 
 struct PlanningHeadingIconSlot: View {
     var body: some View {
         Color.clear
-            .frame(width: 28, height: 28)
+            .frame(width: PlanningTokens.PlanMain.iconSlot, height: PlanningTokens.PlanMain.iconSlot)
             .accessibilityHidden(true)
+    }
+}
+
+/// Shared intro rhythm for Plan, Future, and period pages that show an icon and title.
+struct PlanningSectionIntro<Icon: View>: View {
+    let title: String
+    let message: String
+    @ViewBuilder var icon: () -> Icon
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: PlanningTokens.PlanMain.iconGap) {
+                icon()
+                Text(title)
+                    .font(.system(size: PlanningTokens.PlanMain.titleSize, weight: .semibold))
+                    .foregroundStyle(PlanningPalette.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(.top, PlanningTokens.PlanMain.titleTop)
+            Text(message)
+                .font(.system(size: PlanningTokens.PlanMain.paragraphSize))
+                .lineSpacing(PlanningTokens.PlanMain.paragraphLineSpacing)
+                .foregroundStyle(PlanningPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, PlanningTokens.PlanMain.titleToParagraph)
+        }
     }
 }
 
