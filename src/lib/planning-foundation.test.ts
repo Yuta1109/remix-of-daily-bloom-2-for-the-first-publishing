@@ -967,16 +967,18 @@ describe("planning TestFlight future, discard, and flicker", () => {
 describe("planning chrome polish", () => {
   const glass = readFileSync("ios/App/App/Native/Components/Glass/NativeGlassComponents.swift", "utf8");
 
-  it("uses a 30pt circular Back control with a 44pt hit target", () => {
+  it("uses a 44pt circular Back control with a 44pt hit target", () => {
     expect(chrome).toContain("NativeGlassIconButton(icon: .back, accessibilityLabel: \"Back\", action: onBack)");
-    expect(glass).toContain(".frame(width: 30, height: 30)");
+    expect(glass).toContain(".frame(width: PlanningTokens.Header.buttonVisual, height: PlanningTokens.Header.buttonVisual)");
+    expect(tokens).toContain("static let buttonVisual: CGFloat = 44");
     expect(glass).toContain(".frame(minWidth: 44, minHeight: 44)");
   });
 
   it("keeps the popup header outside the body and whites only the Future editors", () => {
-    expect(chrome).toContain(".overlay(alignment: .top)");
+    expect(chrome).toContain("VStack(spacing: 0)");
+    expect(chrome).not.toContain(".overlay(alignment: .top)");
     expect(chrome).toContain("PlanningTokens.Sheet.headerHeight");
-    expect(chrome).toContain(".clipped()");
+    expect(chrome).toContain(".background(Color.clear)");
     expect(chrome).toContain("func planningExtendingSurface");
     expect(chrome).toContain(".ignoresSafeArea(.keyboard, edges: .bottom)");
     const surface = chrome.slice(chrome.indexOf("func planningExtendingSurface"), chrome.indexOf("func planningFixedHeader"));
@@ -1000,7 +1002,8 @@ describe("planning chrome polish", () => {
     expect(plans).toContain("pendingFocusID");
     expect(plans).toContain("return false");
     const icon = glass.slice(glass.indexOf("struct NativeGlassIconButton"), glass.indexOf("struct NativeGlassTextButton"));
-    expect(icon).toContain(".frame(width: 30, height: 30)");
+    expect(icon).toContain(".frame(width: PlanningTokens.Header.buttonVisual, height: PlanningTokens.Header.buttonVisual)");
+    expect(icon).toContain("PlanningPalette.accent");
     expect(icon).toContain(".buttonStyle(.plain)");
     expect(icon).toContain(".frame(minWidth: 44, minHeight: 44)");
     expect(icon).not.toContain(".buttonStyle(.glass)");
@@ -1071,7 +1074,77 @@ describe("planning period visual rebuild", () => {
     expect(tokens).toContain("static let maximumMultiple: CGFloat = 2.0");
     expect(periodPage).toContain("PlanningReflectionDueCard");
     expect(reflectionPage).toContain("glassEffect");
-    expect(chrome).toContain(".overlay(alignment: .top)");
+    expect(chrome).toContain("VStack(spacing: 0)");
+    expect(chrome).not.toContain(".overlay(alignment: .top)");
     expect(chrome).toContain("PlanningTokens.Sheet.headerHeight");
+  });
+});
+
+describe("planning header icon and sheet geometry", () => {
+  const chrome = readFileSync(`${planningRoot}/PlanningChrome.swift`, "utf8");
+  const glass = readFileSync("ios/App/App/Native/Components/Glass/NativeGlassComponents.swift", "utf8");
+  const tokens = readFileSync(`${planningRoot}/PlanningDesignTokens.swift`, "utf8");
+  const shell = readFileSync(`${planningRoot}/PlanningShell.swift`, "utf8");
+  const future = readFileSync(`${planningRoot}/FuturePages.swift`, "utf8");
+  const period = readFileSync(`${planningRoot}/PeriodPlannerPage.swift`, "utf8");
+  const plans = readFileSync(`${planningRoot}/PlanPages.swift`, "utf8");
+
+  it("extends Planning paper behind the top and bottom safe areas across the shell", () => {
+    const surface = chrome.slice(chrome.indexOf("func planningExtendingSurface"), chrome.indexOf("func planningFixedHeader"));
+    expect(surface).toContain(".ignoresSafeArea(.container, edges: [.top, .bottom])");
+    expect(surface).toContain(".ignoresSafeArea(.keyboard, edges: .bottom)");
+    expect(surface).not.toContain("ScrollView");
+    expect(shell).toContain("PlanningIndex(session: session)");
+    expect(shell).toContain(".planningExtendingSurface(PlanningPalette.paper)");
+    expect(shell).toContain(".planningMeasuredScrollTopInset()");
+  });
+
+  it("applies one measured scroll-content inset to pager pages", () => {
+    expect(chrome).toContain("var planningInitialScrollTopInset");
+    expect(chrome).toContain("systemTop + PlanningTokens.Header.height");
+    expect(chrome).toContain(".contentMargins(.top, inset, for: .scrollContent)");
+    expect(future).toContain(".planningInitialScrollMargin()");
+    expect(period).toContain(".planningInitialScrollMargin()");
+    expect(future).not.toContain(".padding(.top, 72)");
+    expect(period).not.toContain(".padding(.top, 72)");
+    expect(plans).not.toContain(".planningInitialScrollMargin()");
+  });
+
+  it("uses one 44pt accent icon button and hides the iOS 26 Back platter", () => {
+    expect(tokens).toContain("static let buttonVisual: CGFloat = 44");
+    expect(glass).toContain(".font(.system(size: 17, weight: .semibold))");
+    expect(glass).toContain("PlanningPalette.accent");
+    expect(chrome).toContain("NativeGlassIconButton(icon: .back, accessibilityLabel: \"Back\", action: onBack)");
+    expect(chrome).toContain(".sharedBackgroundVisibility(.hidden)");
+    const icon = glass.slice(glass.indexOf("struct NativeGlassIconButton"), glass.indexOf("struct NativeGlassTextButton"));
+    expect(icon).toContain(".buttonStyle(.plain)");
+    expect(icon).not.toContain(".buttonStyle(.glass)");
+    expect(icon.match(/glassEffect/g)?.length).toBe(2);
+  });
+
+  it("puts Planning paper outside pushed page chrome", () => {
+    const editor = plans.slice(plans.indexOf("struct PlanEditorPage"), plans.indexOf("// MARK: Sections"));
+    const chromeAt = editor.indexOf(".planningPageChrome(");
+    const surfaceAt = editor.indexOf(".planningExtendingSurface(PlanningPalette.paper)");
+    expect(chromeAt).toBeGreaterThan(-1);
+    expect(surfaceAt).toBeGreaterThan(chromeAt);
+    const help = readFileSync(`${planningRoot}/PlanningHelpPage.swift`, "utf8");
+    expect(help.indexOf(".planningExtendingSurface(PlanningPalette.paper)")).toBeGreaterThan(help.indexOf(".planningPageChrome("));
+  });
+
+  it("keeps a real clear sheet header and body-only keyboard overlap", () => {
+    const sheet = chrome.slice(chrome.indexOf("struct PlanningSystemSheetChrome"), chrome.indexOf("struct PlanningHeadingIconSlot"));
+    expect(sheet).toContain("VStack(spacing: 0)");
+    expect(sheet).not.toContain(".overlay(alignment: .top)");
+    expect(sheet).not.toContain(".padding(.top, PlanningTokens.Sheet.headerHeight)");
+    expect(tokens).toContain("static let headerHeight: CGFloat = 76");
+    expect(tokens).toContain("static let controlDiameter: CGFloat = 44");
+    expect(sheet).toContain(".background(Color.clear)");
+    expect(sheet).toContain(".ignoresSafeArea(.keyboard, edges: .bottom)");
+    expect(sheet).toContain("PlanningKeyboardOverlap(overlap: $keyboardOverlap)");
+    expect(sheet).toContain(".contentMargins(.bottom, keyboardOverlap, for: .scrollContent)");
+    expect(sheet.indexOf("controls")).toBeLessThan(sheet.indexOf("ScrollView"));
+    expect(sheet).toContain(".presentationDetents([.height(max(stableHeight, 1))])");
+    expect(sheet).toContain("guard !keyboardVisible");
   });
 });

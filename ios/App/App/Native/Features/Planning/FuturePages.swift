@@ -90,6 +90,7 @@ struct FutureYearPage: View {
             .padding(.bottom, 12)
         }
         .planningScroll()
+        .planningInitialScrollMargin()
     }
 
     private func yearControls(_ year: Int) -> some View {

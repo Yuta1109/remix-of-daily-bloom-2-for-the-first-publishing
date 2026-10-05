@@ -30,6 +30,8 @@ struct NativeGlassIconButton: View {
     let icon: NativeGlassIcon
     let accessibilityLabel: LocalizedStringKey
     var prominent = false
+    /// Sheet × uses a neutral symbol. Planning header symbols stay accent.
+    var neutral = false
     var waitsForGlassFeedback = false
     var action: () -> Void
 
@@ -55,14 +57,14 @@ struct NativeGlassIconButton: View {
 
     private var visual: some View {
         Image(systemName: icon.rawValue)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(prominent ? Color.white : theme.foreground)
-            .frame(width: 30, height: 30)
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(prominent ? Color.white : (neutral ? Color(uiColor: .label) : PlanningPalette.accent))
+            .frame(width: PlanningTokens.Header.buttonVisual, height: PlanningTokens.Header.buttonVisual)
             .modifier(PlanningIconGlass(prominent: prominent, tint: theme.accent))
     }
 }
 
-/// Glass stays on the 30 pt circle. The outer button does not receive a glass style.
+/// Glass stays on the one 44 pt circle. The outer button does not receive a glass style.
 private struct PlanningIconGlass: ViewModifier {
     var prominent: Bool
     var tint: Color

@@ -8,7 +8,7 @@ struct NativeSearchAccessory: View {
     var body: some View {
         HStack(spacing: 10) {
             searchField
-            NativeGlassIconButton(icon: .close, accessibilityLabel: "Clear") {
+            NativeGlassIconButton(icon: .close, accessibilityLabel: "Clear", neutral: true) {
                 query = ""
             }
             .disabled(query.isEmpty)

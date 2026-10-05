@@ -59,7 +59,7 @@ extension View {
     func planningExtendingSurface(_ color: Color) -> some View {
         background {
             color
-                .ignoresSafeArea(.container, edges: .bottom)
+                .ignoresSafeArea(.container, edges: [.top, .bottom])
                 .ignoresSafeArea(.keyboard, edges: .bottom)
         }
     }
@@ -116,8 +116,15 @@ private struct PlanningPageChrome: ViewModifier {
             .navigationBarBackButtonHidden(true)
             .navigationBarHidden(false)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    NativeGlassIconButton(icon: .back, accessibilityLabel: "Back", action: onBack)
+                if #available(iOS 26.0, *) {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NativeGlassIconButton(icon: .back, accessibilityLabel: "Back", action: onBack)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NativeGlassIconButton(icon: .back, accessibilityLabel: "Back", action: onBack)
+                    }
                 }
                 if let trailing {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -309,7 +316,7 @@ private struct PlanningSheetMeasureKey: PreferenceKey {
     }
 }
 
-/// Reads the window's bottom safe area so a fitted sheet can clear the Home indicator.
+/// Overlap between this view and the keyboard. Applied only to a sheet body.
 private struct PlanningKeyboardOverlap: UIViewRepresentable {
     @Binding var overlap: CGFloat
 
@@ -339,8 +346,8 @@ private struct PlanningKeyboardOverlap: UIViewRepresentable {
             ) { [weak self, weak view] note in
                 guard let self, let view, let window = view.window,
                       let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-                let covered = window.bounds.intersection(frame).height
-                let next = max(0, covered - window.safeAreaInsets.bottom)
+                let viewFrame = view.convert(view.bounds, to: window)
+                let next = max(0, viewFrame.intersection(frame).height)
                 if abs(next - self.overlap.wrappedValue) > 0.5 { self.overlap.wrappedValue = next }
             }
         }
@@ -452,6 +459,59 @@ private final class PlanningDiscardAlertController: UIAlertController {
     }
 }
 
+private struct PlanningSystemTopInsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct PlanningInitialScrollTopInsetKey: EnvironmentKey {
+    static let defaultValue: CGFloat = PlanningTokens.Header.height
+}
+
+extension EnvironmentValues {
+    /// Status-bar safe area plus the Planning root header. Initial pager scroll margin only.
+    var planningInitialScrollTopInset: CGFloat {
+        get { self[PlanningInitialScrollTopInsetKey.self] }
+        set { self[PlanningInitialScrollTopInsetKey.self] = newValue }
+    }
+}
+
+extension View {
+    func planningMeasuredScrollTopInset() -> some View {
+        modifier(PlanningMeasuredScrollTopInset())
+    }
+
+    /// Initial scroll position only. Content can still scroll under the header.
+    func planningInitialScrollMargin() -> some View {
+        modifier(PlanningInitialScrollMargin())
+    }
+}
+
+private struct PlanningMeasuredScrollTopInset: ViewModifier {
+    @State private var systemTop: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: PlanningSystemTopInsetKey.self, value: proxy.safeAreaInsets.top)
+                }
+            }
+            .onPreferenceChange(PlanningSystemTopInsetKey.self) { systemTop = $0 }
+            .environment(\.planningInitialScrollTopInset, systemTop + PlanningTokens.Header.height)
+    }
+}
+
+private struct PlanningInitialScrollMargin: ViewModifier {
+    @Environment(\.planningInitialScrollTopInset) private var inset
+
+    func body(content: Content) -> some View {
+        content.contentMargins(.top, inset, for: .scrollContent)
+    }
+}
+
 /// Transparent horizontal pager. Replaces nested paging TabView containers.
 struct PlanningHorizontalPager<Page: Hashable, Content: View>: View {
     let pages: [Page]
@@ -484,46 +544,8 @@ struct PlanningHorizontalPager<Page: Hashable, Content: View>: View {
     }
 }
 
-/// One explicit detent. Height is frozen while the keyboard is visible.
-private struct PlanningKeyboardVisibility: UIViewRepresentable {
-    @Binding var isVisible: Bool
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.isUserInteractionEnabled = false
-        view.backgroundColor = .clear
-        context.coordinator.observe()
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(isVisible: $isVisible) }
-
-    final class Coordinator {
-        var isVisible: Binding<Bool>
-        var tokens: [NSObjectProtocol] = []
-
-        init(isVisible: Binding<Bool>) { self.isVisible = isVisible }
-
-        func observe() {
-            let center = NotificationCenter.default
-            tokens.append(center.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.isVisible.wrappedValue = true
-            })
-            tokens.append(center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.isVisible.wrappedValue = false
-            })
-        }
-
-        deinit {
-            tokens.forEach(NotificationCenter.default.removeObserver)
-        }
-    }
-}
-
-/// One continuous sheet surface. × / ✓ stay in the 60 pt top region.
-/// Detent height freezes while the keyboard is visible.
+/// One continuous sheet surface. The header is a real layout row.
+/// Detent height freezes while the keyboard overlaps the sheet.
 struct PlanningSystemSheetChrome<Content: View>: View {
     let onClose: () -> Void
     let onConfirm: () -> Void
@@ -539,35 +561,30 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     @State private var stableHeight: CGFloat = 280
-    @State private var keyboardVisible = false
+    @State private var keyboardOverlap: CGFloat = 0
 
     private var surface: Color { bodySurface ?? Color(uiColor: .systemBackground) }
+    private var keyboardVisible: Bool { keyboardOverlap > 1 }
 
     var body: some View {
-        Group {
-            if maximumBody != nil {
-                ScrollView {
-                    sheetBody
-                }
-                .scrollIndicators(.hidden)
-                .frame(height: max(stableHeight, 1))
-            } else {
+        VStack(spacing: 0) {
+            controls
+            ScrollView {
                 sheetBody
             }
+            .scrollIndicators(.hidden)
+            .contentMargins(.bottom, keyboardOverlap, for: .scrollContent)
+            .frame(height: max(stableHeight - PlanningTokens.Sheet.headerHeight, 1))
         }
-        .overlay(alignment: .top) { controls.zIndex(1) }
-        .clipped()
         .frame(maxWidth: .infinity, alignment: .top)
-        .background {
-            surface
-                .ignoresSafeArea(.container, edges: .bottom)
-                .ignoresSafeArea(.keyboard, edges: .bottom)
-        }
-        .background(PlanningKeyboardVisibility(isVisible: $keyboardVisible))
+        .background(surface)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .background(PlanningKeyboardOverlap(overlap: $keyboardOverlap))
         .onPreferenceChange(PlanningSheetMeasureKey.self) { value in
             guard !keyboardVisible, value > 1 else { return }
-            let cap = maximumBody ?? value
-            let next = min(value, cap)
+            let total = value + PlanningTokens.Sheet.headerHeight
+            let cap = maximumBody ?? total
+            let next = min(total, cap)
             if abs(next - stableHeight) > 0.5 { stableHeight = next }
         }
         .presentationDetents([.height(max(stableHeight, 1))])
@@ -577,10 +594,8 @@ struct PlanningSystemSheetChrome<Content: View>: View {
 
     private var sheetBody: some View {
         content()
-            .padding(.top, PlanningTokens.Sheet.headerHeight)
             .padding(.bottom, PlanningTokens.Sheet.bottomInset)
             .frame(maxWidth: .infinity, alignment: .top)
-            .background(surface)
             .background {
                 GeometryReader { proxy in
                     Color.clear.preference(key: PlanningSheetMeasureKey.self, value: proxy.size.height)
@@ -591,7 +606,7 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     private var controls: some View {
         HStack {
             if showsControls {
-                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", waitsForGlassFeedback: true, action: onClose)
+                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", neutral: true, waitsForGlassFeedback: true, action: onClose)
             } else {
                 Color.clear.frame(width: 44, height: 44)
             }
@@ -618,9 +633,8 @@ struct PlanningSystemSheetChrome<Content: View>: View {
             }
         }
         .padding(.horizontal, PlanningTokens.Sheet.horizontalInset)
-        .padding(.top, PlanningTokens.Sheet.headerTop)
-        .padding(.bottom, PlanningTokens.Sheet.headerTop)
         .frame(height: PlanningTokens.Sheet.headerHeight)
+        .background(Color.clear)
     }
 }
 
@@ -708,7 +722,7 @@ struct PlanningSheetChrome<Content: View>: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack {
-                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: onClose)
+                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", neutral: true, action: onClose)
                 Spacer()
                 NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true, action: onConfirm)
             }

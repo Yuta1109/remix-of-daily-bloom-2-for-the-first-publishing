@@ -10,9 +10,9 @@ enum PlanningTokens {
     enum Header {
         static let height: CGFloat = 72
         static let titleSize: CGFloat = 34
-        static let buttonVisual: CGFloat = 30
+        static let buttonVisual: CGFloat = 44
         static let buttonHit: CGFloat = 44
-        /// Visual gap between the 30pt circles.
+        /// Visual gap between the 44pt circles.
         static let buttonGap: CGFloat = 10
         /// Stack spacing that yields `buttonGap` between visual circles.
         static let buttonStackSpacing: CGFloat = buttonGap - (buttonHit - buttonVisual)
@@ -126,8 +126,10 @@ enum PlanningTokens {
     enum Sheet {
         static let horizontalInset: CGFloat = 16
         /// Distance from the sheet top to the × / ✓ row. The row is centered by matching space below.
-        static let headerTop: CGFloat = 8
-        static let headerHeight: CGFloat = 60
+        static let headerTop: CGFloat = 16
+        /// 16 pt top + 44 pt control + 16 pt bottom.
+        static let headerHeight: CGFloat = 76
+        static let controlDiameter: CGFloat = 44
         static let topInset: CGFloat = 18
         static let sectionSpacing: CGFloat = 22
         static let bottomInset: CGFloat = 20

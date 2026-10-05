@@ -86,6 +86,7 @@ struct PeriodPlannerPage: View {
             .padding(.bottom, session.isActivePrompt(ReflectionScope.period(bucket, key)) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)
         }
         .planningScroll()
+        .planningInitialScrollMargin()
         .planningKeyboardDismiss()
     }
 

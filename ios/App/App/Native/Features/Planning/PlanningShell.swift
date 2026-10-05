@@ -19,6 +19,7 @@ struct PlanningShell: View {
             )
         }
         .planningExtendingSurface(PlanningPalette.paper)
+        .planningMeasuredScrollTopInset()
         .planningKeyboardDismiss()
         .navigationBarHidden(true)
         .navigationDestination(for: PlanningRoute.self) { route in
@@ -225,7 +226,7 @@ private struct PlanningLinkPlaceholder: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(PlanningPalette.paper)
+        .planningExtendingSurface(PlanningPalette.paper)
         .navigationBarHidden(true)
     }
 }

@@ -41,7 +41,7 @@ describe("native iOS foundation", () => {
     expect(glass).toContain("if #available(iOS 26.0, *)");
     expect(glass).toContain(".buttonStyle(.glass)");
     expect(glass).toContain(".thinMaterial");
-    expect(glass).toContain("width: 30, height: 30");
+    expect(glass).toContain("width: PlanningTokens.Header.buttonVisual, height: PlanningTokens.Header.buttonVisual");
     expect(glass).toContain("minWidth: 44, minHeight: 44");
   });
 

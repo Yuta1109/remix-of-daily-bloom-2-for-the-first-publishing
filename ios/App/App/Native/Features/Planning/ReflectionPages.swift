@@ -23,10 +23,10 @@ struct ReflectionFlowPage: View {
                 classificationPage
             }
         }
-        .background(PlanningPalette.paper)
         .planningPageChrome(title: PlanningText.string(completed ? .reflectionResult : .reflectionTitle), onBack: {
             if !navigation.path.isEmpty { navigation.pop() }
         })
+        .planningExtendingSurface(PlanningPalette.paper)
         .onAppear {
             if !completed { session.beginReflection(scope) }
         }
@@ -251,10 +251,10 @@ struct ReflectionHistoryPage: View {
         }
         .padding(16)
         .planningScroll()
-        .background(PlanningPalette.paper)
         .planningPageChrome(title: "振り返り履歴", onBack: {
             if !navigation.path.isEmpty { navigation.pop() }
         })
+        .planningExtendingSurface(PlanningPalette.paper)
     }
 
     private func historyCard(_ scope: ReflectionScope) -> some View {
@@ -318,10 +318,10 @@ struct ReflectionEditPage: View {
             .padding(16)
         }
         .planningScroll()
-        .background(PlanningPalette.paper)
         .planningPageChrome(title: "振り返りを編集", onBack: {
             if !navigation.path.isEmpty { navigation.pop() }
         })
+        .planningExtendingSurface(PlanningPalette.paper)
     }
 
     private var periodContext: String {
@@ -353,10 +353,10 @@ struct ReflectionSettingsPage: View {
             .padding(16)
         }
         .planningScroll()
-        .background(PlanningPalette.paper)
         .planningPageChrome(title: "Reflection Settings", onBack: {
             if !navigation.path.isEmpty { navigation.pop() }
         })
+        .planningExtendingSurface(PlanningPalette.paper)
     }
 }
 
@@ -474,10 +474,10 @@ struct PlanningMemoryPage: View {
         }
         .planningScroll()
         .planningKeyboardDismiss()
-        .planningExtendingSurface(PlanningPalette.paper)
         .planningPageChrome(title: pageTitle, onBack: {
             if !navigation.path.isEmpty { navigation.pop() }
         })
+        .planningExtendingSurface(PlanningPalette.paper)
     }
 
     private var pageTitle: String {

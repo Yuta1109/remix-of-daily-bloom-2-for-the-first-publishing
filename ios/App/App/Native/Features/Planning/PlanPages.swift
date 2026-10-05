@@ -303,7 +303,6 @@ struct PlanEditorPage: View {
             PlanCtaButton(title: PlanningText.string(.reflectToItems), action: reflect)
                 .background(Color.clear)
         }
-        .planningExtendingSurface(PlanningPalette.paper)
         .planningPageChrome(
             title: PlanningText.string(isNewPlan ? .newPlan : .editPlan),
             onBack: requestClose
@@ -311,6 +310,7 @@ struct PlanEditorPage: View {
             PlanningSavePill(action: save)
         }
         .planningKeyboardDismiss()
+        .planningExtendingSurface(PlanningPalette.paper)
         .toolbar(.hidden, for: .tabBar)
         .onAppear(perform: load)
     }
@@ -832,7 +832,7 @@ struct PlanTransferSelectionPage: View {
                 .disabled(selected.isEmpty)
         }
         .planningPageChrome(title: PlanningText.string(.selectItemsTitle), onBack: { navigation.pop() })
-        .background(PlanningPalette.paper)
+        .planningExtendingSurface(PlanningPalette.paper)
         .toolbar(.hidden, for: .tabBar)
         .sheet(isPresented: $showingDestination, onDismiss: {
             // Pop only after the sheet is fully gone, never in the same transaction.
