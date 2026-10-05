@@ -90,7 +90,6 @@ enum TemporaryPlanningSamples {
                 hasMeaningfulActivity: true,
                 reflectionOutstanding: false,
                 reflectionCompleted: true,
-                isSample: true,
                 completedAt: Date(),
                 decisions: [kept, postponed, stopped].map { node in
                     StoredReflectionDecision(
@@ -103,7 +102,8 @@ enum TemporaryPlanningSamples {
                         eventID: node.eventID,
                         todayTaskID: node.todayTaskID
                     )
-                }
+                },
+                isSample: true
             )
         )
     }
@@ -129,7 +129,6 @@ enum TemporaryPlanningSamples {
                 hasMeaningfulActivity: true,
                 reflectionOutstanding: false,
                 reflectionCompleted: true,
-                isSample: true,
                 completedAt: Date().addingTimeInterval(-86_400),
                 decisions: nodes.map { node in
                     StoredReflectionDecision(
@@ -142,7 +141,8 @@ enum TemporaryPlanningSamples {
                         eventID: node.eventID,
                         todayTaskID: node.todayTaskID
                     )
-                }
+                },
+                isSample: true
             )
         )
     }
