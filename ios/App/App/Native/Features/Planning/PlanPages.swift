@@ -46,29 +46,10 @@ private enum PlanDateText {
 
 private struct PlanCtaButton: View {
     let title: String
-    var fill: Color = PlanningPalette.plan
     let action: () -> Void
 
-    @Environment(\.isEnabled) private var isEnabled
-
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(PlanningPalette.ink)
-                .frame(maxWidth: .infinity)
-                .frame(height: PlanningTokens.Editor.ctaHeight)
-                .background(fill, in: RoundedRectangle(cornerRadius: PlanningTokens.Editor.ctaCorner, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: PlanningTokens.Editor.ctaCorner, style: .continuous)
-                        .stroke(PlanningPalette.line, lineWidth: 1)
-                )
-                .opacity(isEnabled ? 1 : 0.4)
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, PlanningTokens.Editor.ctaInset)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
+        PlanningGlassAction(title: title, action: action)
     }
 }
 
@@ -304,9 +285,10 @@ struct PlanEditorPage: View {
                 }
                 .padding(.horizontal, PlanningTokens.contentInset)
                 .padding(.top, PlanningTokens.Editor.subpageTopGap)
-                .padding(.bottom, PlanningTokens.Editor.focusClearance)
+                .padding(.bottom, 12)
             }
             .planningScroll()
+            .background(PlanningPalette.paper)
             .onChange(of: focusedID) { _, id in
                 guard let id else { return }
                 DispatchQueue.main.async {
@@ -326,7 +308,6 @@ struct PlanEditorPage: View {
             PlanningSavePill(action: save)
         }
         .planningKeyboardDismiss()
-        .background(PlanningPalette.paper)
         .toolbar(.hidden, for: .tabBar)
         .onAppear(perform: load)
     }
@@ -420,9 +401,13 @@ struct PlanEditorPage: View {
                             .focused($focusedID, equals: bullet.id)
                             .submitLabel(.next)
                             .onSubmit { apply(PlanBulletReturn.parent(bullets: bullets, parentID: bullet.id)) }
+                            .onKeyPress(.delete) {
+                                guard bullet.text.isEmpty else { return .ignored }
+                                apply(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: nil))
+                                return .handled
+                            }
                     }
                     .frame(minHeight: PlanningTokens.Editor.parentRowHeight)
-                    .padding(.bottom, focusedID == bullet.id ? PlanningTokens.Editor.focusClearance : 0)
                     .id(bullet.id)
                     ForEach($bullet.children) { $child in
                         HStack(spacing: 10) {
@@ -434,10 +419,14 @@ struct PlanEditorPage: View {
                                 .focused($focusedID, equals: child.id)
                                 .submitLabel(.next)
                                 .onSubmit { apply(PlanBulletReturn.child(bullets: bullets, parentID: bullet.id, childID: child.id)) }
+                                .onKeyPress(.delete) {
+                                    guard child.text.isEmpty else { return .ignored }
+                                    apply(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: child.id))
+                                    return .handled
+                                }
                         }
                         .padding(.leading, PlanningTokens.Editor.subtaskIndent)
                         .frame(minHeight: PlanningTokens.Editor.parentRowHeight)
-                        .padding(.bottom, focusedID == child.id ? PlanningTokens.Editor.focusClearance : 0)
                         .id(child.id)
                     }
                 }
@@ -542,7 +531,7 @@ struct PlanEditorPage: View {
             focusedID = id
         case .replaced(let next, let focus):
             bullets = next
-            focusedID = focus
+            DispatchQueue.main.async { focusedID = focus }
         }
     }
 }
@@ -581,6 +570,23 @@ enum PlanBulletReturn {
         let parent = PlanBullet()
         next.insert(parent, at: parentIndex + 1)
         return .replaced(next, focus: parent.id)
+    }
+
+    /// Empty Backspace removes that row and focuses the previous visible row.
+    static func backspace(bullets: [PlanBullet], parentID: UUID, childID: UUID?) -> Result {
+        guard let parentIndex = bullets.firstIndex(where: { $0.id == parentID }) else { return .unchanged }
+        if let childID {
+            guard let childIndex = bullets[parentIndex].children.firstIndex(where: { $0.id == childID }) else { return .unchanged }
+            var next = bullets
+            next[parentIndex].children.remove(at: childIndex)
+            let focus = childIndex > 0 ? next[parentIndex].children[childIndex - 1].id : parentID
+            return .replaced(next, focus: focus)
+        }
+        guard parentIndex > 0 else { return .unchanged }
+        var next = bullets
+        next.remove(at: parentIndex)
+        let previous = next[parentIndex - 1]
+        return .replaced(next, focus: previous.children.last?.id ?? previous.id)
     }
 }
 

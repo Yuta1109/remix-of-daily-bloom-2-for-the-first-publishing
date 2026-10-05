@@ -114,6 +114,7 @@ enum PlanningRoute: Hashable {
     case weeklySettings
     case reflection(ReflectionScope)
     case reflectionHistory
+    case planningMemory(ReflectionScope)
 }
 
 struct PlanTransferSource: Hashable {
@@ -208,6 +209,8 @@ struct PlanningNode: Identifiable, Hashable {
     var endDay: Int?
     var startMinutes: Int?
     var endMinutes: Int?
+    /// Temporary local sample. Real user items stay false.
+    var isSample: Bool
 
     init(
         id: UUID = UUID(),
@@ -226,7 +229,8 @@ struct PlanningNode: Identifiable, Hashable {
         startDay: Int? = nil,
         endDay: Int? = nil,
         startMinutes: Int? = nil,
-        endMinutes: Int? = nil
+        endMinutes: Int? = nil,
+        isSample: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -249,6 +253,7 @@ struct PlanningNode: Identifiable, Hashable {
         self.endDay = endDay
         self.startMinutes = startMinutes
         self.endMinutes = endMinutes
+        self.isSample = isSample
     }
 }
 
@@ -260,6 +265,8 @@ struct PostponedEntry: Identifiable, Hashable {
     var eventID: UUID?
     var todayTaskID: UUID?
     var logicalID: UUID?
+    /// Temporary local sample. Real Postpone entries stay false.
+    var isSample: Bool
 
     init(
         id: UUID = UUID(),
@@ -268,7 +275,8 @@ struct PostponedEntry: Identifiable, Hashable {
         bucket: PlanningBucket,
         eventID: UUID? = nil,
         todayTaskID: UUID? = nil,
-        logicalID: UUID? = nil
+        logicalID: UUID? = nil,
+        isSample: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -277,6 +285,7 @@ struct PostponedEntry: Identifiable, Hashable {
         self.eventID = eventID
         self.todayTaskID = todayTaskID
         self.logicalID = logicalID
+        self.isSample = isSample
     }
 }
 

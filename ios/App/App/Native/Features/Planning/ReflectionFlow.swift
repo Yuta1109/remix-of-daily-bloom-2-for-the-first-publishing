@@ -25,6 +25,10 @@ struct PlanningMemoryEntry: Identifiable, Hashable {
     var hasPhoto: Bool
     var title: String = ""
     var dateText: String = ""
+    var imageData: Data? = nil
+    var saved = false
+    /// Temporary local sample. Not a production account record.
+    var isSample = false
 }
 
 struct ReflectionSchedule: Hashable {
@@ -358,16 +362,56 @@ extension PlanningSession {
         }
     }
 
-    func addMemory(scope: ReflectionScope, kind: PlanningMemoryKind, text: String, hasPhoto: Bool, title: String = "", dateText: String = "") {
-        memoryEntries.append(PlanningMemoryEntry(scope: scope, kind: kind, text: text, hasPhoto: hasPhoto, title: title, dateText: dateText))
+    /// Counts from the stored Reflection snapshot, not the live task list.
+    func classificationCounts(for scope: ReflectionScope) -> (keep: Int, postpone: Int, stop: Int) {
+        let rows = decisions(for: scope)
+        return (
+            rows.filter { $0.disposition == .keep }.count,
+            rows.filter { $0.disposition == .postpone }.count,
+            rows.filter { $0.disposition == .stop }.count
+        )
     }
 
-    func updateMemory(id: UUID, text: String, title: String, dateText: String, hasPhoto: Bool) {
+    func snapshotCompletion(for scope: ReflectionScope) -> (todoDone: Int, todoTotal: Int, eventDone: Int, eventTotal: Int) {
+        let rows = decisions(for: scope)
+        let todos = rows.filter { $0.kind == .task }
+        let events = rows.filter { $0.kind == .event }
+        return (
+            todos.filter(\.completed).count,
+            todos.count,
+            events.filter(\.completed).count,
+            events.count
+        )
+    }
+
+    func addMemory(scope: ReflectionScope, kind: PlanningMemoryKind, text: String, hasPhoto: Bool, title: String = "", dateText: String = "", imageData: Data? = nil, saved: Bool = false, isSample: Bool = false) {
+        memoryEntries.append(
+            PlanningMemoryEntry(
+                scope: scope,
+                kind: kind,
+                text: text,
+                hasPhoto: hasPhoto,
+                title: title,
+                dateText: dateText,
+                imageData: imageData,
+                saved: saved,
+                isSample: isSample
+            )
+        )
+    }
+
+    func saveMemory(id: UUID) {
+        guard let index = memoryEntries.firstIndex(where: { $0.id == id }) else { return }
+        memoryEntries[index].saved = true
+    }
+
+    func updateMemory(id: UUID, text: String, title: String, dateText: String, hasPhoto: Bool, imageData: Data? = nil) {
         guard let index = memoryEntries.firstIndex(where: { $0.id == id }) else { return }
         memoryEntries[index].text = text
         memoryEntries[index].title = title
         memoryEntries[index].dateText = dateText
         memoryEntries[index].hasPhoto = hasPhoto
+        if let imageData { memoryEntries[index].imageData = imageData }
     }
 
     func isExplicitEdit(bucket: PlanningBucket, periodKey: String) -> Bool {

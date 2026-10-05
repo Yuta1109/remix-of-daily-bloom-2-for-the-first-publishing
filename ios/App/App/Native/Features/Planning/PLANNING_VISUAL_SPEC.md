@@ -48,7 +48,7 @@ Reference device: iPhone 13, 390 x 844 pt, portrait only. All values are mirrore
 
 ## Destination sheet
 
-- Native `.sheet` sized to its content (`presentationSizing(.fitted)` on iOS 18+, a measured height detent on earlier systems). No medium, large, or 430 pt detent. System background, close and check (30 visual / 44 hit, 16 inset), no title. About 18 pt top padding, 22 pt between sections, 20 pt after the note, plus the Home indicator.
+- Native `.sheet` sized to its content (`presentationSizing(.fitted)` on iOS 18+, a measured height detent on earlier systems). No medium, large, or 430 pt detent. System background, close and check (30 visual / 44 hit, 16 inset), no title. The × / ✓ row uses 8 pt top padding so it sits at the native sheet position. 22 pt between sections, 20 pt after the note, plus the Home indicator. The sheet ignores the keyboard safe area, so the header stays put and the body scrolls.
 - 1. 反映先の種類 (タスク / 予定), 2. 反映先のスコープ (Monthly / Weekly / Daily), 3. 期間を選択 (row opens a native wheel picker: year+month, week, date). Each picker sheet uses the same fitted chrome and ends after the wheel plus the 20 pt bottom inset.
 - Check copies (never moves), closes the sheet, then pops back to the editor after the sheet has dismissed.
 
@@ -56,6 +56,9 @@ Reference device: iPhone 13, 390 x 844 pt, portrait only. All values are mirrore
 
 - No overlay above the UI. One window-level tap recogniser with `cancelsTouchesInView = false`.
 - `タスク・予定に反映` clears editor focus and waits one run loop before saving and pushing Transfer selection. Returning does not restore that focus.
+- Return between outline rows assigns the next focus directly and does not set focus to nil.
+- The editor paper is painted on the scrolling body. It is not painted as a rectangle behind the keyboard's top corners.
+- `タスク・予定に反映` and `反映先を選ぶ` are the shared glass action: orange accent, white text, prominent Liquid Glass on iOS 26, translucent material before that.
 
 ## Appearance
 
@@ -71,7 +74,7 @@ Planning dirty dismiss uses `PlanningDiscardConfirmation`, a `UIAlertController`
 
 ## Return key
 
-A non-empty parent creates or focuses its first child. A non-empty child inserts the next child. Return on an empty child removes it and creates the next parent. Depth stays at two.
+A non-empty parent creates or focuses its first child. A non-empty child inserts the next child. Return on an empty child removes it and creates the next parent. Backspace on an empty row deletes it and focuses the previous visible row. Depth stays at two. Focus is never cleared as part of Return.
 
 ## Preview remainder
 
@@ -83,7 +86,7 @@ At most five cards. When more exist, the same container shows centered `他Nプ�
 
 ## Shared header chrome
 
-Pushed pages (Plan List, New/Edit Plan, Transfer selection, Postpone, Help) use `planningPageChrome`: the system navigation bar, a back button, a centered title, and a trailing control only when the page has one. iOS 26 uses the system Liquid Glass toolbar. iOS 17.2–25 uses an ultra-thin material toolbar. The Planning root and the Monthly / Weekly / Daily period bars use `planningFixedHeader` (`safeAreaBar` on iOS 26, material inset before that). Neither paints a cream header block. Appearance is the app-wide Light setting, not a Planning-only modifier.
+Pushed pages (Plan List, New/Edit Plan, Transfer selection, Postpone, Help) use `planningPageChrome`: the system navigation bar, a back button, a centered title, and a trailing control only when the page has one. iOS 26 uses the system Liquid Glass toolbar. iOS 17.2–25 uses an ultra-thin material toolbar. The Planning root uses `planningFixedHeader` (`safeAreaBar` on iOS 26, material inset before that). Monthly, Weekly, and Daily do not add a second period-header strip. Their selector scrolls under the shared intro. One Back tap calls `navigation.pop()`, which commits `removeLast()` on the next turn so the toolbar tap is not dropped. Appearance is the app-wide Light setting, not a Planning-only modifier.
 
 ## Index host
 
@@ -91,11 +94,19 @@ Pushed pages (Plan List, New/Edit Plan, Transfer selection, Postpone, Help) use 
 
 ## Future
 
-The Future title and description use `PlanningSectionIntro`, the same `PlanMain.titleTop` and `titleToParagraph` rhythm as Plan. Monthly, Weekly, and Daily place their icon/title row with that same `titleTop`. Year controls sit about 20 pt below and keep the existing year sheet (`fixedHeight: 260`). Years page with the native page TabView.
+The Future title and description use `PlanningSectionIntro`, the same `PlanMain.titleTop` and `titleToParagraph` rhythm as Plan. Monthly, Weekly, and Daily use that same intro, then the existing period selector in the scroll. Year controls sit about 20 pt below and keep the existing year sheet (`fixedHeight: 260`). Years page with the native page TabView.
 
-The year is a 3 by 4 grid. Every month card is 120 pt tall with radius 11.5 and a fixed 6 by 7 date grid. A one-day event draws a 4 pt dot at the top-trailing of that date, in the event's Planning colour. A multi-day event draws a 0.26 opacity band behind the numbers, with a leading cap, middle segments, and a trailing cap per week row. The first event in repository order wins when dates overlap. The same event id is not copied across weeks, months, or years.
+The year is a 3 by 4 grid. Every month card is 120 pt tall with radius 11.5 and a fixed 6 by 7 date grid. A one-day event uses the same pastel band as a one-cell range behind the date number. A multi-day event draws a 0.26 opacity band behind the numbers, with a leading cap, middle segments, and a trailing cap per week row. The first event in repository order wins when dates overlap. The same event id is not copied across weeks, months, or years.
+
+Monthly, Weekly, and Daily mains show summary cards only: ToDo count and completion, and 予定 count. A card opens the list sheet. The list, the source chooser, and the task or event editor share `PlanningSystemSheetChrome`. Daily completion is display-only.
 
 The month editor, event editor, and date/time editor use `PlanningSystemSheetChrome`: one fitted height, system surface, the same × and ✓ row. The month goal is one line at the editor field height. Long lists scroll inside `maximumBody`. The date sheet shows the calendar, then the Time toggle, then the time wheel only while Time is on. Turning Time on remeasures that one height. A child sheet hides the parent × / ✓ while it is presented.
+
+## Reflection due card
+
+`PlanningReflectionDueCard` is one component for Monthly, Weekly, and Daily. Its height is `PlanningTokens.ReflectionDue.height`: 1.5× to 2.0× the measured visible system tab-menu height (`tabBarFallback` 49 until `PlanningTabBarHeightReader` finds the bar). It is not based on the 90 pt index tab. The card sits in the period content column, inset by `contentInset` on the left and the right, so its right edge stops before the index seam. It is fixed with `safeAreaInset` above the system tab bar while the page scrolls, and the scroll body keeps bottom space so the last content can clear it. iOS 26 uses `glassEffect`. Earlier systems use ultra-thin material. Text stays dark. The action uses the Essences orange accent.
+
+The classification page lists items only. It has no progress ring, percent, or count summary. The result page shows period, snapshot completion counts, and 維持 / 先送り / 終了 counts. It has no `主な項目` section.
 
 ## Navigation contract
 

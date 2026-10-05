@@ -6,158 +6,126 @@ struct ReflectionFlowPage: View {
     @EnvironmentObject private var navigation: TabNavigationState
     let scope: ReflectionScope
 
-    @State private var showConfirm = false
+    private var completed: Bool {
+        switch scope {
+        case .period(let bucket, let key):
+            session.isReflectionComplete(bucket: bucket, periodKey: key)
+        case .future(let year):
+            session.futureReflections.first { $0.year == year }?.reflectionCompleted == true
+        }
+    }
 
     var body: some View {
-        let draft = session.reflectionDraft
-        let started = draft?.scope == scope && draft?.started == true
+        Group {
+            if completed {
+                resultPage
+            } else {
+                classificationPage
+            }
+        }
+        .background(PlanningPalette.paper)
+        .planningPageChrome(title: PlanningText.string(completed ? .reflectionResult : .reflectionTitle), onBack: {
+            if !navigation.path.isEmpty { navigation.pop() }
+        })
+        .onAppear {
+            if !completed { session.beginReflection(scope) }
+        }
+    }
+
+    private var classificationPage: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    if !navigation.path.isEmpty { navigation.pop() }
+                Text(periodContext)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PlanningPalette.muted)
+                Text(PlanningText.string(.reflectionExplain))
+                    .font(.body)
+                    .foregroundStyle(PlanningPalette.ink)
+                ForEach(session.reflectionItems(scope)) { item in
+                    decisionRow(item)
                 }
-                Text(started ? "振り返りをしましょう！" : "振り返りを始めますか？")
-                    .font(.title2.bold())
-                if started {
-                    summary
-                    explanations
-                    ForEach(session.reflectionItems(scope)) { item in
-                        decisionRow(item)
-                    }
-                    Button("振り返りを終える") {
-                        if session.completeReflection(scope: scope), !navigation.path.isEmpty {
-                            navigation.pop()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!session.canCompleteReflection(scope))
-                }
-                Button("振り返りの設定") {
-                    navigation.path.append(PlanningRoute.reflectionSettings)
-                }
-                .buttonStyle(.bordered)
             }
             .padding(16)
+            .padding(.bottom, 12)
         }
         .planningScroll()
-        .planningKeyboardDismiss()
-        .background(PlanningPalette.paper)
-        .navigationBarHidden(true)
-        .confirmationDialog("振り返りを始めますか？", isPresented: $showConfirm, titleVisibility: .visible) {
-            Button("始める") { session.beginReflection(scope) }
-            Button(skipTitle) { 
-                session.skipReflection(scope)
-                if !navigation.path.isEmpty { navigation.pop() }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            PlanningGlassAction(title: PlanningText.string(.confirmReflection)) {
+                if session.completeReflection(scope: scope), !navigation.path.isEmpty {
+                    navigation.pop()
+                }
             }
-            Button("キャンセル", role: .cancel) {
-                if !navigation.path.isEmpty { navigation.pop() }
-            }
-        }
-        .onAppear {
-            if !(session.reflectionDraft?.scope == scope && session.reflectionDraft?.started == true) {
-                showConfirm = true
-            }
+            .disabled(!session.canCompleteReflection(scope))
         }
     }
 
-    private var skipTitle: String {
+    private var resultPage: some View {
+        let counts = session.classificationCounts(for: scope)
+        let completion = session.snapshotCompletion(for: scope)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(periodContext)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PlanningPalette.muted)
+                Text("ToDo \(completion.todoDone) / \(completion.todoTotal) 完了")
+                Text("予定 \(completion.eventDone) / \(completion.eventTotal)")
+                Text("\(PlanningText.string(.keepCount)) \(counts.keep)件")
+                Text("\(PlanningText.string(.postponeCount)) \(counts.postpone)件")
+                Text("\(PlanningText.string(.stopCount)) \(counts.stop)件")
+                Text("完了状態と、維持・先送り・終了は別々です。")
+                    .font(.footnote)
+                    .foregroundStyle(PlanningPalette.muted)
+                Button("Replan") { session.select(.plan) }
+                    .buttonStyle(.bordered)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .planningScroll()
+    }
+
+    private var periodContext: String {
         switch scope {
-        case .period(.daily, _): "今日はやめとく"
-        case .period(.weekly, _): "今週はやめとく"
-        case .period(.monthly, _): "今月はやめとく"
-        case .future: "今年はやめとく"
+        case .period(let bucket, let key):
+            PeriodCalendar.label(bucket: bucket, key: key)
+        case .future(let year):
+            "\(year)"
         }
-    }
-
-    private var summary: some View {
-        let fraction = session.achievementFraction(for: scope)
-        return VStack(alignment: .leading, spacing: 6) {
-            Text("この期間の記録")
-                .font(.headline)
-            Text("タスクの達成 \(Int((fraction * 100).rounded()))%")
-                .font(.subheadline)
-            Text("予定 \(session.reflectionItems(scope).filter { $0.kind == .event }.count) 件")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var explanations: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("維持: 次の期間でも続けるもの")
-            Text("先送り: 次にいつ扱うかまだ決めず、先送りボックスへ置くもの")
-            Text("終了: 今後の計画から外すもの")
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
     }
 
     private func decisionRow(_ item: ReflectionItem) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(item.title.isEmpty ? "無題" : item.title)
-                .font(.body.weight(.semibold))
-            Text(item.completed ? "完了" : "未完了")
-                .font(.caption)
-            Picker("分類", selection: Binding(
-                get: { session.reflectionDraft?.decisions[item.id] ?? itemFallback },
-                set: { session.setDraftDecision(itemID: item.id, disposition: $0) }
-            )) {
-                Text("維持").tag(ReflectionDisposition.keep)
-                Text("先送り").tag(ReflectionDisposition.postpone)
-                Text("終了").tag(ReflectionDisposition.stop)
+        let selected = session.reflectionDraft?.decisions[item.id]
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: item.kind == .event ? "calendar" : "checkmark.circle")
+                    .foregroundStyle(PlanningPalette.muted)
+                Text(item.title.isEmpty ? "無題" : item.title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(PlanningPalette.ink)
             }
-            .pickerStyle(.segmented)
+            HStack(spacing: 0) {
+                choice(.keep, selected: selected, item: item)
+                choice(.postpone, selected: selected, item: item)
+                choice(.stop, selected: selected, item: item)
+            }
+            .background(Color(uiColor: .secondarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.vertical, 4)
     }
 
-    private var itemFallback: ReflectionDisposition { .stop }
-}
-
-struct ReflectionResultView: View {
-    @ObservedObject var session: PlanningSession
-    @EnvironmentObject private var navigation: TabNavigationState
-    let scope: ReflectionScope
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("振り返り結果")
-                .font(.title3.weight(.semibold))
-            Text("達成 \(Int((session.achievementFraction(for: scope) * 100).rounded()))%")
-                .font(.subheadline)
-            Text("完了状態と、維持・先送り・終了は別々です。")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            ForEach(session.decisions(for: scope)) { decision in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(decision.title)
-                    Text(decision.completed ? "完了" : "未完了")
-                        .font(.caption)
-                    Text(label(decision.disposition))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Button("Replan") {
-                session.select(.plan)
-            }
-            .buttonStyle(.borderedProminent)
-            Button("振り返り履歴") {
-                navigation.path.append(PlanningRoute.reflectionHistory)
-            }
-            .buttonStyle(.bordered)
-            if case .period(let bucket, let key) = scope {
-                Button("この期間を編集") {
-                    session.setExplicitEdit(bucket: bucket, periodKey: key, enabled: true)
-                }
-                .buttonStyle(.bordered)
-            }
+    private func choice(_ value: ReflectionDisposition, selected: ReflectionDisposition?, item: ReflectionItem) -> some View {
+        let on = selected == value
+        return Button {
+            session.setDraftDecision(itemID: item.id, disposition: value)
+        } label: {
+            Text(label(value))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(on ? Color.white : PlanningPalette.ink)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(on ? Color(red: 0.916, green: 0.524, blue: 0.244) : Color.clear)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     private func label(_ value: ReflectionDisposition) -> String {
@@ -169,6 +137,93 @@ struct ReflectionResultView: View {
     }
 }
 
+struct PlanningReflectionDueCard: View {
+    let bucket: PlanningBucket
+    let action: () -> Void
+    var tabBarHeight: CGFloat
+
+    private var accent: Color { Color(red: 0.916, green: 0.524, blue: 0.244) }
+
+    var body: some View {
+        let card = VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(PlanningPalette.ink)
+            Text(explanation)
+                .font(.system(size: 12))
+                .foregroundStyle(PlanningPalette.ink)
+                .lineLimit(2)
+            Button(PlanningText.string(.startReflection), action: action)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(accent)
+                .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight))
+
+        if #available(iOS 26.0, *) {
+            card.glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        } else {
+            card.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+    }
+
+    private var title: String {
+        switch bucket {
+        case .monthly: PlanningText.string(.monthlyDueTitle)
+        case .weekly: PlanningText.string(.weeklyDueTitle)
+        case .daily: PlanningText.string(.dailyDueTitle)
+        }
+    }
+
+    private var explanation: String {
+        switch bucket {
+        case .monthly: PlanningText.string(.monthlyDueBody)
+        case .weekly: PlanningText.string(.weeklyDueBody)
+        case .daily: PlanningText.string(.dailyDueBody)
+        }
+    }
+}
+
+struct ReflectionResultView: View {
+    @ObservedObject var session: PlanningSession
+    @EnvironmentObject private var navigation: TabNavigationState
+    let scope: ReflectionScope
+
+    var body: some View {
+        let counts = session.classificationCounts(for: scope)
+        let completion = session.snapshotCompletion(for: scope)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(PlanningText.string(.reflectionResult))
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(PlanningPalette.ink)
+            Text("ToDo \(completion.todoDone) / \(completion.todoTotal) 完了")
+                .font(.subheadline)
+            Text("予定 \(completion.eventDone) / \(completion.eventTotal)")
+                .font(.subheadline)
+            Text("\(PlanningText.string(.keepCount)) \(counts.keep)件")
+            Text("\(PlanningText.string(.postponeCount)) \(counts.postpone)件")
+            Text("\(PlanningText.string(.stopCount)) \(counts.stop)件")
+            Button("結果を開く") {
+                navigation.path.append(PlanningRoute.reflection(scope))
+            }
+            .buttonStyle(.bordered)
+            Button("Replan") { session.select(.plan) }
+                .buttonStyle(.bordered)
+            Button("振り返り履歴") {
+                navigation.path.append(PlanningRoute.reflectionHistory)
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+    }
+}
+
 struct ReflectionHistoryPage: View {
     @ObservedObject var session: PlanningSession
     @EnvironmentObject private var navigation: TabNavigationState
@@ -176,9 +231,6 @@ struct ReflectionHistoryPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                if !navigation.path.isEmpty { navigation.pop() }
-            }
             Text("振り返り履歴")
                 .font(.title2.bold())
             Picker("種類", selection: $section) {
@@ -191,38 +243,44 @@ struct ReflectionHistoryPage: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(session.completedHistory(for: section), id: \.self) { scope in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(historyTitle(scope))
-                                .font(.headline)
-                            ForEach(session.decisions(for: scope)) { decision in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(decision.title)
-                                    Text(decision.completed ? "完了" : "未完了")
-                                        .font(.caption)
-                                    Picker("分類", selection: Binding(
-                                        get: { decision.disposition },
-                                        set: { session.updateHistoricalDecision(scope: scope, itemID: decision.itemID, disposition: $0) }
-                                    )) {
-                                        Text("維持").tag(ReflectionDisposition.keep)
-                                        Text("先送り").tag(ReflectionDisposition.postpone)
-                                        Text("終了").tag(ReflectionDisposition.stop)
-                                    }
-                                    .pickerStyle(.segmented)
-                                }
-                            }
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        historyCard(scope)
                     }
                 }
             }
         }
         .padding(16)
         .planningScroll()
-        .planningKeyboardDismiss()
         .background(PlanningPalette.paper)
-        .navigationBarHidden(true)
+        .planningPageChrome(title: "振り返り履歴", onBack: {
+            if !navigation.path.isEmpty { navigation.pop() }
+        })
+    }
+
+    private func historyCard(_ scope: ReflectionScope) -> some View {
+        let counts = session.classificationCounts(for: scope)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(historyTitle(scope))
+                .font(.headline)
+            Text("維持 \(counts.keep)件  先送り \(counts.postpone)件  終了 \(counts.stop)件")
+                .font(.subheadline)
+            ForEach(session.decisions(for: scope)) { decision in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(decision.title)
+                    Picker("分類", selection: Binding(
+                        get: { decision.disposition },
+                        set: { session.updateHistoricalDecision(scope: scope, itemID: decision.itemID, disposition: $0) }
+                    )) {
+                        Text("維持").tag(ReflectionDisposition.keep)
+                        Text("先送り").tag(ReflectionDisposition.postpone)
+                        Text("終了").tag(ReflectionDisposition.stop)
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func historyTitle(_ scope: ReflectionScope) -> String {
@@ -242,9 +300,6 @@ struct ReflectionSettingsPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                NativeGlassIconButton(icon: .back, accessibilityLabel: "Back") {
-                    if !navigation.path.isEmpty { navigation.pop() }
-                }
                 Text("Reflection Settings")
                     .font(.title2.bold())
                 Stepper("Daily \(session.reflectionSchedule.dailyHour):00", value: $session.reflectionSchedule.dailyHour, in: 0...23)
@@ -257,14 +312,100 @@ struct ReflectionSettingsPage: View {
             .padding(16)
         }
         .planningScroll()
-        .planningKeyboardDismiss()
         .background(PlanningPalette.paper)
-        .navigationBarHidden(true)
+        .planningPageChrome(title: "Reflection Settings", onBack: {
+            if !navigation.path.isEmpty { navigation.pop() }
+        })
     }
 }
 
 struct NoActivityMemorySection: View {
     @ObservedObject var session: PlanningSession
+    @EnvironmentObject private var navigation: TabNavigationState
+    let scope: ReflectionScope
+
+    private var entry: PlanningMemoryEntry? {
+        session.memoryEntries.first { $0.scope == scope }
+    }
+
+    var body: some View {
+        if let entry, entry.saved {
+            Button {
+                navigation.path.append(PlanningRoute.planningMemory(scope))
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.kind == .photoNote ? PlanningText.string(.photoAndLine) : PlanningText.string(.anythingDiary))
+                        .font(.headline)
+                        .foregroundStyle(PlanningPalette.ink)
+                    Text(entry.kind == .photoNote ? entry.text : entry.title)
+                        .font(.subheadline)
+                        .foregroundStyle(PlanningPalette.muted)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        } else {
+            recommendation
+        }
+    }
+
+    private var recommendation: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(emptyTitle)
+                .font(.headline)
+                .foregroundStyle(PlanningPalette.ink)
+            Text(emptyBody)
+                .font(.body)
+                .foregroundStyle(PlanningPalette.ink)
+            choiceButton(title: PlanningText.string(.photoAndLine), kind: .photoNote)
+            choiceButton(title: PlanningText.string(.anythingDiary), kind: .diary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+    }
+
+    private var emptyTitle: String {
+        switch scope {
+        case .period(.monthly, _): PlanningText.string(.monthlyEmptyTitle)
+        case .period(.weekly, _): PlanningText.string(.weeklyEmptyTitle)
+        case .period(.daily, _), .future: PlanningText.string(.dailyEmptyTitle)
+        }
+    }
+
+    private var emptyBody: String {
+        switch scope {
+        case .period(.monthly, _): PlanningText.string(.monthlyEmptyBody)
+        case .period(.weekly, _): PlanningText.string(.weeklyEmptyBody)
+        case .period(.daily, _), .future: PlanningText.string(.dailyEmptyBody)
+        }
+    }
+
+    private func choiceButton(title: String, kind: PlanningMemoryKind) -> some View {
+        Button {
+            if entry == nil {
+                session.addMemory(scope: scope, kind: kind, text: "", hasPhoto: false)
+            }
+            navigation.path.append(PlanningRoute.planningMemory(scope))
+        } label: {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(PlanningPalette.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(PlanningPalette.paper, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct PlanningMemoryPage: View {
+    @ObservedObject var session: PlanningSession
+    @EnvironmentObject private var navigation: TabNavigationState
     let scope: ReflectionScope
     @State private var photo: PhotosPickerItem?
 
@@ -273,108 +414,120 @@ struct NoActivityMemorySection: View {
     }
 
     var body: some View {
-        if let entry {
-            if entry.kind == .photoNote {
-                photoLayout(entry)
-            } else {
-                diaryLayout(entry)
+        ScrollView {
+            if let entry {
+                if entry.saved {
+                    completed(entry)
+                } else if entry.kind == .photoNote {
+                    photoEditor(entry)
+                } else {
+                    diaryEditor(entry)
+                }
             }
-        } else {
-            recommendation
+        }
+        .planningScroll()
+        .planningKeyboardDismiss()
+        .background(PlanningPalette.paper)
+        .planningPageChrome(title: pageTitle, onBack: {
+            if !navigation.path.isEmpty { navigation.pop() }
+        })
+    }
+
+    private var pageTitle: String {
+        guard let entry else { return "" }
+        return entry.kind == .photoNote ? PlanningText.string(.photoAndLine) : PlanningText.string(.anythingDiary)
+    }
+
+    private var dateLabel: String {
+        switch scope {
+        case .period(let bucket, let key):
+            PeriodCalendar.label(bucket: bucket, key: key)
+        case .future(let year):
+            "\(year)"
         }
     }
 
-    private var recommendation: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("忙しい日はだれにでもあります。\n今日は下のどちらかをやってみませんか？")
-                .font(.body)
-                .foregroundStyle(PlanningPalette.ink)
-            choiceButton(
-                title: "写真 & 一言",
-                detail: "写真を1枚と、短い一言だけ残します。",
-                kind: .photoNote
-            )
-            choiceButton(
-                title: "なんでも日記",
-                detail: "タイトルと日にち、本文だけを書きます。",
-                kind: .diary
-            )
+    @ViewBuilder
+    private func completed(_ entry: PlanningMemoryEntry) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(pageTitle).font(.title2.bold()).foregroundStyle(PlanningPalette.ink)
+            Text(dateLabel).font(.subheadline).foregroundStyle(PlanningPalette.muted)
+            if entry.kind == .photoNote {
+                photoImage(entry)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 280)
+                Text(entry.text)
+                    .font(.body)
+                    .foregroundStyle(PlanningPalette.ink)
+            } else {
+                Text(entry.title).font(.title3.weight(.semibold))
+                Text(entry.text).font(.body)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
     }
 
-    private func choiceButton(title: String, detail: String, kind: PlanningMemoryKind) -> some View {
-        Button {
-            session.addMemory(scope: scope, kind: kind, text: "", hasPhoto: false)
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline).foregroundStyle(PlanningPalette.ink)
-                Text(detail).font(.subheadline).foregroundStyle(PlanningPalette.muted)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(PlanningPalette.paper, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    @ViewBuilder
+    private func photoImage(_ entry: PlanningMemoryEntry) -> some View {
+        if let data = entry.imageData, let image = UIImage(data: data) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        } else {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(PlanningPalette.card)
+                .overlay { Text("写真").foregroundStyle(PlanningPalette.muted) }
         }
-        .buttonStyle(.plain)
     }
 
-    private func photoLayout(_ entry: PlanningMemoryEntry) -> some View {
+    private func photoEditor(_ entry: PlanningMemoryEntry) -> some View {
         VStack(spacing: 16) {
             PhotosPicker(selection: $photo, matching: .images) {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(PlanningPalette.card)
+                photoImage(entry)
                     .frame(maxWidth: .infinity)
                     .frame(height: 280)
-                    .overlay {
-                        Text(entry.hasPhoto ? "写真" : "写真を選ぶ")
-                            .foregroundStyle(PlanningPalette.muted)
-                    }
-                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(PlanningPalette.line, lineWidth: 1))
             }
             TextField("一言", text: memoryText(entry))
                 .textFieldStyle(.roundedBorder)
+            PlanningGlassAction(title: PlanningText.string(.save)) {
+                session.saveMemory(id: entry.id)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 420)
+        .padding(16)
         .onChange(of: photo) { _, item in
-            session.updateMemory(id: entry.id, text: entry.text, title: entry.title, dateText: entry.dateText, hasPhoto: item != nil)
+            Task {
+                let data = try? await item?.loadTransferable(type: Data.self)
+                session.updateMemory(id: entry.id, text: entry.text, title: entry.title, dateText: entry.dateText, hasPhoto: data != nil, imageData: data)
+            }
         }
     }
 
-    private func diaryLayout(_ entry: PlanningMemoryEntry) -> some View {
+    private func diaryEditor(_ entry: PlanningMemoryEntry) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             TextField("タイトル", text: memoryTitle(entry))
                 .font(.title3.weight(.semibold))
-            TextField("日にち", text: memoryDate(entry))
             TextField("本文", text: memoryText(entry), axis: .vertical)
                 .lineLimit(8...16)
+            PlanningGlassAction(title: PlanningText.string(.save)) {
+                session.saveMemory(id: entry.id)
+            }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 420, alignment: .topLeading)
-        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(PlanningPalette.line, lineWidth: 1))
     }
 
     private func memoryText(_ entry: PlanningMemoryEntry) -> Binding<String> {
         Binding(
-            get: { entry.text },
-            set: { session.updateMemory(id: entry.id, text: $0, title: entry.title, dateText: entry.dateText, hasPhoto: entry.hasPhoto) }
+            get: { session.memoryEntries.first { $0.id == entry.id }?.text ?? entry.text },
+            set: { session.updateMemory(id: entry.id, text: $0, title: entry.title, dateText: entry.dateText, hasPhoto: entry.hasPhoto, imageData: entry.imageData) }
         )
     }
 
     private func memoryTitle(_ entry: PlanningMemoryEntry) -> Binding<String> {
         Binding(
-            get: { entry.title },
-            set: { session.updateMemory(id: entry.id, text: entry.text, title: $0, dateText: entry.dateText, hasPhoto: entry.hasPhoto) }
-        )
-    }
-
-    private func memoryDate(_ entry: PlanningMemoryEntry) -> Binding<String> {
-        Binding(
-            get: { entry.dateText },
-            set: { session.updateMemory(id: entry.id, text: entry.text, title: entry.title, dateText: $0, hasPhoto: entry.hasPhoto) }
+            get: { session.memoryEntries.first { $0.id == entry.id }?.title ?? entry.title },
+            set: { session.updateMemory(id: entry.id, text: entry.text, title: $0, dateText: entry.dateText, hasPhoto: entry.hasPhoto, imageData: entry.imageData) }
         )
     }
 }

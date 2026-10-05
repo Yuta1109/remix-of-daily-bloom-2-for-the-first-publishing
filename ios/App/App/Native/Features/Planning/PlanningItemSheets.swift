@@ -10,7 +10,7 @@ struct PlanningSubtaskDraft: Identifiable, Equatable {
 struct PlanningItemDraft: Equatable {
     var title = ""
     var iconSymbol = "circle"
-    var colorID = PlanningColorChoice.sand.rawValue
+    var colorID = PlanIconColor.defaultID
     var startDay: Int?
     var endDay: Int?
     var startMinutes: Int?
@@ -108,28 +108,28 @@ struct PeriodItemListSheet: View {
     @State private var showingSources = false
     @State private var editingID: EditingNodeID?
     @State private var creating = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(session.nodes(bucket: bucket, periodKey: periodKey, kind: kind)) { node in
-                        parentRow(node)
-                    }
+        PlanningSystemSheetChrome(
+            onClose: { dismiss() },
+            onConfirm: { dismiss() },
+            maximumBody: PlanningTokens.Sheet.maximumBody
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(session.nodes(bucket: bucket, periodKey: periodKey, kind: kind)) { node in
+                    parentRow(node)
                 }
-                .padding(16)
-                .padding(.bottom, 72)
             }
-            .planningScroll()
+            .padding(16)
+            .padding(.bottom, 72)
+        }
+        .overlay(alignment: .bottomTrailing) {
             NativeGlassIconButton(icon: .plus, accessibilityLabel: "Add", prominent: true) {
                 showingSources = true
             }
             .padding(16)
         }
-        .background(PlanningPalette.paper)
-        .presentationDetents([.large])
-        .presentationDragIndicator(.hidden)
-        .presentationBackground(PlanningPalette.paper)
         .sheet(isPresented: $showingSources) {
             PeriodSourceChooser(session: session, bucket: bucket, kind: kind, periodKey: periodKey) {
                 showingSources = false
@@ -163,7 +163,7 @@ struct PeriodItemListSheet: View {
             }
         }
         .padding(12)
-        .background(PlanningColorChoice(rawValue: node.colorID)?.color ?? PlanningPalette.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
     }
 
@@ -185,7 +185,7 @@ struct PeriodItemListSheet: View {
             .buttonStyle(.plain)
             if showsIcon {
                 Image(systemName: node.iconSymbol)
-                    .foregroundStyle(PlanningPalette.ink)
+                    .foregroundStyle(PlanIconColor.resolved(node.colorID).color)
             }
         }
     }
@@ -228,27 +228,18 @@ struct PeriodSourceChooser: View {
     @State private var picking: PeriodAddSource?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: onClose)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            ForEach(PeriodCalendar.addSources(for: bucket)) { source in
-                Button(source.title) {
-                    if source == .create { onCreate() } else { picking = source }
+        PlanningSystemSheetChrome(onClose: onClose, onConfirm: onClose) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(PeriodCalendar.addSources(for: bucket)) { source in
+                    Button(source.title) {
+                        if source == .create { onCreate() } else { picking = source }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(PlanningPalette.paper)
-        .presentationDetents([.height(280)])
-        .presentationDragIndicator(.hidden)
-        .presentationBackground(PlanningPalette.paper)
         .sheet(item: $picking) { source in
             PeriodSourceSelectionSheet(session: session, source: source, bucket: bucket, kind: kind, periodKey: periodKey) {
                 picking = nil
@@ -268,39 +259,30 @@ struct PeriodSourceSelectionSheet: View {
     @State private var selected: Set<UUID> = []
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: onClose)
-                Spacer()
-                NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true) {
-                    session.importSources(selected, source: source, bucket: bucket, kind: kind, periodKey: periodKey)
-                    onClose()
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(rows, id: \.id) { row in
-                        Button {
-                            if selected.contains(row.id) { selected.remove(row.id) } else { selected.insert(row.id) }
-                        } label: {
-                            HStack {
-                                Image(systemName: selected.contains(row.id) ? "checkmark.square.fill" : "square")
-                                Text(row.title).foregroundStyle(PlanningPalette.ink)
-                                Spacer()
-                            }
+        PlanningSystemSheetChrome(
+            onClose: onClose,
+            onConfirm: {
+                session.importSources(selected, source: source, bucket: bucket, kind: kind, periodKey: periodKey)
+                onClose()
+            },
+            maximumBody: PlanningTokens.Sheet.maximumBody
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(rows, id: \.id) { row in
+                    Button {
+                        if selected.contains(row.id) { selected.remove(row.id) } else { selected.insert(row.id) }
+                    } label: {
+                        HStack {
+                            Image(systemName: selected.contains(row.id) ? "checkmark.square.fill" : "square")
+                            Text(row.title).foregroundStyle(PlanningPalette.ink)
+                            Spacer()
                         }
-                        .buttonStyle(.plain)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(16)
             }
-            .planningScroll()
+            .padding(16)
         }
-        .background(PlanningPalette.paper)
-        .presentationDetents([.large])
-        .presentationDragIndicator(.hidden)
     }
 
     private var rows: [(id: UUID, title: String)] {
@@ -345,45 +327,42 @@ struct PlanningItemEditorSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: requestClose)
-                Spacer()
-                NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true) {
-                    onSave(draft)
+        PlanningSystemSheetChrome(
+            onClose: requestClose,
+            onConfirm: { onSave(draft) },
+            maximumBody: PlanningTokens.Sheet.maximumBody
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    Image(systemName: draft.iconSymbol)
+                        .foregroundStyle(PlanIconColor.resolved(draft.colorID).color)
+                        .frame(width: 28)
+                    TextField("内容", text: $draft.title)
                 }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 10) {
-                        Image(systemName: draft.iconSymbol).frame(width: 28)
-                        TextField("内容", text: $draft.title)
-                        Circle().fill(PlanningColorChoice(rawValue: draft.colorID)?.color ?? PlanningPalette.card).frame(width: 18, height: 18)
-                    }
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(PlanningIconCatalog.symbols, id: \.self) { symbol in
-                                Button { draft.iconSymbol = symbol } label: {
-                                    Image(systemName: symbol)
-                                        .frame(width: 32, height: 32)
-                                        .background(draft.iconSymbol == symbol ? PlanningPalette.line : Color.clear, in: Circle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack {
-                        ForEach(PlanningColorChoice.allCases) { choice in
-                            Button { draft.colorID = choice.rawValue } label: {
-                                Circle().fill(choice.color).frame(width: 22, height: 22)
-                                    .overlay(Circle().stroke(draft.colorID == choice.rawValue ? PlanningPalette.ink : PlanningPalette.line, lineWidth: 1))
+                        ForEach(PlanningIconCatalog.symbols, id: \.self) { symbol in
+                            Button { draft.iconSymbol = symbol } label: {
+                                Image(systemName: symbol)
+                                    .foregroundStyle(PlanIconColor.resolved(draft.colorID).color)
+                                    .frame(width: 32, height: 32)
+                                    .background(draft.iconSymbol == symbol ? PlanningPalette.line : Color.clear, in: Circle())
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    rangeEditors
+                }
+                HStack {
+                    ForEach(PlanIconColor.allCases) { choice in
+                        Button { draft.colorID = choice.rawValue } label: {
+                            Circle().fill(choice.color).frame(width: 22, height: 22)
+                                .overlay(Circle().stroke(draft.colorID == choice.rawValue ? PlanningPalette.ink : PlanningPalette.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                rangeEditors
+                if kind == .task {
                     Text("サブタスク").font(.caption.weight(.semibold)).foregroundStyle(PlanningPalette.muted)
                     ForEach($draft.subtasks) { $subtask in
                         TextField("サブタスク", text: $subtask.title)
@@ -391,17 +370,12 @@ struct PlanningItemEditorSheet: View {
                             .onSubmit { appendSubtask(after: subtask) }
                     }
                 }
-                .padding(16)
             }
-            .planningScroll()
+            .padding(16)
         }
-        .background(PlanningPalette.paper)
-        .presentationDetents([.large])
-        .presentationDragIndicator(.hidden)
-        .presentationBackground(PlanningPalette.paper)
         .planningKeyboardDismiss()
         .onAppear {
-            if draft.subtasks.isEmpty { draft.subtasks = [PlanningSubtaskDraft()] }
+            if kind == .task, draft.subtasks.isEmpty { draft.subtasks = [PlanningSubtaskDraft()] }
             original = draft
         }
         .onChange(of: confirmDiscard) { _, show in

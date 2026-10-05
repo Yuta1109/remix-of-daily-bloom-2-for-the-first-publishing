@@ -30,6 +30,8 @@ struct PeriodReflectionRecord: Identifiable, Hashable {
     var completedAt: Date?
     var decisions: [StoredReflectionDecision] = []
     var explicitEdit = false
+    /// Temporary local sample. Not a production account record.
+    var isSample = false
 
     var id: String { "\(bucket.rawValue):\(periodKey)" }
 }

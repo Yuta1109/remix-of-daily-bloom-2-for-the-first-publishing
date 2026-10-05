@@ -224,18 +224,25 @@ describe("planning reflection", () => {
     expect(reflection).toContain("sourceEventID");
     expect(reflection).toContain("matchesPostpone");
     expect(reflectionPage).not.toContain("今月の進捗");
-    expect(reflectionPage).toContain("達成");
-    expect(reflectionPage).toContain("振り返り結果");
+    expect(reflectionPage).not.toContain("主な項目");
+    expect(reflectionPage).not.toContain("この期間の記録");
+    expect(reflectionPage).toContain(".reflectionResult");
+    expect(planText).toContain("振り返り結果");
     expect(reflectionPage).toContain("Button(\"Replan\")");
-    expect(reflectionPage).toContain("写真 & 一言");
-    expect(reflectionPage).toContain("なんでも日記");
     expect(reflectionPage).toContain("addMemory");
     expect(reflectionPage).toContain("updateHistoricalDecision");
-    expect(reflectionPage).toContain("振り返りを始めますか？");
-    expect(reflectionPage).toContain("今日はやめとく");
-    expect(reflectionPage).toContain("今週はやめとく");
-    expect(reflectionPage).toContain("今月はやめとく");
-    expect(reflectionPage).toContain("今年はやめとく");
+    expect(reflectionPage).toContain("PlanningReflectionDueCard");
+    expect(reflectionPage).toContain("PlanningTokens.ReflectionDue.height");
+    expect(reflectionPage).not.toContain("Index.length");
+    expect(reflection).toContain("canCompleteReflection");
+    expect(reflection).toContain("classificationCounts");
+    expect(reflection).toContain("skipReflection");
+    expect(planText).toContain("写真 & 一言");
+    expect(planText).toContain("なんでも日記");
+    expect(planText).toContain("今月は記録がありませんでした");
+    expect(planText).toContain("今週は記録がありませんでした");
+    expect(planText).toContain("今日は記録がありませんでした");
+    expect(planText).not.toContain("今月はまだ記録がありません");
   });
 });
 
@@ -287,7 +294,8 @@ describe("planning blueprint fidelity", () => {
     expect(chrome).toContain("func periodHasEnded");
     expect(periodPage).toContain("periodHasEnded");
     expect(periodPage).toContain("NoActivityMemorySection");
-    expect(reflectionPage).toContain("忙しい日はだれにでもあります。");
+    expect(planText).toContain("忙しい日はだれにでもあります。");
+    expect(planText).toContain("忙しい週はだれにでもあります。");
   });
 
   it("keeps month cards on a stable grid and pages years and periods", () => {
@@ -307,7 +315,25 @@ describe("planning blueprint fidelity", () => {
     expect(samples).toContain(".postpone");
     expect(samples).toContain(".stop");
     expect(samples).not.toContain("Firebase");
+    expect(samples).toContain("isSample: true");
+    expect(samples).toContain("夕方の空がきれいだった。");
+    expect(samples).toContain("少し落ち着けた日");
+    expect(samples).toContain("static func install");
+    expect(samples).toContain("func seedSamplePeriod");
+    expect(samples).toContain("if session.periodRecords.contains");
+    expect(samples).not.toContain("record.hasMeaningfulActivity = true");
+    expect(samples).toContain("isSample: true");
+    expect(samples).not.toContain("session.postponed =");
+    expect(samples).not.toContain("session.periodItems =");
     expect(models).toContain("TemporaryPlanningSamples.install");
+    expect(periodPage).toContain("PlanningReflectionDueCard");
+    expect(periodPage).toContain("PlanningTokens.contentInset");
+    expect(periodPage).toContain("isActivePrompt");
+    expect(tokens).toContain("minimumMultiple: CGFloat = 1.5");
+    expect(tokens).toContain("maximumMultiple: CGFloat = 2.0");
+    expect(tokens).toContain("tabBarFallback: CGFloat = 49");
+    expect(appState).toContain("guard !isPopping, path.count > 0 else { return }");
+    expect(appState).toContain("DispatchQueue.main.async {");
   });
 });
 
@@ -356,7 +382,12 @@ describe("planning item editor", () => {
   it("opens sheets from the section and keeps the source lists", () => {
     const section = periodPage.slice(periodPage.indexOf("func itemSection"), periodPage.indexOf("func sectionTitle"));
     expect(section).not.toContain("追加");
+    expect(section).not.toContain("ForEach(nodes)");
     expect(section).toContain("onTapGesture");
+    expect(section).toContain("完了");
+    expect(itemSheets).toContain("PlanningSystemSheetChrome(");
+    expect(itemSheets).toContain("ForEach(PlanIconColor.allCases)");
+    expect(itemSheets).toContain("if kind == .task");
     expect(periodPage).toContain("PeriodItemListSheet");
     expect(period).toContain("case .monthly: [.plan, .create, .postpone]");
     expect(period).toContain("case .weekly: [.plan, .create, .postpone, .monthly]");
@@ -826,11 +857,19 @@ describe("planning TestFlight header, sheets, and index", () => {
     expect(plans).toContain("planningPageChrome");
     expect(help).toContain("planningPageChrome");
     expect(postpone).toContain("planningPageChrome");
-    expect(periodPage).toContain("planningFixedHeader");
+    expect(periodPage).toContain("PlanningSectionIntro(");
+    expect(periodPage).not.toContain("planningFixedHeader");
     expect(tokens).toContain("static let topGap: CGFloat = 10");
     expect(plans).toContain("PlanningTokens.Search.topGap");
     expect(plans).toContain("proxy.scrollTo(id, anchor: .bottom)");
-    expect(tokens).toContain("static let focusClearance: CGFloat = 44");
+    expect(plans).not.toContain("focusClearance");
+    expect(plans).toContain("onKeyPress(.delete)");
+    expect(plans).toContain("PlanBulletReturn.backspace");
+    expect(plans).toContain("DispatchQueue.main.async { focusedID = focus }");
+    expect(plans).toContain("PlanningGlassAction(title:");
+    expect(chrome).toContain("struct PlanningGlassAction");
+    expect(chrome).toContain(".buttonStyle(.glassProminent)");
+    expect(appState).toContain("DispatchQueue.main.async {");
   });
 });
 
@@ -841,12 +880,16 @@ describe("planning TestFlight future, discard, and flicker", () => {
     expect(chrome).toContain("PlanningTokens.PlanMain.titleToParagraph");
     expect(future).toContain("PlanningSectionIntro(title: \"Future\"");
     expect(plans).toContain("PlanningSectionIntro(");
-    expect(periodPage).toContain("PlanningTokens.PlanMain.titleTop");
+    expect(periodPage).toContain("PlanningSectionIntro(");
+    expect(planText).toContain("今月の予定ややることを整理して、1か月の流れを見通しましょう。");
+    expect(planText).toContain("今週の予定ややることを整理して、1週間の流れを見通しましょう。");
+    expect(planText).toContain("今日の予定とやることを確認して、1日の流れを整えましょう。");
   });
 
-  it("marks one day beside the number and bands a range in event colour", () => {
+  it("marks one day as a one-cell band and bands a longer range in event colour", () => {
     expect(tokens).toContain("cardHeight: CGFloat = 120");
-    expect(future).toContain("alignment: .topTrailing");
+    expect(future).toContain("eventID: event?.id");
+    expect(future).not.toContain("width: 4, height: 4");
     expect(future).toContain("PlanIconColor.resolved(event.colorID).color");
     expect(future).not.toContain("PlanningPalette.future");
     expect(future).toContain("opacity(0.26)");

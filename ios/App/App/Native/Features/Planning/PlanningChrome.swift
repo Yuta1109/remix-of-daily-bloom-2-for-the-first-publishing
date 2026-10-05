@@ -109,7 +109,10 @@ private struct PlanningPageChrome: ViewModifier {
                         Image(systemName: "chevron.backward")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(PlanningPalette.ink)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel("Back")
                 }
                 if let trailing {
@@ -303,6 +306,112 @@ private struct PlanningSheetMeasureKey: PreferenceKey {
 }
 
 /// Reads the window's bottom safe area so a fitted sheet can clear the Home indicator.
+private struct PlanningKeyboardOverlap: UIViewRepresentable {
+    @Binding var overlap: CGFloat
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        context.coordinator.observe(view)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(overlap: $overlap) }
+
+    final class Coordinator {
+        var overlap: Binding<CGFloat>
+        var token: NSObjectProtocol?
+
+        init(overlap: Binding<CGFloat>) { self.overlap = overlap }
+
+        func observe(_ view: UIView) {
+            token = NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardWillChangeFrameNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self, weak view] note in
+                guard let self, let view, let window = view.window,
+                      let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+                let covered = window.bounds.intersection(frame).height
+                let next = max(0, covered - window.safeAreaInsets.bottom)
+                if abs(next - self.overlap.wrappedValue) > 0.5 { self.overlap.wrappedValue = next }
+            }
+        }
+
+        deinit {
+            if let token { NotificationCenter.default.removeObserver(token) }
+        }
+    }
+}
+
+struct PlanningTabBarHeightReader: UIViewRepresentable {
+    @Binding var height: CGFloat
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        DispatchQueue.main.async {
+            var current: UIView? = uiView
+            while let view = current {
+                if let bar = view as? UITabBar {
+                    let visible = bar.bounds.height - bar.safeAreaInsets.bottom
+                    let next = visible > 1 ? visible : bar.bounds.height
+                    if abs(next - height) > 0.5 { height = next }
+                    return
+                }
+                current = view.superview
+            }
+        }
+    }
+}
+
+struct PlanningGlassAction: View {
+    let title: String
+    let action: () -> Void
+
+    @Environment(\.isEnabled) private var isEnabled
+    private var accent: Color { Color(red: 0.916, green: 0.524, blue: 0.244) }
+
+    var body: some View {
+        Group {
+            if #available(iOS 26.0, *) {
+                Button(action: action) {
+                    Text(title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: PlanningTokens.Editor.ctaHeight)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(accent)
+            } else {
+                Button(action: action) {
+                    Text(title)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: PlanningTokens.Editor.ctaHeight)
+                        .background(accent.opacity(0.92), in: RoundedRectangle(cornerRadius: PlanningTokens.Editor.ctaCorner, style: .continuous))
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: PlanningTokens.Editor.ctaCorner, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .opacity(isEnabled ? 1 : 0.4)
+        .padding(.horizontal, PlanningTokens.Editor.ctaInset)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+    }
+}
+
 private struct PlanningBottomSafeArea: UIViewRepresentable {
     @Binding var inset: CGFloat
 
@@ -368,10 +477,12 @@ private struct PlanningFittedSheet: ViewModifier {
                 .presentationDetents([.height(max(height, 1))])
                 .presentationSizing(.fitted)
                 .presentationDragIndicator(.hidden)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
         } else {
             content
                 .presentationDetents([.height(max(height, 1))])
                 .presentationDragIndicator(.hidden)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
         }
     }
 }
@@ -393,6 +504,7 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     @State private var contentHeight: CGFloat = 280
     @State private var bodyHeight: CGFloat = 1
     @State private var bottomSafeArea: CGFloat = 0
+    @State private var keyboardOverlap: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -407,6 +519,8 @@ struct PlanningSystemSheetChrome<Content: View>: View {
                         }
                 }
                 .scrollIndicators(.hidden)
+                .contentMargins(.bottom, keyboardOverlap, for: .scrollContent)
+                .background(PlanningKeyboardOverlap(overlap: $keyboardOverlap))
                 .frame(height: min(max(bodyHeight, 1), maximumBody))
             } else {
                 content()
@@ -436,7 +550,7 @@ struct PlanningSystemSheetChrome<Content: View>: View {
 
     private var resolvedHeight: CGFloat {
         if maximumBody == nil { return contentHeight }
-        let controlsHeight: CGFloat = 44 + 18
+        let controlsHeight: CGFloat = 44 + 8
         return controlsHeight + min(max(bodyHeight, 1), maximumBody ?? bodyHeight) + PlanningTokens.Sheet.bottomInset
     }
 
@@ -470,7 +584,7 @@ struct PlanningSystemSheetChrome<Content: View>: View {
             }
         }
         .padding(.horizontal, PlanningTokens.Sheet.horizontalInset)
-        .padding(.top, 18)
+        .padding(.top, 8)
     }
 }
 

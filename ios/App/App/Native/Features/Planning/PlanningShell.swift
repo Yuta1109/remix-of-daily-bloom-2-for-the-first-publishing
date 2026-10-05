@@ -44,6 +44,8 @@ struct PlanningShell: View {
                     ReflectionFlowPage(session: session, scope: scope)
                 case .reflectionHistory:
                     ReflectionHistoryPage(session: session)
+                case .planningMemory(let scope):
+                    PlanningMemoryPage(session: session, scope: scope)
                 }
             }
             .environmentObject(navigation)

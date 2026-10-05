@@ -237,6 +237,10 @@ Do not show blueprint period labels such as Plan, Future, or Daily on a plan row
 Monthly / Weekly のToDo・予定へ反映できます。
 
 - Allow save only, or transfer the selection and save. **Superseded by Phase 2-D2. Save is the top-right check. Copy is `タスク・予定に反映`.**
+- Return moves focus from the current row to the next row in the same turn. It does not clear focus.
+- Backspace on an empty parent or subtask removes that row and focuses the previous visible row. Text is not merged. Depth stays at two.
+- The focused row scrolls into view above `タスク・予定に反映`. There is no extra blank row reserved above that button.
+- `タスク・予定に反映` and `反映先を選ぶ` use one glass action: iOS 26 prominent Liquid Glass, earlier systems a translucent orange material, white label.
 - Editing an existing plan counts as Replan and supports リプラン数.
 - Import from Notes only when that Note is already a bullet list. Handwritten/photo scan uses the same API and key path as the existing Notes AI camera, and only the prescribed scan format. Do not add another AI provider. Do not duplicate that API in Phase 2-A.
 
@@ -248,6 +252,7 @@ Monthly / Weekly のToDo・予定へ反映できます。
 - Horizontal swipe moves to the previous or next year.
 - Twelve small month calendars, 3 columns by 4 rows. January, February, and March are the first row.
 - A month can show fixed-event date highlights and its single monthly goal or short outlook when space allows.
+- A one-day event is a one-cell pastel highlight behind the date number. A longer event keeps the range band. Overlaps use the earliest stored event.
 - Do not copy the blueprint calendar decoration.
 
 ## Future month editor
@@ -263,7 +268,11 @@ Events created here must be able to sync later with Monthly, Weekly when relevan
 
 ## Period sources
 
-Recorded now. Monthly and Weekly screens are implemented later.
+Monthly, Weekly, and Daily mains are overviews. Each shows the shared intro, the existing period selector, a ToDo summary card, and a 予定 summary card. The cards do not list or edit items. Tapping a card opens that list sheet. The add button lives inside the list sheet.
+
+Monthly shares the one Future monthly goal. Weekly keeps its own items and can later be turned off without deleting history. Daily shows completion and does not change it. Today owns completion. Daily does not include Routine or Quick Memo.
+
+List, source, and item editor sheets use `PlanningSystemSheetChrome`. Colour tints the icon and the event mark. It does not fill the row.
 
 Monthly and Weekly task and event sources:
 
@@ -283,7 +292,7 @@ Monthly and Weekly ToDo lists may stay independent. Selected Monthly ToDo items 
 
 ## Shared period navigation
 
-Monthly, Weekly, and Daily, when built, share one period-navigation architecture:
+Monthly, Weekly, and Daily share one period-navigation architecture. Their intro uses `PlanningSectionIntro` (`PlanMain.titleTop`, `PlanMain.titleToParagraph`). The selector sits in the scroll under that intro. The root Planning header, the clear index host, and the system tab bar stay the same as Plan.
 
 - Left and right chevrons
 - Tap the period title to open that period's picker
@@ -329,25 +338,16 @@ Defaults already established:
 - Monthly: month boundary, beginning-versus-end configurable
 - Future: end of year, date configurable
 
-When a Reflection is due, ask `振り返りを始めますか？` with:
+A Reflection is due only when the period had meaningful activity, the default time has passed, and it is neither completed nor skipped. That state is `PlanningReflectionDueCard`, fixed above the system tab bar. It does not scroll with the page. No-activity, skipped, and completed periods do not show it.
 
-- 始める
-- 今日/今週/今月/今年はやめとく
-- キャンセル
-
-First show the period's activity and results. Then `振り返りをしましょう！` and every relevant item in that period.
-
-Each item receives 維持, 先送り, or 終了. Completion and this classification are different. Do not derive one from the other.
+The classification page has no progress summary. Each relevant item gets exactly one of 維持, 先送り, or 終了. Completion does not choose the classification. `結果を確定する` stays disabled until every item is classified, then stores a historical snapshot.
 
 After Reflection:
 
-- The normal ToDo and Event sections are no longer the main result view for that reflected period.
-- Show the Reflection result instead.
-- Show each item's completion state separately from its 維持 / 先送り / 終了 classification.
-- Show period progress or status only after Reflection. Do not show `今月の進捗` or Reflection status before that.
-- The same behavior applies to Monthly, Weekly, and Daily.
-- Strongly offer optional Replan. Replan is never mandatory.
-- Do not add Challenges or Points.
+- The period page shows the result counts, not the due card.
+- The result reads the snapshot. It has no `主な項目` section and no points, XP, rewards, or streaks.
+- Optional Replan stays available. Replan is never mandatory.
+- Completed history keeps the latest 5 completed Reflections per type. Skips and memory entries are not history.
 
 ## No-activity periods
 
@@ -356,10 +356,13 @@ If a day, week, or month has no task or event added, no meaningful edit, no post
 - Do not create a Reflection obligation.
 - Do not increment its Reflection badge.
 
-Offer two alternatives, neither of which counts as Reflection:
+Offer exactly two alternatives, neither of which counts as Reflection, a badge, or history:
 
-- `写真＋一言` — photo plus a short text
-- `過去を思い出して、その日何があったかを日記形式で書いてみる`
+- Title, past tense: `今月は記録がありませんでした`, `今週は記録がありませんでした`, `今日は記録がありませんでした`
+- `写真 & 一言` — one photo and one sentence
+- `なんでも日記` — title and body, no photo
+
+Temporary TestFlight examples for the previous three days live only in `TemporaryPlanningSamples`. They are marked `isSample` and are not written to Firebase.
 
 ## Reflection history
 

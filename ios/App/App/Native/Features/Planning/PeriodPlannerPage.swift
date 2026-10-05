@@ -7,6 +7,7 @@ struct PeriodPlannerPage: View {
 
     @State private var showingPicker = false
     @State private var addingKind: PlanningItemKind?
+    @State private var tabBarHeight: CGFloat = 0
 
     private var periodKey: String { session.periodKey(for: bucket) }
 
@@ -18,6 +19,19 @@ struct PeriodPlannerPage: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .background(PlanningPalette.paper)
+        .background(PlanningTabBarHeightReader(height: $tabBarHeight))
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if session.isActivePrompt(ReflectionScope.period(bucket, periodKey)) {
+                PlanningReflectionDueCard(bucket: bucket, action: {
+                    let scope = ReflectionScope.period(bucket, periodKey)
+                    session.refreshDue(scope)
+                    navigation.path.append(PlanningRoute.reflection(scope))
+                }, tabBarHeight: tabBarHeight)
+                .padding(.leading, PlanningTokens.contentInset)
+                .padding(.trailing, PlanningTokens.contentInset)
+                .padding(.bottom, 8)
+            }
+        }
         .onAppear {
             session.refreshDue(ReflectionScope.period(bucket, periodKey))
         }
@@ -52,6 +66,16 @@ struct PeriodPlannerPage: View {
     private func periodPage(_ key: String) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                PlanningSectionIntro(
+                    title: introTitle,
+                    message: PlanningText.string(introKey)
+                ) {
+                    Image(systemName: introSymbol)
+                        .font(.system(size: 20, weight: .semibold))
+                        .frame(width: PlanningTokens.PlanMain.iconSlot, height: PlanningTokens.PlanMain.iconSlot)
+                        .foregroundStyle(PlanningPalette.ink)
+                }
+                periodBar(key)
                 if bucket == .weekly {
                     Button("Weeklyをなくす") {
                         navigation.path.append(PlanningRoute.weeklySettings)
@@ -63,16 +87,37 @@ struct PeriodPlannerPage: View {
                 }
                 periodBody(key)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+            .padding(.bottom, session.isActivePrompt(ReflectionScope.period(bucket, key)) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)
         }
         .planningScroll()
         .planningKeyboardDismiss()
-        .planningFixedHeader {
-            periodBar(key)
-                .padding(.horizontal, 16)
-                .padding(.top, PlanningTokens.PlanMain.titleTop)
-        }
         .background(PlanningPalette.paper)
+    }
+
+    private var introTitle: String {
+        switch bucket {
+        case .monthly: "Monthly"
+        case .weekly: "Weekly"
+        case .daily: "Daily"
+        }
+    }
+
+    private var introKey: PlanningText.Key {
+        switch bucket {
+        case .monthly: .monthlyDescription
+        case .weekly: .weeklyDescription
+        case .daily: .dailyDescription
+        }
+    }
+
+    private var introSymbol: String {
+        switch bucket {
+        case .monthly: "calendar"
+        case .weekly: "calendar.badge.clock"
+        case .daily: "sun.max"
+        }
     }
 
     private func periodBar(_ key: String) -> some View {
@@ -115,13 +160,6 @@ struct PeriodPlannerPage: View {
             if !reflected, elapsed, inactive {
                 NoActivityMemorySection(session: session, scope: scope)
             } else {
-                if !reflected, session.isActivePrompt(scope) {
-                    Button("振り返りを始めますか？") {
-                        session.refreshDue(scope)
-                        navigation.path.append(PlanningRoute.reflection(scope))
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
                 itemSection(.task, key: key)
                 itemSection(.event, key: key)
             }
@@ -146,48 +184,36 @@ struct PeriodPlannerPage: View {
     }
 
     private func itemSection(_ kind: PlanningItemKind, key: String) -> some View {
-        let card = bucket == .daily
-            ? PlanningPalette.card
-            : (kind == .task ? PlanningPalette.todo : PlanningPalette.event)
-        return VStack(alignment: .leading, spacing: 10) {
+        let nodes = session.nodes(bucket: bucket, periodKey: key, kind: kind)
+        let leaves = PeriodCalendar.flattenedLeaves(nodes)
+        let done = leaves.filter(\.completed).count
+        return VStack(alignment: .leading, spacing: 6) {
             Text(sectionTitle(kind))
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(PlanningPalette.ink)
-            let nodes = session.nodes(bucket: bucket, periodKey: key, kind: kind)
-            if nodes.isEmpty {
-                Text("まだありません")
+            if kind == .task {
+                Text("\(leaves.count)件")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(PlanningPalette.ink)
+                Text("\(done) / \(leaves.count) 完了")
                     .font(.subheadline)
                     .foregroundStyle(PlanningPalette.muted)
-            }
-            ForEach(nodes) { node in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(node.title).foregroundStyle(PlanningPalette.ink)
-                    let range = PlanningRangeText.display(startDay: node.startDay, endDay: node.endDay, startMinutes: node.startMinutes, endMinutes: node.endMinutes)
-                    if !range.isEmpty {
-                        Text(range).font(.caption).foregroundStyle(PlanningPalette.muted)
-                    }
-                    ForEach(node.children) { child in
-                        Text(child.title)
-                            .font(.subheadline)
-                            .foregroundStyle(PlanningPalette.muted)
-                            .padding(.leading, 16)
-                    }
-                }
+            } else {
+                Text("\(nodes.count)件")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(PlanningPalette.ink)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onTapGesture { addingKind = kind }
     }
 
     private func sectionTitle(_ kind: PlanningItemKind) -> String {
-        if bucket == .daily {
-            return kind == .task ? "今日のタスク" : "予定"
-        }
-        return kind == .task ? "ToDo" : "予定"
+        kind == .task ? "ToDo" : "予定"
     }
 }
 

@@ -18,8 +18,15 @@ final class TabNavigationState: ObservableObject {
     func pop() {
         guard !isPopping, path.count > 0 else { return }
         isPopping = true
-        path.removeLast()
-        isPopping = false
+        // The toolbar Back action arrives while the navigation bar is still
+        // resolving the tap. removeLast() in that same turn is dropped.
+        // The next turn commits one pop. isPopping stays set until then.
+        DispatchQueue.main.async {
+            if self.path.count > 0 {
+                self.path.removeLast()
+            }
+            self.isPopping = false
+        }
     }
 
     private var isPopping = false

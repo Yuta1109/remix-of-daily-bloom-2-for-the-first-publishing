@@ -335,8 +335,7 @@ private struct FutureMonthCell: View {
 
     private func dayCell(day: Int?, column: Int, winners: [UUID?]) -> some View {
         let event = day.flatMap { FutureCalendarMarks.winner(events, year: year, month: month, day: $0) }
-        let ranged = event.map(FutureCalendarMarks.isRange) ?? false
-        let role = FutureCalendarMarks.bandRole(column: column, eventID: ranged ? event?.id : nil, rowWinners: winners)
+        let role = FutureCalendarMarks.bandRole(column: column, eventID: event?.id, rowWinners: winners)
         return ZStack {
             if let event, let role {
                 FutureRangeBand(role: role)
@@ -346,14 +345,6 @@ private struct FutureMonthCell: View {
             Text(day.map(String.init) ?? " ")
                 .font(.system(size: PlanningTokens.Future.dateFont))
                 .foregroundStyle(PlanningPalette.ink)
-            if let event, day != nil, !ranged {
-                Circle()
-                    .fill(PlanIconColor.resolved(event.colorID).color)
-                    .frame(width: 4, height: 4)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, 1)
-                    .accessibilityHidden(true)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

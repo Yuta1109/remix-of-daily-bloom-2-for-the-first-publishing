@@ -78,8 +78,23 @@ enum PlanningTokens {
         static let ctaCorner: CGFloat = 15
         static let ctaInset: CGFloat = 16
         static let sectionGap: CGFloat = 20
-        /// Room for one more bullet row below the focused row, above the transfer button.
-        static let focusClearance: CGFloat = 44
+    }
+
+    /// Reflection-due card. Height is 1.5×–2.0× the visible system tab-menu height, never the 90 pt index tab.
+    enum ReflectionDue {
+        static let minimumMultiple: CGFloat = 1.5
+        static let maximumMultiple: CGFloat = 2.0
+        /// Visible UITabBar menu height used until the live bar is measured.
+        static let tabBarFallback: CGFloat = 49
+        /// Title, two-line explanation, and action, with compact padding.
+        static let contentNeed: CGFloat = 96
+
+        static func height(tabBar: CGFloat) -> CGFloat {
+            let bar = tabBar > 1 ? tabBar : tabBarFallback
+            let low = bar * minimumMultiple
+            let high = bar * maximumMultiple
+            return min(high, max(low, contentNeed))
+        }
     }
 
     enum Future {
