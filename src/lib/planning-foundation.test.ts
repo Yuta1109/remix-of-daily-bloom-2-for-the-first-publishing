@@ -94,7 +94,8 @@ describe("planning foundation rules", () => {
     expect(future).toContain("count: 3");
     expect(future).toContain("PlanningSystemSheetChrome");
     expect(future).not.toContain("presentationDetents([.large])");
-    expect(future).toContain(".tabViewStyle(.page(indexDisplayMode: .never))");
+    expect(future).toContain("PlanningHorizontalPager");
+    expect(future).not.toContain(".tabViewStyle(.page");
     expect(future).toContain("目標は1つ");
   });
 });
@@ -152,7 +153,8 @@ describe("planning period pages", () => {
     expect(shell).not.toContain("NativeFloatingTabBar");
     expect(periodPage).toContain("chevron.left");
     expect(periodPage).toContain("chevron.right");
-    expect(periodPage).toContain(".tabViewStyle(.page(indexDisplayMode: .never))");
+    expect(periodPage).toContain("PlanningHorizontalPager");
+    expect(periodPage).not.toContain(".tabViewStyle(.page");
     expect(periodPage).not.toContain("DragGesture");
   });
 
@@ -301,8 +303,9 @@ describe("planning blueprint fidelity", () => {
     expect(chrome).toContain("static let rowCount = 6");
     expect(chrome).toContain("static let columnCount = 7");
     expect(future).toContain("PlanningCalendarGrid.matrix");
-    expect(future).toContain("indexDisplayMode: .never");
-    expect(periodPage).toContain("indexDisplayMode: .never");
+    expect(future).toContain("PlanningHorizontalPager");
+    expect(periodPage).toContain("PlanningHorizontalPager");
+    expect(chrome).toContain("scrollTargetBehavior(.paging)");
     expect(future).toContain("fixedHeight: 260");
     expect(periodPage).toContain("fixedHeight: bucket == .daily ? 460 : 280");
   });
@@ -587,8 +590,8 @@ describe("planning blueprint 1", () => {
     expect(planText).toContain("3. 期間を選択");
     expect(sheet).toContain(".pickerStyle(.wheel)");
     expect(chrome).toContain("struct PlanningSystemSheetChrome");
-    expect(chrome).toContain("presentationSizing(.fitted)");
-    expect(chrome).toContain("presentationDetents([.height(max(height, 1))])");
+    expect(chrome).not.toContain("presentationSizing(.fitted)");
+    expect(chrome).toContain("presentationDetents([.height(max(stableHeight, 1))])");
     expect(plans).toContain("onDismiss");
     expect(plans).toContain("popAfterDismiss");
   });
@@ -694,7 +697,8 @@ describe("planning blueprint 1", () => {
     expect(future).toContain("PlanningSectionIntro(title: \"Future\"");
     expect(planText).toContain("これからの1年を見通して");
     expect(future).toContain("fixedHeight: 260");
-    expect(future).toContain(".tabViewStyle(.page(indexDisplayMode: .never))");
+    expect(future).toContain("PlanningHorizontalPager");
+    expect(future).not.toContain(".tabViewStyle(.page");
   });
 
   it("shares the monthly goal and updates an event in place", () => {
@@ -817,9 +821,10 @@ describe("planning TestFlight header, sheets, and index", () => {
       chrome.indexOf("struct PlanningSystemSheetChrome"),
       chrome.indexOf("struct PlanningHeadingIconSlot"),
     );
-    expect(chrome).toContain("presentationSizing(.fitted)");
-    expect(system).toContain("PlanningFittedSheet(height: resolvedHeight + bottomSafeArea)");
-    expect(system).toContain(".fixedSize(horizontal: false, vertical: true)");
+    expect(chrome).not.toContain("presentationSizing(.fitted)");
+    expect(system).toContain("guard !keyboardVisible");
+    expect(system).not.toContain("bottomSafeArea");
+    expect(system).not.toContain("Color.clear.frame(height: PlanningTokens.Sheet.bottomInset)");
     expect(system).not.toContain(".medium");
     expect(system).not.toContain(".large");
     expect(system).not.toContain("maxHeight: .infinity");
@@ -866,7 +871,9 @@ describe("planning TestFlight header, sheets, and index", () => {
     expect(plans).toContain("return false");
     expect(plans).toContain("onEmptyDelete");
     expect(plans).toContain("PlanBulletReturn.backspace");
-    expect(plans).toContain("DispatchQueue.main.async { focusedID = focus }");
+    expect(plans).toContain("outlineFocus.requestFocus");
+    expect(plans).toContain("focusThenRemove");
+    expect(plans).not.toContain("DispatchQueue.main.async { focusedID = focus }");
     expect(plans).toContain("PlanningGlassAction(title:");
     expect(chrome).toContain("struct PlanningGlassAction");
     expect(chrome).toContain(".buttonStyle(.glassProminent)");
@@ -939,7 +946,7 @@ describe("planning TestFlight future, discard, and flicker", () => {
     expect(future).toContain("if includesTime");
     expect(future).toContain("PlanningTokens.Sheet.timeWheelHeight");
     expect(future).not.toContain("presentationDetents([.medium, .large])");
-    expect(chrome).toContain("presentationDetents([.height(max(height, 1))])");
+    expect(chrome).toContain("presentationDetents([.height(max(stableHeight, 1))])");
     expect(chrome).toContain("view.tintColor = .label");
     expect(chrome).toContain("style: .cancel");
     expect(chrome).toContain("style: .destructive");
@@ -970,7 +977,11 @@ describe("planning chrome polish", () => {
     expect(chrome).toContain(".overlay(alignment: .top)");
     expect(chrome).toContain("PlanningTokens.Sheet.headerHeight");
     expect(chrome).toContain(".clipped()");
-    expect(chrome).not.toContain("ignoresSafeArea(.keyboard");
+    expect(chrome).toContain("func planningExtendingSurface");
+    expect(chrome).toContain(".ignoresSafeArea(.keyboard, edges: .bottom)");
+    const surface = chrome.slice(chrome.indexOf("func planningExtendingSurface"), chrome.indexOf("func planningFixedHeader"));
+    expect(surface).toContain(".ignoresSafeArea(.keyboard, edges: .bottom)");
+    expect(surface).not.toContain("ScrollView");
     expect(future).toContain("bodySurface: Color.white");
     const moment = future.slice(future.indexOf("struct FutureMomentPicker"));
     expect(moment).not.toContain("bodySurface: Color.white");
@@ -984,6 +995,16 @@ describe("planning chrome polish", () => {
     expect(apply).not.toContain("focusedID = nil");
     expect(glass).toContain("static let duration: TimeInterval = 0.22");
     expect(glass).toContain("NativeGlassFeedback.perform");
+    expect(glass).toContain("isScheduled");
+    expect(plans).toContain("PlanningOutlineFocusCoordinator");
+    expect(plans).toContain("pendingFocusID");
+    expect(plans).toContain("return false");
+    const icon = glass.slice(glass.indexOf("struct NativeGlassIconButton"), glass.indexOf("struct NativeGlassTextButton"));
+    expect(icon).toContain(".frame(width: 30, height: 30)");
+    expect(icon).toContain(".buttonStyle(.plain)");
+    expect(icon).toContain(".frame(minWidth: 44, minHeight: 44)");
+    expect(icon).not.toContain(".buttonStyle(.glass)");
+    expect(icon).toContain("icon == .back");
     expect(tokens).toContain("static let outlineRowSpacing: CGFloat = 2");
     expect(tokens).toContain("static let parentRowHeight: CGFloat = 32");
   });

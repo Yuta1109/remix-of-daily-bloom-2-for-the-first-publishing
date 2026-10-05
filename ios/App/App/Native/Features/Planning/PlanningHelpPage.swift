@@ -11,7 +11,7 @@ struct PlanningHelpPage: View {
         .scrollDismissesKeyboard(.interactively)
         .planningPageChrome(title: PlanningText.string(.planningHelpTitle), onBack: { navigation.pop() })
         .planningKeyboardDismiss()
-        .background(PlanningPalette.paper)
+        .planningExtendingSurface(PlanningPalette.paper)
     }
 
     private var helpBody: some View {

@@ -474,7 +474,7 @@ struct PlanningMemoryPage: View {
         }
         .planningScroll()
         .planningKeyboardDismiss()
-        .background(PlanningPalette.paper)
+        .planningExtendingSurface(PlanningPalette.paper)
         .planningPageChrome(title: pageTitle, onBack: {
             if !navigation.path.isEmpty { navigation.pop() }
         })

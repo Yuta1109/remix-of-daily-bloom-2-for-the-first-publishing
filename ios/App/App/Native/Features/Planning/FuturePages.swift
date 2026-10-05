@@ -9,13 +9,9 @@ struct FutureYearPage: View {
     private let pageYears = Array(2020...2036)
 
     var body: some View {
-        TabView(selection: $session.selectedYear) {
-            ForEach(pageYears, id: \.self) { year in
-                yearPage(year)
-                    .tag(year)
-            }
+        PlanningHorizontalPager(pages: pageYears, selection: $session.selectedYear) { year in
+            yearPage(year)
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
         .onChange(of: session.selectedYear) { _, _ in
             session.ensureSelectedYear()
         }
@@ -94,7 +90,6 @@ struct FutureYearPage: View {
             .padding(.bottom, 12)
         }
         .planningScroll()
-        .background(PlanningPalette.paper)
     }
 
     private func yearControls(_ year: Int) -> some View {

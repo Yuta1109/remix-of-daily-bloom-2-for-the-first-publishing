@@ -13,13 +13,9 @@ struct PeriodPlannerPage: View {
     private var periodKey: String { session.periodKey(for: bucket) }
 
     var body: some View {
-        TabView(selection: periodSelection) {
-            ForEach(pageKeys, id: \.self) { key in
-                periodPage(key).tag(key)
-            }
+        PlanningHorizontalPager(pages: pageKeys, selection: periodSelection) { key in
+            periodPage(key)
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .background(PlanningPalette.paper)
         .background(PlanningTabBarHeightReader(height: $tabBarHeight))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if session.isActivePrompt(ReflectionScope.period(bucket, periodKey)) {
@@ -91,7 +87,6 @@ struct PeriodPlannerPage: View {
         }
         .planningScroll()
         .planningKeyboardDismiss()
-        .background(PlanningPalette.paper)
     }
 
     private var introTitle: String {

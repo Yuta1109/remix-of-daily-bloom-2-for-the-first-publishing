@@ -231,7 +231,7 @@ struct PlanFullListPage: View {
         }
         .planningPageChrome(title: PlanningText.string(.planListTitle), onBack: { navigation.pop() })
         .planningKeyboardDismiss()
-        .background(PlanningPalette.paper)
+        .planningExtendingSurface(PlanningPalette.paper)
     }
 
     private var searchField: some View {
@@ -273,6 +273,7 @@ struct PlanEditorPage: View {
     @State private var isNewPlan = true
     @State private var savedSnapshot = ""
     @FocusState private var focusedID: UUID?
+    @StateObject private var outlineFocus = PlanningOutlineFocusCoordinator()
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -289,7 +290,6 @@ struct PlanEditorPage: View {
                 .padding(.bottom, 12)
             }
             .planningScroll()
-            .background(PlanningPalette.paper)
             .onChange(of: focusedID) { _, id in
                 guard let id else { return }
                 DispatchQueue.main.async {
@@ -303,6 +303,7 @@ struct PlanEditorPage: View {
             PlanCtaButton(title: PlanningText.string(.reflectToItems), action: reflect)
                 .background(Color.clear)
         }
+        .planningExtendingSurface(PlanningPalette.paper)
         .planningPageChrome(
             title: PlanningText.string(isNewPlan ? .newPlan : .editPlan),
             onBack: requestClose
@@ -399,13 +400,14 @@ struct PlanEditorPage: View {
                         Circle().fill(PlanningPalette.ink).frame(width: 7, height: 7)
                             .padding(.leading, PlanningTokens.Editor.parentBulletInset)
                         PlanningOutlineTextField(
+                            rowID: bullet.id,
                             text: $bullet.text,
-                            isFocused: focusedID == bullet.id,
+                            focus: outlineFocus,
                             placeholder: PlanningText.string(.parentPlaceholder),
                             fontSize: 16,
                             onFocus: { focusedID = bullet.id },
                             onSubmit: { apply(PlanBulletReturn.parent(bullets: bullets, parentID: bullet.id)) },
-                            onEmptyDelete: { apply(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: nil)) }
+                            onEmptyDelete: { focusThenRemove(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: nil)) }
                         )
                     }
                     .frame(minHeight: PlanningTokens.Editor.parentRowHeight)
@@ -416,13 +418,14 @@ struct PlanEditorPage: View {
                                 .stroke(PlanningPalette.ink, lineWidth: 1.2)
                                 .frame(width: 7, height: 7)
                             PlanningOutlineTextField(
+                                rowID: child.id,
                                 text: $child.text,
-                                isFocused: focusedID == child.id,
+                                focus: outlineFocus,
                                 placeholder: PlanningText.string(.subtaskPlaceholder),
                                 fontSize: 15,
                                 onFocus: { focusedID = child.id },
                                 onSubmit: { apply(PlanBulletReturn.child(bullets: bullets, parentID: bullet.id, childID: child.id)) },
-                                onEmptyDelete: { apply(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: child.id)) }
+                                onEmptyDelete: { focusThenRemove(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: child.id)) }
                             )
                         }
                         .padding(.leading, PlanningTokens.Editor.subtaskIndent)
@@ -529,58 +532,159 @@ struct PlanEditorPage: View {
             break
         case .focus(let id):
             focusedID = id
+            outlineFocus.requestFocus(id)
         case .replaced(let next, let focus):
             bullets = next
-            DispatchQueue.main.async { focusedID = focus }
+            focusedID = focus
+            outlineFocus.requestFocus(focus)
+        }
+    }
+
+    /// Move first responder to the previous row, then remove the empty row.
+    private func focusThenRemove(_ result: PlanBulletReturn.Result) {
+        switch result {
+        case .unchanged:
+            break
+        case .focus(let id):
+            focusedID = id
+            outlineFocus.requestFocus(id)
+        case .replaced(let next, let focus):
+            focusedID = focus
+            outlineFocus.requestFocus(focus)
+            bullets = next
         }
     }
 }
 
+final class PlanningOutlineFocusCoordinator: ObservableObject {
+    private final class WeakField {
+        weak var field: PlanningOutlineUITextField?
+        init(_ field: PlanningOutlineUITextField) { self.field = field }
+    }
+
+    private var fields: [UUID: WeakField] = [:]
+    private(set) var pendingFocusID: UUID?
+
+    func register(_ field: PlanningOutlineUITextField, id: UUID) {
+        fields[id] = WeakField(field)
+        focusIfReady(id)
+    }
+
+    func unregister(id: UUID, field: PlanningOutlineUITextField) {
+        if fields[id]?.field === field {
+            fields[id] = nil
+        }
+    }
+
+    func requestFocus(_ id: UUID) {
+        pendingFocusID = id
+        focusIfReady(id)
+    }
+
+    func focusIfReady(_ id: UUID) {
+        guard pendingFocusID == id, let field = fields[id]?.field, field.window != nil else { return }
+        if field.becomeFirstResponder() {
+            pendingFocusID = nil
+        }
+    }
+}
+
+final class PlanningOutlineUITextField: UITextField {
+    var onAttached: (() -> Void)?
+    var onEmptyDelete: (() -> Void)?
+    private var handlingEmptyDelete = false
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window != nil else { return }
+        onAttached?()
+    }
+
+    override func deleteBackward() {
+        if (text ?? "").isEmpty {
+            handleEmptyDelete()
+        } else {
+            super.deleteBackward()
+        }
+    }
+
+    func handleEmptyDelete() {
+        guard !handlingEmptyDelete else { return }
+        handlingEmptyDelete = true
+        onEmptyDelete?()
+        handlingEmptyDelete = false
+    }
+}
+
 struct PlanningOutlineTextField: UIViewRepresentable {
+    var rowID: UUID
     @Binding var text: String
-    var isFocused: Bool
+    var focus: PlanningOutlineFocusCoordinator
     var placeholder: String
     var fontSize: CGFloat
     var onFocus: () -> Void
     var onSubmit: () -> Void
     var onEmptyDelete: () -> Void
 
-    func makeUIView(context: Context) -> UITextField {
-        let field = UITextField()
+    func makeUIView(context: Context) -> PlanningOutlineUITextField {
+        let field = PlanningOutlineUITextField()
         field.delegate = context.coordinator
         field.font = .systemFont(ofSize: fontSize)
         field.placeholder = placeholder
         field.returnKeyType = .next
         field.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)), for: .editingChanged)
+        field.onAttached = { [weak field] in
+            guard let field else { return }
+            context.coordinator.attached(field)
+        }
+        field.onEmptyDelete = { context.coordinator.handleEmptyDelete() }
         return field
     }
 
-    func updateUIView(_ field: UITextField, context: Context) {
+    func updateUIView(_ field: PlanningOutlineUITextField, context: Context) {
         if field.text != text { field.text = text }
+        context.coordinator.rowID = rowID
         context.coordinator.text = $text
+        context.coordinator.focus = focus
         context.coordinator.onFocus = onFocus
         context.coordinator.onSubmit = onSubmit
         context.coordinator.onEmptyDelete = onEmptyDelete
-        if isFocused, !field.isFirstResponder {
-            field.becomeFirstResponder()
-        }
+        field.onEmptyDelete = { context.coordinator.handleEmptyDelete() }
+        focus.register(field, id: rowID)
+    }
+
+    static func dismantleUIView(_ field: PlanningOutlineUITextField, coordinator: Coordinator) {
+        coordinator.focus.unregister(id: coordinator.rowID, field: field)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onFocus: onFocus, onSubmit: onSubmit, onEmptyDelete: onEmptyDelete)
+        Coordinator(rowID: rowID, text: $text, focus: focus, onFocus: onFocus, onSubmit: onSubmit, onEmptyDelete: onEmptyDelete)
     }
 
     final class Coordinator: NSObject, UITextFieldDelegate {
+        var rowID: UUID
         var text: Binding<String>
+        var focus: PlanningOutlineFocusCoordinator
         var onFocus: () -> Void
         var onSubmit: () -> Void
         var onEmptyDelete: () -> Void
 
-        init(text: Binding<String>, onFocus: @escaping () -> Void, onSubmit: @escaping () -> Void, onEmptyDelete: @escaping () -> Void) {
+        init(rowID: UUID, text: Binding<String>, focus: PlanningOutlineFocusCoordinator, onFocus: @escaping () -> Void, onSubmit: @escaping () -> Void, onEmptyDelete: @escaping () -> Void) {
+            self.rowID = rowID
             self.text = text
+            self.focus = focus
             self.onFocus = onFocus
             self.onSubmit = onSubmit
             self.onEmptyDelete = onEmptyDelete
+        }
+
+        func attached(_ field: PlanningOutlineUITextField) {
+            focus.register(field, id: rowID)
+            focus.focusIfReady(rowID)
+        }
+
+        func handleEmptyDelete() {
+            onEmptyDelete()
         }
 
         @objc func changed(_ field: UITextField) {
@@ -598,7 +702,7 @@ struct PlanningOutlineTextField: UIViewRepresentable {
 
         func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
             if string.isEmpty, (textField.text ?? "").isEmpty {
-                onEmptyDelete()
+                (textField as? PlanningOutlineUITextField)?.handleEmptyDelete()
                 return false
             }
             return true

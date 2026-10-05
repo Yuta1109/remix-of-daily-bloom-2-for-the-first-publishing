@@ -60,7 +60,7 @@ struct PostponeBoxPage: View {
         .planningScroll()
         .planningKeyboardDismiss()
         .planningPageChrome(title: "Postpone Box", onBack: { navigation.pop() })
-        .background(PlanningPalette.paper)
+        .planningExtendingSurface(PlanningPalette.paper)
         .nativeSheet(isPresented: Binding(
             get: { editing != nil },
             set: { if !$0 { editing = nil } }
@@ -90,6 +90,11 @@ private struct PostponeEditorSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .padding(20)
             Spacer()
+        }
+        .presentationBackground(Color(uiColor: .systemBackground))
+        .background {
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
         }
     }
 }

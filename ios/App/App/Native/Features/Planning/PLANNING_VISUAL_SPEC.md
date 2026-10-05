@@ -112,9 +112,11 @@ The classification page lists items only. It has no progress ring, percent, or c
 
 Pushed pages and the Planning root use the same translucent header as `Planning の使い方`: iOS 26 system glass, earlier systems ultra-thin material. Page content scrolls underneath. The system tab bar stays system-owned, with automatic glass on iOS 26 and material before that. No opaque white block is painted behind the header or the tab bar.
 
-Sheet headers are one overlay (`PlanningSystemSheetChrome`). The top inset stays 8 pt, with the same 8 pt below the controls so the 30 pt circles sit in the center of a 60 pt header. The body scrolls under that header and is clipped to the sheet. Future month and event editors use a white body; the header stays material.
+Future and the period pages page with `PlanningHorizontalPager`, a transparent horizontal `ScrollView`. Planning paper is one surface on the shell, extended under the system tab bar and behind the keyboard. It is not painted only on an inner scroll view.
 
-`NativeGlassFeedback` waits 0.22 s before a glass control dismisses or navigates, so the press animation can finish. Outline rows use `PlanningOutlineTextField`, which keeps first responder on Return.
+`PlanningSystemSheetChrome` is one `systemBackground` surface, or the caller's white body. The × / ✓ row stays at 8 pt from the top inside the 60 pt region. There is no header material rectangle and no extra clear tail. The detent is one stable height and does not update while the keyboard is visible.
+
+`NativeGlassFeedback` waits 0.22 s, once, before a glass control dismisses or navigates. Back, sheet × / ✓, and the primary CTAs use it. The Back control's glass is a 30 pt circle inside a 44 pt plain hit target. Outline rows register live `UITextField`s with `PlanningOutlineFocusCoordinator`. Return keeps the current field first responder until the next row is in a window.
 
 ## Navigation contract
 

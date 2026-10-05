@@ -54,6 +54,16 @@ extension View {
         background(PlanningKeyboardDismissInstaller().allowsHitTesting(false))
     }
 
+    /// Surface only. Extends under the tab bar and behind the keyboard.
+    /// Do not apply this to scrolling or keyboard-avoiding content.
+    func planningExtendingSurface(_ color: Color) -> some View {
+        background {
+            color
+                .ignoresSafeArea(.container, edges: .bottom)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
+        }
+    }
+
     /// Custom header row (Planning title, period controls) in the system safe-area bar.
     /// iOS 26 uses `safeAreaBar` so the platform draws Liquid Glass and the scroll edge.
     /// Earlier systems use a material inset. The header view itself stays unpainted.
@@ -406,27 +416,6 @@ struct PlanningGlassAction: View {
     }
 }
 
-private struct PlanningBottomSafeArea: UIViewRepresentable {
-    @Binding var inset: CGFloat
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.isUserInteractionEnabled = false
-        view.backgroundColor = .clear
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        DispatchQueue.main.async {
-            let value = uiView.window?.safeAreaInsets.bottom ?? 0
-            // The keyboard inflates the window inset. Keep the Home-indicator inset
-            // so the fitted detent does not grow and then settle back down.
-            let isHomeIndicator = value > 0 && value < 80
-            if isHomeIndicator, abs(value - inset) > 0.5 { inset = value }
-        }
-    }
-}
-
 /// Native discard alert. Cancel uses the alert's own label tint, so it stays black
 /// in Planning light mode without changing the app accent. Discard stays destructive red.
 enum PlanningDiscardConfirmation {
@@ -463,27 +452,78 @@ private final class PlanningDiscardAlertController: UIAlertController {
     }
 }
 
-/// Content-sized sheet. iOS 18+ also asks for fitted presentation sizing.
-private struct PlanningFittedSheet: ViewModifier {
-    let height: CGFloat
+/// Transparent horizontal pager. Replaces nested paging TabView containers.
+struct PlanningHorizontalPager<Page: Hashable, Content: View>: View {
+    let pages: [Page]
+    @Binding var selection: Page
+    @ViewBuilder var content: (Page) -> Content
 
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content
-                .presentationDetents([.height(max(height, 1))])
-                .presentationSizing(.fitted)
-                .presentationDragIndicator(.hidden)
-        } else {
-            content
-                .presentationDetents([.height(max(height, 1))])
-                .presentationDragIndicator(.hidden)
+    private var position: Binding<Page?> {
+        Binding(
+            get: { selection },
+            set: { if let page = $0 { selection = page } }
+        )
+    }
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 0) {
+                ForEach(pages, id: \.self) { page in
+                    content(page)
+                        .id(page)
+                        .containerRelativeFrame(.horizontal)
+                        .containerRelativeFrame(.vertical)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: position)
+        .scrollIndicators(.hidden)
+        .background(Color.clear)
+    }
+}
+
+/// One explicit detent. Height is frozen while the keyboard is visible.
+private struct PlanningKeyboardVisibility: UIViewRepresentable {
+    @Binding var isVisible: Bool
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        context.coordinator.observe()
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(isVisible: $isVisible) }
+
+    final class Coordinator {
+        var isVisible: Binding<Bool>
+        var tokens: [NSObjectProtocol] = []
+
+        init(isVisible: Binding<Bool>) { self.isVisible = isVisible }
+
+        func observe() {
+            let center = NotificationCenter.default
+            tokens.append(center.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.isVisible.wrappedValue = true
+            })
+            tokens.append(center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.isVisible.wrappedValue = false
+            })
+        }
+
+        deinit {
+            tokens.forEach(NotificationCenter.default.removeObserver)
         }
     }
 }
 
-/// Chrome for the destination sheet and the Monthly / Weekly / Daily period pickers.
-/// Height follows the content. No medium, large, or oversized fixed detent.
+/// One continuous sheet surface. × / ✓ stay in the 60 pt top region.
+/// Detent height freezes while the keyboard is visible.
 struct PlanningSystemSheetChrome<Content: View>: View {
     let onClose: () -> Void
     let onConfirm: () -> Void
@@ -494,62 +534,58 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     var onCenter: (() -> Void)? = nil
     /// Caps the body and scrolls it. Nil keeps the short transfer sheets intrinsic.
     var maximumBody: CGFloat? = nil
-    /// Future event and month editors use a white body. The header stays material.
+    /// Future event and month editors pass white. Default is the system sheet surface.
     var bodySurface: Color? = nil
     @ViewBuilder var content: () -> Content
 
-    @State private var contentHeight: CGFloat = 280
-    @State private var bodyHeight: CGFloat = 1
-    @State private var bottomSafeArea: CGFloat = 0
+    @State private var stableHeight: CGFloat = 280
+    @State private var keyboardVisible = false
+
+    private var surface: Color { bodySurface ?? Color(uiColor: .systemBackground) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let maximumBody {
+        Group {
+            if maximumBody != nil {
                 ScrollView {
-                    content()
-                        .padding(.top, PlanningTokens.Sheet.headerHeight)
-                        .background(bodySurface ?? Color.clear)
-                        .background {
-                            GeometryReader { proxy in
-                                Color.clear.preference(key: PlanningSheetMeasureKey.self, value: proxy.size.height)
-                            }
-                        }
+                    sheetBody
                 }
                 .scrollIndicators(.hidden)
-                .frame(height: min(max(bodyHeight, 1), maximumBody))
+                .frame(height: max(stableHeight, 1))
             } else {
-                content()
-                    .padding(.top, PlanningTokens.Sheet.headerHeight)
-                    .background(bodySurface ?? Color.clear)
+                sheetBody
             }
-            Color.clear.frame(height: PlanningTokens.Sheet.bottomInset)
         }
         .overlay(alignment: .top) { controls.zIndex(1) }
         .clipped()
-        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .top)
         .background {
-            if maximumBody == nil {
+            surface
+                .ignoresSafeArea(.container, edges: .bottom)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
+        }
+        .background(PlanningKeyboardVisibility(isVisible: $keyboardVisible))
+        .onPreferenceChange(PlanningSheetMeasureKey.self) { value in
+            guard !keyboardVisible, value > 1 else { return }
+            let cap = maximumBody ?? value
+            let next = min(value, cap)
+            if abs(next - stableHeight) > 0.5 { stableHeight = next }
+        }
+        .presentationDetents([.height(max(stableHeight, 1))])
+        .presentationDragIndicator(.hidden)
+        .presentationBackground(surface)
+    }
+
+    private var sheetBody: some View {
+        content()
+            .padding(.top, PlanningTokens.Sheet.headerHeight)
+            .padding(.bottom, PlanningTokens.Sheet.bottomInset)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .background(surface)
+            .background {
                 GeometryReader { proxy in
                     Color.clear.preference(key: PlanningSheetMeasureKey.self, value: proxy.size.height)
                 }
             }
-        }
-        .onPreferenceChange(PlanningSheetMeasureKey.self) { value in
-            guard value > 1 else { return }
-            if maximumBody == nil {
-                if abs(value - contentHeight) > 0.5 { contentHeight = value }
-            } else if abs(value - bodyHeight) > 0.5 {
-                bodyHeight = value
-            }
-        }
-        .background(PlanningBottomSafeArea(inset: $bottomSafeArea))
-        .modifier(PlanningFittedSheet(height: resolvedHeight + bottomSafeArea))
-    }
-
-    private var resolvedHeight: CGFloat {
-        if maximumBody == nil { return contentHeight }
-        return min(max(bodyHeight, 1), maximumBody ?? bodyHeight) + PlanningTokens.Sheet.bottomInset
     }
 
     private var controls: some View {
@@ -585,13 +621,6 @@ struct PlanningSystemSheetChrome<Content: View>: View {
         .padding(.top, PlanningTokens.Sheet.headerTop)
         .padding(.bottom, PlanningTokens.Sheet.headerTop)
         .frame(height: PlanningTokens.Sheet.headerHeight)
-        .background {
-            if #available(iOS 26.0, *) {
-                Rectangle().fill(.clear).glassEffect(.regular, in: Rectangle()).allowsHitTesting(false)
-            } else {
-                Rectangle().fill(.ultraThinMaterial).allowsHitTesting(false)
-            }
-        }
     }
 }
 

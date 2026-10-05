@@ -3,9 +3,15 @@ import SwiftUI
 enum NativeGlassFeedback {
     /// Matches the system glass press. Buttons that dismiss or navigate wait for this once.
     static let duration: TimeInterval = 0.22
+    private static var isScheduled = false
 
     static func perform(_ action: @escaping () -> Void) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: action)
+        guard !isScheduled else { return }
+        isScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            isScheduled = false
+            action()
+        }
     }
 }
 
@@ -30,57 +36,51 @@ struct NativeGlassIconButton: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        if #available(iOS 26.0, *) {
-            if prominent {
-                Button(action: invoke) {
-                    label
-                }
-                .buttonStyle(.glassProminent)
-                .buttonBorderShape(.circle)
-                .tint(theme.accent)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
-                .accessibilityLabel(accessibilityLabel)
-            } else {
-                Button(action: invoke) {
-                    label
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
-                .accessibilityLabel(accessibilityLabel)
-            }
-        } else {
-            Button(action: invoke) {
-                Image(systemName: icon.rawValue)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(prominent ? Color.white : theme.foreground)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        Circle().fill(prominent ? AnyShapeStyle(theme.accent) : AnyShapeStyle(.thinMaterial))
-                    )
-                    .overlay(Circle().stroke(.white.opacity(0.24), lineWidth: 0.5))
-            }
-            .buttonStyle(.plain)
-            .frame(minWidth: 44, minHeight: 44)
-            .contentShape(Rectangle())
-            .accessibilityLabel(accessibilityLabel)
+        Button(action: invoke) {
+            visual
         }
+        .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private func invoke() {
-        if waitsForGlassFeedback {
+        if waitsForGlassFeedback || icon == .back {
             NativeGlassFeedback.perform(action)
         } else {
             action()
         }
     }
 
-    private var label: some View {
+    private var visual: some View {
         Image(systemName: icon.rawValue)
             .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(prominent ? Color.white : theme.foreground)
             .frame(width: 30, height: 30)
+            .modifier(PlanningIconGlass(prominent: prominent, tint: theme.accent))
+    }
+}
+
+/// Glass stays on the 30 pt circle. The outer button does not receive a glass style.
+private struct PlanningIconGlass: ViewModifier {
+    var prominent: Bool
+    var tint: Color
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if prominent {
+                content
+                    .background(Circle().fill(tint))
+                    .glassEffect(.regular.interactive(), in: Circle())
+            } else {
+                content.glassEffect(.regular.interactive(), in: Circle())
+            }
+        } else {
+            content
+                .background(Circle().fill(prominent ? AnyShapeStyle(tint) : AnyShapeStyle(.thinMaterial)))
+                .overlay(Circle().stroke(.white.opacity(0.24), lineWidth: 0.5))
+        }
     }
 }
 

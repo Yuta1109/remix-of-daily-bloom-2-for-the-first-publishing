@@ -35,7 +35,7 @@ struct NativeFeaturePlaceholder: View {
                 ]
             )
         }
-        .background(theme.background)
+        .planningExtendingSurface(theme.background)
         .navigationBarHidden(true)
     }
 }

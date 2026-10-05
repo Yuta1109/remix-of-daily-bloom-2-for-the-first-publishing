@@ -18,7 +18,7 @@ struct PlanningShell: View {
                 onUser: {}
             )
         }
-        .background(PlanningPalette.paper)
+        .planningExtendingSurface(PlanningPalette.paper)
         .planningKeyboardDismiss()
         .navigationBarHidden(true)
         .navigationDestination(for: PlanningRoute.self) { route in
