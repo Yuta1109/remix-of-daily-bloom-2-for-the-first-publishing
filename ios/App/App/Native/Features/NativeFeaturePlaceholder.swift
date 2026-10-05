@@ -6,20 +6,7 @@ struct NativeFeaturePlaceholder: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        VStack(spacing: 0) {
-            NativeHeader(
-                title: tab.title,
-                trailing: [
-                    NativeHeaderAction(
-                        id: "user",
-                        icon: .user,
-                        accessibilityLabel: "User",
-                        action: {}
-                    )
-                ],
-                backgroundStyle: [.today, .calendar, .progress].contains(tab) ? .translucent : .clear
-            )
-            Spacer()
+        ScrollView {
             VStack(spacing: 10) {
                 Image(systemName: tab.systemImage)
                     .font(.system(size: 30, weight: .medium))
@@ -30,7 +17,23 @@ struct NativeFeaturePlaceholder: View {
                     .font(.footnote)
                     .foregroundStyle(theme.secondaryForeground)
             }
-            Spacer()
+            .frame(maxWidth: .infinity)
+            .padding(.top, 48)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        .planningFixedHeader {
+            NativeHeader(
+                title: tab.title,
+                trailing: [
+                    NativeHeaderAction(
+                        id: "user",
+                        icon: .user,
+                        accessibilityLabel: "User",
+                        action: {}
+                    )
+                ]
+            )
         }
         .background(theme.background)
         .navigationBarHidden(true)

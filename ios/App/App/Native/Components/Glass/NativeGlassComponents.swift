@@ -1,5 +1,14 @@
 import SwiftUI
 
+enum NativeGlassFeedback {
+    /// Matches the system glass press. Buttons that dismiss or navigate wait for this once.
+    static let duration: TimeInterval = 0.22
+
+    static func perform(_ action: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: action)
+    }
+}
+
 enum NativeGlassIcon: String {
     case back = "chevron.backward"
     case close = "xmark"
@@ -15,6 +24,7 @@ struct NativeGlassIconButton: View {
     let icon: NativeGlassIcon
     let accessibilityLabel: LocalizedStringKey
     var prominent = false
+    var waitsForGlassFeedback = false
     var action: () -> Void
 
     @Environment(\.appTheme) private var theme
@@ -22,7 +32,7 @@ struct NativeGlassIconButton: View {
     var body: some View {
         if #available(iOS 26.0, *) {
             if prominent {
-                Button(action: action) {
+                Button(action: invoke) {
                     label
                 }
                 .buttonStyle(.glassProminent)
@@ -32,7 +42,7 @@ struct NativeGlassIconButton: View {
                 .contentShape(Rectangle())
                 .accessibilityLabel(accessibilityLabel)
             } else {
-                Button(action: action) {
+                Button(action: invoke) {
                     label
                 }
                 .buttonStyle(.glass)
@@ -42,7 +52,7 @@ struct NativeGlassIconButton: View {
                 .accessibilityLabel(accessibilityLabel)
             }
         } else {
-            Button(action: action) {
+            Button(action: invoke) {
                 Image(systemName: icon.rawValue)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(prominent ? Color.white : theme.foreground)
@@ -56,6 +66,14 @@ struct NativeGlassIconButton: View {
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
             .accessibilityLabel(accessibilityLabel)
+        }
+    }
+
+    private func invoke() {
+        if waitsForGlassFeedback {
+            NativeGlassFeedback.perform(action)
+        } else {
+            action()
         }
     }
 

@@ -105,15 +105,7 @@ private struct PlanningPageChrome: ViewModifier {
             .navigationBarHidden(false)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(action: onBack) {
-                        Image(systemName: "chevron.backward")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(PlanningPalette.ink)
-                            .frame(minWidth: 44, minHeight: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Back")
+                    NativeGlassIconButton(icon: .back, accessibilityLabel: "Back", action: onBack)
                 }
                 if let trailing {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -145,7 +137,7 @@ struct PlanningSavePill: View {
 
     var body: some View {
         if #available(iOS 26.0, *) {
-            Button(action: action) {
+            Button(action: { NativeGlassFeedback.perform(action) }) {
                 Text(PlanningText.string(.save))
                     .font(.system(size: 15.5, weight: .semibold))
                     .padding(.horizontal, 14)
@@ -157,7 +149,7 @@ struct PlanningSavePill: View {
             .frame(minWidth: 44, minHeight: 44)
             .accessibilityLabel(PlanningText.string(.save))
         } else {
-            Button(action: action) {
+            Button(action: { NativeGlassFeedback.perform(action) }) {
                 Text(PlanningText.string(.save))
                     .font(.system(size: 15.5, weight: .semibold))
                     .foregroundStyle(Color.white)
@@ -383,7 +375,7 @@ struct PlanningGlassAction: View {
     var body: some View {
         Group {
             if #available(iOS 26.0, *) {
-                Button(action: action) {
+                Button(action: { NativeGlassFeedback.perform(action) }) {
                     Text(title)
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Color.white)
@@ -393,7 +385,7 @@ struct PlanningGlassAction: View {
                 .buttonStyle(.glassProminent)
                 .tint(accent)
             } else {
-                Button(action: action) {
+                Button(action: { NativeGlassFeedback.perform(action) }) {
                     Text(title)
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Color.white)
@@ -425,7 +417,10 @@ private struct PlanningBottomSafeArea: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {
         DispatchQueue.main.async {
             let value = uiView.window?.safeAreaInsets.bottom ?? 0
-            if abs(value - inset) > 0.5 { inset = value }
+            // The keyboard inflates the window inset. Keep the Home-indicator inset
+            // so the fitted detent does not grow and then settle back down.
+            let isHomeIndicator = value > 0 && value < 80
+            if isHomeIndicator, abs(value - inset) > 0.5 { inset = value }
         }
     }
 }
@@ -477,12 +472,10 @@ private struct PlanningFittedSheet: ViewModifier {
                 .presentationDetents([.height(max(height, 1))])
                 .presentationSizing(.fitted)
                 .presentationDragIndicator(.hidden)
-                .ignoresSafeArea(.keyboard, edges: .bottom)
         } else {
             content
                 .presentationDetents([.height(max(height, 1))])
                 .presentationDragIndicator(.hidden)
-                .ignoresSafeArea(.keyboard, edges: .bottom)
         }
     }
 }
@@ -499,19 +492,21 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     var onCenter: (() -> Void)? = nil
     /// Caps the body and scrolls it. Nil keeps the short transfer sheets intrinsic.
     var maximumBody: CGFloat? = nil
+    /// Future event and month editors use a white body. The header stays material.
+    var bodySurface: Color? = nil
     @ViewBuilder var content: () -> Content
 
     @State private var contentHeight: CGFloat = 280
     @State private var bodyHeight: CGFloat = 1
     @State private var bottomSafeArea: CGFloat = 0
-    @State private var keyboardOverlap: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            controls
             if let maximumBody {
                 ScrollView {
                     content()
+                        .padding(.top, PlanningTokens.Sheet.headerHeight)
+                        .background(bodySurface ?? Color.clear)
                         .background {
                             GeometryReader { proxy in
                                 Color.clear.preference(key: PlanningSheetMeasureKey.self, value: proxy.size.height)
@@ -519,14 +514,16 @@ struct PlanningSystemSheetChrome<Content: View>: View {
                         }
                 }
                 .scrollIndicators(.hidden)
-                .contentMargins(.bottom, keyboardOverlap, for: .scrollContent)
-                .background(PlanningKeyboardOverlap(overlap: $keyboardOverlap))
                 .frame(height: min(max(bodyHeight, 1), maximumBody))
             } else {
                 content()
+                    .padding(.top, PlanningTokens.Sheet.headerHeight)
+                    .background(bodySurface ?? Color.clear)
             }
             Color.clear.frame(height: PlanningTokens.Sheet.bottomInset)
         }
+        .overlay(alignment: .top) { controls.zIndex(1) }
+        .clipped()
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .top)
         .background {
@@ -550,14 +547,13 @@ struct PlanningSystemSheetChrome<Content: View>: View {
 
     private var resolvedHeight: CGFloat {
         if maximumBody == nil { return contentHeight }
-        let controlsHeight: CGFloat = 44 + 8
-        return controlsHeight + min(max(bodyHeight, 1), maximumBody ?? bodyHeight) + PlanningTokens.Sheet.bottomInset
+        return min(max(bodyHeight, 1), maximumBody ?? bodyHeight) + PlanningTokens.Sheet.bottomInset
     }
 
     private var controls: some View {
         HStack {
             if showsControls {
-                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", action: onClose)
+                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", waitsForGlassFeedback: true, action: onClose)
             } else {
                 Color.clear.frame(width: 44, height: 44)
             }
@@ -576,7 +572,7 @@ struct PlanningSystemSheetChrome<Content: View>: View {
             }
             Spacer(minLength: 0)
             if showsControls {
-                NativeGlassIconButton(icon: .check, accessibilityLabel: "Confirm", prominent: true, action: onConfirm)
+                NativeGlassIconButton(icon: .check, accessibilityLabel: "Confirm", prominent: true, waitsForGlassFeedback: true, action: onConfirm)
                     .disabled(!confirmEnabled)
                     .opacity(confirmEnabled ? 1 : 0.4)
             } else {
@@ -584,7 +580,16 @@ struct PlanningSystemSheetChrome<Content: View>: View {
             }
         }
         .padding(.horizontal, PlanningTokens.Sheet.horizontalInset)
-        .padding(.top, 8)
+        .padding(.top, PlanningTokens.Sheet.headerTop)
+        .padding(.bottom, PlanningTokens.Sheet.headerTop)
+        .frame(height: PlanningTokens.Sheet.headerHeight)
+        .background {
+            if #available(iOS 26.0, *) {
+                Rectangle().fill(.clear).glassEffect(.regular, in: Rectangle()).allowsHitTesting(false)
+            } else {
+                Rectangle().fill(.ultraThinMaterial).allowsHitTesting(false)
+            }
+        }
     }
 }
 
@@ -677,13 +682,16 @@ struct PlanningSheetChrome<Content: View>: View {
                 NativeGlassIconButton(icon: .check, accessibilityLabel: "Save", prominent: true, action: onConfirm)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.top, PlanningTokens.Sheet.headerTop)
+            .padding(.bottom, PlanningTokens.Sheet.headerTop)
+            .background {
+                Rectangle().fill(.ultraThinMaterial).allowsHitTesting(false)
+            }
             content()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .presentationDetents([.height(fixedHeight)])
         .presentationDragIndicator(.hidden)
-        .presentationBackground(PlanningPalette.paper)
         .planningKeyboardDismiss()
     }
 }

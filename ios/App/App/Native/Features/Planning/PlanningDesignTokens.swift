@@ -67,7 +67,8 @@ enum PlanningTokens {
     enum Editor {
         static let fieldHeight: CGFloat = 46
         static let iconCell: CGFloat = 44
-        static let parentRowHeight: CGFloat = 40
+        static let parentRowHeight: CGFloat = 32
+        static let outlineRowSpacing: CGFloat = 2
         static let parentBulletInset: CGFloat = 6
         static let subtaskIndent: CGFloat = 28
         static let subpageTopGap: CGFloat = 8
@@ -118,6 +119,9 @@ enum PlanningTokens {
 
     enum Sheet {
         static let horizontalInset: CGFloat = 16
+        /// Distance from the sheet top to the × / ✓ row. The row is centered by matching space below.
+        static let headerTop: CGFloat = 8
+        static let headerHeight: CGFloat = 60
         static let topInset: CGFloat = 18
         static let sectionSpacing: CGFloat = 22
         static let bottomInset: CGFloat = 20

@@ -863,7 +863,9 @@ describe("planning TestFlight header, sheets, and index", () => {
     expect(plans).toContain("PlanningTokens.Search.topGap");
     expect(plans).toContain("proxy.scrollTo(id, anchor: .bottom)");
     expect(plans).not.toContain("focusClearance");
-    expect(plans).toContain("onKeyPress(.delete)");
+    expect(plans).toContain("struct PlanningOutlineTextField");
+    expect(plans).toContain("return false");
+    expect(plans).toContain("onEmptyDelete");
     expect(plans).toContain("PlanBulletReturn.backspace");
     expect(plans).toContain("DispatchQueue.main.async { focusedID = focus }");
     expect(plans).toContain("PlanningGlassAction(title:");
@@ -953,5 +955,37 @@ describe("planning TestFlight future, discard, and flicker", () => {
     expect(tokens).toContain("depth: CGFloat = 30.8");
     expect(tokens).toContain("length: CGFloat = 90");
     expect(tokens).toContain("trailingMargin: CGFloat = 4");
+  });
+});
+
+describe("planning chrome polish", () => {
+  const glass = readFileSync("ios/App/App/Native/Components/Glass/NativeGlassComponents.swift", "utf8");
+
+  it("uses a 30pt circular Back control with a 44pt hit target", () => {
+    expect(chrome).toContain("NativeGlassIconButton(icon: .back, accessibilityLabel: \"Back\", action: onBack)");
+    expect(glass).toContain(".frame(width: 30, height: 30)");
+    expect(glass).toContain(".frame(minWidth: 44, minHeight: 44)");
+  });
+
+  it("keeps the popup header outside the body and whites only the Future editors", () => {
+    expect(chrome).toContain(".overlay(alignment: .top)");
+    expect(chrome).toContain("PlanningTokens.Sheet.headerHeight");
+    expect(chrome).toContain(".clipped()");
+    expect(chrome).not.toContain("ignoresSafeArea(.keyboard");
+    expect(future).toContain("bodySurface: Color.white");
+    const moment = future.slice(future.indexOf("struct FutureMomentPicker"));
+    expect(moment).not.toContain("bodySurface: Color.white");
+  });
+
+  it("keeps outline focus and waits once for glass feedback", () => {
+    expect(plans).toContain("textFieldShouldReturn");
+    expect(plans).toContain("return false");
+    expect(plans).toContain("onEmptyDelete");
+    const apply = plans.slice(plans.indexOf("private func apply"), plans.indexOf("struct PlanningOutlineTextField"));
+    expect(apply).not.toContain("focusedID = nil");
+    expect(glass).toContain("static let duration: TimeInterval = 0.22");
+    expect(glass).toContain("NativeGlassFeedback.perform");
+    expect(tokens).toContain("static let outlineRowSpacing: CGFloat = 2");
+    expect(tokens).toContain("static let parentRowHeight: CGFloat = 32");
   });
 });

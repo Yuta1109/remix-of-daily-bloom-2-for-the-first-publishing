@@ -108,6 +108,14 @@ The month editor, event editor, and date/time editor use `PlanningSystemSheetChr
 
 The classification page lists items only. It has no progress ring, percent, or count summary. The result page shows period, snapshot completion counts, and 維持 / 先送り / 終了 counts. It has no `主な項目` section.
 
+## Shared chrome
+
+Pushed pages and the Planning root use the same translucent header as `Planning の使い方`: iOS 26 system glass, earlier systems ultra-thin material. Page content scrolls underneath. The system tab bar stays system-owned, with automatic glass on iOS 26 and material before that. No opaque white block is painted behind the header or the tab bar.
+
+Sheet headers are one overlay (`PlanningSystemSheetChrome`). The top inset stays 8 pt, with the same 8 pt below the controls so the 30 pt circles sit in the center of a 60 pt header. The body scrolls under that header and is clipped to the sheet. Future month and event editors use a white body; the header stays material.
+
+`NativeGlassFeedback` waits 0.22 s before a glass control dismisses or navigates, so the press animation can finish. Outline rows use `PlanningOutlineTextField`, which keeps first responder on Return.
+
 ## Navigation contract
 
 - `TabNavigationState` is injected on the `NavigationStack` and on each destination. Every Back uses `navigation.pop()`.

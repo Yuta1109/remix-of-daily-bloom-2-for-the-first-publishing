@@ -16,6 +16,20 @@ struct AppShell: View {
                 .tag(tab)
             }
         }
+        .modifier(NativeSystemTabChrome())
+    }
+}
+
+/// System tab bar stays Apple-owned. iOS 26 uses the platform glass; earlier systems use material.
+private struct NativeSystemTabChrome: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.toolbarBackground(.automatic, for: .tabBar)
+        } else {
+            content
+                .toolbarBackground(.visible, for: .tabBar)
+                .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+        }
     }
 }
 

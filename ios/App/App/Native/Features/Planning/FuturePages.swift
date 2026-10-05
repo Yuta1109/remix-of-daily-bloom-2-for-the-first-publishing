@@ -420,7 +420,8 @@ struct FutureMonthSheet: View {
             onClose: requestClose,
             onConfirm: save,
             showsControls: editingEventID == nil,
-            maximumBody: PlanningTokens.Sheet.maximumBody
+            maximumBody: PlanningTokens.Sheet.maximumBody,
+            bodySurface: Color.white
         ) {
             VStack(alignment: .leading, spacing: PlanningTokens.Future.sheetTopGap) {
                     Text(PlanningText.string(.monthGoal))
@@ -575,7 +576,8 @@ private struct FutureEventSheet: View {
             confirmEnabled: canSave,
             showsControls: !pickingStart && !pickingEnd,
             centerTitle: PlanningText.string(isNew ? .addEvent : .editEvent),
-            maximumBody: PlanningTokens.Sheet.maximumBody
+            maximumBody: PlanningTokens.Sheet.maximumBody,
+            bodySurface: Color.white
         ) {
             VStack(alignment: .leading, spacing: PlanningTokens.Editor.sectionGap) {
                     labeled(.titleLabel) {

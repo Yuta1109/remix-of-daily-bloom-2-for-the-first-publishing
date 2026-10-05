@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Icons
 
@@ -300,6 +301,7 @@ struct PlanEditorPage: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PlanCtaButton(title: PlanningText.string(.reflectToItems), action: reflect)
+                .background(Color.clear)
         }
         .planningPageChrome(
             title: PlanningText.string(isNewPlan ? .newPlan : .editPlan),
@@ -391,21 +393,20 @@ struct PlanEditorPage: View {
     private var bulletsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionLabel(.bulletsLabel)
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: PlanningTokens.Editor.outlineRowSpacing) {
                 ForEach($bullets) { $bullet in
                     HStack(spacing: 10) {
                         Circle().fill(PlanningPalette.ink).frame(width: 7, height: 7)
                             .padding(.leading, PlanningTokens.Editor.parentBulletInset)
-                        TextField(PlanningText.string(.parentPlaceholder), text: $bullet.text)
-                            .font(.system(size: 16))
-                            .focused($focusedID, equals: bullet.id)
-                            .submitLabel(.next)
-                            .onSubmit { apply(PlanBulletReturn.parent(bullets: bullets, parentID: bullet.id)) }
-                            .onKeyPress(.delete) {
-                                guard bullet.text.isEmpty else { return .ignored }
-                                apply(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: nil))
-                                return .handled
-                            }
+                        PlanningOutlineTextField(
+                            text: $bullet.text,
+                            isFocused: focusedID == bullet.id,
+                            placeholder: PlanningText.string(.parentPlaceholder),
+                            fontSize: 16,
+                            onFocus: { focusedID = bullet.id },
+                            onSubmit: { apply(PlanBulletReturn.parent(bullets: bullets, parentID: bullet.id)) },
+                            onEmptyDelete: { apply(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: nil)) }
+                        )
                     }
                     .frame(minHeight: PlanningTokens.Editor.parentRowHeight)
                     .id(bullet.id)
@@ -414,16 +415,15 @@ struct PlanEditorPage: View {
                             Circle()
                                 .stroke(PlanningPalette.ink, lineWidth: 1.2)
                                 .frame(width: 7, height: 7)
-                            TextField(PlanningText.string(.subtaskPlaceholder), text: $child.text)
-                                .font(.system(size: 15))
-                                .focused($focusedID, equals: child.id)
-                                .submitLabel(.next)
-                                .onSubmit { apply(PlanBulletReturn.child(bullets: bullets, parentID: bullet.id, childID: child.id)) }
-                                .onKeyPress(.delete) {
-                                    guard child.text.isEmpty else { return .ignored }
-                                    apply(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: child.id))
-                                    return .handled
-                                }
+                            PlanningOutlineTextField(
+                                text: $child.text,
+                                isFocused: focusedID == child.id,
+                                placeholder: PlanningText.string(.subtaskPlaceholder),
+                                fontSize: 15,
+                                onFocus: { focusedID = child.id },
+                                onSubmit: { apply(PlanBulletReturn.child(bullets: bullets, parentID: bullet.id, childID: child.id)) },
+                                onEmptyDelete: { apply(PlanBulletReturn.backspace(bullets: bullets, parentID: bullet.id, childID: child.id)) }
+                            )
                         }
                         .padding(.leading, PlanningTokens.Editor.subtaskIndent)
                         .frame(minHeight: PlanningTokens.Editor.parentRowHeight)
@@ -532,6 +532,76 @@ struct PlanEditorPage: View {
         case .replaced(let next, let focus):
             bullets = next
             DispatchQueue.main.async { focusedID = focus }
+        }
+    }
+}
+
+struct PlanningOutlineTextField: UIViewRepresentable {
+    @Binding var text: String
+    var isFocused: Bool
+    var placeholder: String
+    var fontSize: CGFloat
+    var onFocus: () -> Void
+    var onSubmit: () -> Void
+    var onEmptyDelete: () -> Void
+
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.delegate = context.coordinator
+        field.font = .systemFont(ofSize: fontSize)
+        field.placeholder = placeholder
+        field.returnKeyType = .next
+        field.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)), for: .editingChanged)
+        return field
+    }
+
+    func updateUIView(_ field: UITextField, context: Context) {
+        if field.text != text { field.text = text }
+        context.coordinator.text = $text
+        context.coordinator.onFocus = onFocus
+        context.coordinator.onSubmit = onSubmit
+        context.coordinator.onEmptyDelete = onEmptyDelete
+        if isFocused, !field.isFirstResponder {
+            field.becomeFirstResponder()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, onFocus: onFocus, onSubmit: onSubmit, onEmptyDelete: onEmptyDelete)
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var text: Binding<String>
+        var onFocus: () -> Void
+        var onSubmit: () -> Void
+        var onEmptyDelete: () -> Void
+
+        init(text: Binding<String>, onFocus: @escaping () -> Void, onSubmit: @escaping () -> Void, onEmptyDelete: @escaping () -> Void) {
+            self.text = text
+            self.onFocus = onFocus
+            self.onSubmit = onSubmit
+            self.onEmptyDelete = onEmptyDelete
+        }
+
+        @objc func changed(_ field: UITextField) {
+            text.wrappedValue = field.text ?? ""
+        }
+
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            onFocus()
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            onSubmit()
+            return false
+        }
+
+        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+            if string.isEmpty, (textField.text ?? "").isEmpty {
+                onEmptyDelete()
+                return false
+            }
+            return true
         }
     }
 }

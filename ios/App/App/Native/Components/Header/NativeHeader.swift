@@ -38,13 +38,10 @@ struct NativeHeader: View {
         .frame(minHeight: 52)
         .background {
             if backgroundStyle == .translucent {
-                ZStack {
-                    Rectangle()
-                        .fill(Color.white)
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                }
-                .ignoresSafeArea(edges: .top)
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .ignoresSafeArea(edges: .top)
+                    .allowsHitTesting(false)
             }
         }
     }
