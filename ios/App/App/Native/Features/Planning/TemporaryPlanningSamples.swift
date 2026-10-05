@@ -12,9 +12,6 @@ enum TemporaryPlanningSamples {
         let monthly = PeriodCalendar.currentKey(.monthly, now: now)
         let weekly = PeriodCalendar.currentKey(.weekly, now: now)
         let daily = PeriodCalendar.currentKey(.daily, now: now)
-        let previousMonth = PeriodCalendar.shift(monthly, bucket: .monthly, by: -1)
-        let previousWeek = PeriodCalendar.shift(weekly, bucket: .weekly, by: -1)
-
         session.monthlyPeriodKey = monthly
         session.weeklyPeriodKey = weekly
         session.dailyPeriodKey = daily
@@ -37,14 +34,12 @@ enum TemporaryPlanningSamples {
             sampleParent(title: "会議", child: "資料を開く", bucket: .daily, key: daily, kind: .event)
         ])
 
-        seedReflected(session, bucket: .monthly, key: previousMonth)
-        seedReflected(session, bucket: .weekly, key: previousWeek)
-        let yesterday = PeriodCalendar.shift(daily, bucket: .daily, by: -1)
-        let twoDaysAgo = PeriodCalendar.shift(daily, bucket: .daily, by: -2)
-        let threeDaysAgo = PeriodCalendar.shift(daily, bucket: .daily, by: -3)
-        seedDemoReflection(session, key: yesterday)
-        seedDemoPhoto(session, key: twoDaysAgo)
-        seedDemoDiary(session, key: threeDaysAgo)
+        for bucket in [PlanningBucket.monthly, .weekly, .daily] {
+            let current = PeriodCalendar.currentKey(bucket, now: now)
+            seedDemoReflection(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -1))
+            seedDemoPhoto(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -2))
+            seedDemoDiary(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -3))
+        }
         seedSamplePeriod(session, bucket: .monthly, key: monthly)
         seedSamplePeriod(session, bucket: .weekly, key: weekly)
         seedSamplePeriod(session, bucket: .daily, key: daily)
@@ -78,11 +73,19 @@ enum TemporaryPlanningSamples {
     }
 
     @MainActor
-    private static func seedReflected(_ session: PlanningSession, bucket: PlanningBucket, key: String) {
-        let kept = PlanningNode(title: "続けたこと", kind: .task, bucket: bucket, periodKey: key, completed: true, reflectionDisposition: .keep, isSample: true)
-        let postponed = PlanningNode(title: "先送りしたこと", kind: .task, bucket: bucket, periodKey: key, completed: false, reflectionDisposition: .postpone, isSample: true)
-        let stopped = PlanningNode(title: "終了したこと", kind: .event, bucket: bucket, periodKey: key, completed: true, reflectionDisposition: .stop, isSample: true)
-        session.periodItems.append(contentsOf: [kept, postponed, stopped])
+    private static func seedDemoReflection(_ session: PlanningSession, bucket: PlanningBucket, key: String) {
+        if session.periodRecords.contains(where: { $0.bucket == bucket && $0.periodKey == key }) { return }
+        let rows: [(String, PlanningItemKind, Bool, ReflectionDisposition)] = [
+            ("朝のストレッチ", .task, true, .keep),
+            ("本を2冊読む", .task, true, .keep),
+            ("部屋を整理する", .task, false, .postpone),
+            ("チームミーティング", .event, true, .postpone),
+            ("友人と食事", .event, true, .stop)
+        ]
+        let nodes = rows.map { title, kind, completed, disposition in
+            PlanningNode(title: title, kind: kind, bucket: bucket, periodKey: key, completed: completed, reflectionDisposition: disposition, isSample: true)
+        }
+        session.periodItems.append(contentsOf: nodes)
         session.store(
             PeriodReflectionRecord(
                 bucket: bucket,
@@ -91,45 +94,6 @@ enum TemporaryPlanningSamples {
                 reflectionOutstanding: false,
                 reflectionCompleted: true,
                 completedAt: Date(),
-                decisions: [kept, postponed, stopped].map { node in
-                    StoredReflectionDecision(
-                        itemID: node.id,
-                        logicalID: node.logicalID,
-                        title: node.title,
-                        kind: node.kind,
-                        completed: node.completed,
-                        disposition: node.reflectionDisposition ?? .keep,
-                        eventID: node.eventID,
-                        todayTaskID: node.todayTaskID
-                    )
-                },
-                isSample: true
-            )
-        )
-    }
-
-    @MainActor
-    private static func seedDemoReflection(_ session: PlanningSession, key: String) {
-        let rows: [(String, PlanningItemKind, Bool, ReflectionDisposition)] = [
-            ("朝の準備", .task, true, .keep),
-            ("企画の続き", .task, true, .keep),
-            ("夕方の確認", .task, false, .keep),
-            ("資料の見直し", .task, false, .postpone),
-            ("来週の打ち合わせ", .event, true, .postpone),
-            ("終わった用事", .event, false, .stop)
-        ]
-        let nodes = rows.map { title, kind, completed, disposition in
-            PlanningNode(title: title, kind: kind, bucket: .daily, periodKey: key, completed: completed, reflectionDisposition: disposition, isSample: true)
-        }
-        session.periodItems.append(contentsOf: nodes)
-        session.store(
-            PeriodReflectionRecord(
-                bucket: .daily,
-                periodKey: key,
-                hasMeaningfulActivity: true,
-                reflectionOutstanding: false,
-                reflectionCompleted: true,
-                completedAt: Date().addingTimeInterval(-86_400),
                 decisions: nodes.map { node in
                     StoredReflectionDecision(
                         itemID: node.id,
@@ -148,11 +112,14 @@ enum TemporaryPlanningSamples {
     }
 
     @MainActor
-    private static func seedDemoPhoto(_ session: PlanningSession, key: String) {
+    private static func seedDemoPhoto(_ session: PlanningSession, bucket: PlanningBucket, key: String) {
+        if session.periodRecords.contains(where: { $0.bucket == bucket && $0.periodKey == key }) { return }
+        let scope = ReflectionScope.period(bucket, key)
+        if session.memoryEntries.contains(where: { $0.scope == scope }) { return }
         session.addMemory(
-            scope: .period(.daily, key),
+            scope: scope,
             kind: .photoNote,
-            text: "夕方の空がきれいだった。",
+            text: "その日の写真を1枚選び、一言だけ残せる記録です。",
             hasPhoto: true,
             imageData: demoSkyImage(),
             saved: true,
@@ -161,13 +128,16 @@ enum TemporaryPlanningSamples {
     }
 
     @MainActor
-    private static func seedDemoDiary(_ session: PlanningSession, key: String) {
+    private static func seedDemoDiary(_ session: PlanningSession, bucket: PlanningBucket, key: String) {
+        if session.periodRecords.contains(where: { $0.bucket == bucket && $0.periodKey == key }) { return }
+        let scope = ReflectionScope.period(bucket, key)
+        if session.memoryEntries.contains(where: { $0.scope == scope }) { return }
         session.addMemory(
-            scope: .period(.daily, key),
+            scope: scope,
             kind: .diary,
-            text: "今日は少し早めに作業を切り上げて、ゆっくり過ごした。\nやることは全部終わらなかったけれど、一度立ち止まれたのはよかった。\n明日は一つずつ進めたい。",
+            text: "なんでも日記は、形式を決めずにその日・週・月の出来事や考えたことを自由に残すための記録です。短くても長くてもかまいません。振り返りでは書ききれないことを、自分の言葉で残したいときに使えます。",
             hasPhoto: false,
-            title: "少し落ち着けた日",
+            title: "なんでも日記（例）",
             saved: true,
             isSample: true
         )

@@ -96,11 +96,11 @@ enum PeriodCalendar {
         case .weekly:
             let start = date(from: key) ?? Date()
             let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
-            return "\(dayLabel(start)) – \(shortDayLabel(end))"
+            return "\(dayLabel(start))～\(shortDayLabel(end))"
         case .daily:
             let date = date(from: key) ?? Date()
             let weekday = calendar.shortWeekdaySymbols[calendar.component(.weekday, from: date) - 1]
-            return "\(dayLabel(date)) (\(weekday))"
+            return "\(dayLabel(date))（\(weekday)）"
         }
     }
 

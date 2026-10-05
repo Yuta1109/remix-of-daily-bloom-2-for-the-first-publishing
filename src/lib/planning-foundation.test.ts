@@ -187,8 +187,7 @@ describe("planning period pages", () => {
     expect(periodPage).not.toContain("今月の進捗");
     expect(models).toContain("var reflectionDisposition");
     expect(models).toContain("var goal: String");
-    expect(periodPage).toContain("Weeklyをなくす");
-    expect(periodPage).toContain("PlanningRoute.weeklySettings");
+    expect(periodPage).not.toContain("Weeklyをなくす");
     expect(models).toContain("static let maximumDepth = 2");
   });
 });
@@ -316,8 +315,8 @@ describe("planning blueprint fidelity", () => {
     expect(samples).toContain(".stop");
     expect(samples).not.toContain("Firebase");
     expect(samples).toContain("isSample: true");
-    expect(samples).toContain("夕方の空がきれいだった。");
-    expect(samples).toContain("少し落ち着けた日");
+    expect(samples).toContain("その日の写真を1枚選び、一言だけ残せる記録です。");
+    expect(samples).toContain("なんでも日記（例）");
     expect(samples).toContain("static func install");
     expect(samples).toContain("func seedSamplePeriod");
     expect(samples).toContain("if session.periodRecords.contains");
@@ -987,5 +986,71 @@ describe("planning chrome polish", () => {
     expect(glass).toContain("NativeGlassFeedback.perform");
     expect(tokens).toContain("static let outlineRowSpacing: CGFloat = 2");
     expect(tokens).toContain("static let parentRowHeight: CGFloat = 32");
+  });
+});
+
+describe("planning period visual rebuild", () => {
+  const sheets = readFileSync(`${planningRoot}/PlanningItemSheets.swift`, "utf8");
+
+  it("keeps the period label on one centered line between fixed arrow zones", () => {
+    const bar = periodPage.slice(periodPage.indexOf("func periodBar"), periodPage.indexOf("func periodBody"));
+    expect(bar).toContain("ZStack");
+    expect(bar).toContain(".lineLimit(1)");
+    expect(bar).toContain("PlanningTokens.PeriodSelector.arrowZone");
+    expect(bar).toContain("PlanningTokens.PeriodSelector.labelScaleFloor");
+    expect(tokens).toContain("enum PeriodSelector");
+    expect(tokens).toContain("static let arrowZone: CGFloat = 44");
+  });
+
+  it("drops the Weekly removal control and uses the app accent", () => {
+    expect(periodPage).not.toContain("Weeklyをなくす");
+    expect(periodPage).toContain("PlanningPalette.accent");
+    expect(chrome).toContain("static let accent = Color(red: 0.916, green: 0.524, blue: 0.244)");
+  });
+
+  it("opens blocks by tap and keeps ellipsis off the period overview", () => {
+    expect(periodPage).toContain("onTapGesture");
+    expect(periodPage).not.toContain("ellipsis");
+    expect(sheets).not.toContain("ellipsis");
+    expect(reflectionPage).not.toContain("ellipsis");
+  });
+
+  it("edits a stored reflection from 振り返りを編集 without a progress summary", () => {
+    expect(reflectionPage).toContain("振り返りを編集");
+    expect(reflectionPage).toContain("PlanningRoute.reflectionEdit");
+    expect(reflectionPage).not.toContain("進捗サマリー");
+    expect(reflectionPage).not.toContain("主な項目");
+    expect(planText).toContain("今月は記録がありませんでした");
+    expect(planText).toContain("今週は記録がありませんでした");
+    expect(planText).toContain("今日は記録がありませんでした");
+  });
+
+  it("seeds nine previous sample periods and never overwrites a real one", () => {
+    expect(samples).toContain("by: -1");
+    expect(samples).toContain("by: -2");
+    expect(samples).toContain("by: -3");
+    expect(samples).toContain("PlanningBucket.monthly, .weekly, .daily");
+    expect(samples).toContain("朝のストレッチ");
+    expect(samples).toContain("本を2冊読む");
+    expect(samples).toContain("部屋を整理する");
+    expect(samples).toContain("チームミーティング");
+    expect(samples).toContain("友人と食事");
+    expect(samples).toContain("その日の写真を1枚選び、一言だけ残せる記録です。");
+    expect(samples).toContain("なんでも日記は、形式を決めずにその日・週・月の出来事や考えたことを自由に残すための記録です。");
+    expect(samples).toContain("isSample: true");
+    expect(samples).toContain("if session.periodRecords.contains");
+    expect(samples).not.toContain("Firebase");
+  });
+
+  it("keeps the right index, due card, and shared chrome", () => {
+    expect(tokens).toContain("depth: CGFloat = 30.8");
+    expect(tokens).toContain("length: CGFloat = 90");
+    expect(tokens).toContain("trailingMargin: CGFloat = 4");
+    expect(tokens).toContain("static let minimumMultiple: CGFloat = 1.5");
+    expect(tokens).toContain("static let maximumMultiple: CGFloat = 2.0");
+    expect(periodPage).toContain("PlanningReflectionDueCard");
+    expect(reflectionPage).toContain("glassEffect");
+    expect(chrome).toContain(".overlay(alignment: .top)");
+    expect(chrome).toContain("PlanningTokens.Sheet.headerHeight");
   });
 });

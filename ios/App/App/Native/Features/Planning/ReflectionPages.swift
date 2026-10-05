@@ -66,7 +66,7 @@ struct ReflectionFlowPage: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(periodContext)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(PlanningPalette.muted)
+                    .foregroundStyle(PlanningPalette.accent)
                 Text("ToDo \(completion.todoDone) / \(completion.todoTotal) 完了")
                 Text("予定 \(completion.eventDone) / \(completion.eventTotal)")
                 Text("\(PlanningText.string(.keepCount)) \(counts.keep)件")
@@ -123,7 +123,7 @@ struct ReflectionFlowPage: View {
                 .foregroundStyle(on ? Color.white : PlanningPalette.ink)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(on ? Color(red: 0.916, green: 0.524, blue: 0.244) : Color.clear)
+                .background(on ? PlanningPalette.accent : Color.clear)
         }
         .buttonStyle(.plain)
     }
@@ -142,7 +142,7 @@ struct PlanningReflectionDueCard: View {
     let action: () -> Void
     var tabBarHeight: CGFloat
 
-    private var accent: Color { Color(red: 0.916, green: 0.524, blue: 0.244) }
+    private var accent: Color { PlanningPalette.accent }
 
     var body: some View {
         let card = VStack(alignment: .leading, spacing: 4) {
@@ -195,9 +195,10 @@ struct ReflectionResultView: View {
     var body: some View {
         let counts = session.classificationCounts(for: scope)
         let completion = session.snapshotCompletion(for: scope)
+        let title = session.reflectionIsSample(scope) ? "振り返り結果（例）" : PlanningText.string(.reflectionResult)
         return VStack(alignment: .leading, spacing: 8) {
-            Text(PlanningText.string(.reflectionResult))
-                .font(.title3.weight(.semibold))
+            Text(title)
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(PlanningPalette.ink)
             Text("ToDo \(completion.todoDone) / \(completion.todoTotal) 完了")
                 .font(.subheadline)
@@ -258,32 +259,72 @@ struct ReflectionHistoryPage: View {
 
     private func historyCard(_ scope: ReflectionScope) -> some View {
         let counts = session.classificationCounts(for: scope)
-        return VStack(alignment: .leading, spacing: 8) {
-            Text(historyTitle(scope))
-                .font(.headline)
-            Text("維持 \(counts.keep)件  先送り \(counts.postpone)件  終了 \(counts.stop)件")
-                .font(.subheadline)
-            ForEach(session.decisions(for: scope)) { decision in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(decision.title)
-                    Picker("分類", selection: Binding(
-                        get: { decision.disposition },
-                        set: { session.updateHistoricalDecision(scope: scope, itemID: decision.itemID, disposition: $0) }
-                    )) {
-                        Text("維持").tag(ReflectionDisposition.keep)
-                        Text("先送り").tag(ReflectionDisposition.postpone)
-                        Text("終了").tag(ReflectionDisposition.stop)
-                    }
-                    .pickerStyle(.segmented)
-                }
+        return Button {
+            navigation.path.append(PlanningRoute.reflectionEdit(scope))
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(historyTitle(scope))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(PlanningPalette.ink)
+                Text("維持 \(counts.keep)件  先送り \(counts.postpone)件  終了 \(counts.stop)件")
+                    .font(.system(size: 13))
+                    .foregroundStyle(PlanningPalette.muted)
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     private func historyTitle(_ scope: ReflectionScope) -> String {
+        switch scope {
+        case .period(let bucket, let key):
+            PeriodCalendar.label(bucket: bucket, key: key)
+        case .future(let year):
+            "\(year)年"
+        }
+    }
+}
+
+struct ReflectionEditPage: View {
+    @ObservedObject var session: PlanningSession
+    @EnvironmentObject private var navigation: TabNavigationState
+    let scope: ReflectionScope
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(periodContext)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PlanningPalette.accent)
+                ForEach(session.decisions(for: scope)) { decision in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(decision.title)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(PlanningPalette.ink)
+                        Picker("分類", selection: Binding(
+                            get: { decision.disposition },
+                            set: { session.updateHistoricalDecision(scope: scope, itemID: decision.itemID, disposition: $0) }
+                        )) {
+                            Text("維持").tag(ReflectionDisposition.keep)
+                            Text("先送り").tag(ReflectionDisposition.postpone)
+                            Text("終了").tag(ReflectionDisposition.stop)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .planningScroll()
+        .background(PlanningPalette.paper)
+        .planningPageChrome(title: "振り返りを編集", onBack: {
+            if !navigation.path.isEmpty { navigation.pop() }
+        })
+    }
+
+    private var periodContext: String {
         switch scope {
         case .period(let bucket, let key):
             PeriodCalendar.label(bucket: bucket, key: key)
@@ -353,20 +394,25 @@ struct NoActivityMemorySection: View {
     }
 
     private var recommendation: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(spacing: 16) {
+            Image(systemName: "leaf")
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(PlanningPalette.accent)
+                .frame(width: 64, height: 64)
+                .background(PlanningPalette.accent.opacity(0.12), in: Circle())
             Text(emptyTitle)
-                .font(.headline)
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(PlanningPalette.ink)
+                .multilineTextAlignment(.center)
             Text(emptyBody)
-                .font(.body)
-                .foregroundStyle(PlanningPalette.ink)
+                .font(.system(size: 15))
+                .foregroundStyle(PlanningPalette.muted)
+                .multilineTextAlignment(.center)
             choiceButton(title: PlanningText.string(.photoAndLine), kind: .photoNote)
             choiceButton(title: PlanningText.string(.anythingDiary), kind: .diary)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var emptyTitle: String {
@@ -393,11 +439,12 @@ struct NoActivityMemorySection: View {
             navigation.path.append(PlanningRoute.planningMemory(scope))
         } label: {
             Text(title)
-                .font(.headline)
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(PlanningPalette.ink)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(PlanningPalette.paper, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(16)
+                .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PlanningPalette.accent.opacity(0.45), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -450,18 +497,23 @@ struct PlanningMemoryPage: View {
     @ViewBuilder
     private func completed(_ entry: PlanningMemoryEntry) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(pageTitle).font(.title2.bold()).foregroundStyle(PlanningPalette.ink)
-            Text(dateLabel).font(.subheadline).foregroundStyle(PlanningPalette.muted)
+            Text(dateLabel)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(PlanningPalette.accent)
             if entry.kind == .photoNote {
                 photoImage(entry)
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: 280)
+                    .frame(minHeight: 320)
                 Text(entry.text)
-                    .font(.body)
+                    .font(.system(size: 17))
                     .foregroundStyle(PlanningPalette.ink)
             } else {
-                Text(entry.title).font(.title3.weight(.semibold))
-                Text(entry.text).font(.body)
+                Text(entry.title)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(PlanningPalette.ink)
+                Text(entry.text)
+                    .font(.system(size: 16))
+                    .foregroundStyle(PlanningPalette.ink)
             }
         }
         .padding(16)

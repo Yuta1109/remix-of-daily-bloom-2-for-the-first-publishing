@@ -353,6 +353,15 @@ extension PlanningSession {
         return rows.map { .period($0.bucket, $0.periodKey) }
     }
 
+    func reflectionIsSample(_ scope: ReflectionScope) -> Bool {
+        switch scope {
+        case .period(let bucket, let key):
+            existingRecord(bucket: bucket, periodKey: key).isSample
+        case .future:
+            false
+        }
+    }
+
     func decisions(for scope: ReflectionScope) -> [StoredReflectionDecision] {
         switch scope {
         case .period(let bucket, let key):

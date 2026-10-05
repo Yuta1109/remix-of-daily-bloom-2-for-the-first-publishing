@@ -81,6 +81,12 @@ enum PlanningTokens {
         static let sectionGap: CGFloat = 20
     }
 
+    /// Period label sits in the center. Arrow zones stay fixed on the left and right.
+    enum PeriodSelector {
+        static let arrowZone: CGFloat = 44
+        static let labelScaleFloor: CGFloat = 0.75
+    }
+
     /// Reflection-due card. Height is 1.5×–2.0× the visible system tab-menu height, never the 90 pt index tab.
     enum ReflectionDue {
         static let minimumMultiple: CGFloat = 1.5

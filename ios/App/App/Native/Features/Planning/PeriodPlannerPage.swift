@@ -8,6 +8,7 @@ struct PeriodPlannerPage: View {
     @State private var showingPicker = false
     @State private var addingKind: PlanningItemKind?
     @State private var tabBarHeight: CGFloat = 0
+    @State private var editingGoal = false
 
     private var periodKey: String { session.periodKey(for: bucket) }
 
@@ -34,6 +35,9 @@ struct PeriodPlannerPage: View {
         }
         .onAppear {
             session.refreshDue(ReflectionScope.period(bucket, periodKey))
+        }
+        .sheet(isPresented: $editingGoal) {
+            monthlyGoalEditor
         }
         .sheet(isPresented: $showingPicker) {
             PeriodPickerSheet(session: session, bucket: bucket) { showingPicker = false }
@@ -65,7 +69,7 @@ struct PeriodPlannerPage: View {
 
     private func periodPage(_ key: String) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 12) {
                 PlanningSectionIntro(
                     title: introTitle,
                     message: PlanningText.string(introKey)
@@ -73,15 +77,9 @@ struct PeriodPlannerPage: View {
                     Image(systemName: introSymbol)
                         .font(.system(size: 20, weight: .semibold))
                         .frame(width: PlanningTokens.PlanMain.iconSlot, height: PlanningTokens.PlanMain.iconSlot)
-                        .foregroundStyle(PlanningPalette.ink)
+                        .foregroundStyle(PlanningPalette.accent)
                 }
                 periodBar(key)
-                if bucket == .weekly {
-                    Button("Weeklyをなくす") {
-                        navigation.path.append(PlanningRoute.weeklySettings)
-                    }
-                    .buttonStyle(.bordered)
-                }
                 if bucket == .monthly {
                     monthlyGoal(key)
                 }
@@ -121,27 +119,39 @@ struct PeriodPlannerPage: View {
     }
 
     private func periodBar(_ key: String) -> some View {
-        HStack(spacing: 8) {
-            PlanningHeadingIconSlot()
-            Button {
-                session.shiftPeriod(bucket, by: -1)
-            } label: {
-                Image(systemName: "chevron.left").frame(width: 44, height: 44)
-            }
+        ZStack {
             Button {
                 showingPicker = true
             } label: {
                 Text(PeriodCalendar.label(bucket: bucket, key: key))
                     .foregroundStyle(PlanningPalette.ink)
-                    .font(.title3.bold())
-                    .frame(minHeight: 44)
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(PlanningTokens.PeriodSelector.labelScaleFloor)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: PlanningTokens.PeriodSelector.arrowZone)
             }
-            Button {
-                session.shiftPeriod(bucket, by: 1)
-            } label: {
-                Image(systemName: "chevron.right").frame(width: 44, height: 44)
+            .buttonStyle(.plain)
+            .padding(.horizontal, PlanningTokens.PeriodSelector.arrowZone)
+            HStack {
+                Button {
+                    session.shiftPeriod(bucket, by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(PlanningPalette.accent)
+                        .frame(width: PlanningTokens.PeriodSelector.arrowZone, height: PlanningTokens.PeriodSelector.arrowZone)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    session.shiftPeriod(bucket, by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(PlanningPalette.accent)
+                        .frame(width: PlanningTokens.PeriodSelector.arrowZone, height: PlanningTokens.PeriodSelector.arrowZone)
+                }
             }
-            Spacer(minLength: 0)
         }
         .buttonStyle(.plain)
     }
@@ -168,10 +178,32 @@ struct PeriodPlannerPage: View {
 
     private func monthlyGoal(_ key: String) -> some View {
         let parts = PeriodCalendar.monthParts(key)
-        return VStack(alignment: .leading, spacing: 6) {
+        let goal = session.goal(year: parts.year, month: parts.month)
+        return VStack(alignment: .leading, spacing: 4) {
             Text("今月の目標")
-                .font(.headline)
-                .foregroundStyle(PlanningPalette.ink)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(PlanningPalette.accent)
+            Text(goal.isEmpty ? "目標は1つ" : goal)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(goal.isEmpty ? PlanningPalette.muted : PlanningPalette.ink)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture { editingGoal = true }
+    }
+
+    private var monthlyGoalEditor: some View {
+        let parts = PeriodCalendar.monthParts(periodKey)
+        return PlanningSystemSheetChrome(
+            onClose: { editingGoal = false },
+            onConfirm: { editingGoal = false },
+            centerTitle: "今月の目標",
+            bodySurface: Color.white
+        ) {
             TextField(
                 "目標は1つ",
                 text: Binding(
@@ -179,7 +211,7 @@ struct PeriodPlannerPage: View {
                     set: { session.setGoal($0, year: parts.year, month: parts.month) }
                 )
             )
-            .textFieldStyle(.roundedBorder)
+            .padding(16)
         }
     }
 
@@ -187,27 +219,34 @@ struct PeriodPlannerPage: View {
         let nodes = session.nodes(bucket: bucket, periodKey: key, kind: kind)
         let leaves = PeriodCalendar.flattenedLeaves(nodes)
         let done = leaves.filter(\.completed).count
-        return VStack(alignment: .leading, spacing: 6) {
+        let preview = nodes.first?.title ?? ""
+        return VStack(alignment: .leading, spacing: 4) {
             Text(sectionTitle(kind))
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(PlanningPalette.ink)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(PlanningPalette.accent)
             if kind == .task {
                 Text("\(leaves.count)件")
-                    .font(.title2.weight(.semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(PlanningPalette.ink)
                 Text("\(done) / \(leaves.count) 完了")
-                    .font(.subheadline)
+                    .font(.system(size: 13))
                     .foregroundStyle(PlanningPalette.muted)
             } else {
                 Text("\(nodes.count)件")
-                    .font(.title2.weight(.semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(PlanningPalette.ink)
+            }
+            if !preview.isEmpty {
+                Text(preview)
+                    .font(.system(size: 13))
+                    .foregroundStyle(PlanningPalette.muted)
+                    .lineLimit(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+        .padding(12)
+        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onTapGesture { addingKind = kind }
     }

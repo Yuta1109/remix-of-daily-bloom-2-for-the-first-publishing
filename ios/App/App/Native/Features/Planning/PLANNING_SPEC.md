@@ -362,15 +362,15 @@ Offer exactly two alternatives, neither of which counts as Reflection, a badge, 
 - `写真 & 一言` — one photo and one sentence
 - `なんでも日記` — title and body, no photo
 
-Temporary TestFlight examples for the previous three days live only in `TemporaryPlanningSamples`. They are marked `isSample` and are not written to Firebase.
+Temporary TestFlight examples cover the previous three months, three weeks, and three days. The nearest previous period is a Reflection result, the second is Photo & one line, and the third is Anything Diary. They live only in `TemporaryPlanningSamples`, are marked `isSample`, and are skipped when that period already has a record. They are not written to Firebase.
 
 ## Reflection history
 
-Later history supports Future, Monthly, Weekly, and Daily, and shows the last 5 completed Reflections. Periods that were never reflected are excluded. Keep, Postpone, and Stop stay editable under the established Reflection-window rules. The data model must not discard this.
+Later history supports Future, Monthly, Weekly, and Daily, and shows the last 5 completed Reflections. Opening one opens `振り返りを編集`, which corrects that period's stored snapshot through `updateHistoricalDecision`. Periods that were never reflected are excluded. Keep, Postpone, and Stop stay editable under the established Reflection-window rules. The data model must not discard this.
 
 ## Weekly setting
 
-Weekly is on by default. The later Weekly page includes `Weeklyをなくす`, which opens the Weekly setting section itself, not a generic Settings root. When Weekly is disabled, hide it from the right-edge index, keep its data, and do not delete historical Weekly data.
+Weekly is on by default. The Weekly page does not show `Weeklyをなくす`. When Weekly is disabled, hide it from the right-edge index, keep its data, and do not delete historical Weekly data.
 
 ## Cross-feature routes
 

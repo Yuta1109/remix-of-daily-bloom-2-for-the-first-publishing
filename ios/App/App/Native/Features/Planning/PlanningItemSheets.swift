@@ -103,20 +103,33 @@ enum PlanningSelection {
 struct PeriodItemListSheet: View {
     @ObservedObject var session: PlanningSession
     let bucket: PlanningBucket
-    let kind: PlanningItemKind
     let periodKey: String
+    @State private var kind: PlanningItemKind
     @State private var showingSources = false
     @State private var editingID: EditingNodeID?
     @State private var creating = false
     @Environment(\.dismiss) private var dismiss
 
+    init(session: PlanningSession, bucket: PlanningBucket, kind: PlanningItemKind, periodKey: String) {
+        self.session = session
+        self.bucket = bucket
+        self.periodKey = periodKey
+        _kind = State(initialValue: kind)
+    }
+
     var body: some View {
         PlanningSystemSheetChrome(
             onClose: { dismiss() },
             onConfirm: { dismiss() },
-            maximumBody: PlanningTokens.Sheet.maximumBody
+            maximumBody: PlanningTokens.Sheet.maximumBody,
+            bodySurface: Color.white
         ) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("種類", selection: $kind) {
+                    Text("ToDo").tag(PlanningItemKind.task)
+                    Text("予定").tag(PlanningItemKind.event)
+                }
+                .pickerStyle(.segmented)
                 ForEach(session.nodes(bucket: bucket, periodKey: periodKey, kind: kind)) { node in
                     parentRow(node)
                 }
@@ -162,8 +175,8 @@ struct PeriodItemListSheet: View {
                     .padding(.leading, 22)
             }
         }
-        .padding(12)
-        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(10)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
     }
 
@@ -199,7 +212,7 @@ struct PeriodItemListSheet: View {
                 _ = session.setCompleted(nodeID: node.id, completed: !node.completed)
             } label: {
                 Image(systemName: node.completed ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(PlanningPalette.ink)
+                    .foregroundStyle(PlanningPalette.accent)
             }
             .buttonStyle(.plain)
         } else {
@@ -330,7 +343,9 @@ struct PlanningItemEditorSheet: View {
         PlanningSystemSheetChrome(
             onClose: requestClose,
             onConfirm: { onSave(draft) },
-            maximumBody: PlanningTokens.Sheet.maximumBody
+            centerTitle: kind == .task ? "ToDo" : "予定",
+            maximumBody: PlanningTokens.Sheet.maximumBody,
+            bodySurface: Color.white
         ) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 10) {

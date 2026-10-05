@@ -42,6 +42,8 @@ struct PlanningShell: View {
                     PlanningLinkPlaceholder(session: session, route: route)
                 case .reflection(let scope):
                     ReflectionFlowPage(session: session, scope: scope)
+                case .reflectionEdit(let scope):
+                    ReflectionEditPage(session: session, scope: scope)
                 case .reflectionHistory:
                     ReflectionHistoryPage(session: session)
                 case .planningMemory(let scope):

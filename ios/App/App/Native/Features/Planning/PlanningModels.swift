@@ -113,6 +113,7 @@ enum PlanningRoute: Hashable {
     case reflectionSettings
     case weeklySettings
     case reflection(ReflectionScope)
+    case reflectionEdit(ReflectionScope)
     case reflectionHistory
     case planningMemory(ReflectionScope)
 }
