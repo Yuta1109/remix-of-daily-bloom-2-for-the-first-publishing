@@ -35,7 +35,7 @@ enum TemporaryPlanningSamples {
             sampleParent(title: "週の打ち合わせ", child: "議題を送る", bucket: .weekly, key: weekly, kind: .event),
             sampleParent(title: "今日の準備", child: "持ち物を確認", bucket: .daily, key: daily, kind: .task),
             sampleParent(title: "会議", child: "資料を開く", bucket: .daily, key: daily, kind: .event)
-        ]
+        ])
 
         seedReflected(session, bucket: .monthly, key: previousMonth)
         seedReflected(session, bucket: .weekly, key: previousWeek)
