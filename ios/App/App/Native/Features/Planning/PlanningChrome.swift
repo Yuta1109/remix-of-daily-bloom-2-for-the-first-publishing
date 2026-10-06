@@ -574,10 +574,10 @@ private final class PlanningDiscardAlertController: UIAlertController {
     }
 }
 
-private struct PlanningSystemTopInsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+enum PlanningViewportMetrics {
+    /// Header clearance measured from the Planning shell, not from a scrolling descendant.
+    static func topContentInset(rootSafeTop: CGFloat) -> CGFloat {
+        rootSafeTop + PlanningTokens.Header.height
     }
 }
 
@@ -594,8 +594,9 @@ extension EnvironmentValues {
 }
 
 extension View {
-    func planningMeasuredScrollTopInset() -> some View {
-        modifier(PlanningMeasuredScrollTopInset())
+    /// Stable root safe-area reading. It does not follow scroll content.
+    func planningRootSafeArea() -> some View {
+        modifier(PlanningRootSafeAreaInset())
     }
 
     /// Initial scroll position only. Content can still scroll under the header.
@@ -604,18 +605,53 @@ extension View {
     }
 }
 
-private struct PlanningMeasuredScrollTopInset: ViewModifier {
-    @State private var systemTop: CGFloat = 0
+private struct PlanningRootSafeAreaInset: ViewModifier {
+    @State private var rootSafeTop: CGFloat = 0
 
     func body(content: Content) -> some View {
         content
             .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(key: PlanningSystemTopInsetKey.self, value: proxy.safeAreaInsets.top)
-                }
+                PlanningRootSafeAreaReader(top: $rootSafeTop)
             }
-            .onPreferenceChange(PlanningSystemTopInsetKey.self) { systemTop = $0 }
-            .environment(\.planningInitialScrollTopInset, systemTop + PlanningTokens.Header.height)
+            .environment(\.planningInitialScrollTopInset, PlanningViewportMetrics.topContentInset(rootSafeTop: rootSafeTop))
+    }
+}
+
+/// Reports the window safe area from the shell, not from a scrolling child.
+private struct PlanningRootSafeAreaReader: UIViewRepresentable {
+    @Binding var top: CGFloat
+
+    func makeUIView(context: Context) -> Reader {
+        let view = Reader()
+        view.onChange = { top = $0 }
+        return view
+    }
+
+    func updateUIView(_ uiView: Reader, context: Context) {
+        uiView.onChange = { top = $0 }
+        uiView.reportIfChanged()
+    }
+
+    final class Reader: UIView {
+        var onChange: (CGFloat) -> Void = { _ in }
+        private var last: CGFloat = -1
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            reportIfChanged()
+        }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            reportIfChanged()
+        }
+
+        func reportIfChanged() {
+            let value = window?.safeAreaInsets.top ?? safeAreaInsets.top
+            guard abs(value - last) > 0.5 else { return }
+            last = value
+            onChange(value)
+        }
     }
 }
 
@@ -645,9 +681,8 @@ struct PlanningHorizontalPager<Page: Hashable, Content: View>: View {
             LazyHStack(spacing: 0) {
                 ForEach(pages, id: \.self) { page in
                     content(page)
-                        .id(page)
                         .containerRelativeFrame(.horizontal)
-                        .containerRelativeFrame(.vertical)
+                        .frame(maxHeight: .infinity, alignment: .top)
                 }
             }
             .scrollTargetLayout()
@@ -655,6 +690,7 @@ struct PlanningHorizontalPager<Page: Hashable, Content: View>: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: position)
         .scrollIndicators(.hidden)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.clear)
     }
 }
@@ -775,7 +811,7 @@ struct PlanningHeadingIconSlot: View {
 struct PlanningSectionIntro<Icon: View>: View {
     let title: String
     let message: String
-    var topGap: CGFloat = PlanningTokens.PlanMain.titleTop
+    var topGap: CGFloat = PlanningTokens.PlanIntro.topGap
     @ViewBuilder var icon: () -> Icon
 
     var body: some View {

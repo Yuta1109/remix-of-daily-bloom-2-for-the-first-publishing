@@ -286,7 +286,6 @@ struct ReflectionPeriodSummary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ReflectionPeriodLabel(text: periodLabel)
             ReflectionAchievementCard(session: session, scope: scope)
             ReflectionClassificationCard(session: session, scope: scope)
             Button {
@@ -300,13 +299,6 @@ struct ReflectionPeriodSummary: View {
                     .background(PlanningPalette.accent, in: RoundedRectangle(cornerRadius: PlanningTokens.ReflectionSummary.actionRadius, style: .continuous))
             }
             .buttonStyle(.plain)
-        }
-    }
-
-    private var periodLabel: String {
-        switch scope {
-        case .period(let bucket, let key): PeriodCalendar.label(bucket: bucket, key: key)
-        case .future(let year): "\(year)年"
         }
     }
 }
@@ -702,6 +694,18 @@ struct ReflectionSettingsPage: View {
     }
 }
 
+struct PlanningMemoryPhoto: View {
+    let image: UIImage
+
+    var body: some View {
+        Image(uiImage: image)
+            .resizable()
+            .scaledToFit()
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
 struct SavedPeriodMemory: View {
     @ObservedObject var session: PlanningSession
     @EnvironmentObject private var navigation: TabNavigationState
@@ -745,17 +749,16 @@ struct SavedPeriodMemory: View {
     }
 
     private var savedPhoto: some View {
-        ZStack {
+        Group {
             if let data = entry.imageData, let image = UIImage(data: data) {
-                Image(uiImage: image).resizable().scaledToFill()
+                PlanningMemoryPhoto(image: image)
             } else {
                 PlanningPalette.card
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 220)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var periodLabel: String {
@@ -932,11 +935,9 @@ struct PlanningMemoryPage: View {
     }
 
     private func photoWell(_ entry: PlanningMemoryEntry) -> some View {
-        ZStack {
+        Group {
             if let data = entry.imageData, let image = UIImage(data: data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+                PlanningMemoryPhoto(image: image)
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "photo.badge.plus")
@@ -946,13 +947,11 @@ struct PlanningMemoryPage: View {
                         .font(.system(size: 14))
                         .foregroundStyle(PlanningPalette.muted)
                 }
+                .frame(maxWidth: .infinity)
+                .frame(height: 160)
+                .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 280)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func diaryEditor(_ entry: PlanningMemoryEntry) -> some View {

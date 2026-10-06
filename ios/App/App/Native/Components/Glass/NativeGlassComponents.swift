@@ -41,10 +41,25 @@ struct NativeGlassIconButton: View {
     @State private var transitionPending = false
 
     var body: some View {
-        Button(action: invoke) {
-            visual
+        Group {
+            if #available(iOS 26.0, *) {
+                if prominent {
+                    Button(action: invoke) { symbol }
+                        .buttonStyle(.glassProminent)
+                        .buttonBorderShape(.circle)
+                        .tint(theme.accent)
+                } else {
+                    Button(action: invoke) { symbol }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                }
+            } else {
+                Button(action: invoke) {
+                    symbol.modifier(PlanningIconGlass(prominent: prominent, tint: theme.accent))
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityLabel(accessibilityLabel)
@@ -63,14 +78,11 @@ struct NativeGlassIconButton: View {
         }
     }
 
-    private var visual: some View {
+    private var symbol: some View {
         Image(systemName: icon.rawValue)
             .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(prominent ? Color.white : (neutral ? Color(uiColor: .label) : PlanningPalette.accent))
             .frame(width: PlanningTokens.Header.buttonVisual, height: PlanningTokens.Header.buttonVisual)
-            .scaleEffect(transitionPending ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.12), value: transitionPending)
-            .modifier(PlanningIconGlass(prominent: prominent, tint: theme.accent))
     }
 }
 

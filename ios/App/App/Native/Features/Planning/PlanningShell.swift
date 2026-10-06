@@ -19,7 +19,7 @@ struct PlanningShell: View {
             )
         }
         .planningExtendingSurface(PlanningPalette.paper)
-        .planningMeasuredScrollTopInset()
+        .planningRootSafeArea()
         .planningKeyboardDismiss()
         .navigationBarHidden(true)
         .navigationDestination(for: PlanningRoute.self) { route in

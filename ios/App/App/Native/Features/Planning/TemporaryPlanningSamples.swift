@@ -144,13 +144,10 @@ enum TemporaryPlanningSamples {
     }
 
     private static func demoSkyImage() -> Data {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 80))
-        let image = renderer.image { context in
-            UIColor(red: 0.96, green: 0.62, blue: 0.38, alpha: 1).setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
-            UIColor(red: 0.45, green: 0.62, blue: 0.86, alpha: 1).setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 120, height: 36))
+        if let image = UIImage(named: "planning_photo_memory_sample"),
+           let data = image.jpegData(compressionQuality: 0.9) {
+            return data
         }
-        return image.pngData() ?? Data()
+        return Data()
     }
 }

@@ -472,7 +472,11 @@ final class PlanningSession: ObservableObject {
     @Published var plans: [PlanDocument] = []
     @Published var periodItems: [PlanningNode] = []
     @Published var postponed: [PostponedEntry] = []
-    @Published var events: [PlanningEventRecord] = []
+    @Published var events: [PlanningEventRecord] = [] {
+        didSet { noteFutureEventsChanged() }
+    }
+    private(set) var futureCalendarRevision = 0
+    let futureCalendars = FutureCalendarCache()
     @Published var years: [FutureYearModel] = []
     @Published var selectedYear: Int
     @Published var obligations: [ReflectionObligation] = []
@@ -511,6 +515,18 @@ final class PlanningSession: ObservableObject {
     func select(_ section: PlanningSection) {
         guard index.contains(section) else { return }
         self.section = section
+        if section == .future {
+            futureCalendars.prepare(around: selectedYear, events: events, revision: futureCalendarRevision)
+        }
+    }
+
+    func futureCalendar(year: Int) -> FutureYearCalendarSnapshot {
+        futureCalendars.snapshot(year: year, events: events, revision: futureCalendarRevision)
+    }
+
+    private func noteFutureEventsChanged() {
+        futureCalendarRevision &+= 1
+        futureCalendars.prepare(around: selectedYear, events: events, revision: futureCalendarRevision)
     }
 
     func setWeeklyEnabled(_ enabled: Bool) {
@@ -675,6 +691,7 @@ final class PlanningSession: ObservableObject {
             years.append(PlanningRules.makeYear(selectedYear))
         }
         ensurePeriodDefaults()
+        futureCalendars.prepare(around: selectedYear, events: events, revision: futureCalendarRevision)
     }
 
     func persist(into navigation: TabNavigationState) {

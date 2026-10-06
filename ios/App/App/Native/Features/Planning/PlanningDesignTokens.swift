@@ -88,9 +88,14 @@ enum PlanningTokens {
         static let listSubtaskIndent: CGFloat = 28
     }
 
-    /// Gap above the Future / Monthly / Weekly / Daily intro icon. Plan keeps `PlanMain.titleTop`.
+    /// Half of Plan's previous 35 pt header-to-intro gap.
+    enum PlanIntro {
+        static let topGap: CGFloat = 17.5
+    }
+
+    /// Half of the previous Future / period gap (`35 * 0.67`).
     enum PeriodIntro {
-        static let topGap: CGFloat = PlanMain.titleTop * 0.67
+        static let topGap: CGFloat = 11.725
     }
 
     enum Search {

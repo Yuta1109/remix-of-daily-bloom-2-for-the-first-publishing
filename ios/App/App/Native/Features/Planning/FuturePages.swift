@@ -42,8 +42,7 @@ struct FutureYearPage: View {
     }
 
     private func yearPage(_ year: Int) -> some View {
-        let model = session.years.first(where: { $0.year == year }) ?? PlanningRules.makeYear(year)
-        return ScrollView {
+        ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 PlanningSectionIntro(title: "Future", message: PlanningText.string(.futureDescription), topGap: PlanningTokens.PeriodIntro.topGap) {
                     Image(systemName: "calendar")
@@ -68,17 +67,14 @@ struct FutureYearPage: View {
                     .padding(.top, 12)
                 }
 
+                let calendar = session.futureCalendar(year: year)
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: PlanningTokens.Future.columnGap), count: 3),
                     spacing: PlanningTokens.Future.rowGap
                 ) {
-                    ForEach(model.months) { month in
+                    ForEach(calendar.months) { month in
                         Button { PlanningTransition.perform { selectedMonth = month.month } } label: {
-                            FutureMonthCell(
-                                year: year,
-                                month: month.month,
-                                events: session.events.filter { FutureEventOrder.belongs($0, year: year, month: month.month) }
-                            )
+                            FutureMonthCell(month: month)
                         }
                         .buttonStyle(.plain)
                     }
@@ -89,6 +85,7 @@ struct FutureYearPage: View {
             .padding(.trailing, PlanningTokens.Future.trailingInset)
             .padding(.bottom, 12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .planningScroll()
         .planningInitialScrollMargin()
     }
@@ -278,10 +275,60 @@ enum FutureCalendarMarks {
     }
 }
 
+struct FutureMonthCalendar: Identifiable {
+    var month: Int
+    var rows: [[Int?]]
+    var winnerIDs: [[UUID?]]
+    var colors: [UUID: String]
+    var id: Int { month }
+}
+
+struct FutureYearCalendarSnapshot {
+    var year: Int
+    var revision: Int
+    var months: [FutureMonthCalendar]
+
+    static func build(year: Int, events: [PlanningEventRecord], revision: Int) -> FutureYearCalendarSnapshot {
+        let months = (1...12).map { month -> FutureMonthCalendar in
+            let rows = PlanningCalendarGrid.matrix(year: year, month: month)
+            let relevant = events.filter { FutureEventOrder.belongs($0, year: year, month: month) }
+            var colors: [UUID: String] = [:]
+            let winnerIDs = rows.map { row in
+                row.map { day -> UUID? in
+                    guard let day else { return nil }
+                    guard let winner = FutureCalendarMarks.winner(relevant, year: year, month: month, day: day) else { return nil }
+                    colors[winner.id] = winner.colorID
+                    return winner.id
+                }
+            }
+            return FutureMonthCalendar(month: month, rows: rows, winnerIDs: winnerIDs, colors: colors)
+        }
+        return FutureYearCalendarSnapshot(year: year, revision: revision, months: months)
+    }
+}
+
+/// Survives FutureYearPage recreation. Invalidates when `eventsRevision` changes.
+final class FutureCalendarCache {
+    private var stored: [Int: FutureYearCalendarSnapshot] = [:]
+
+    func snapshot(year: Int, events: [PlanningEventRecord], revision: Int) -> FutureYearCalendarSnapshot {
+        if let existing = stored[year], existing.revision == revision {
+            return existing
+        }
+        let built = FutureYearCalendarSnapshot.build(year: year, events: events, revision: revision)
+        stored[year] = built
+        return built
+    }
+
+    func prepare(around year: Int, events: [PlanningEventRecord], revision: Int) {
+        for candidate in [year - 1, year, year + 1] {
+            _ = snapshot(year: candidate, events: events, revision: revision)
+        }
+    }
+}
+
 private struct FutureMonthCell: View {
-    let year: Int
-    let month: Int
-    let events: [PlanningEventRecord]
+    let month: FutureMonthCalendar
 
     private var weekdays: [String] {
         let symbols = PeriodCalendar.calendar.veryShortWeekdaySymbols
@@ -291,7 +338,7 @@ private struct FutureMonthCell: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("\(month)月")
+            Text("\(month.month)月")
                 .font(.system(size: PlanningTokens.Future.monthFont, weight: .semibold))
                 .foregroundStyle(PlanningPalette.ink)
             HStack(spacing: 0) {
@@ -302,16 +349,12 @@ private struct FutureMonthCell: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            let rows = PlanningCalendarGrid.matrix(year: year, month: month)
             VStack(spacing: 2) {
                 ForEach(0..<PlanningCalendarGrid.rowCount, id: \.self) { row in
-                    let winners: [UUID?] = (0..<PlanningCalendarGrid.columnCount).map { column in
-                        guard let day = rows[row][column] else { return nil }
-                        return FutureCalendarMarks.winner(events, year: year, month: month, day: day)?.id
-                    }
+                    let winners = month.winnerIDs[row]
                     HStack(spacing: 0) {
                         ForEach(0..<PlanningCalendarGrid.columnCount, id: \.self) { column in
-                            dayCell(day: rows[row][column], column: column, winners: winners)
+                            dayCell(day: month.rows[row][column], column: column, winners: winners)
                         }
                     }
                 }
@@ -330,12 +373,12 @@ private struct FutureMonthCell: View {
     }
 
     private func dayCell(day: Int?, column: Int, winners: [UUID?]) -> some View {
-        let event = day.flatMap { FutureCalendarMarks.winner(events, year: year, month: month, day: $0) }
-        let role = FutureCalendarMarks.bandRole(column: column, eventID: event?.id, rowWinners: winners)
+        let eventID = winners[column]
+        let role = FutureCalendarMarks.bandRole(column: column, eventID: eventID, rowWinners: winners)
         return ZStack {
-            if let event, let role {
+            if let eventID, let role {
                 FutureRangeBand(role: role)
-                    .fill(PlanIconColor.resolved(event.colorID).color.opacity(0.26))
+                    .fill(PlanIconColor.resolved(month.colors[eventID] ?? PlanIconColor.defaultID).color.opacity(0.26))
                     .padding(.vertical, 1)
             }
             Text(day.map(String.init) ?? " ")

@@ -19,7 +19,7 @@ struct PeriodPlannerPage: View {
             periodPage(key)
         }
         .background(PlanningTabBarHeightReader(height: $tabBarHeight))
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .overlay(alignment: .bottom) {
             if session.isActivePrompt(ReflectionScope.period(bucket, periodKey)),
                !periodHasSavedMemory(periodKey) {
                 PlanningReflectionDueCard(bucket: bucket, action: {
@@ -89,6 +89,7 @@ struct PeriodPlannerPage: View {
             .padding(.bottom, 16)
             .padding(.bottom, session.isActivePrompt(ReflectionScope.period(bucket, key)) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .planningScroll()
         .planningInitialScrollMargin()
         .planningKeyboardDismiss()
