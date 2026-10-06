@@ -170,12 +170,11 @@ struct PeriodPlannerPage: View {
             let reflected = session.isReflectionComplete(bucket: bucket, periodKey: key)
             let elapsed = PeriodCalendar.periodHasEnded(bucket, key: key)
             let inactive = !session.existingRecord(bucket: bucket, periodKey: key).hasMeaningfulActivity
-            if !reflected, elapsed, inactive {
+            if reflected {
+                ReflectionPeriodSummary(session: session, scope: scope)
+            } else if elapsed, inactive {
                 NoActivityMemorySection(session: session, scope: scope)
             } else {
-                if reflected {
-                    ReflectionResultView(session: session, scope: scope)
-                }
                 periodListSection(.task, key: key, expanded: $tasksExpanded)
                 periodListSection(.event, key: key, expanded: $eventsExpanded)
             }

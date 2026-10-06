@@ -168,8 +168,8 @@ describe("planning period pages", () => {
     expect(periodPage).toContain("copyMonthlyTasks");
   });
 
-  it("allows Monthly and Weekly completion edits and only displays Daily completion", () => {
-    expect(period).toContain("bucket != .daily");
+  it("allows Monthly, Weekly, and Daily completion edits from one source", () => {
+    expect(period).toContain("Daily Planning and Today share");
     expect(period).toContain("func setCompleted");
     expect(period).toContain("func applyExternalDailyCompletion");
     expect(periodPage).toContain("PeriodTypeGlyph");
@@ -184,7 +184,7 @@ describe("planning period pages", () => {
     expect(periodBadge(false, true, false)).toBe(0);
     expect(periodBadge(true, true, false)).toBe(1);
     expect(periodBadge(true, true, true)).toBe(0);
-    expect(periodPage).toContain("ReflectionResultView");
+    expect(periodPage).toContain("ReflectionPeriodSummary");
     expect(periodPage).toContain("isReflectionComplete");
     expect(periodPage).not.toContain("今月の進捗");
     expect(models).toContain("var reflectionDisposition");
@@ -399,7 +399,7 @@ describe("planning item editor", () => {
   });
 
   it("protects daily completion and shares the editor model", () => {
-    expect(period).toContain("bucket != .daily");
+    expect(period).toContain("Daily Planning and Today share");
     expect(itemSheets).toContain("allowsCompletionToggle");
     expect(itemSheets).toContain("Today completion");
     expect(itemSheets).not.toContain("Event status");
@@ -1274,5 +1274,93 @@ describe("planning period lists and reflection windows", () => {
     expect(photo).not.toContain("periodItems.append");
     const diary = samples.slice(samples.indexOf("func seedDemoDiary"), samples.indexOf("func demoSkyImage"));
     expect(diary).not.toContain("periodItems.append");
+  });
+});
+
+describe("phase C-3 reflection and popups", () => {
+  it("replaces completed period lists with the shared summary", () => {
+    const body = periodPage.slice(periodPage.indexOf("func periodBody"), periodPage.indexOf("func monthlyGoal"));
+    expect(body).toContain("ReflectionPeriodSummary");
+    expect(body.indexOf("if reflected")).toBeLessThan(body.indexOf("periodListSection"));
+    expect(reflectionPage).toContain("詳細を見る");
+    expect(reflectionPage).toContain("struct ReflectionAchievementCard");
+    expect(reflectionPage).toContain("struct ReflectionClassificationCard");
+    expect(reflectionPage).toContain("全体の達成率");
+    expect(reflectionPage).toContain("振り返りの分類結果");
+    expect(tokens).toContain("static let ringDiameter: CGFloat = 112");
+    expect(tokens).toContain("static let blockHeight: CGFloat = 82");
+  });
+
+  it("builds one detail page from the same cards and snapshot titles", () => {
+    const detail = reflectionPage.slice(reflectionPage.indexOf("private var detailPage"), reflectionPage.indexOf("private var periodContext"));
+    expect(detail).toContain("ReflectionAchievementCard");
+    expect(detail).toContain("ReflectionClassificationCard");
+    expect(detail).toContain("ToDo の振り返り結果");
+    expect(detail).toContain("予定 の振り返り結果");
+    expect(detail).toContain("振り返りの編集");
+    expect(detail).not.toContain("editBucket");
+    expect(detail).not.toContain("主な項目");
+    expect(detail).not.toContain("Replan");
+    expect(reflectionPage).toContain("該当する項目はありません");
+    expect(reflectionPage).toContain("session.decisions(for: scope)");
+  });
+
+  it("uses the rolling window and an inline alert", () => {
+    expect(reflection).toContain("func reflectionIsEditable");
+    expect(reflection).toContain("case .daily: 7");
+    expect(reflection).toContain("case .weekly: 4");
+    expect(reflection).toContain("case .monthly: 1");
+    expect(reflectionPage).toContain("この振り返りは現在編集できます。");
+    expect(reflectionPage).toContain("この振り返りの編集可能期間は終了しています。");
+    expect(reflectionPage).toContain("編集可能範囲は Daily 7件 / Weekly 4件 / Monthly 1件です。");
+    expect(reflectionPage).toContain("編集可能範囲: Daily 7件 / Weekly 4件 / Monthly 1件");
+    expect(reflectionPage).toContain("新しい振り返りが追加されると、古いものから編集できなくなります。");
+  });
+
+  it("rebuilds the list popup around a plus and a parent timeline", () => {
+    expect(itemSheets).toContain("centerTitle: \"ToDo・予定\"");
+    expect(itemSheets).toContain("confirmIcon: .plus");
+    expect(itemSheets).toContain("checkmark.square.fill");
+    expect(itemSheets).toContain("checkmark.circle.fill");
+    expect(itemSheets).toContain("connectsToNext");
+    expect(itemSheets).toContain("listSubtaskIndent");
+    expect(itemSheets).toContain("timelineGap");
+    const row = itemSheets.slice(itemSheets.indexOf("func parentTimelineRow"), itemSheets.indexOf("func timelineSpan"));
+    expect(row).not.toContain("ellipsis");
+    expect(row).not.toContain("Divider(");
+  });
+
+  it("anchors the source popover and keeps the list sheet open", () => {
+    expect(itemSheets).toContain("presentationCompactAdaptation(.popover)");
+    expect(itemSheets).toContain("showingSources = false");
+    expect(period).toContain("case .monthly: [.plan, .create, .postpone]");
+    expect(period).toContain("case .weekly: [.plan, .create, .postpone, .monthly]");
+    expect(period).toContain("case .daily: [.periods, .create, .postpone]");
+    expect(addSources("daily")).not.toContain("Planから追加");
+  });
+
+  it("rebuilds the editor, date popup, and subtask focus rules", () => {
+    expect(itemSheets).toContain("タスクを追加");
+    expect(itemSheets).toContain("予定を追加");
+    expect(itemSheets).toContain("if kind == .task");
+    expect(itemSheets).toContain("struct PlanningDateTimePopup");
+    expect(itemSheets).toContain("開始日時");
+    expect(itemSheets).toContain("終了日時");
+    expect(itemSheets).toContain("shouldAppendNextRow");
+    expect(itemSheets).toContain("requestFocus(previous)");
+    expect(itemSheets).toContain("resignFirstResponder");
+    expect(itemSheets).toContain("PlanningTransition.perform { editingDate = field }");
+  });
+
+  it("keeps source pages in selection mode", () => {
+    const source = itemSheets.slice(itemSheets.indexOf("struct PeriodSourceSelectionSheet"), itemSheets.indexOf("private enum PlanningDateField"));
+    expect(source).toContain("plan.title");
+    expect(source).toContain("afterToggle");
+    expect(source).toContain("postponeSection(.monthly");
+    expect(source).toContain("postponeSection(.weekly");
+    expect(source).toContain("postponeSection(.daily");
+    expect(source).not.toContain("editingID");
+    expect(period).toContain("Parent on checks children");
+    expect(period).toContain("Children never check the parent");
   });
 });

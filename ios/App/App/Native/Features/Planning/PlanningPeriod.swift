@@ -113,7 +113,8 @@ enum PeriodCalendar {
     }
 
     static func allowsCompletionToggle(_ bucket: PlanningBucket) -> Bool {
-        bucket != .daily
+        _ = bucket
+        return true
     }
 
     static func periodBadge(hasMeaningfulActivity: Bool, outstanding: Bool, completed: Bool, skipped: Bool = false) -> Int {
@@ -222,10 +223,30 @@ extension PlanningSession {
         periodItems.filter { $0.bucket == bucket && $0.periodKey == periodKey && $0.kind == kind }
     }
 
+    /// Daily Planning and Today share `todayTaskID` completion. Parent on checks children. Parent off does not clear them. Children never check the parent.
     @discardableResult
     func setCompleted(nodeID: UUID, completed: Bool) -> Bool {
-        guard let bucket = findNode(nodeID)?.bucket, PeriodCalendar.allowsCompletionToggle(bucket) else { return false }
-        return updateNode(nodeID) { $0.completed = completed }
+        guard let node = findNode(nodeID) else { return false }
+        let isParent = periodItems.contains { $0.id == nodeID }
+        let changed = updateNode(nodeID) { item in
+            item.completed = completed
+            if isParent, completed {
+                for index in item.children.indices {
+                    item.children[index].completed = true
+                }
+            }
+        }
+        if node.bucket == .daily, let todayTaskID = node.todayTaskID {
+            applyExternalDailyCompletion(todayTaskID: todayTaskID, completed: completed)
+        }
+        if isParent, completed {
+            for child in node.children {
+                if child.bucket == .daily, let todayTaskID = child.todayTaskID {
+                    applyExternalDailyCompletion(todayTaskID: todayTaskID, completed: true)
+                }
+            }
+        }
+        return changed
     }
 
     func applyExternalDailyCompletion(todayTaskID: UUID, completed: Bool) {

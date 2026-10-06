@@ -72,6 +72,22 @@ enum PlanningTokens {
         static let progressDiameter: CGFloat = 84
     }
 
+    /// Completed Reflection summary on the period page and the detail page.
+    enum ReflectionSummary {
+        static let inset: CGFloat = 16
+        static let cardRadius: CGFloat = 14
+        static let cardPadding: CGFloat = 15
+        static let ringDiameter: CGFloat = 112
+        static let ringThickness: CGFloat = 11
+        static let blockHeight: CGFloat = 82
+        static let blockGap: CGFloat = 9
+        static let blockRadius: CGFloat = 13
+        static let actionHeight: CGFloat = 50
+        static let actionRadius: CGFloat = 16
+        static let listRowHeight: CGFloat = 48
+        static let listSubtaskIndent: CGFloat = 28
+    }
+
     /// Gap above the Future / Monthly / Weekly / Daily intro icon. Plan keeps `PlanMain.titleTop`.
     enum PeriodIntro {
         static let topGap: CGFloat = PlanMain.titleTop * 0.67

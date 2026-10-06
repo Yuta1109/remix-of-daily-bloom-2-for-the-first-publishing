@@ -306,7 +306,7 @@ ToDo and Events each use the full available width as a large section. Do not use
 
 - Monthly completion may be checked on Monthly.
 - Weekly completion may be checked on Weekly.
-- Daily completion cannot be changed from Planning. It comes from Today. Planning Daily does not show completion checkboxes.
+- Daily completion is editable in Planning. Daily Planning and Today share the same `todayTaskID` completion. Checking a parent checks its subtasks. Checking every subtask does not check the parent. Unchecking a parent does not clear subtasks.
 - Top-level Daily task and event rows use a leading type glyph. Child task rows do not.
 - Planning Daily does not show Routine or Quick Memo. Those stay on Today.
 - Planning Daily contains ToDo and Events only.
@@ -321,7 +321,7 @@ For Monthly progress, a subtask divides the parent's contribution. A child is no
 
 Do not fully wire every integration in Phase 2-A. The model must still allow them.
 
-- A Daily Planning task and the Today task are the same logical task. Only Today may change Daily completion.
+- A Daily Planning task and the Today task are the same logical task. Either surface may change Daily completion through `todayTaskID`.
 - A Planning event and the Calendar event share one stable id. They are not unrelated duplicates.
 - An event created on Monthly can later appear on Weekly where relevant, on Calendar, and optionally on Future.
 - An event created on Daily can later appear on Monthly, Weekly, Calendar, and optionally on Future.

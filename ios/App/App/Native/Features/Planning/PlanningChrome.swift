@@ -673,6 +673,8 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     var maximumBody: CGFloat? = nil
     /// Future event and month editors pass white. Default is the system sheet surface.
     var bodySurface: Color? = nil
+    /// List popup uses plus. Editors keep the check.
+    var confirmIcon: NativeGlassIcon = .check
     @ViewBuilder var content: () -> Content
 
     @State private var stableHeight: CGFloat = 280
@@ -748,7 +750,7 @@ struct PlanningSystemSheetChrome<Content: View>: View {
             }
             Spacer(minLength: 0)
             if showsControls {
-                NativeGlassIconButton(icon: .check, accessibilityLabel: "Confirm", prominent: true, waitsForGlassFeedback: true, action: onConfirm)
+                NativeGlassIconButton(icon: confirmIcon, accessibilityLabel: confirmIcon == .plus ? "Add" : "Confirm", prominent: true, waitsForGlassFeedback: true, action: onConfirm)
                     .disabled(!confirmEnabled)
                     .opacity(confirmEnabled ? 1 : 0.4)
             } else {

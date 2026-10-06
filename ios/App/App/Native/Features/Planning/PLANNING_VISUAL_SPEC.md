@@ -98,7 +98,7 @@ The Future title and description use `PlanningSectionIntro`, the same `PlanMain.
 
 The year is a 3 by 4 grid. Every month card is 120 pt tall with radius 11.5 and a fixed 6 by 7 date grid. A one-day event uses the same pastel band as a one-cell range behind the date number. A multi-day event draws a 0.26 opacity band behind the numbers, with a leading cap, middle segments, and a trailing cap per week row. The first event in repository order wins when dates overlap. The same event id is not copied across weeks, months, or years.
 
-Monthly, Weekly, and Daily mains show summary cards only: ToDo count and completion, and 予定 count. A card opens the list sheet. The list, the source chooser, and the task or event editor share `PlanningSystemSheetChrome`. Daily completion is display-only.
+Monthly, Weekly, and Daily mains show ToDo and 予定 until Reflection is complete. A completed Reflection replaces those lists with the shared summary: period label, achievement card, classification card, and `詳細を見る`. The list popup header is × / `ToDo・予定` / ＋. ＋ opens an anchored popover and leaves the list sheet open. Daily completion is editable and shared with Today.
 
 The month editor, event editor, and date/time editor use `PlanningSystemSheetChrome`: one fitted height, system surface, the same × and ✓ row. The month goal is one line at the editor field height. Long lists scroll inside `maximumBody`. The date sheet shows the calendar, then the Time toggle, then the time wheel only while Time is on. Turning Time on remeasures that one height. A child sheet hides the parent × / ✓ while it is presented.
 
@@ -106,13 +106,13 @@ The month editor, event editor, and date/time editor use `PlanningSystemSheetChr
 
 `PlanningReflectionDueCard` is one component for Monthly, Weekly, and Daily. Its height is `PlanningTokens.ReflectionDue.height`: 1.5× to 2.0× the measured visible system tab-menu height (`tabBarFallback` 49 until `PlanningTabBarHeightReader` finds the bar). It is not based on the 90 pt index tab. The card sits in the period content column, inset by `contentInset` on the left and the right, so its right edge stops before the index seam. It is fixed with `safeAreaInset` above the system tab bar while the page scrolls, and the scroll body keeps bottom space so the last content can clear it. iOS 26 uses `glassEffect`. Earlier systems use ultra-thin material. Text stays dark. The action uses the Essences orange accent.
 
-The classification page lists items only. It has no progress ring, percent, or count summary, and no `進捗サマリー`. The result page shows period, snapshot completion counts, and 維持 / 先送り / 終了 counts. It has no `主な項目` section. A sample result is titled `振り返り結果（例）`. History opens `振り返りを編集`. No-activity copy stays `今月は記録がありませんでした`, `今週は記録がありませんでした`, and `今日は記録がありませんでした`, with `写真 & 一言` and `なんでも日記`.
+The classification page lists items only. It has no progress ring. The completed Reflection detail page reuses the achievement and classification cards, then separate ToDo and 予定 snapshot cards, one `振り返りの編集` button for the current Reflection, and an inline rolling-window alert. It has no `主な項目` section and no Replan. Editability is the latest 7 Daily, 4 Weekly, and 1 Monthly completed Reflections. No-activity copy stays `今月は記録がありませんでした`, `今週は記録がありませんでした`, and `今日は記録がありませんでした`, with `写真 & 一言` and `なんでも日記`.
 
 ## Period lists and Reflection
 
 Below the unchanged intro and period selector, ToDo and 予定 are collapsible Blueprint lists. A 1.25 pt line joins parent-task positions with a 5 pt gap and does not connect subtasks. Photo and Diary periods show only that memory, under the Monthly goal when the page is Monthly.
 
-Reflection is overview, classification, then result. Classification has no progress summary. The result has no `主な項目` and no Replan. Edits live under `振り返りの編集`.
+Phase C-3 supersedes the completed Reflection main page, the result detail, the single current-period edit button, the rolling edit window, editable Daily completion, the parent-task timeline in the list popup, the ＋ header, the anchored source popover, the Task and Event editor, and subtask Enter / Backspace. A nonempty Enter creates the next subtask and keeps the keyboard. An empty Backspace focuses the previous row. An empty Enter dismisses the keyboard. Plan import groups Plan titles. Postpone import is grouped Monthly, Weekly, and Daily. Source rows select and do not open the editor.
 
 ## Shared chrome
 

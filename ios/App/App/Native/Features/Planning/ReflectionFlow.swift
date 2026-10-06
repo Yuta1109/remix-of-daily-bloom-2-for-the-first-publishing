@@ -351,6 +351,15 @@ extension PlanningSession {
         return rows.prefix(limit).map { .period($0.bucket, $0.periodKey) }
     }
 
+    func reflectionIsEditable(_ scope: ReflectionScope) -> Bool {
+        switch scope {
+        case .period(let bucket, _):
+            editableReflections(bucket: bucket).contains(scope)
+        case .future:
+            false
+        }
+    }
+
     func completedHistory(for section: PlanningSection) -> [ReflectionScope] {
         if section == .future {
             let rows = ReflectionRules.history(futureReflections, completed: \.reflectionCompleted, date: \.completedAt)

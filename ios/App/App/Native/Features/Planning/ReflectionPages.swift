@@ -37,7 +37,7 @@ struct ReflectionFlowPage: View {
     }
 
     private var pageTitle: String {
-        if completed { return "振り返り結果" }
+        if completed { return PlanningText.string(.reflectionResult) }
         if step == .classification { return "維持 / 先送り / 終了" }
         switch scope {
         case .period(.monthly, _): return "今月の振り返り"
@@ -102,21 +102,31 @@ struct ReflectionFlowPage: View {
 
     private var detailPage: some View {
         let rows = session.decisions(for: scope)
-        let completion = session.snapshotCompletion(for: scope)
+        let editable = session.reflectionIsEditable(scope)
         return ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(periodContext)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(PlanningPalette.accent)
-                Text("ToDo \(completion.todoDone) / \(completion.todoTotal) 完了")
-                    .font(.subheadline)
-                Text("予定 \(completion.eventDone) / \(completion.eventTotal)")
-                    .font(.subheadline)
-                snapshotGroup(title: "ToDo", rows: rows.filter { $0.kind == .task })
-                snapshotGroup(title: "予定", rows: rows.filter { $0.kind == .event })
-                editWindow
+            VStack(alignment: .leading, spacing: 14) {
+                ReflectionPeriodLabel(text: periodContext)
+                ReflectionAchievementCard(session: session, scope: scope)
+                ReflectionClassificationCard(session: session, scope: scope)
+                ReflectionDispositionCard(title: "ToDo の振り返り結果", icon: "checkmark.square", rows: rows.filter { $0.kind == .task })
+                ReflectionDispositionCard(title: "予定 の振り返り結果", icon: "calendar", rows: rows.filter { $0.kind == .event })
+                Button {
+                    guard editable else { return }
+                    PlanningTransition.perform { navigation.path.append(PlanningRoute.reflectionEdit(scope)) }
+                } label: {
+                    Label("振り返りの編集", systemImage: "pencil")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: PlanningTokens.ReflectionSummary.actionHeight)
+                        .background(PlanningPalette.accent, in: RoundedRectangle(cornerRadius: PlanningTokens.ReflectionSummary.actionRadius, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(!editable)
+                ReflectionEditabilityAlert(editable: editable)
             }
-            .padding(16)
+            .padding(.horizontal, PlanningTokens.ReflectionSummary.inset)
+            .padding(.vertical, 12)
         }
         .planningScroll()
     }
@@ -159,71 +169,6 @@ struct ReflectionFlowPage: View {
             ForEach(items) { item in
                 decisionRow(item)
             }
-        }
-    }
-
-    private func snapshotGroup(title: String, rows: [StoredReflectionDecision]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 16, weight: .semibold))
-            dispositionList("維持", rows.filter { $0.disposition == .keep })
-            dispositionList("先送り", rows.filter { $0.disposition == .postpone })
-            dispositionList("終了", rows.filter { $0.disposition == .stop })
-        }
-    }
-
-    private func dispositionList(_ label: String, _ rows: [StoredReflectionDecision]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: 13, weight: .semibold)).foregroundStyle(dispositionColor(label))
-            ForEach(rows) { row in
-                Text(row.title.isEmpty ? "無題" : row.title)
-                    .font(.system(size: 15))
-                    .foregroundStyle(PlanningPalette.ink)
-            }
-        }
-    }
-
-    private var editWindow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("振り返りの編集")
-                .font(.system(size: 16, weight: .semibold))
-            editBucket(.daily, title: "Daily")
-            editBucket(.weekly, title: "Weekly")
-            editBucket(.monthly, title: "Monthly")
-        }
-        .padding(.top, 8)
-    }
-
-    private func editBucket(_ bucket: PlanningBucket, title: String) -> some View {
-        let scopes = session.editableReflections(bucket: bucket)
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(PlanningPalette.muted)
-            ForEach(scopes, id: \.self) { item in
-                Button {
-                    PlanningTransition.perform { navigation.path.append(PlanningRoute.reflectionEdit(item)) }
-                } label: {
-                    Text(editLabel(item))
-                        .font(.system(size: 15))
-                        .foregroundStyle(PlanningPalette.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(minHeight: 36)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func editLabel(_ scope: ReflectionScope) -> String {
-        switch scope {
-        case .period(let bucket, let key): PeriodCalendar.label(bucket: bucket, key: key)
-        case .future(let year): "\(year)"
-        }
-    }
-
-    private func dispositionColor(_ label: String) -> Color {
-        switch label {
-        case "維持": PlanningPalette.keep
-        case "先送り": PlanningPalette.postpone
-        default: PlanningPalette.stop
         }
     }
 
@@ -334,56 +279,260 @@ struct PlanningReflectionDueCard: View {
     }
 }
 
-struct ReflectionResultView: View {
+struct ReflectionPeriodSummary: View {
     @ObservedObject var session: PlanningSession
     @EnvironmentObject private var navigation: TabNavigationState
     let scope: ReflectionScope
 
     var body: some View {
-        let counts = session.classificationCounts(for: scope)
+        VStack(alignment: .leading, spacing: 14) {
+            ReflectionPeriodLabel(text: periodLabel)
+            ReflectionAchievementCard(session: session, scope: scope)
+            ReflectionClassificationCard(session: session, scope: scope)
+            Button {
+                PlanningTransition.perform { navigation.path.append(PlanningRoute.reflection(scope)) }
+            } label: {
+                Text("詳細を見る")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: PlanningTokens.ReflectionSummary.actionHeight)
+                    .background(PlanningPalette.accent, in: RoundedRectangle(cornerRadius: PlanningTokens.ReflectionSummary.actionRadius, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var periodLabel: String {
+        switch scope {
+        case .period(let bucket, let key): PeriodCalendar.label(bucket: bucket, key: key)
+        case .future(let year): "\(year)年"
+        }
+    }
+}
+
+struct ReflectionPeriodLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 22, weight: .bold))
+            .foregroundStyle(PlanningPalette.accent)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct ReflectionAchievementCard: View {
+    @ObservedObject var session: PlanningSession
+    let scope: ReflectionScope
+
+    var body: some View {
         let completion = session.snapshotCompletion(for: scope)
         let total = completion.todoTotal + completion.eventTotal
         let done = completion.todoDone + completion.eventDone
-        let title = session.reflectionIsSample(scope) ? "振り返り結果（例）" : PlanningText.string(.reflectionResult)
-        return Button {
-            PlanningTransition.perform { navigation.path.append(PlanningRoute.reflection(scope)) }
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 8) {
-                    Image(systemName: "arrow.trianglehead.counterclockwise")
-                        .foregroundStyle(PlanningPalette.accent)
-                    Text(title)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(PlanningPalette.ink)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
+        return HStack(alignment: .center, spacing: 12) {
+            ReflectionSummaryRing(done: done, total: total)
+            VStack(spacing: 0) {
+                achievementRow(
+                    icon: "checkmark",
+                    tint: PlanningPalette.keep,
+                    title: "ToDo",
+                    detail: "\(completion.todoTotal)件中 \(completion.todoDone)件完了",
+                    percent: percent(completion.todoDone, completion.todoTotal)
+                )
+                Divider().overlay(PlanningPalette.line)
+                achievementRow(
+                    icon: "calendar",
+                    tint: PlanningPalette.postpone,
+                    title: "予定",
+                    detail: "\(completion.eventTotal)件中 \(completion.eventDone)件実施",
+                    percent: percent(completion.eventDone, completion.eventTotal)
+                )
+            }
+        }
+        .padding(PlanningTokens.ReflectionSummary.cardPadding)
+        .frame(minHeight: 132)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: PlanningTokens.ReflectionSummary.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: PlanningTokens.ReflectionSummary.cardRadius, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+    }
+
+    private func achievementRow(icon: String, tint: Color, title: String, detail: String, percent: Int) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 40, height: 40)
+                .background(tint.opacity(0.16), in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(PlanningPalette.ink)
+                Text(detail).font(.system(size: 14)).foregroundStyle(PlanningPalette.muted)
+            }
+            Spacer(minLength: 4)
+            Text("\(percent)%").font(.system(size: 20, weight: .semibold)).foregroundStyle(PlanningPalette.ink)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func percent(_ done: Int, _ total: Int) -> Int {
+        guard total > 0 else { return 0 }
+        return Int((Double(done) / Double(total) * 100).rounded())
+    }
+}
+
+struct ReflectionSummaryRing: View {
+    let done: Int
+    let total: Int
+
+    private var fraction: CGFloat {
+        guard total > 0 else { return 0 }
+        return CGFloat(done) / CGFloat(total)
+    }
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(PlanningPalette.line.opacity(0.45), lineWidth: PlanningTokens.ReflectionSummary.ringThickness)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(PlanningPalette.accent, style: StrokeStyle(lineWidth: PlanningTokens.ReflectionSummary.ringThickness, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            VStack(spacing: 2) {
+                Text("\(Int((fraction * 100).rounded()))%")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundStyle(PlanningPalette.ink)
+                Text("全体の達成率")
+                    .font(.system(size: 12))
+                    .foregroundStyle(PlanningPalette.muted)
+            }
+        }
+        .frame(width: PlanningTokens.ReflectionSummary.ringDiameter, height: PlanningTokens.ReflectionSummary.ringDiameter)
+    }
+}
+
+struct ReflectionClassificationCard: View {
+    @ObservedObject var session: PlanningSession
+    let scope: ReflectionScope
+
+    var body: some View {
+        let counts = session.classificationCounts(for: scope)
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("振り返りの分類結果")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(PlanningPalette.ink)
+            HStack(spacing: PlanningTokens.ReflectionSummary.blockGap) {
+                classificationBlock("維持", count: counts.keep, icon: "leaf", tint: PlanningPalette.keep)
+                classificationBlock("先送り", count: counts.postpone, icon: "clock", tint: PlanningPalette.postpone)
+                classificationBlock("終了", count: counts.stop, icon: "xmark", tint: PlanningPalette.stop)
+            }
+        }
+        .padding(PlanningTokens.ReflectionSummary.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: PlanningTokens.ReflectionSummary.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: PlanningTokens.ReflectionSummary.cardRadius, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+    }
+
+    private func classificationBlock(_ title: String, count: Int, icon: String, tint: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(Color.white.opacity(0.7), in: Circle())
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(tint)
+            Text("\(count)件").font(.system(size: 16, weight: .bold)).foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: PlanningTokens.ReflectionSummary.blockHeight)
+        .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: PlanningTokens.ReflectionSummary.blockRadius, style: .continuous))
+    }
+}
+
+struct ReflectionDispositionCard: View {
+    let title: String
+    let icon: String
+    let rows: [StoredReflectionDecision]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(PlanningPalette.accent)
+                    .frame(width: 28, height: 28)
+                Text(title)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(PlanningPalette.ink)
+            }
+            dispositionGroup("維持", rows.filter { $0.disposition == .keep }, PlanningPalette.keep)
+            Divider().overlay(PlanningPalette.line)
+            dispositionGroup("先送り", rows.filter { $0.disposition == .postpone }, PlanningPalette.postpone)
+            Divider().overlay(PlanningPalette.line)
+            dispositionGroup("終了", rows.filter { $0.disposition == .stop }, PlanningPalette.stop)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+    }
+
+    private func dispositionGroup(_ label: String, _ rows: [StoredReflectionDecision], _ tint: Color) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label).font(.system(size: 14, weight: .semibold)).foregroundStyle(tint)
+                Text("\(rows.count)件").font(.system(size: 13, weight: .semibold)).foregroundStyle(tint)
+            }
+            .frame(width: 72, alignment: .leading)
+            VStack(alignment: .leading, spacing: 4) {
+                if rows.isEmpty {
+                    Text("該当する項目はありません")
+                        .font(.system(size: 14))
                         .foregroundStyle(PlanningPalette.muted)
-                }
-                HStack(alignment: .center, spacing: 12) {
-                    ReflectionProgressRing(done: done, total: total, diameter: 56)
-                    VStack(alignment: .leading, spacing: 4) {
-                        resultCount("維持", counts.keep, PlanningPalette.keep)
-                        resultCount("先送り", counts.postpone, PlanningPalette.postpone)
-                        resultCount("終了", counts.stop, PlanningPalette.stop)
+                } else {
+                    ForEach(rows) { row in
+                        HStack(spacing: 6) {
+                            Circle().fill(tint).frame(width: 7, height: 7)
+                            Text(row.title.isEmpty ? "無題" : row.title)
+                                .font(.system(size: 15))
+                                .foregroundStyle(PlanningPalette.ink)
+                        }
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func resultCount(_ label: String, _ count: Int, _ color: Color) -> some View {
-        HStack(spacing: 8) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(label).font(.system(size: 14)).foregroundStyle(PlanningPalette.ink)
             Spacer(minLength: 0)
-            Text("\(count)").font(.system(size: 14, weight: .semibold)).foregroundStyle(color)
         }
+    }
+}
+
+struct ReflectionEditabilityAlert: View {
+    let editable: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: editable ? "info.circle" : "exclamationmark.triangle")
+                .foregroundStyle(editable ? PlanningPalette.accent : PlanningPalette.stop)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(editable ? "この振り返りは現在編集できます。" : "この振り返りの編集可能期間は終了しています。")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(PlanningPalette.ink)
+                if editable {
+                    Text("編集可能範囲は Daily 7件 / Weekly 4件 / Monthly 1件です。")
+                    Text("新しい振り返りが追加されると、古いものから編集できなくなります。")
+                } else {
+                    Text("結果は引き続き確認できますが、分類を変更することはできません。")
+                    Text("編集可能範囲: Daily 7件 / Weekly 4件 / Monthly 1件")
+                }
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(PlanningPalette.muted)
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background((editable ? PlanningPalette.accent : PlanningPalette.stop).opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(editable ? PlanningPalette.accent.opacity(0.45) : PlanningPalette.stop.opacity(0.45), lineWidth: 1)
+        )
     }
 }
 
