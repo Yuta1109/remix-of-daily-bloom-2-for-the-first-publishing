@@ -57,7 +57,7 @@ struct FutureYearPage: View {
 
                 let futureScope = ReflectionScope.future(year)
                 if session.futureReflections.first(where: { $0.year == year })?.reflectionCompleted == true {
-                    ReflectionResultView(session: session, scope: futureScope)
+                    ReflectionPeriodSummary(session: session, scope: futureScope)
                         .padding(.top, 12)
                 } else if year == session.selectedYear, session.isActivePrompt(futureScope) {
                     Button("振り返りを始めますか？") {
