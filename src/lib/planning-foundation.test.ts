@@ -591,7 +591,7 @@ describe("planning blueprint 1", () => {
     expect(sheet).toContain(".pickerStyle(.wheel)");
     expect(chrome).toContain("struct PlanningSystemSheetChrome");
     expect(chrome).not.toContain("presentationSizing(.fitted)");
-    expect(chrome).toContain("presentationDetents([.height(max(stableHeight, 1))])");
+    expect(chrome).toContain("presentationDetents([.height(max(presentedHeight, 1))])");
     expect(plans).toContain("onDismiss");
     expect(plans).toContain("popAfterDismiss");
   });
@@ -822,7 +822,7 @@ describe("planning TestFlight header, sheets, and index", () => {
       chrome.indexOf("struct PlanningHeadingIconSlot"),
     );
     expect(chrome).not.toContain("presentationSizing(.fitted)");
-    expect(system).toContain("guard !keyboardVisible");
+    expect(system).toContain("guard !keyboardObstructing");
     expect(system).not.toContain("bottomSafeArea");
     expect(system).not.toContain("Color.clear.frame(height: PlanningTokens.Sheet.bottomInset)");
     expect(system).not.toContain(".medium");
@@ -946,7 +946,7 @@ describe("planning TestFlight future, discard, and flicker", () => {
     expect(future).toContain("if includesTime");
     expect(future).toContain("PlanningTokens.Sheet.timeWheelHeight");
     expect(future).not.toContain("presentationDetents([.medium, .large])");
-    expect(chrome).toContain("presentationDetents([.height(max(stableHeight, 1))])");
+    expect(chrome).toContain("presentationDetents([.height(max(presentedHeight, 1))])");
     expect(chrome).toContain("view.tintColor = .label");
     expect(chrome).toContain("style: .cancel");
     expect(chrome).toContain("style: .destructive");
@@ -997,7 +997,8 @@ describe("planning chrome polish", () => {
     expect(apply).not.toContain("focusedID = nil");
     expect(glass).toContain("static let duration: TimeInterval = 0.22");
     expect(glass).toContain("NativeGlassFeedback.perform");
-    expect(glass).toContain("isScheduled");
+    expect(glass).toContain("transitionPending");
+    expect(glass).not.toContain("isScheduled");
     expect(plans).toContain("PlanningOutlineFocusCoordinator");
     expect(plans).toContain("pendingFocusID");
     expect(plans).toContain("return false");
@@ -1141,10 +1142,65 @@ describe("planning header icon and sheet geometry", () => {
     expect(tokens).toContain("static let controlDiameter: CGFloat = 44");
     expect(sheet).toContain(".background(Color.clear)");
     expect(sheet).toContain(".ignoresSafeArea(.keyboard, edges: .bottom)");
-    expect(sheet).toContain("PlanningKeyboardOverlap(overlap: $keyboardOverlap)");
-    expect(sheet).toContain(".contentMargins(.bottom, keyboardOverlap, for: .scrollContent)");
+    expect(sheet).toContain("PlanningSheetViewport(maximumVisible: $maximumVisibleSheetHeight, keyboardObstructing: $keyboardObstructing)");
+    expect(sheet).toContain("private var bodyViewportHeight");
+    expect(sheet).not.toContain(".contentMargins(.bottom, keyboardOverlap, for: .scrollContent)");
     expect(sheet.indexOf("controls")).toBeLessThan(sheet.indexOf("ScrollView"));
-    expect(sheet).toContain(".presentationDetents([.height(max(stableHeight, 1))])");
-    expect(sheet).toContain("guard !keyboardVisible");
+    expect(sheet).toContain(".presentationDetents([.height(max(presentedHeight, 1))])");
+    expect(sheet).toContain("guard !keyboardObstructing");
+  });
+});
+
+describe("planning interaction stability", () => {
+  const chrome = readFileSync(`${planningRoot}/PlanningChrome.swift`, "utf8");
+  const glass = readFileSync("ios/App/App/Native/Components/Glass/NativeGlassComponents.swift", "utf8");
+  const tokens = readFileSync(`${planningRoot}/PlanningDesignTokens.swift`, "utf8");
+  const plans = readFileSync(`${planningRoot}/PlanPages.swift`, "utf8");
+  const future = readFileSync(`${planningRoot}/FuturePages.swift`, "utf8");
+  const period = readFileSync(`${planningRoot}/PeriodPlannerPage.swift`, "utf8");
+  const shell = readFileSync(`${planningRoot}/PlanningShell.swift`, "utf8");
+
+  it("clamps the sheet to the visible region and keeps the header out of the body", () => {
+    const sheet = chrome.slice(chrome.indexOf("struct PlanningSystemSheetChrome"), chrome.indexOf("struct PlanningHeadingIconSlot"));
+    expect(sheet).toContain("min(max(stableHeight, 1), maximumVisibleSheetHeight)");
+    expect(sheet).toContain("presentedHeight - PlanningTokens.Sheet.headerHeight");
+    expect(chrome).toContain("PlanningTokens.Sheet.platterTopGap");
+    expect(sheet).toContain("VStack(spacing: 0)");
+    expect(sheet.indexOf("controls")).toBeLessThan(sheet.indexOf("ScrollView"));
+    expect(sheet).not.toContain(".overlay(alignment: .top)");
+    expect(future).toContain("maximumBody: PlanningTokens.Sheet.maximumBody");
+  });
+
+  it("dismisses the keyboard before a transition and not on outline focus moves", () => {
+    expect(glass).toContain("enum PlanningTransition");
+    expect(glass).toContain("resignFirstResponder");
+    const transition = glass.slice(glass.indexOf("enum PlanningTransition"), glass.indexOf("enum NativeGlassIcon"));
+    expect(transition.indexOf("resignFirstResponder")).toBeLessThan(transition.indexOf("NativeGlassFeedback.perform"));
+    const submit = plans.slice(plans.indexOf("func textFieldShouldReturn"), plans.indexOf("func textField("));
+    expect(submit).toContain("return false");
+    expect(submit).not.toContain("PlanningTransition");
+    expect(submit).not.toContain("resignFirstResponder");
+    const backspace = plans.slice(plans.indexOf("func textField(_ textField: UITextField, shouldChangeCharactersIn"), plans.indexOf("enum PlanBulletReturn"));
+    expect(backspace).toContain("handleEmptyDelete");
+    expect(backspace).not.toContain("PlanningTransition");
+  });
+
+  it("keeps glass feedback local to the tapped control", () => {
+    expect(glass).not.toContain("isScheduled");
+    expect(glass).toContain("guard !transitionPending else { return }");
+    expect(glass).toContain("Button(action: invoke)");
+    expect(glass).not.toContain("DragGesture");
+    expect(shell).toContain("NativeGlassIconButton(icon: .postpone, accessibilityLabel: \"Postpone Box\", waitsForGlassFeedback: true, action: onPostpone)");
+    const icon = glass.slice(glass.indexOf("struct NativeGlassIconButton"), glass.indexOf("struct NativeGlassTextButton"));
+    expect(icon).not.toContain(".regular.interactive()");
+  });
+
+  it("shares one reduced intro gap for Future and the period pages", () => {
+    expect(tokens).toContain("static let topGap: CGFloat = PlanMain.titleTop * 0.67");
+    expect(tokens).toContain("static let titleTop: CGFloat = 35");
+    expect(future).toContain("topGap: PlanningTokens.PeriodIntro.topGap");
+    expect(period).toContain("topGap: PlanningTokens.PeriodIntro.topGap");
+    const planIntro = plans.slice(plans.indexOf("PlanningSectionIntro("), plans.indexOf("PlanningHeadingIconSlot"));
+    expect(planIntro).not.toContain("PeriodIntro.topGap");
   });
 });

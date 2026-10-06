@@ -58,6 +58,11 @@ enum PlanningTokens {
         static let chevronHit: CGFloat = 44
     }
 
+    /// Gap above the Future / Monthly / Weekly / Daily intro icon. Plan keeps `PlanMain.titleTop`.
+    enum PeriodIntro {
+        static let topGap: CGFloat = PlanMain.titleTop * 0.67
+    }
+
     enum Search {
         static let height: CGFloat = 38
         static let inset: CGFloat = 16
@@ -130,6 +135,8 @@ enum PlanningTokens {
         /// 16 pt top + 44 pt control + 16 pt bottom.
         static let headerHeight: CGFloat = 76
         static let controlDiameter: CGFloat = 44
+        /// Space kept above a keyboard-clamped sheet so the platter top stays on screen.
+        static let platterTopGap: CGFloat = 10
         static let topInset: CGFloat = 18
         static let sectionSpacing: CGFloat = 22
         static let bottomInset: CGFloat = 20

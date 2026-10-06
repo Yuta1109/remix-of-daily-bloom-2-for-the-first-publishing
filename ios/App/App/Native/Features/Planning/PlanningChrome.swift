@@ -153,10 +153,20 @@ private struct PlanningToolbarMaterial: ViewModifier {
 /// Orange capsule used by New / Edit Plan. iOS 26 uses prominent glass with an orange tint.
 struct PlanningSavePill: View {
     let action: () -> Void
+    @State private var transitionPending = false
+
+    private func invoke() {
+        guard !transitionPending else { return }
+        transitionPending = true
+        PlanningTransition.perform {
+            transitionPending = false
+            action()
+        }
+    }
 
     var body: some View {
         if #available(iOS 26.0, *) {
-            Button(action: { NativeGlassFeedback.perform(action) }) {
+            Button(action: invoke) {
                 Text(PlanningText.string(.save))
                     .font(.system(size: 15.5, weight: .semibold))
                     .padding(.horizontal, 14)
@@ -168,7 +178,7 @@ struct PlanningSavePill: View {
             .frame(minWidth: 44, minHeight: 44)
             .accessibilityLabel(PlanningText.string(.save))
         } else {
-            Button(action: { NativeGlassFeedback.perform(action) }) {
+            Button(action: invoke) {
                 Text(PlanningText.string(.save))
                     .font(.system(size: 15.5, weight: .semibold))
                     .foregroundStyle(Color.white)
@@ -316,9 +326,10 @@ private struct PlanningSheetMeasureKey: PreferenceKey {
     }
 }
 
-/// Overlap between this view and the keyboard. Applied only to a sheet body.
-private struct PlanningKeyboardOverlap: UIViewRepresentable {
-    @Binding var overlap: CGFloat
+/// Measures how tall a sheet can be while its top stays inside the visible platter.
+private struct PlanningSheetViewport: UIViewRepresentable {
+    @Binding var maximumVisible: CGFloat
+    @Binding var keyboardObstructing: Bool
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
@@ -328,33 +339,124 @@ private struct PlanningKeyboardOverlap: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.host = uiView
+        context.coordinator.publish()
+    }
 
-    func makeCoordinator() -> Coordinator { Coordinator(overlap: $overlap) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(maximumVisible: $maximumVisible, keyboardObstructing: $keyboardObstructing)
+    }
 
     final class Coordinator {
-        var overlap: Binding<CGFloat>
+        var maximumVisible: Binding<CGFloat>
+        var keyboardObstructing: Binding<Bool>
+        weak var host: UIView?
         var token: NSObjectProtocol?
+        var keyboardFrame: CGRect?
 
-        init(overlap: Binding<CGFloat>) { self.overlap = overlap }
+        init(maximumVisible: Binding<CGFloat>, keyboardObstructing: Binding<Bool>) {
+            self.maximumVisible = maximumVisible
+            self.keyboardObstructing = keyboardObstructing
+        }
 
         func observe(_ view: UIView) {
+            host = view
             token = NotificationCenter.default.addObserver(
                 forName: UIResponder.keyboardWillChangeFrameNotification,
                 object: nil,
                 queue: .main
-            ) { [weak self, weak view] note in
-                guard let self, let view, let window = view.window,
-                      let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-                let viewFrame = view.convert(view.bounds, to: window)
-                let next = max(0, viewFrame.intersection(frame).height)
-                if abs(next - self.overlap.wrappedValue) > 0.5 { self.overlap.wrappedValue = next }
+            ) { [weak self] note in
+                self?.keyboardFrame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
+                self?.publish()
             }
+        }
+
+        func publish() {
+            guard let window = host?.window else { return }
+            let frame: CGRect
+            if let keyboardFrame {
+                frame = window.convert(keyboardFrame, from: nil)
+            } else {
+                frame = CGRect(x: 0, y: window.bounds.maxY, width: window.bounds.width, height: 0)
+            }
+            let topClearance = window.safeAreaInsets.top + PlanningTokens.Sheet.platterTopGap
+            let limit = max(PlanningTokens.Sheet.headerHeight + 1, frame.minY - topClearance)
+            let obstructing = frame.height > 1 && frame.minY < window.bounds.maxY - 1
+            if abs(limit - maximumVisible.wrappedValue) > 0.5 { maximumVisible.wrappedValue = limit }
+            if keyboardObstructing.wrappedValue != obstructing { keyboardObstructing.wrappedValue = obstructing }
         }
 
         deinit {
             if let token { NotificationCenter.default.removeObserver(token) }
         }
+    }
+}
+
+/// Scrolls only the focused field into the already-shrunk body viewport.
+private struct PlanningFocusedFieldScroller: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        context.coordinator.observe()
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.host = uiView
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        weak var host: UIView?
+        var token: NSObjectProtocol?
+
+        func observe() {
+            token = NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardWillChangeFrameNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
+                let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+                guard let window = self?.host?.window, let frame, frame.minY < window.bounds.maxY - 1 else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + duration) { self?.scrollIfNeeded() }
+            }
+        }
+
+        func scrollIfNeeded() {
+            guard let window = host?.window, let responder = window.planningFirstResponder() else { return }
+            guard let scroll = responder.planningEnclosingScrollView() else { return }
+            let rect = responder.convert(responder.bounds, to: scroll).insetBy(dx: 0, dy: -12)
+            let visible = scroll.bounds.inset(by: scroll.adjustedContentInset)
+            if visible.contains(rect) { return }
+            scroll.scrollRectToVisible(rect, animated: true)
+        }
+
+        deinit {
+            if let token { NotificationCenter.default.removeObserver(token) }
+        }
+    }
+}
+
+private extension UIView {
+    func planningFirstResponder() -> UIView? {
+        if isFirstResponder { return self }
+        for child in subviews {
+            if let found = child.planningFirstResponder() { return found }
+        }
+        return nil
+    }
+
+    func planningEnclosingScrollView() -> UIScrollView? {
+        var current: UIView? = superview
+        while let view = current {
+            if let scroll = view as? UIScrollView { return scroll }
+            current = view.superview
+        }
+        return nil
     }
 }
 
@@ -389,12 +491,22 @@ struct PlanningGlassAction: View {
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
+    @State private var transitionPending = false
     private var accent: Color { Color(red: 0.916, green: 0.524, blue: 0.244) }
+
+    private func invoke() {
+        guard !transitionPending else { return }
+        transitionPending = true
+        PlanningTransition.perform {
+            transitionPending = false
+            action()
+        }
+    }
 
     var body: some View {
         Group {
             if #available(iOS 26.0, *) {
-                Button(action: { NativeGlassFeedback.perform(action) }) {
+                Button(action: invoke) {
                     Text(title)
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Color.white)
@@ -404,7 +516,7 @@ struct PlanningGlassAction: View {
                 .buttonStyle(.glassProminent)
                 .tint(accent)
             } else {
-                Button(action: { NativeGlassFeedback.perform(action) }) {
+                Button(action: invoke) {
                     Text(title)
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Color.white)
@@ -561,10 +673,18 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     @State private var stableHeight: CGFloat = 280
-    @State private var keyboardOverlap: CGFloat = 0
+    @State private var maximumVisibleSheetHeight: CGFloat = 4000
+    @State private var keyboardObstructing = false
 
     private var surface: Color { bodySurface ?? Color(uiColor: .systemBackground) }
-    private var keyboardVisible: Bool { keyboardOverlap > 1 }
+    /// Fitted content height, never taller than the region above the keyboard.
+    private var presentedHeight: CGFloat {
+        min(max(stableHeight, 1), maximumVisibleSheetHeight)
+    }
+    /// Header stays intact. Only the body viewport shrinks.
+    private var bodyViewportHeight: CGFloat {
+        max(presentedHeight - PlanningTokens.Sheet.headerHeight, 1)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -573,21 +693,21 @@ struct PlanningSystemSheetChrome<Content: View>: View {
                 sheetBody
             }
             .scrollIndicators(.hidden)
-            .contentMargins(.bottom, keyboardOverlap, for: .scrollContent)
-            .frame(height: max(stableHeight - PlanningTokens.Sheet.headerHeight, 1))
+            .frame(height: bodyViewportHeight)
+            .background(PlanningFocusedFieldScroller())
         }
         .frame(maxWidth: .infinity, alignment: .top)
         .background(surface)
         .ignoresSafeArea(.keyboard, edges: .bottom)
-        .background(PlanningKeyboardOverlap(overlap: $keyboardOverlap))
+        .background(PlanningSheetViewport(maximumVisible: $maximumVisibleSheetHeight, keyboardObstructing: $keyboardObstructing))
         .onPreferenceChange(PlanningSheetMeasureKey.self) { value in
-            guard !keyboardVisible, value > 1 else { return }
+            guard !keyboardObstructing, value > 1 else { return }
             let total = value + PlanningTokens.Sheet.headerHeight
             let cap = maximumBody ?? total
             let next = min(total, cap)
             if abs(next - stableHeight) > 0.5 { stableHeight = next }
         }
-        .presentationDetents([.height(max(stableHeight, 1))])
+        .presentationDetents([.height(max(presentedHeight, 1))])
         .presentationDragIndicator(.hidden)
         .presentationBackground(surface)
     }
@@ -650,6 +770,7 @@ struct PlanningHeadingIconSlot: View {
 struct PlanningSectionIntro<Icon: View>: View {
     let title: String
     let message: String
+    var topGap: CGFloat = PlanningTokens.PlanMain.titleTop
     @ViewBuilder var icon: () -> Icon
 
     var body: some View {
@@ -662,7 +783,7 @@ struct PlanningSectionIntro<Icon: View>: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            .padding(.top, PlanningTokens.PlanMain.titleTop)
+            .padding(.top, topGap)
             Text(message)
                 .font(.system(size: PlanningTokens.PlanMain.paragraphSize))
                 .lineSpacing(PlanningTokens.PlanMain.paragraphLineSpacing)

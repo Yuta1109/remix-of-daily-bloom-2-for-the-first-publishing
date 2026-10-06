@@ -80,9 +80,9 @@ private struct PlanningHeader: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Spacer(minLength: 8)
-            NativeGlassIconButton(icon: .postpone, accessibilityLabel: "Postpone Box", action: onPostpone)
-            NativeGlassIconButton(icon: .help, accessibilityLabel: "Planning help", action: onHelp)
-            NativeGlassIconButton(icon: .user, accessibilityLabel: "User", action: onUser)
+            NativeGlassIconButton(icon: .postpone, accessibilityLabel: "Postpone Box", waitsForGlassFeedback: true, action: onPostpone)
+            NativeGlassIconButton(icon: .help, accessibilityLabel: "Planning help", waitsForGlassFeedback: true, action: onHelp)
+            NativeGlassIconButton(icon: .user, accessibilityLabel: "User", waitsForGlassFeedback: true, action: onUser)
         }
         .padding(.horizontal, PlanningTokens.contentInset)
         .frame(maxWidth: .infinity)

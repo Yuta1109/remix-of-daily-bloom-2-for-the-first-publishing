@@ -138,7 +138,7 @@ struct PeriodItemListSheet: View {
             .padding(.bottom, 72)
         }
         .overlay(alignment: .bottomTrailing) {
-            NativeGlassIconButton(icon: .plus, accessibilityLabel: "Add", prominent: true) {
+            NativeGlassIconButton(icon: .plus, accessibilityLabel: "Add", prominent: true, waitsForGlassFeedback: true) {
                 showingSources = true
             }
             .padding(16)
@@ -245,7 +245,9 @@ struct PeriodSourceChooser: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(PeriodCalendar.addSources(for: bucket)) { source in
                     Button(source.title) {
-                        if source == .create { onCreate() } else { picking = source }
+                        PlanningTransition.perform {
+                            if source == .create { onCreate() } else { picking = source }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)

@@ -22,7 +22,7 @@ struct PeriodPlannerPage: View {
                 PlanningReflectionDueCard(bucket: bucket, action: {
                     let scope = ReflectionScope.period(bucket, periodKey)
                     session.refreshDue(scope)
-                    navigation.path.append(PlanningRoute.reflection(scope))
+                    PlanningTransition.perform { navigation.path.append(PlanningRoute.reflection(scope)) }
                 }, tabBarHeight: tabBarHeight)
                 .padding(.leading, PlanningTokens.contentInset)
                 .padding(.trailing, PlanningTokens.contentInset)
@@ -68,7 +68,8 @@ struct PeriodPlannerPage: View {
             VStack(alignment: .leading, spacing: 12) {
                 PlanningSectionIntro(
                     title: introTitle,
-                    message: PlanningText.string(introKey)
+                    message: PlanningText.string(introKey),
+                    topGap: PlanningTokens.PeriodIntro.topGap
                 ) {
                     Image(systemName: introSymbol)
                         .font(.system(size: 20, weight: .semibold))
@@ -117,7 +118,7 @@ struct PeriodPlannerPage: View {
     private func periodBar(_ key: String) -> some View {
         ZStack {
             Button {
-                showingPicker = true
+                PlanningTransition.perform { showingPicker = true }
             } label: {
                 Text(PeriodCalendar.label(bucket: bucket, key: key))
                     .foregroundStyle(PlanningPalette.ink)
@@ -189,7 +190,7 @@ struct PeriodPlannerPage: View {
         .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .onTapGesture { editingGoal = true }
+        .onTapGesture { PlanningTransition.perform { editingGoal = true } }
     }
 
     private var monthlyGoalEditor: some View {

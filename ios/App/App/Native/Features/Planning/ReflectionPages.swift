@@ -208,13 +208,13 @@ struct ReflectionResultView: View {
             Text("\(PlanningText.string(.postponeCount)) \(counts.postpone)件")
             Text("\(PlanningText.string(.stopCount)) \(counts.stop)件")
             Button("結果を開く") {
-                navigation.path.append(PlanningRoute.reflection(scope))
+                PlanningTransition.perform { navigation.path.append(PlanningRoute.reflection(scope)) }
             }
             .buttonStyle(.bordered)
             Button("Replan") { session.select(.plan) }
                 .buttonStyle(.bordered)
             Button("振り返り履歴") {
-                navigation.path.append(PlanningRoute.reflectionHistory)
+                PlanningTransition.perform { navigation.path.append(PlanningRoute.reflectionHistory) }
             }
             .buttonStyle(.bordered)
         }
@@ -260,7 +260,7 @@ struct ReflectionHistoryPage: View {
     private func historyCard(_ scope: ReflectionScope) -> some View {
         let counts = session.classificationCounts(for: scope)
         return Button {
-            navigation.path.append(PlanningRoute.reflectionEdit(scope))
+            PlanningTransition.perform { navigation.path.append(PlanningRoute.reflectionEdit(scope)) }
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(historyTitle(scope))
@@ -372,7 +372,7 @@ struct NoActivityMemorySection: View {
     var body: some View {
         if let entry, entry.saved {
             Button {
-                navigation.path.append(PlanningRoute.planningMemory(scope))
+                PlanningTransition.perform { navigation.path.append(PlanningRoute.planningMemory(scope)) }
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.kind == .photoNote ? PlanningText.string(.photoAndLine) : PlanningText.string(.anythingDiary))
@@ -436,7 +436,7 @@ struct NoActivityMemorySection: View {
             if entry == nil {
                 session.addMemory(scope: scope, kind: kind, text: "", hasPhoto: false)
             }
-            navigation.path.append(PlanningRoute.planningMemory(scope))
+            PlanningTransition.perform { navigation.path.append(PlanningRoute.planningMemory(scope)) }
         } label: {
             Text(title)
                 .font(.system(size: 17, weight: .semibold))

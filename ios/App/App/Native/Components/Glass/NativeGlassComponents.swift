@@ -1,17 +1,19 @@
 import SwiftUI
 
 enum NativeGlassFeedback {
-    /// Matches the system glass press. Buttons that dismiss or navigate wait for this once.
+    /// Visual delay only. It does not decide whether a tap counts, and it does not lock other controls.
     static let duration: TimeInterval = 0.22
-    private static var isScheduled = false
 
     static func perform(_ action: @escaping () -> Void) {
-        guard !isScheduled else { return }
-        isScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
-            isScheduled = false
-            action()
-        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: action)
+    }
+}
+
+/// Leaves the current screen or sheet. The keyboard resigns before the glass delay, then navigation runs once.
+enum PlanningTransition {
+    static func perform(_ action: @escaping () -> Void) {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        NativeGlassFeedback.perform(action)
     }
 }
 
@@ -36,6 +38,7 @@ struct NativeGlassIconButton: View {
     var action: () -> Void
 
     @Environment(\.appTheme) private var theme
+    @State private var transitionPending = false
 
     var body: some View {
         Button(action: invoke) {
@@ -48,8 +51,13 @@ struct NativeGlassIconButton: View {
     }
 
     private func invoke() {
+        guard !transitionPending else { return }
         if waitsForGlassFeedback || icon == .back {
-            NativeGlassFeedback.perform(action)
+            transitionPending = true
+            PlanningTransition.perform {
+                transitionPending = false
+                action()
+            }
         } else {
             action()
         }
@@ -60,6 +68,8 @@ struct NativeGlassIconButton: View {
             .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(prominent ? Color.white : (neutral ? Color(uiColor: .label) : PlanningPalette.accent))
             .frame(width: PlanningTokens.Header.buttonVisual, height: PlanningTokens.Header.buttonVisual)
+            .scaleEffect(transitionPending ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.12), value: transitionPending)
             .modifier(PlanningIconGlass(prominent: prominent, tint: theme.accent))
     }
 }
@@ -74,9 +84,9 @@ private struct PlanningIconGlass: ViewModifier {
             if prominent {
                 content
                     .background(Circle().fill(tint))
-                    .glassEffect(.regular.interactive(), in: Circle())
+                    .glassEffect(.regular, in: Circle())
             } else {
-                content.glassEffect(.regular.interactive(), in: Circle())
+                content.glassEffect(.regular, in: Circle())
             }
         } else {
             content

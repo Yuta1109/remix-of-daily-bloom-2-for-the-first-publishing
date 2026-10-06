@@ -45,7 +45,7 @@ struct FutureYearPage: View {
         let model = session.years.first(where: { $0.year == year }) ?? PlanningRules.makeYear(year)
         return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                PlanningSectionIntro(title: "Future", message: PlanningText.string(.futureDescription)) {
+                PlanningSectionIntro(title: "Future", message: PlanningText.string(.futureDescription), topGap: PlanningTokens.PeriodIntro.topGap) {
                     Image(systemName: "calendar")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PlanningPalette.ink)
@@ -62,7 +62,7 @@ struct FutureYearPage: View {
                 } else if year == session.selectedYear, session.isActivePrompt(futureScope) {
                     Button("振り返りを始めますか？") {
                         session.refreshDue(futureScope)
-                        navigation.path.append(PlanningRoute.reflection(futureScope))
+                        PlanningTransition.perform { navigation.path.append(PlanningRoute.reflection(futureScope)) }
                     }
                     .buttonStyle(.borderedProminent)
                     .padding(.top, 12)
@@ -73,7 +73,7 @@ struct FutureYearPage: View {
                     spacing: PlanningTokens.Future.rowGap
                 ) {
                     ForEach(model.months) { month in
-                        Button { selectedMonth = month.month } label: {
+                        Button { PlanningTransition.perform { selectedMonth = month.month } } label: {
                             FutureMonthCell(
                                 year: year,
                                 month: month.month,
@@ -101,7 +101,7 @@ struct FutureYearPage: View {
                     .foregroundStyle(PlanningPalette.ink)
                     .frame(width: 44, height: 44)
             }
-            Button { showingYearPicker = true } label: {
+            Button { PlanningTransition.perform { showingYearPicker = true } } label: {
                 Text(FutureYearText.label(year))
                     .font(.title3.bold())
                     .foregroundStyle(PlanningPalette.ink)
@@ -432,7 +432,7 @@ struct FutureMonthSheet: View {
                             .font(.system(size: 15, weight: .semibold))
                         Spacer()
                         Button {
-                            editingEventID = FutureEventRoute(id: UUID())
+                            PlanningTransition.perform { editingEventID = FutureEventRoute(id: UUID()) }
                         } label: {
                             Image(systemName: "plus")
                                 .font(.system(size: 17, weight: .semibold))
@@ -450,7 +450,7 @@ struct FutureMonthSheet: View {
                     } else {
                         ForEach(events) { event in
                             Button {
-                                editingEventID = FutureEventRoute(id: event.id)
+                                PlanningTransition.perform { editingEventID = FutureEventRoute(id: event.id) }
                             } label: {
                                 eventRow(event)
                             }
@@ -655,7 +655,7 @@ private struct FutureEventSheet: View {
     }
 
     private func momentButton(displayYear: Int, displayMonth: Int, day: Int?, minutes: Int?, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button(action: { PlanningTransition.perform(action) }) {
             Text(day == nil ? PlanningText.string(.unset) : FutureEventText.range(year: displayYear, month: displayMonth, startDay: day, startMinutes: minutes, endDay: nil, endMinutes: nil))
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)

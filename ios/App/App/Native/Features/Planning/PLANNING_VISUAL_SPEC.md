@@ -114,9 +114,9 @@ Pushed pages and the Planning root use the same translucent header as `Planning 
 
 Future and the period pages page with `PlanningHorizontalPager`, a transparent horizontal `ScrollView`. Planning paper is one surface on the shell, extended under the system tab bar and behind the keyboard. It is not painted only on an inner scroll view.
 
-`PlanningSystemSheetChrome` is one continuous sheet surface. The × / ✓ row is a real 76 pt header with a clear background. The sheet root ignores the keyboard safe area. Keyboard overlap is applied only as the body scroll inset. The detent stays frozen while that overlap is visible.
+`PlanningSystemSheetChrome` is one continuous sheet surface. The × / ✓ row is a real 76 pt header with a clear background. The presented height is the fitted height clamped to the visible area above the keyboard, and only the body viewport shrinks. The fitted measurement stays frozen while the keyboard is up.
 
-`NativeGlassFeedback` waits 0.22 s, once, before a glass control dismisses or navigates. Back, sheet × / ✓, and the primary CTAs use it. The Back control's glass is a 30 pt circle inside a 44 pt plain hit target. Outline rows register live `UITextField`s with `PlanningOutlineFocusCoordinator`. Return keeps the current field first responder until the next row is in a window.
+`PlanningTransition` resigns the keyboard, then `NativeGlassFeedback` waits 0.22 s before that control navigates. The wait is per control. Outline Return and Backspace do not use it. The Back control is one 44 pt circle. Outline rows register live `UITextField`s with `PlanningOutlineFocusCoordinator`. Return keeps the current field first responder until the next row is in a window.
 
 ## Navigation contract
 

@@ -107,8 +107,10 @@ struct PlanListPage: View {
                 }
 
                 Button {
-                    let id = session.beginPlan()
-                    navigation.path.append(PlanningRoute.planEditor(id))
+                    PlanningTransition.perform {
+                        let id = session.beginPlan()
+                        navigation.path.append(PlanningRoute.planEditor(id))
+                    }
                 } label: {
                     Text("＋  \(PlanningText.string(.newPlanButton))")
                         .font(.system(size: PlanningTokens.PlanMain.buttonFontSize, weight: .semibold))
@@ -144,7 +146,7 @@ struct PlanListPage: View {
                     .foregroundStyle(PlanningPalette.ink)
                 Spacer()
                 Button {
-                    navigation.path.append(PlanningRoute.planList)
+                    PlanningTransition.perform { navigation.path.append(PlanningRoute.planList) }
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 15, weight: .semibold))
@@ -167,13 +169,13 @@ struct PlanListPage: View {
                 } else {
                     ForEach(previews) { plan in
                         PlanCardRow(plan: plan) {
-                            navigation.path.append(PlanningRoute.planEditor(plan.id))
+                            PlanningTransition.perform { navigation.path.append(PlanningRoute.planEditor(plan.id)) }
                         }
                     }
                     let remaining = session.savedPlansNewestFirst.count - previews.count
                     if remaining > 0 {
                         Button {
-                            navigation.path.append(PlanningRoute.planList)
+                            PlanningTransition.perform { navigation.path.append(PlanningRoute.planList) }
                         } label: {
                             Text(PlanningText.morePlans(remaining))
                                 .font(.system(size: 14))
@@ -218,7 +220,7 @@ struct PlanFullListPage: View {
                     } else {
                         ForEach(plans) { plan in
                             PlanCardRow(plan: plan) {
-                                navigation.path.append(PlanningRoute.planEditor(plan.id))
+                                PlanningTransition.perform { navigation.path.append(PlanningRoute.planEditor(plan.id)) }
                             }
                             .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: PlanningTokens.PlanMain.cardCorner, style: .continuous))
                         }
@@ -929,7 +931,7 @@ private struct PlanDestinationSheet: View {
 
                 label(.destinationPeriod)
                 Button {
-                    showingPeriodPicker = true
+                    PlanningTransition.perform { showingPeriodPicker = true }
                 } label: {
                     Text(PeriodCalendar.label(bucket: bucket, key: periodKey))
                         .font(.system(size: 17))
