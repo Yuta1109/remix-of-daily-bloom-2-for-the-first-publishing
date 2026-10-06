@@ -82,6 +82,16 @@ struct FutureReflectionRecord: Identifiable, Hashable {
     var id: Int { year }
 }
 
+enum ReflectionEditWindow {
+    static func limit(for bucket: PlanningBucket) -> Int {
+        switch bucket {
+        case .daily: 7
+        case .weekly: 4
+        case .monthly: 1
+        }
+    }
+}
+
 enum ReflectionRules {
     static let historyLimit = 5
 
@@ -330,6 +340,15 @@ extension PlanningSession {
             apply(record.decisions[index], scope: scope, previous: previous)
             storeFuture(record)
         }
+    }
+
+    /// Latest completed reflections only. Older completed records stay viewable and are not editable.
+    func editableReflections(bucket: PlanningBucket) -> [ReflectionScope] {
+        let limit = ReflectionEditWindow.limit(for: bucket)
+        let rows = periodRecords
+            .filter { $0.bucket == bucket && $0.reflectionCompleted && $0.completedAt != nil }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        return rows.prefix(limit).map { .period($0.bucket, $0.periodKey) }
     }
 
     func completedHistory(for section: PlanningSection) -> [ReflectionScope] {

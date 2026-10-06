@@ -18,6 +18,9 @@ enum PlanningPalette {
     static let rail = Color(red: 0.55, green: 0.42, blue: 0.32)
     /// Generic Planning accent. User-selected item colors stay on `PlanIconColor`.
     static let accent = Color(red: 0.916, green: 0.524, blue: 0.244)
+    static let keep = Color(red: 0.36, green: 0.58, blue: 0.40)
+    static let postpone = Color(red: 0.72, green: 0.52, blue: 0.20)
+    static let stop = Color(red: 0.70, green: 0.32, blue: 0.28)
 }
 
 /// Stable Plan icon colours. Stored as an id, never as a SwiftUI Color.

@@ -229,7 +229,7 @@ describe("planning reflection", () => {
     expect(reflectionPage).not.toContain("この期間の記録");
     expect(reflectionPage).toContain(".reflectionResult");
     expect(planText).toContain("振り返り結果");
-    expect(reflectionPage).toContain("Button(\"Replan\")");
+    expect(reflectionPage).not.toContain("Button(\"Replan\")");
     expect(reflectionPage).toContain("addMemory");
     expect(reflectionPage).toContain("updateHistoricalDecision");
     expect(reflectionPage).toContain("PlanningReflectionDueCard");
@@ -382,11 +382,11 @@ describe("planning item editor", () => {
   });
 
   it("opens sheets from the section and keeps the source lists", () => {
-    const section = periodPage.slice(periodPage.indexOf("func itemSection"), periodPage.indexOf("func sectionTitle"));
+    const section = periodPage.slice(periodPage.indexOf("func periodListSection"), periodPage.indexOf("private struct PeriodParentTimeline"));
     expect(section).not.toContain("追加");
-    expect(section).not.toContain("ForEach(nodes)");
-    expect(section).toContain("onTapGesture");
-    expect(section).toContain("完了");
+    expect(section).toContain("chevron.down");
+    expect(section).not.toContain("件");
+    expect(periodPage).toContain("PeriodItemListSheet");
     expect(itemSheets).toContain("PlanningSystemSheetChrome(");
     expect(itemSheets).toContain("ForEach(PlanIconColor.allCases)");
     expect(itemSheets).toContain("if kind == .task");
@@ -1202,5 +1202,77 @@ describe("planning interaction stability", () => {
     expect(period).toContain("topGap: PlanningTokens.PeriodIntro.topGap");
     const planIntro = plans.slice(plans.indexOf("PlanningSectionIntro("), plans.indexOf("PlanningHeadingIconSlot"));
     expect(planIntro).not.toContain("PeriodIntro.topGap");
+  });
+});
+
+describe("planning period lists and reflection windows", () => {
+  const periodPage = readFileSync(`${planningRoot}/PeriodPlannerPage.swift`, "utf8");
+  const reflectionPage = readFileSync(`${planningRoot}/ReflectionPages.swift`, "utf8");
+  const reflection = readFileSync(`${planningRoot}/ReflectionFlow.swift`, "utf8");
+  const tokens = readFileSync(`${planningRoot}/PlanningDesignTokens.swift`, "utf8");
+  const samples = readFileSync(`${planningRoot}/TemporaryPlanningSamples.swift`, "utf8");
+
+  function editable(dates: number[], limit: number): number[] {
+    return [...dates].sort((left, right) => right - left).slice(0, limit);
+  }
+
+  it("uses a parent timeline and collapsible sections without counts", () => {
+    expect(periodPage).toContain("chevron.down");
+    expect(periodPage).toContain("struct PeriodParentTimeline");
+    expect(tokens).toContain("static let timelineGap: CGFloat = 5");
+    expect(tokens).toContain("static let subtaskIndent: CGFloat = 16");
+    expect(periodPage).toContain("showsIcon: false");
+    const timeline = periodPage.slice(periodPage.indexOf("struct PeriodParentTimeline"), periodPage.indexOf("struct PeriodEventRow"));
+    expect(timeline).toContain("connectsToNext");
+    expect(timeline).not.toContain("Divider(");
+    const header = periodPage.slice(periodPage.indexOf("func periodListSection"), periodPage.indexOf("struct PeriodParentTimeline"));
+    expect(header).not.toContain("件");
+    expect(periodPage).toContain("PlanningTransition.perform(action)");
+  });
+
+  it("splits reflection into overview, classification, and snapshot detail", () => {
+    expect(reflectionPage).toContain("Button(action: action)");
+    const overview = reflectionPage.slice(reflectionPage.indexOf("private var overviewPage"), reflectionPage.indexOf("private var classificationPage"));
+    expect(overview).toContain("ReflectionProgressRing");
+    expect(overview).toContain("\"ToDo\"");
+    expect(overview).toContain("\"予定\"");
+    const classification = reflectionPage.slice(reflectionPage.indexOf("private var classificationPage"), reflectionPage.indexOf("private var detailPage"));
+    expect(classification).not.toContain("ReflectionProgressRing");
+    expect(classification).toContain("\"ToDo\"");
+    expect(classification).toContain("\"予定\"");
+    expect(reflectionPage).toContain("item.completed ? \"完了\" : \"未完了\"");
+    expect(reflection).toContain("canCompleteReflection");
+    expect(reflectionPage).toContain("維持");
+    expect(reflectionPage).toContain("先送り");
+    expect(reflectionPage).toContain("終了");
+    expect(reflectionPage).not.toContain("主な項目");
+    expect(reflectionPage).not.toContain("Button(\"Replan\")");
+    expect(reflectionPage).toContain("session.decisions(for: scope)");
+  });
+
+  it("keeps rolling completed-reflection edit windows", () => {
+    expect(editable([8, 7, 6, 5, 4, 3, 2, 1], 7)).toEqual([8, 7, 6, 5, 4, 3, 2]);
+    expect(editable([8, 7, 6, 5, 4, 3, 2, 1], 7)).not.toContain(1);
+    expect(editable([5, 4, 3, 2, 1], 4)).toEqual([5, 4, 3, 2]);
+    expect(editable([5, 4, 3, 2, 1], 4)).not.toContain(1);
+    expect(editable([2, 1], 1)).toEqual([2]);
+    expect(reflection).toContain("case .daily: 7");
+    expect(reflection).toContain("case .weekly: 4");
+    expect(reflection).toContain("case .monthly: 1");
+    expect(reflectionPage).toContain("振り返りの編集");
+  });
+
+  it("keeps photo and diary off the task lists", () => {
+    const body = periodPage.slice(periodPage.indexOf("func periodBody"), periodPage.indexOf("func monthlyGoal"));
+    expect(body).toContain("SavedPeriodMemory");
+    expect(body.indexOf("if let entry")).toBeLessThan(body.indexOf("periodListSection"));
+    expect(reflectionPage).toContain("一言を入力");
+    expect(reflectionPage).toContain("PlanningRoute.planningMemory");
+    expect(samples).toContain("kind: .photoNote");
+    expect(samples).toContain("kind: .diary");
+    const photo = samples.slice(samples.indexOf("func seedDemoPhoto"), samples.indexOf("func seedDemoDiary"));
+    expect(photo).not.toContain("periodItems.append");
+    const diary = samples.slice(samples.indexOf("func seedDemoDiary"), samples.indexOf("func demoSkyImage"));
+    expect(diary).not.toContain("periodItems.append");
   });
 });

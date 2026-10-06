@@ -268,7 +268,7 @@ Events created here must be able to sync later with Monthly, Weekly when relevan
 
 ## Period sources
 
-Monthly, Weekly, and Daily mains are overviews. Each shows the shared intro, the existing period selector, a ToDo summary card, and a 予定 summary card. The cards do not list or edit items. Tapping a card opens that list sheet. The add button lives inside the list sheet.
+Monthly, Weekly, and Daily mains keep the shared intro and the existing period selector. Below that, ToDo and 予定 are separate collapsible lists. Parent task checkboxes share one timeline; the line joins parent positions and does not connect a parent to its subtasks. There is no horizontal group separator and no count in the section heading. A row opens the existing list sheet. The add button stays inside that sheet. Photo and Diary periods do not show ToDo or 予定.
 
 Monthly shares the one Future monthly goal. Weekly keeps its own items and can later be turned off without deleting history. Daily shows completion and does not change it. Today owns completion. Daily does not include Routine or Quick Memo.
 
@@ -338,16 +338,18 @@ Defaults already established:
 - Monthly: month boundary, beginning-versus-end configurable
 - Future: end of year, date configurable
 
-A Reflection is due only when the period had meaningful activity, the default time has passed, and it is neither completed nor skipped. That state is `PlanningReflectionDueCard`, fixed above the system tab bar. It does not scroll with the page. No-activity, skipped, and completed periods do not show it.
+A Reflection is due only when the period had meaningful activity, the default time has passed, and it is neither completed nor skipped. That state is `PlanningReflectionDueCard`, fixed above the system tab bar. The whole card is the tap target. It does not scroll with the page. No-activity, skipped, completed, and Photo/Diary periods do not show it.
 
-The classification page has no progress summary. Each relevant item gets exactly one of 維持, 先送り, or 終了. Completion does not choose the classification. `結果を確定する` stays disabled until every item is classified, then stores a historical snapshot.
+The flow is overview, then classification, then the result. The overview shows circular progress and separates ToDo from 予定. The classification page has no progress summary. Each relevant item shows 完了 or 未完了 and exactly one of 維持, 先送り, or 終了. Completion does not choose the classification. `完了` stays disabled until every item is classified, then stores a historical snapshot and returns to the period page.
 
 After Reflection:
 
-- The period page shows the result counts, not the due card.
-- The result reads the snapshot. It has no `主な項目` section and no points, XP, rewards, or streaks.
-- Optional Replan stays available. Replan is never mandatory.
-- Completed history keeps the latest 5 completed Reflections per type. Skips and memory entries are not history.
+- The period page shows the result card, not the due card.
+- The result has progress plus 維持, 先送り, and 終了. It has no `主な項目` section and no Replan.
+- Detail lists the stored snapshot, with ToDo and 予定 separate.
+- Historical edits start only from `振り返りの編集` on that detail page.
+- Editable completed windows are the latest 7 Daily, 4 Weekly, and 1 Monthly. Older completed records stay viewable and read-only.
+- Photo and Diary are not Reflections.
 
 ## No-activity periods
 
@@ -364,9 +366,9 @@ Offer exactly two alternatives, neither of which counts as Reflection, a badge, 
 
 Temporary TestFlight examples cover the previous three months, three weeks, and three days. The nearest previous period is a Reflection result, the second is Photo & one line, and the third is Anything Diary. They live only in `TemporaryPlanningSamples`, are marked `isSample`, and are skipped when that period already has a record. They are not written to Firebase.
 
-## Reflection history
+## Reflection editing
 
-Later history supports Future, Monthly, Weekly, and Daily, and shows the last 5 completed Reflections. Opening one opens `振り返りを編集`, which corrects that period's stored snapshot through `updateHistoricalDecision`. Periods that were never reflected are excluded. Keep, Postpone, and Stop stay editable under the established Reflection-window rules. The data model must not discard this.
+`振り返りの編集` lists only the editable completed windows: latest 7 Daily, latest 4 Weekly, and latest 1 Monthly. Opening one opens `振り返りを編集`, which corrects that period's stored snapshot through `updateHistoricalDecision`. Expired reflections stay on their period as results and are absent from the edit list. Photo and Diary records are not in this list.
 
 ## Weekly setting
 

@@ -58,6 +58,20 @@ enum PlanningTokens {
         static let chevronHit: CGFloat = 44
     }
 
+    enum PeriodBody {
+        static let sectionGap: CGFloat = 12
+        static let cardRadius: CGFloat = 14
+        static let cardPadding: CGFloat = 12
+        static let rowHeight: CGFloat = 36
+        static let checkboxColumn: CGFloat = 22
+        static let timelineWidth: CGFloat = 1.25
+        /// Gap between a parent checkbox and the timeline, so the line does not touch the box.
+        static let timelineGap: CGFloat = 5
+        static let subtaskIndent: CGFloat = 16
+        static let goalIcon: CGFloat = 38
+        static let progressDiameter: CGFloat = 84
+    }
+
     /// Gap above the Future / Monthly / Weekly / Daily intro icon. Plan keeps `PlanMain.titleTop`.
     enum PeriodIntro {
         static let topGap: CGFloat = PlanMain.titleTop * 0.67

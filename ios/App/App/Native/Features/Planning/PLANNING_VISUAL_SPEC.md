@@ -108,6 +108,12 @@ The month editor, event editor, and date/time editor use `PlanningSystemSheetChr
 
 The classification page lists items only. It has no progress ring, percent, or count summary, and no `進捗サマリー`. The result page shows period, snapshot completion counts, and 維持 / 先送り / 終了 counts. It has no `主な項目` section. A sample result is titled `振り返り結果（例）`. History opens `振り返りを編集`. No-activity copy stays `今月は記録がありませんでした`, `今週は記録がありませんでした`, and `今日は記録がありませんでした`, with `写真 & 一言` and `なんでも日記`.
 
+## Period lists and Reflection
+
+Below the unchanged intro and period selector, ToDo and 予定 are collapsible Blueprint lists. A 1.25 pt line joins parent-task positions with a 5 pt gap and does not connect subtasks. Photo and Diary periods show only that memory, under the Monthly goal when the page is Monthly.
+
+Reflection is overview, classification, then result. Classification has no progress summary. The result has no `主な項目` and no Replan. Edits live under `振り返りの編集`.
+
 ## Shared chrome
 
 Pushed pages and the Planning root use the same translucent header as `Planning の使い方`: iOS 26 system glass, earlier systems ultra-thin material. Page content scrolls underneath. The system tab bar stays system-owned, with automatic glass on iOS 26 and material before that. No opaque white block is painted behind the header or the tab bar.
