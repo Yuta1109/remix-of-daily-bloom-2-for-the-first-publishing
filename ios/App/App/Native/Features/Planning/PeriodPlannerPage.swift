@@ -68,7 +68,7 @@ struct PeriodPlannerPage: View {
 
     private func periodPage(_ key: String) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
                 PlanningSectionIntro(
                     title: introTitle,
                     message: PlanningText.string(introKey),
@@ -80,8 +80,11 @@ struct PeriodPlannerPage: View {
                         .foregroundStyle(PlanningPalette.accent)
                 }
                 periodBar(key)
+                    .padding(.top, 18)
+                    .padding(.bottom, 16)
                 if bucket == .monthly {
                     monthlyGoal(key)
+                        .padding(.bottom, 16)
                 }
                 periodBody(key)
             }
@@ -174,8 +177,10 @@ struct PeriodPlannerPage: View {
             } else if elapsed, inactive {
                 NoActivityMemorySection(session: session, scope: scope)
             } else {
-                periodListSection(.task, key: key, expanded: $tasksExpanded)
-                periodListSection(.event, key: key, expanded: $eventsExpanded)
+                VStack(spacing: 18) {
+                    periodListSection(.task, key: key, expanded: $tasksExpanded)
+                    periodListSection(.event, key: key, expanded: $eventsExpanded)
+                }
             }
         }
     }
@@ -183,7 +188,9 @@ struct PeriodPlannerPage: View {
     private func monthlyGoal(_ key: String) -> some View {
         let parts = PeriodCalendar.monthParts(key)
         let goal = session.goal(year: parts.year, month: parts.month)
-        return HStack(alignment: .center, spacing: 12) {
+        let reflected = session.isReflectionComplete(bucket: .monthly, periodKey: key)
+        let message = reflected ? "今月の振り返りを見てみよう！" : (goal.isEmpty ? "目標を入れてみよう！" : goal)
+        return HStack(alignment: .center, spacing: 14) {
             Image(systemName: "flag.fill")
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(PlanningPalette.accent)
@@ -192,17 +199,18 @@ struct PeriodPlannerPage: View {
                 Text("今月の目標")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(PlanningPalette.accent)
-                Text(goal.isEmpty ? "目標は1つ" : goal)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(goal.isEmpty ? PlanningPalette.muted : PlanningPalette.ink)
-                    .lineLimit(1)
+                Text(message)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(PlanningPalette.ink)
+                    .lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
-        .background(PlanningPalette.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(16)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: PlanningTokens.PeriodBody.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: PlanningTokens.PeriodBody.cardRadius, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+        .shadow(color: PlanningPalette.ink.opacity(0.04), radius: 8, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: PlanningTokens.PeriodBody.cardRadius, style: .continuous))
         .onTapGesture { PlanningTransition.perform { editingGoal = true } }
     }
 
@@ -233,23 +241,49 @@ struct PeriodPlannerPage: View {
             } label: {
                 HStack {
                     Text(kind == .task ? "ToDo" : "予定")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(PlanningPalette.ink)
                     Spacer(minLength: 0)
-                    Image(systemName: expanded.wrappedValue ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.down")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(PlanningPalette.muted)
+                        .rotationEffect(.degrees(expanded.wrappedValue ? 0 : -90))
                         .frame(width: 44, height: 28)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if expanded.wrappedValue {
-                if kind == .task {
-                    PeriodParentTimeline(nodes: nodes) { addingKind = kind }
+                if nodes.isEmpty {
+                    Button {
+                        PlanningTransition.perform { addingKind = kind }
+                    } label: {
+                        Text(kind == .task ? "まだタスクはありません" : "まだ予定はありません")
+                            .font(.system(size: 15))
+                            .foregroundStyle(PlanningPalette.muted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                } else if kind == .task {
+                    PeriodParentTimeline(nodes: nodes, periodKey: key) { nodeID in
+                        guard let node = session.findNode(nodeID) else { return }
+                        _ = session.setCompleted(nodeID: nodeID, completed: !node.completed)
+                    } open: {
+                        addingKind = kind
+                    }
                 } else {
                     VStack(spacing: 0) {
-                        ForEach(nodes) { node in
-                            PeriodEventRow(node: node) { addingKind = kind }
+                        ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
+                            if index > 0 {
+                                Rectangle().fill(PlanningPalette.line).frame(height: 0.5).padding(.leading, PlanningTokens.PeriodBody.checkboxColumn)
+                            }
+                            PeriodEventRow(node: node, periodKey: key) { nodeID in
+                                guard let node = session.findNode(nodeID) else { return }
+                                _ = session.setCompleted(nodeID: nodeID, completed: !node.completed)
+                            } open: {
+                                addingKind = kind
+                            }
                         }
                     }
                 }
@@ -259,17 +293,26 @@ struct PeriodPlannerPage: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white, in: RoundedRectangle(cornerRadius: PlanningTokens.PeriodBody.cardRadius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: PlanningTokens.PeriodBody.cardRadius, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+        .shadow(color: PlanningPalette.ink.opacity(0.04), radius: 8, y: 3)
     }
 }
 
 /// Parent checkboxes share one X. The line joins those positions and does not touch them.
 private struct PeriodParentTimeline: View {
     let nodes: [PlanningNode]
+    let periodKey: String
+    let toggle: (UUID) -> Void
     let open: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
+                if index > 0 {
+                    Rectangle()
+                        .fill(PlanningPalette.line)
+                        .frame(height: 0.5)
+                        .padding(.vertical, 6)
+                }
                 parentBlock(node, connectsToNext: index < nodes.count - 1)
             }
         }
@@ -277,7 +320,7 @@ private struct PeriodParentTimeline: View {
 
     private func parentBlock(_ node: PlanningNode, connectsToNext: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            PeriodOverviewRow(node: node, square: true, showsIcon: true, action: open)
+            PeriodOverviewRow(node: node, periodKey: periodKey, square: true, showsIcon: true, compact: false, toggle: toggle, action: open)
             if connectsToNext || !node.children.isEmpty {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(spacing: 0) {
@@ -296,7 +339,7 @@ private struct PeriodParentTimeline: View {
                     if !node.children.isEmpty {
                         VStack(spacing: 0) {
                             ForEach(node.children) { child in
-                                PeriodOverviewRow(node: child, square: true, showsIcon: false, action: open)
+                                PeriodOverviewRow(node: child, periodKey: periodKey, square: true, showsIcon: false, compact: true, toggle: toggle, action: open)
                             }
                         }
                         .padding(.leading, PlanningTokens.PeriodBody.subtaskIndent)
@@ -309,76 +352,111 @@ private struct PeriodParentTimeline: View {
 
 private struct PeriodEventRow: View {
     let node: PlanningNode
+    let periodKey: String
+    let toggle: (UUID) -> Void
     let open: () -> Void
 
     var body: some View {
-        PeriodOverviewRow(node: node, square: false, showsIcon: true, action: open)
+        PeriodOverviewRow(node: node, periodKey: periodKey, square: false, showsIcon: true, compact: false, toggle: toggle, action: open)
     }
 }
 
 private struct PeriodTypeGlyph: View {
     let square: Bool
     let completed: Bool
+    var side: CGFloat = 18
+
+    private var espresso: Color { Color(red: 0.29, green: 0.22, blue: 0.16) }
 
     var body: some View {
-        Group {
+        ZStack {
             if square {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .stroke(PlanningPalette.ink.opacity(0.7), lineWidth: 1.4)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(completed ? espresso : PlanningPalette.muted.opacity(0.55), lineWidth: 1.4)
                     .background {
                         if completed {
-                            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(PlanningPalette.accent.opacity(0.2))
+                            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(espresso)
                         }
                     }
-                    .frame(width: 16, height: 16)
             } else {
-                Image(systemName: completed ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 16))
-                    .foregroundStyle(completed ? PlanningPalette.accent : PlanningPalette.ink.opacity(0.7))
+                Circle()
+                    .stroke(completed ? espresso : PlanningPalette.muted.opacity(0.55), lineWidth: 1.4)
+                    .background {
+                        if completed { Circle().fill(espresso) }
+                    }
+            }
+            if completed {
+                Image(systemName: "checkmark")
+                    .font(.system(size: side * 0.55, weight: .bold))
+                    .foregroundStyle(Color.white)
             }
         }
+        .frame(width: side, height: side)
+        .accessibilityLabel(completed ? Text("完了") : Text("未完了"))
+    }
+}
+
+struct PlanningCategoryIconBubble: View {
+    let symbol: String
+    let colorID: String
+
+    var body: some View {
+        let tint = PlanIconColor.resolved(colorID).color
+        Image(systemName: symbol)
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(tint)
+            .frame(width: 42, height: 42)
+            .background(tint.opacity(0.18), in: Circle())
     }
 }
 
 private struct PeriodOverviewRow: View {
     let node: PlanningNode
+    let periodKey: String
     let square: Bool
     let showsIcon: Bool
+    let compact: Bool
+    let toggle: (UUID) -> Void
     let action: () -> Void
 
     var body: some View {
-        Button(action: { PlanningTransition.perform(action) }) {
-            HStack(alignment: .center, spacing: 8) {
-                PeriodTypeGlyph(square: square, completed: node.completed)
-                    .frame(width: PlanningTokens.PeriodBody.checkboxColumn, height: PlanningTokens.PeriodBody.rowHeight)
-                if node.bucket == .daily, node.completed {
-                    Text("完了")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(PlanningPalette.muted)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(node.title.isEmpty ? "無題" : node.title)
-                        .font(.system(size: 15, weight: .regular))
-                        .foregroundStyle(PlanningPalette.ink)
-                        .lineLimit(1)
-                    if let secondary = secondaryText {
-                        Text(secondary)
-                            .font(.system(size: 12))
-                            .foregroundStyle(PlanningPalette.muted)
+        HStack(alignment: .center, spacing: 8) {
+            Button {
+                toggle(node.id)
+            } label: {
+                PeriodTypeGlyph(square: square, completed: node.completed, side: compact ? 15 : 18)
+                    .frame(width: PlanningTokens.PeriodBody.checkboxColumn, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Button(action: { PlanningTransition.perform(action) }) {
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(node.title.isEmpty ? "無題" : node.title)
+                            .font(.system(size: compact ? 14 : 16, weight: compact ? .regular : .semibold))
+                            .foregroundStyle(PlanningPalette.ink)
                             .lineLimit(1)
+                        if let secondary = secondaryText {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 11, weight: .medium))
+                                Text(secondary)
+                                    .font(.system(size: 12))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(PlanningPalette.muted)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if showsIcon, let symbol = configuredSymbol {
+                        PlanningCategoryIconBubble(symbol: symbol, colorID: node.colorID)
                     }
                 }
-                Spacer(minLength: 0)
-                if showsIcon, let symbol = configuredSymbol {
-                    Image(systemName: symbol)
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(PlanIconColor.resolved(node.colorID).color)
-                        .frame(width: 22, height: 22)
-                }
+                .frame(maxWidth: .infinity, minHeight: compact ? 36 : 48, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(minHeight: PlanningTokens.PeriodBody.rowHeight)
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
     private var configuredSymbol: String? {
@@ -387,11 +465,7 @@ private struct PeriodOverviewRow: View {
     }
 
     private var secondaryText: String? {
-        guard let day = node.startDay else { return nil }
-        if let minutes = node.startMinutes {
-            return String(format: "%d日 %d:%02d", day, minutes / 60, minutes % 60)
-        }
-        return "\(day)日"
+        PeriodCalendar.mainSchedule(periodKey: periodKey, month: node.scheduleMonth, day: node.startDay, minutes: node.startMinutes)
     }
 }
 

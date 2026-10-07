@@ -285,7 +285,7 @@ struct ReflectionPeriodSummary: View {
     let scope: ReflectionScope
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             ReflectionAchievementCard(session: session, scope: scope)
             ReflectionClassificationCard(session: session, scope: scope)
             Button {
@@ -330,7 +330,7 @@ struct ReflectionAchievementCard: View {
                     icon: "checkmark",
                     tint: PlanningPalette.keep,
                     title: "ToDo",
-                    detail: "\(completion.todoTotal)件中 \(completion.todoDone)件完了",
+                    detail: "\(completion.todoTotal)件中\(completion.todoDone)件完了",
                     percent: percent(completion.todoDone, completion.todoTotal)
                 )
                 Divider().overlay(PlanningPalette.line)
@@ -338,7 +338,7 @@ struct ReflectionAchievementCard: View {
                     icon: "calendar",
                     tint: PlanningPalette.postpone,
                     title: "予定",
-                    detail: "\(completion.eventTotal)件中 \(completion.eventDone)件実施",
+                    detail: "\(completion.eventTotal)件中\(completion.eventDone)件実施",
                     percent: percent(completion.eventDone, completion.eventTotal)
                 )
             }
@@ -358,11 +358,13 @@ struct ReflectionAchievementCard: View {
                 .frame(width: 40, height: 40)
                 .background(tint.opacity(0.16), in: Circle())
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(PlanningPalette.ink)
+                HStack(spacing: 8) {
+                    Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(PlanningPalette.ink)
+                    Text("\(percent)%").font(.system(size: 20, weight: .semibold)).foregroundStyle(PlanningPalette.ink)
+                }
                 Text(detail).font(.system(size: 14)).foregroundStyle(PlanningPalette.muted)
             }
-            Spacer(minLength: 4)
-            Text("\(percent)%").font(.system(size: 20, weight: .semibold)).foregroundStyle(PlanningPalette.ink)
+            Spacer(minLength: 0)
         }
         .padding(.vertical, 8)
     }
@@ -706,6 +708,96 @@ struct PlanningMemoryPhoto: View {
     }
 }
 
+/// Museum frame for a dynamic photo. The picture itself is content, not a fixed asset.
+struct PlanningFramedPhoto: View {
+    let image: UIImage?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Capsule()
+                .fill(Color(red: 0.62, green: 0.48, blue: 0.28))
+                .frame(width: 58, height: 8)
+                .overlay(alignment: .bottom) {
+                    Ellipse()
+                        .fill(Color(red: 1, green: 0.93, blue: 0.72).opacity(0.85))
+                        .frame(width: 90, height: 16)
+                        .blur(radius: 6)
+                        .offset(y: 10)
+                }
+                .padding(.bottom, 6)
+            Group {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    Color(red: 0.93, green: 0.90, blue: 0.86)
+                        .frame(height: 180)
+                }
+            }
+            .padding(8)
+            .background(Color(red: 0.99, green: 0.97, blue: 0.94))
+            .overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1))
+            .padding(14)
+            .background(Color(red: 0.95, green: 0.91, blue: 0.85))
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .shadow(color: PlanningPalette.ink.opacity(0.14), radius: 18, y: 10)
+            .padding(.horizontal, 6)
+        }
+        .padding(.top, 4)
+    }
+}
+
+struct PlanningDiaryCard: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 12) {
+                Text("なんでも日記")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(PlanningPalette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(alignment: .bottomLeading) {
+                        Rectangle()
+                            .fill(Color(red: 0.62, green: 0.48, blue: 0.28).opacity(0.45))
+                            .frame(height: 1.5)
+                            .offset(y: 7)
+                    }
+                Spacer(minLength: 8)
+                Image(systemName: "pencil.and.scribble")
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(PlanningPalette.muted.opacity(0.75))
+            }
+            Text(text)
+                .font(.system(size: 16))
+                .lineSpacing(14)
+                .foregroundStyle(PlanningPalette.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(DiaryRuledLines().allowsHitTesting(false))
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0.995, green: 0.985, blue: 0.965), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+    }
+}
+
+private struct DiaryRuledLines: View {
+    var body: some View {
+        Canvas { context, size in
+            var y: CGFloat = 26
+            while y < size.height {
+                var path = Path()
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+                context.stroke(path, with: .color(PlanningPalette.line.opacity(0.7)), lineWidth: 0.6)
+                y += 30
+            }
+        }
+    }
+}
+
 struct SavedPeriodMemory: View {
     @ObservedObject var session: PlanningSession
     @EnvironmentObject private var navigation: TabNavigationState
@@ -714,57 +806,38 @@ struct SavedPeriodMemory: View {
 
     var body: some View {
         if entry.kind == .photoNote {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 18) {
                 Button { openEditor() } label: { savedPhoto }
                     .buttonStyle(.plain)
                 Button { openEditor() } label: {
                     Text(entry.text.isEmpty ? "一言を入力" : entry.text)
                         .font(.system(size: 16))
+                        .lineSpacing(6)
                         .foregroundStyle(PlanningPalette.ink)
+                        .multilineTextAlignment(.leading)
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 20)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(entry.dateText.isEmpty ? periodLabel : entry.dateText)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(PlanningPalette.muted)
-                Button { openEditor() } label: {
-                    Text(entry.title.isEmpty ? "無題" : entry.title)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(PlanningPalette.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                Button { openEditor() } label: {
-                    Text(entry.text)
-                        .font(.system(size: 15))
-                        .foregroundStyle(PlanningPalette.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
+            Button { openEditor() } label: {
+                PlanningDiaryCard(text: entry.text)
             }
+            .buttonStyle(.plain)
         }
     }
 
     private var savedPhoto: some View {
         Group {
             if let data = entry.imageData, let image = UIImage(data: data) {
-                PlanningMemoryPhoto(image: image)
+                PlanningFramedPhoto(image: image)
             } else {
-                PlanningPalette.card
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 160)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                PlanningFramedPhoto(image: nil)
             }
-        }
-    }
-
-    private var periodLabel: String {
-        switch scope {
-        case .period(let bucket, let key): PeriodCalendar.label(bucket: bucket, key: key)
-        case .future(let year): "\(year)"
         }
     }
 

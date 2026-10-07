@@ -96,7 +96,7 @@ enum PeriodCalendar {
         case .weekly:
             let start = date(from: key) ?? Date()
             let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
-            return "\(dayLabel(start))～\(shortDayLabel(end))"
+            return "\(dayLabel(start))〜\(shortDayLabel(end))"
         case .daily:
             let date = date(from: key) ?? Date()
             let weekday = calendar.shortWeekdaySymbols[calendar.component(.weekday, from: date) - 1]
@@ -133,6 +133,25 @@ enum PeriodCalendar {
         nodes.flatMap { node in
             node.children.isEmpty ? [node] : flattenedLeaves(node.children)
         }
+    }
+
+    /// Main-card schedule line: `9/15（火）` or `9/20（日）19:00`.
+    static func mainSchedule(periodKey: String, month: Int?, day: Int?, minutes: Int?) -> String? {
+        guard let day else { return nil }
+        let parts = monthParts(periodKey)
+        let month = min(12, max(1, month ?? parts.month))
+        let weekday: String
+        if let date = calendar.date(from: DateComponents(year: parts.year, month: month, day: day)) {
+            let index = calendar.component(.weekday, from: date) - 1
+            weekday = calendar.shortWeekdaySymbols[index]
+        } else {
+            weekday = ""
+        }
+        var text = "\(month)/\(day)（\(weekday)）"
+        if let minutes {
+            text += " \(minutes / 60):" + String(format: "%02d", minutes % 60)
+        }
+        return text
     }
 
     static func monthParts(_ key: String) -> (year: Int, month: Int) {

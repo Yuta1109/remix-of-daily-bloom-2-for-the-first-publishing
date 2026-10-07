@@ -25,14 +25,7 @@ enum TemporaryPlanningSamples {
             PostponedEntry(title: "夕方の散歩", kind: .event, bucket: .daily, isSample: true)
         ])
 
-        session.periodItems.append(contentsOf: [
-            sampleParent(title: "健康的な生活", child: "朝のストレッチ", bucket: .monthly, key: monthly, kind: .task),
-            sampleParent(title: "友人とランチ", child: "店を予約する", bucket: .monthly, key: monthly, kind: .event),
-            sampleParent(title: "今週の集中作業", child: "企画メモ", bucket: .weekly, key: weekly, kind: .task),
-            sampleParent(title: "週の打ち合わせ", child: "議題を送る", bucket: .weekly, key: weekly, kind: .event),
-            sampleParent(title: "今日の準備", child: "持ち物を確認", bucket: .daily, key: daily, kind: .task),
-            sampleParent(title: "会議", child: "資料を開く", bucket: .daily, key: daily, kind: .event)
-        ])
+        session.periodItems.append(contentsOf: blueprintItems(monthly: monthly, weekly: weekly, daily: daily))
 
         for bucket in [PlanningBucket.monthly, .weekly, .daily] {
             let current = PeriodCalendar.currentKey(bucket, now: now)
@@ -61,13 +54,60 @@ enum TemporaryPlanningSamples {
         )
     }
 
-    private static func sampleParent(title: String, child: String, bucket: PlanningBucket, key: String, kind: PlanningItemKind) -> PlanningNode {
+    private static func blueprintItems(monthly: String, weekly: String, daily: String) -> [PlanningNode] {
+        [
+            item("健康的な生活", .task, .monthly, monthly, symbol: "leaf", color: "mint", children: [
+                item("朝のストレッチ", .task, .monthly, monthly)
+            ]),
+            item("本を2冊読む", .task, .monthly, monthly, completed: true, symbol: "book", color: "sky", month: 9, day: 15, children: [
+                item("1冊目を読む", .task, .monthly, monthly, month: 9, day: 12),
+                item("2冊目を読む", .task, .monthly, monthly, completed: true, month: 9, day: 15)
+            ]),
+            item("友人と食事に行く", .task, .monthly, monthly, symbol: "fork.knife", color: "yellow", month: 9, day: 20, minutes: 19 * 60),
+            item("定例ミーティング", .event, .monthly, monthly, symbol: "person.3", color: "rose", month: 10, day: 8, minutes: 9 * 60),
+            item("歯科検診", .event, .monthly, monthly, completed: true, symbol: "stethoscope", color: "mint", month: 10, day: 16, minutes: 14 * 60),
+            item("今週の集中作業", .task, .weekly, weekly, symbol: "leaf", color: "mint", month: 10, day: 7, minutes: 10 * 60),
+            item("本を2冊読む", .task, .weekly, weekly, completed: true, symbol: "book", color: "sky", month: 10, day: 6, children: [
+                item("1冊目を読む", .task, .weekly, weekly, month: 10, day: 6),
+                item("2冊目を読む", .task, .weekly, weekly, completed: true, month: 10, day: 8)
+            ]),
+            item("友人と食事に行く", .task, .weekly, weekly, symbol: "fork.knife", color: "yellow", month: 10, day: 10, minutes: 19 * 60),
+            item("週の打ち合わせ", .event, .weekly, weekly, symbol: "person.3", color: "rose", month: 10, day: 6, minutes: 9 * 60),
+            item("歯科検診", .event, .weekly, weekly, completed: true, symbol: "stethoscope", color: "mint", month: 10, day: 9, minutes: 14 * 60),
+            item("健康診断を予約する", .task, .daily, daily, completed: true, symbol: "stethoscope", color: "rose", month: 9, day: 10, minutes: 10 * 60, children: [
+                item("持ち物を確認", .task, .daily, daily)
+            ]),
+            item("会議資料を作る", .task, .daily, daily, symbol: "briefcase", color: "mint"),
+            item("定例ミーティング", .event, .daily, daily, symbol: "person.3", color: "rose", month: 10, day: 7, minutes: 9 * 60),
+            item("歯科検診", .event, .daily, daily, completed: true, symbol: "stethoscope", color: "mint", month: 10, day: 7, minutes: 14 * 60)
+        ]
+    }
+
+    private static func item(
+        _ title: String,
+        _ kind: PlanningItemKind,
+        _ bucket: PlanningBucket,
+        _ key: String,
+        completed: Bool = false,
+        symbol: String = "circle",
+        color: String = "rose",
+        month: Int? = nil,
+        day: Int? = nil,
+        minutes: Int? = nil,
+        children: [PlanningNode] = []
+    ) -> PlanningNode {
         PlanningNode(
             title: title,
-            children: [PlanningNode(title: child, kind: kind, bucket: bucket, periodKey: key, isSample: true)],
+            children: children,
             kind: kind,
             bucket: bucket,
             periodKey: key,
+            completed: completed,
+            iconSymbol: symbol,
+            colorID: color,
+            scheduleMonth: month,
+            startDay: day,
+            startMinutes: minutes,
             isSample: true
         )
     }
@@ -119,7 +159,7 @@ enum TemporaryPlanningSamples {
         session.addMemory(
             scope: scope,
             kind: .photoNote,
-            text: "その日の写真を1枚選び、一言だけ残せる記録です。",
+            text: "このカフェでノートを開いた瞬間、\nやりたいことが少しずつ見えてきた。",
             hasPhoto: true,
             imageData: demoSkyImage(),
             saved: true,
@@ -135,9 +175,9 @@ enum TemporaryPlanningSamples {
         session.addMemory(
             scope: scope,
             kind: .diary,
-            text: "なんでも日記は、形式を決めずにその日・週・月の出来事や考えたことを自由に残すための記録です。短くても長くてもかまいません。振り返りでは書ききれないことを、自分の言葉で残したいときに使えます。",
+            text: "今週は、仕事もプライベートもバタバタして\nいたけれど、なんとか乗り切れた気がする。\n\n忙しい中でも、好きな本を読む時間がとれて\nよかった。\n\n朝のストレッチも3日できて、少し体が軽く\nなったように感じる。\n\n友人と久しぶりに食事に行けて、たくさん\n話せて楽しかった。\n\n今週はうまくいかないこともあったけれど、\nそれも含めていい経験になった。\n\n来週は、少し早めに寝ることと、読書の時間\nをもっとつくりたい。\n\n自分のペースで、ゆっくり進んでいこう。",
             hasPhoto: false,
-            title: "なんでも日記（例）",
+            title: "なんでも日記",
             saved: true,
             isSample: true
         )

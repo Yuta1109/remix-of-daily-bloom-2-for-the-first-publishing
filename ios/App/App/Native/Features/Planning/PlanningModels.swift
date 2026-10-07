@@ -206,6 +206,8 @@ struct PlanningNode: Identifiable, Hashable {
     var todayTaskID: UUID?
     var iconSymbol: String
     var colorID: String
+    /// Month of the shown schedule when it is not the period month. Nil uses the period key.
+    var scheduleMonth: Int?
     var startDay: Int?
     var endDay: Int?
     var startMinutes: Int?
@@ -227,6 +229,7 @@ struct PlanningNode: Identifiable, Hashable {
         todayTaskID: UUID? = nil,
         iconSymbol: String = "circle",
         colorID: String = "sand",
+        scheduleMonth: Int? = nil,
         startDay: Int? = nil,
         endDay: Int? = nil,
         startMinutes: Int? = nil,
@@ -250,6 +253,7 @@ struct PlanningNode: Identifiable, Hashable {
         self.todayTaskID = todayTaskID
         self.iconSymbol = iconSymbol
         self.colorID = colorID
+        self.scheduleMonth = scheduleMonth
         self.startDay = startDay
         self.endDay = endDay
         self.startMinutes = startMinutes

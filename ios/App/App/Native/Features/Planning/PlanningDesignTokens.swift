@@ -60,10 +60,10 @@ enum PlanningTokens {
 
     enum PeriodBody {
         static let sectionGap: CGFloat = 12
-        static let cardRadius: CGFloat = 14
-        static let cardPadding: CGFloat = 12
-        static let rowHeight: CGFloat = 36
-        static let checkboxColumn: CGFloat = 22
+        static let cardRadius: CGFloat = 20
+        static let cardPadding: CGFloat = 16
+        static let rowHeight: CGFloat = 44
+        static let checkboxColumn: CGFloat = 36
         static let timelineWidth: CGFloat = 1.25
         /// Gap between a parent checkbox and the timeline, so the line does not touch the box.
         static let timelineGap: CGFloat = 5
@@ -75,7 +75,7 @@ enum PlanningTokens {
     /// Completed Reflection summary on the period page and the detail page.
     enum ReflectionSummary {
         static let inset: CGFloat = 16
-        static let cardRadius: CGFloat = 14
+        static let cardRadius: CGFloat = 20
         static let cardPadding: CGFloat = 15
         static let ringDiameter: CGFloat = 112
         static let ringThickness: CGFloat = 11

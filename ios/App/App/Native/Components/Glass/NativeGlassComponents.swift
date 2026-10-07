@@ -51,7 +51,7 @@ struct NativeGlassIconButton: View {
                     }
                     .buttonStyle(.glassProminent)
                     .buttonBorderShape(.circle)
-                    .controlSize(.regular)
+                    .controlSize(.large)
                     .tint(theme.accent)
                 } else {
                     Button(action: invoke) {
@@ -61,7 +61,7 @@ struct NativeGlassIconButton: View {
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
-                    .controlSize(.regular)
+                    .controlSize(.large)
                 }
             } else {
                 // fallback platter

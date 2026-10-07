@@ -318,8 +318,8 @@ describe("planning blueprint fidelity", () => {
     expect(samples).toContain(".stop");
     expect(samples).not.toContain("Firebase");
     expect(samples).toContain("isSample: true");
-    expect(samples).toContain("その日の写真を1枚選び、一言だけ残せる記録です。");
-    expect(samples).toContain("なんでも日記（例）");
+    expect(samples).toContain("このカフェでノートを開いた瞬間");
+    expect(samples).toContain("なんでも日記");
     expect(samples).toContain("static func install");
     expect(samples).toContain("func seedSamplePeriod");
     expect(samples).toContain("if session.periodRecords.contains");
@@ -1061,8 +1061,8 @@ describe("planning period visual rebuild", () => {
     expect(samples).toContain("部屋を整理する");
     expect(samples).toContain("チームミーティング");
     expect(samples).toContain("友人と食事");
-    expect(samples).toContain("その日の写真を1枚選び、一言だけ残せる記録です。");
-    expect(samples).toContain("なんでも日記は、形式を決めずにその日・週・月の出来事や考えたことを自由に残すための記録です。");
+    expect(samples).toContain("やりたいことが少しずつ見えてきた。");
+    expect(samples).toContain("自分のペースで、ゆっくり進んでいこう。");
     expect(samples).toContain("isSample: true");
     expect(samples).toContain("if session.periodRecords.contains");
     expect(samples).not.toContain("Firebase");
@@ -1462,7 +1462,7 @@ describe("planning root viewport repair", () => {
 
   it("sizes system glass from the symbol and keeps a 44pt hit slot", () => {
     const icon = glass.slice(glass.indexOf("struct NativeGlassIconButton"), glass.indexOf("// fallback platter"));
-    expect(icon).toContain(".controlSize(.regular)");
+    expect(icon).toContain(".controlSize(.large)");
     expect(icon).toContain(".font(.system(size: 17, weight: .semibold))");
     expect(icon).toContain(".buttonStyle(.glass)");
     expect(icon).toContain(".buttonBorderShape(.circle)");
