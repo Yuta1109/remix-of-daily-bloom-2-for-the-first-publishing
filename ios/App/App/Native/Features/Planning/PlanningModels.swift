@@ -266,7 +266,14 @@ struct PostponedEntry: Identifiable, Hashable {
     var id: UUID
     var title: String
     var kind: PlanningItemKind
+    /// Current Postpone Box section. Moving the item changes only this.
     var bucket: PlanningBucket
+    /// Reflection bucket the item came from. A later move does not change it.
+    var originBucket: PlanningBucket?
+    /// Reflection period the item came from. A later move does not change it.
+    var originPeriodKey: String?
+    var iconSymbol: String
+    var colorID: String
     var eventID: UUID?
     var todayTaskID: UUID?
     var logicalID: UUID?
@@ -278,6 +285,10 @@ struct PostponedEntry: Identifiable, Hashable {
         title: String,
         kind: PlanningItemKind,
         bucket: PlanningBucket,
+        originBucket: PlanningBucket? = nil,
+        originPeriodKey: String? = nil,
+        iconSymbol: String = "circle",
+        colorID: String = "rose",
         eventID: UUID? = nil,
         todayTaskID: UUID? = nil,
         logicalID: UUID? = nil,
@@ -287,6 +298,10 @@ struct PostponedEntry: Identifiable, Hashable {
         self.title = title
         self.kind = kind
         self.bucket = bucket
+        self.originBucket = originBucket
+        self.originPeriodKey = originPeriodKey
+        self.iconSymbol = iconSymbol
+        self.colorID = colorID
         self.eventID = eventID
         self.todayTaskID = todayTaskID
         self.logicalID = logicalID
@@ -651,6 +666,11 @@ final class PlanningSession: ObservableObject {
     func movePostponed(_ id: UUID, to bucket: PlanningBucket) {
         guard let index = postponed.firstIndex(where: { $0.id == id }) else { return }
         postponed[index].bucket = bucket
+    }
+
+    func renamePostponed(_ id: UUID, title: String) {
+        guard let index = postponed.firstIndex(where: { $0.id == id }) else { return }
+        postponed[index].title = title
     }
 
     func placePostponedOnPlan(_ id: UUID) {

@@ -771,7 +771,15 @@ struct PlanningSystemSheetChrome<Content: View>: View {
             .background(PlanningFocusedFieldScroller())
         }
         .frame(maxWidth: .infinity, alignment: .top)
-        .background(surface)
+        .background(alignment: .top) {
+            ZStack(alignment: .top) {
+                surface
+                Capsule()
+                    .fill(Color(uiColor: .systemGray3))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+            }
+        }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .background(PlanningSheetViewport(maximumVisible: $maximumVisibleSheetHeight, keyboardObstructing: $keyboardObstructing))
         .onPreferenceChange(PlanningSheetMeasureKey.self) { value in
@@ -930,6 +938,12 @@ struct PlanningSheetChrome<Content: View>: View {
             content()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(alignment: .top) {
+            Capsule()
+                .fill(Color(uiColor: .systemGray3))
+                .frame(width: 40, height: 5)
+                .padding(.top, 8)
+        }
         .presentationDetents([.height(fixedHeight)])
         .presentationDragIndicator(.hidden)
         .planningKeyboardDismiss()

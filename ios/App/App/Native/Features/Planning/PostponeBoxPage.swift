@@ -7,94 +7,168 @@ struct PostponeBoxPage: View {
     @State private var editing: PostponedEntry?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Picker("Kind", selection: $kind) {
-                Text("Tasks").tag(PlanningItemKind.task)
-                Text("Events").tag(PlanningItemKind.event)
-            }
-            .pickerStyle(.segmented)
-            .padding(16)
-            List {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Picker(PlanningText.string(.postponeBoxTitle), selection: $kind) {
+                    Text(PlanningText.string(.postponeTasks)).tag(PlanningItemKind.task)
+                    Text(PlanningText.string(.postponeEvents)).tag(PlanningItemKind.event)
+                }
+                .pickerStyle(.segmented)
                 ForEach(PlanningBucket.allCases) { bucket in
-                    Section(bucket.title) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(bucket.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(PlanningPalette.muted)
                         let entries = session.postponed.filter { $0.kind == kind && $0.bucket == bucket }
                         if entries.isEmpty {
-                            Text("なし")
-                                .foregroundStyle(.secondary)
+                            Text(PlanningText.isEnglish ? "None" : "なし")
+                                .font(.system(size: 14))
+                                .foregroundStyle(PlanningPalette.muted)
                         }
                         ForEach(entries) { entry in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(entry.title)
-                                    .font(.body.weight(.semibold))
-                                Text(entry.kind == .task ? "Task" : "Event")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                HStack {
-                                    Button("編集") { editing = entry }
-                                    Button("削除", role: .destructive) {
-                                        session.postponed.removeAll { $0.id == entry.id }
-                                    }
-                                    Menu("移動") {
-                                        ForEach(PlanningBucket.allCases) { destination in
-                                            Button(destination.title) {
-                                                session.movePostponed(entry.id, to: destination)
-                                            }
-                                        }
-                                    }
-                                    Button("プランへ戻す") {
-                                        session.placePostponedOnPlan(entry.id)
-                                    }
-                                }
-                                .font(.caption)
-                                .buttonStyle(.borderless)
+                            Button {
+                                editing = entry
+                            } label: {
+                                PostponeBoxRow(entry: entry)
                             }
-                            .padding(.vertical, 4)
+                            .buttonStyle(.plain)
                         }
                     }
                 }
             }
-            .listStyle(.plain)
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
+            .padding(16)
+            .padding(.bottom, 24)
         }
         .planningScroll()
         .planningKeyboardDismiss()
-        .planningPageChrome(title: "Postpone Box", onBack: { navigation.pop() })
+        .planningPageChrome(title: PlanningText.string(.postponeBoxTitle), onBack: { navigation.pop() })
         .planningExtendingSurface(PlanningPalette.paper)
-        .nativeSheet(isPresented: Binding(
-            get: { editing != nil },
-            set: { if !$0 { editing = nil } }
-        ), detents: [.medium]) {
-            if let editing {
-                PostponeEditorSheet(entry: editing) { updated in
-                    if let index = session.postponed.firstIndex(where: { $0.id == updated.id }) {
-                        session.postponed[index] = updated
-                    }
-                    self.editing = nil
-                } onClose: {
-                    self.editing = nil
-                }
-            }
+        .sheet(item: $editing) { entry in
+            PostponeActionSheet(session: session, entryID: entry.id)
         }
     }
 }
 
-private struct PostponeEditorSheet: View {
-    @State var entry: PostponedEntry
-    let onSave: (PostponedEntry) -> Void
-    let onClose: () -> Void
+private struct PostponeBoxRow: View {
+    let entry: PostponedEntry
 
     var body: some View {
-        NativeSheetScaffold(title: "編集", onClose: onClose, onConfirm: { onSave(entry) }) {
-            TextField("名前", text: $entry.title)
-                .textFieldStyle(.roundedBorder)
-                .padding(20)
-            Spacer()
+        HStack(spacing: 12) {
+            PlanningCategoryIconBubble(
+                symbol: entry.iconSymbol == "circle" ? "tray" : entry.iconSymbol,
+                colorID: entry.colorID,
+                diameter: 46
+            )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(PlanningPalette.ink)
+                    .lineLimit(1)
+                let source = PeriodCalendar.postponeProvenance(bucket: entry.originBucket, key: entry.originPeriodKey)
+                if !source.isEmpty {
+                    Text(source)
+                        .font(.system(size: 13))
+                        .foregroundStyle(PlanningPalette.muted)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(PlanningPalette.muted)
         }
-        .presentationBackground(Color(uiColor: .systemBackground))
-        .background {
-            Color(uiColor: .systemBackground)
-                .ignoresSafeArea(.keyboard, edges: .bottom)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 74)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+        .shadow(color: PlanningPalette.ink.opacity(0.04), radius: 6, y: 2)
+    }
+}
+
+private struct PostponeActionSheet: View {
+    @ObservedObject var session: PlanningSession
+    let entryID: UUID
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var confirmingDelete = false
+
+    private var entry: PostponedEntry? {
+        session.postponed.first { $0.id == entryID }
+    }
+
+    var body: some View {
+        PlanningSystemSheetChrome(
+            onClose: { dismiss() },
+            onConfirm: { dismiss() },
+            showsControls: false,
+            centerTitle: entry?.title ?? "",
+            bodySurface: Color.white
+        ) {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(PlanningText.string(.postponeEditName))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(PlanningPalette.muted)
+                    TextField(PlanningText.string(.postponeEditName), text: $title)
+                        .font(.system(size: 16))
+                        .textFieldStyle(.plain)
+                        .submitLabel(.done)
+                        .padding(.horizontal, 16)
+                        .frame(height: 48)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+                        .onSubmit { resign() }
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(PlanningText.string(.postponeMoveWithin))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(PlanningPalette.muted)
+                    Picker(PlanningText.string(.postponeMoveWithin), selection: moveBinding) {
+                        ForEach(PlanningBucket.allCases) { bucket in
+                            Text(bucket.title).tag(bucket)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Button(role: .destructive) {
+                    confirmingDelete = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "trash")
+                        Text(PlanningText.string(.postponeDelete))
+                            .font(.system(size: 17, weight: .semibold))
+                    }
+                    .foregroundStyle(Color(red: 0.75, green: 0.22, blue: 0.18))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color(red: 0.75, green: 0.22, blue: 0.18).opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
         }
+        .onAppear { title = entry?.title ?? "" }
+        .onChange(of: title) { _, newValue in
+            session.renamePostponed(entryID, title: newValue)
+        }
+        .alert(PlanningText.string(.postponeDeleteConfirm), isPresented: $confirmingDelete) {
+            Button(PlanningText.string(.postponeDelete), role: .destructive) {
+                session.postponed.removeAll { $0.id == entryID }
+                dismiss()
+            }
+            Button(PlanningText.string(.cancel), role: .cancel) {}
+        }
+    }
+
+    private var moveBinding: Binding<PlanningBucket> {
+        Binding(
+            get: { entry?.bucket ?? .monthly },
+            set: { session.movePostponed(entryID, to: $0) }
+        )
+    }
+
+    private func resign() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }

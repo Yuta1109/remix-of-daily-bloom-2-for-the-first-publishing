@@ -85,8 +85,10 @@ describe("planning foundation rules", () => {
     expect(shell).toContain("NavigationStack(path: $navigation.path)");
     expect(helpText).toContain("Planning の使い方");
     expect(help).toContain("PlanningText.string(.planningHelpTitle)");
-    expect(postpone).toContain("Tasks");
-    expect(postpone).toContain("Events");
+    expect(postpone).toContain("PlanningText.string(.postponeTasks)");
+    expect(postpone).toContain("PlanningText.string(.postponeEvents)");
+    expect(planText).toContain("postponeTasks: (\"タスク\", \"Tasks\")");
+    expect(planText).toContain("postponeEvents: (\"予定\", \"Events\")");
     expect(planText).toContain("プランを新規作成");
     expect(plans).toContain("PlanningRoute.planEditor");
     expect(planText).toContain("タスク・予定に反映");
@@ -1336,7 +1338,8 @@ describe("phase C-3 reflection and popups", () => {
   });
 
   it("anchors the source popover and keeps the list sheet open", () => {
-    expect(itemSheets).toContain("presentationCompactAdaptation(.popover)");
+    expect(itemSheets).toContain("RoundedRectangle(cornerRadius: 16, style: .continuous)");
+    expect(itemSheets).not.toContain("presentationCompactAdaptation(.popover)");
     expect(itemSheets).toContain("showingSources = false");
     expect(period).toContain("case .monthly: [.plan, .create, .postpone]");
     expect(period).toContain("case .weekly: [.plan, .create, .postpone, .monthly]");
@@ -1486,5 +1489,44 @@ describe("planning root viewport repair", () => {
     expect(periodPage).toContain(".overlay(alignment: .bottom)");
     expect(periodPage).toContain(".padding(.bottom, session.isActivePrompt(ReflectionScope.period(bucket, key)) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)");
     expect(periodPage).not.toContain("safeAreaInset");
+  });
+});
+
+describe("planning blueprint refinement", () => {
+  const models = readFileSync(`${planningRoot}/PlanningModels.swift`, "utf8");
+  const postpone = readFileSync(`${planningRoot}/PostponeBoxPage.swift`, "utf8");
+  const planText = readFileSync(`${planningRoot}/PlanningText.swift`, "utf8");
+  const periodPage = readFileSync(`${planningRoot}/PeriodPlannerPage.swift`, "utf8");
+  const samples = readFileSync(`${planningRoot}/TemporaryPlanningSamples.swift`, "utf8");
+  const shell = readFileSync(`${planningRoot}/PlanningShell.swift`, "utf8");
+
+  it("keeps postpone provenance when the current bucket changes", () => {
+    expect(models).toContain("var originBucket: PlanningBucket?");
+    expect(models).toContain("var originPeriodKey: String?");
+    const move = models.slice(models.indexOf("func movePostponed"), models.indexOf("func renamePostponed"));
+    expect(move).toContain("postponed[index].bucket = bucket");
+    expect(move).not.toContain("originBucket");
+    expect(move).not.toContain("originPeriodKey");
+    expect(samples).toContain("originBucket: .monthly");
+    expect(samples).toContain("bucket: .daily, originBucket: .monthly");
+  });
+
+  it("localizes postpone actions and confirms deletion", () => {
+    expect(postpone).not.toContain("プランへ戻す");
+    expect(postpone).toContain("PlanningText.string(.postponeMoveWithin)");
+    expect(postpone).toContain("PlanningText.string(.postponeDeleteConfirm)");
+    expect(planText).toContain("先送りボックス内で移動させる");
+    expect(planText).toContain("Move within Postpone Box");
+    expect(planText).toContain("Deleting this item cannot be undone. Delete it?");
+    expect(planText).toContain("postponeBoxTitle: (\"先送りボックス\", \"Postpone Box\")");
+  });
+
+  it("uses the goal placeholder and does not add a reflection arrow badge", () => {
+    expect(periodPage).toContain("目標を入れてみよう！");
+    expect(periodPage).toContain(".frame(height: 76)");
+    expect(periodPage).not.toContain("ReflectionArrowBadge");
+    expect(shell).toContain("PlanningTokens.Header.iconGroupGap");
+    const photo = samples.slice(samples.indexOf("func seedDemoPhoto"), samples.indexOf("func seedDemoDiary"));
+    expect(photo).not.toContain("periodItems.append");
   });
 });

@@ -708,43 +708,67 @@ struct PlanningMemoryPhoto: View {
     }
 }
 
-/// Museum frame for a dynamic photo. The picture itself is content, not a fixed asset.
+/// Museum frame for a dynamic photo. Width drives the frame; the picture keeps its aspect ratio.
 struct PlanningFramedPhoto: View {
     let image: UIImage?
+    private let brass = Color(red: 0.72, green: 0.55, blue: 0.28)
 
     var body: some View {
-        VStack(spacing: 10) {
-            Capsule()
-                .fill(Color(red: 0.62, green: 0.48, blue: 0.28))
-                .frame(width: 58, height: 8)
-                .overlay(alignment: .bottom) {
-                    Ellipse()
-                        .fill(Color(red: 1, green: 0.93, blue: 0.72).opacity(0.85))
-                        .frame(width: 90, height: 16)
-                        .blur(radius: 6)
-                        .offset(y: 10)
-                }
-                .padding(.bottom, 6)
-            Group {
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    Color(red: 0.93, green: 0.90, blue: 0.86)
-                        .frame(height: 180)
-                }
+        VStack(spacing: 0) {
+            VStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(brass)
+                    .frame(width: 7, height: 13)
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.86, green: 0.70, blue: 0.38), brass, Color(red: 0.55, green: 0.40, blue: 0.18)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 92, height: 9)
+                    .shadow(color: brass.opacity(0.35), radius: 2, y: 1)
             }
-            .padding(8)
-            .background(Color(red: 0.99, green: 0.97, blue: 0.94))
-            .overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1))
-            .padding(14)
-            .background(Color(red: 0.95, green: 0.91, blue: 0.85))
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .shadow(color: PlanningPalette.ink.opacity(0.14), radius: 18, y: 10)
-            .padding(.horizontal, 6)
+            .padding(.bottom, 15)
+            framedImage
         }
-        .padding(.top, 4)
+        .background(alignment: .top) {
+            Ellipse()
+                .fill(Color(red: 1, green: 0.90, blue: 0.62).opacity(0.55))
+                .frame(width: 150, height: 64)
+                .blur(radius: 18)
+                .offset(y: 22)
+                .allowsHitTesting(false)
+        }
+        .padding(.horizontal, 15)
+    }
+
+    private var framedImage: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            } else {
+                Color(red: 0.93, green: 0.90, blue: 0.86)
+                    .frame(height: 180)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            }
+        }
+        .padding(12)
+        .background(Color(red: 0.99, green: 0.97, blue: 0.94))
+        .padding(11)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.98, green: 0.96, blue: 0.92), Color(red: 0.93, green: 0.89, blue: 0.82)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .shadow(color: PlanningPalette.ink.opacity(0.16), radius: 16, y: 8)
     }
 }
 
@@ -769,32 +793,99 @@ struct PlanningDiaryCard: View {
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(PlanningPalette.muted.opacity(0.75))
             }
-            Text(text)
-                .font(.system(size: 16))
-                .lineSpacing(14)
-                .foregroundStyle(PlanningPalette.ink)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(DiaryRuledLines().allowsHitTesting(false))
+            PlanningDiaryPaper(text: text)
         }
-        .padding(20)
+        .padding(.horizontal, 23)
+        .padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(red: 0.995, green: 0.985, blue: 0.965), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
     }
 }
 
-private struct DiaryRuledLines: View {
-    var body: some View {
-        Canvas { context, size in
-            var y: CGFloat = 26
-            while y < size.height {
-                var path = Path()
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(path, with: .color(PlanningPalette.line.opacity(0.7)), lineWidth: 0.6)
-                y += 30
-            }
+/// One TextKit layout. Ruled lines use that same line pitch, including blank paper below the text.
+struct PlanningDiaryPaper: UIViewRepresentable {
+    let text: String
+    static let pitch: CGFloat = 28
+
+    func makeUIView(context: Context) -> DiaryPaperView {
+        let view = DiaryPaperView()
+        view.apply(text)
+        return view
+    }
+
+    func updateUIView(_ uiView: DiaryPaperView, context: Context) {
+        uiView.apply(text)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: DiaryPaperView, context: Context) -> CGSize? {
+        let width = proposal.width ?? UIScreen.main.bounds.width
+        let height = uiView.measuredHeight(for: width, text: text)
+        return CGSize(width: width, height: height)
+    }
+}
+
+final class DiaryPaperView: UIView {
+    private let textView = UITextView()
+    private let pitch = PlanningDiaryPaper.pitch
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+        textView.isEditable = false
+        textView.isSelectable = false
+        textView.isScrollEnabled = false
+        textView.backgroundColor = .clear
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.isUserInteractionEnabled = false
+        textView.isOpaque = false
+        addSubview(textView)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func apply(_ text: String) {
+        let font = UIFont.systemFont(ofSize: 16.5)
+        let style = NSMutableParagraphStyle()
+        style.minimumLineHeight = pitch
+        style.maximumLineHeight = pitch
+        style.paragraphSpacing = pitch
+        let attributed = NSAttributedString(string: text, attributes: [
+            .font: font,
+            .foregroundColor: UIColor(red: 0.227, green: 0.184, blue: 0.145, alpha: 1),
+            .paragraphStyle: style,
+            .baselineOffset: max((pitch - font.lineHeight) / 2, 0)
+        ])
+        if textView.attributedText != attributed {
+            textView.attributedText = attributed
         }
+        setNeedsDisplay()
+    }
+
+    func measuredHeight(for width: CGFloat, text: String) -> CGFloat {
+        apply(text)
+        let fitted = textView.sizeThatFits(CGSize(width: max(width, 1), height: .greatestFiniteMagnitude)).height
+        return fitted + pitch * 2
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        textView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height)
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        context.setStrokeColor(UIColor(red: 0.72, green: 0.64, blue: 0.52, alpha: 0.45).cgColor)
+        context.setLineWidth(0.6)
+        var y = pitch
+        while y < bounds.height {
+            context.move(to: CGPoint(x: 0, y: y))
+            context.addLine(to: CGPoint(x: bounds.width, y: y))
+            y += pitch
+        }
+        context.strokePath()
     }
 }
 
@@ -806,7 +897,7 @@ struct SavedPeriodMemory: View {
 
     var body: some View {
         if entry.kind == .photoNote {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 22) {
                 Button { openEditor() } label: { savedPhoto }
                     .buttonStyle(.plain)
                 Button { openEditor() } label: {
@@ -815,11 +906,12 @@ struct SavedPeriodMemory: View {
                         .lineSpacing(6)
                         .foregroundStyle(PlanningPalette.ink)
                         .multilineTextAlignment(.leading)
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, 24)
                         .padding(.vertical, 20)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+                        .shadow(color: PlanningPalette.ink.opacity(0.05), radius: 8, y: 3)
                 }
                 .buttonStyle(.plain)
             }

@@ -137,6 +137,9 @@ struct PeriodItemListSheet: View {
                 .frame(height: 36)
                 let nodes = session.nodes(bucket: bucket, periodKey: periodKey, kind: kind)
                 ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
+                    if index > 0 {
+                        Rectangle().fill(PlanningPalette.line).frame(height: 0.5)
+                    }
                     parentTimelineRow(node, connectsToNext: index < nodes.count - 1)
                 }
             }
@@ -144,14 +147,25 @@ struct PeriodItemListSheet: View {
             .padding(.top, 8)
             .padding(.bottom, 16)
         }
-        .popover(isPresented: $showingSources, attachmentAnchor: .point(.topTrailing), arrowEdge: .top) {
-            PeriodSourcePopover(bucket: bucket) { source in
-                showingSources = false
-                PlanningTransition.perform {
-                    if source == .create { creating = true } else { picking = source }
+        .overlay {
+            if showingSources {
+                ZStack(alignment: .topTrailing) {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showingSources = false }
+                    PeriodSourcePopover(bucket: bucket) { source in
+                        showingSources = false
+                        PlanningTransition.perform {
+                            if source == .create { creating = true } else { picking = source }
+                        }
+                    }
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PlanningPalette.line.opacity(0.6), lineWidth: 0.5))
+                    .shadow(color: PlanningPalette.ink.opacity(0.16), radius: 16, y: 8)
+                    .padding(.top, PlanningTokens.Sheet.headerHeight + 6)
+                    .padding(.trailing, PlanningTokens.Sheet.horizontalInset)
                 }
             }
-            .presentationCompactAdaptation(.popover)
         }
         .sheet(isPresented: $creating) {
             PlanningItemEditorSheet(draft: PlanningItemDraft(), isNew: true, bucket: bucket, kind: kind, periodKey: periodKey) { draft in
@@ -212,21 +226,29 @@ struct PeriodItemListSheet: View {
             Button {
                 editingID = EditingNodeID(id: parent)
             } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(node.title).foregroundStyle(PlanningPalette.ink).lineLimit(1)
-                    let range = PlanningRangeText.display(startDay: node.startDay, endDay: node.endDay, startMinutes: node.startMinutes, endMinutes: node.endMinutes)
-                    if !range.isEmpty {
-                        Text(range).font(.caption).foregroundStyle(PlanningPalette.muted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(node.title)
+                        .font(.system(size: showsIcon ? 16 : 14, weight: showsIcon ? .semibold : .regular))
+                        .foregroundStyle(PlanningPalette.ink)
+                        .lineLimit(1)
+                    if let line = PeriodCalendar.mainSchedule(periodKey: periodKey, month: node.scheduleMonth, day: node.startDay, minutes: node.startMinutes) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock").font(.system(size: 11, weight: .medium))
+                            Text(line).font(.system(size: 12))
+                        }
+                        .foregroundStyle(PlanningPalette.muted)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
             if showsIcon, !node.iconSymbol.isEmpty, node.iconSymbol != "circle" {
-                Image(systemName: node.iconSymbol)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(PlanIconColor.resolved(node.colorID).color)
-                    .frame(width: 28, height: 28)
+                PlanningCategoryIconBubble(symbol: node.iconSymbol, colorID: node.colorID)
+            }
+            if showsIcon {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(PlanningPalette.muted)
             }
         }
         .frame(minHeight: PlanningTokens.ReflectionSummary.listRowHeight)
@@ -234,19 +256,44 @@ struct PeriodItemListSheet: View {
 
     private func completionControl(_ node: PlanningNode) -> some View {
         let allowsEdit = PeriodCalendar.allowsCompletionToggle(bucket)
-        let symbol = kind == .event
-            ? (node.completed ? "checkmark.circle.fill" : "circle")
-            : (node.completed ? "checkmark.square.fill" : "square")
         return Button {
             _ = session.setCompleted(nodeID: node.id, completed: !node.completed)
         } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 18))
-                .foregroundStyle(node.completed ? PlanningPalette.accent : PlanningPalette.muted)
+            PeriodListCheckbox(square: kind != .event, completed: node.completed)
         }
         .buttonStyle(.plain)
         .disabled(!allowsEdit)
         .accessibilityLabel(bucket == .daily ? "Today completion" : "Completion")
+    }
+}
+
+private struct PeriodListCheckbox: View {
+    let square: Bool
+    let completed: Bool
+    /// Kept so the completed glyph stays the same semantic control as the earlier list.
+    static let taskComplete = "checkmark.square.fill"
+    static let eventComplete = "checkmark.circle.fill"
+    private var espresso: Color { Color(red: 0.29, green: 0.22, blue: 0.16) }
+
+    var body: some View {
+        ZStack {
+            if square {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(completed ? espresso : PlanningPalette.muted.opacity(0.55), lineWidth: 1.4)
+                    .background { if completed { RoundedRectangle(cornerRadius: 4, style: .continuous).fill(espresso) } }
+            } else {
+                Circle()
+                    .stroke(completed ? espresso : PlanningPalette.muted.opacity(0.55), lineWidth: 1.4)
+                    .background { if completed { Circle().fill(espresso) } }
+            }
+            if completed {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.white)
+            }
+        }
+        .frame(width: 18, height: 18)
+        .accessibilityIdentifier(completed ? (square ? Self.taskComplete : Self.eventComplete) : (square ? "square" : "circle"))
     }
 }
 

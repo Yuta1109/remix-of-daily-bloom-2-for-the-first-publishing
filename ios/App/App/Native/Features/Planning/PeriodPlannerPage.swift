@@ -214,6 +214,33 @@ struct PeriodPlannerPage: View {
         .onTapGesture { PlanningTransition.perform { editingGoal = true } }
     }
 
+    private struct GoalEntryField: View {
+        @Binding var text: String
+
+        var body: some View {
+            ZStack(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text("目標を入れてみよう！")
+                        .font(.system(size: 16))
+                        .foregroundStyle(PlanningPalette.muted)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $text)
+                    .font(.system(size: 16))
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
+            .frame(height: 76)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+        }
+    }
+
     private var monthlyGoalEditor: some View {
         let parts = PeriodCalendar.monthParts(periodKey)
         return PlanningSystemSheetChrome(
@@ -222,14 +249,12 @@ struct PeriodPlannerPage: View {
             centerTitle: "今月の目標",
             bodySurface: Color.white
         ) {
-            TextField(
-                "目標は1つ",
+            GoalEntryField(
                 text: Binding(
                     get: { session.goal(year: parts.year, month: parts.month) },
                     set: { session.setGoal($0, year: parts.year, month: parts.month) }
                 )
             )
-            .padding(16)
         }
     }
 
@@ -399,13 +424,14 @@ private struct PeriodTypeGlyph: View {
 struct PlanningCategoryIconBubble: View {
     let symbol: String
     let colorID: String
+    var diameter: CGFloat = 42
 
     var body: some View {
         let tint = PlanIconColor.resolved(colorID).color
         Image(systemName: symbol)
-            .font(.system(size: 16, weight: .medium))
+            .font(.system(size: diameter * 0.38, weight: .medium))
             .foregroundStyle(tint)
-            .frame(width: 42, height: 42)
+            .frame(width: diameter, height: diameter)
             .background(tint.opacity(0.18), in: Circle())
     }
 }

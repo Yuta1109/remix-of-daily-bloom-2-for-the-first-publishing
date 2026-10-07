@@ -14,6 +14,8 @@ enum PlanningTokens {
         static let buttonHit: CGFloat = 44
         /// Visual gap between the 44pt circles.
         static let buttonGap: CGFloat = 10
+        /// Visible edge-to-edge gap inside the trailing Postpone / Help / User group.
+        static let iconGroupGap: CGFloat = 8
         /// Stack spacing that yields `buttonGap` between visual circles.
         static let buttonStackSpacing: CGFloat = buttonGap - (buttonHit - buttonVisual)
     }

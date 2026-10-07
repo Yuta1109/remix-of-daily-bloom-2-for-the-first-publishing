@@ -203,9 +203,12 @@ Meaning: items whose next destination was not chosen after Reflection.
 - Tasks and Events are separate lists. Never merge them.
 - Organize each list by Monthly, Weekly, and Daily.
 - There is no Future postpone box.
-- The user can view, rename/edit, delete, and move an item between those period boxes.
-- An item can later be placed onto a Monthly, Weekly, or Daily plan.
-- Task and Event stay visually distinct.
+- Each item is one card. The row opens an action sheet. The main page does not show inline edit, delete, or move.
+- The action sheet has a one-line name field labeled `名称を編集` / `Edit name`, a move control labeled `先送りボックス内で移動させる` / `Move within Postpone Box`, and a destructive `削除` / `Delete` button.
+- Delete asks `削除するともとに戻すことはできません。削除しますか？` and does nothing on cancel.
+- `originBucket` and `originPeriodKey` stay fixed when the current box changes. The secondary line is that reflection provenance, localized, not the current bucket and not a generic task/date line.
+- There is no `プランへ戻す` action on this page.
+- Titles and labels use `PlanningText` for Japanese and English.
 
 ## Plan page
 

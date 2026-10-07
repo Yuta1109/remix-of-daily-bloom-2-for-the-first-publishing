@@ -558,16 +558,26 @@ extension PlanningSession {
 
     private func ensurePostpone(_ decision: StoredReflectionDecision, scope: ReflectionScope) {
         let bucket: PlanningBucket
+        let originKey: String
         switch scope {
-        case .period(let periodBucket, _): bucket = periodBucket
-        case .future: bucket = .monthly
+        case .period(let periodBucket, let key):
+            bucket = periodBucket
+            originKey = key
+        case .future(let year):
+            bucket = .monthly
+            originKey = String(year)
         }
         if postponed.contains(where: { matchesPostpone($0, decision) }) { return }
+        let source = periodItems.first { $0.logicalID == decision.logicalID }
         postponed.append(
             PostponedEntry(
                 title: decision.title,
                 kind: decision.kind,
                 bucket: bucket,
+                originBucket: bucket,
+                originPeriodKey: originKey,
+                iconSymbol: source?.iconSymbol ?? "circle",
+                colorID: source?.colorID ?? PlanIconColor.defaultID,
                 eventID: decision.eventID,
                 todayTaskID: decision.todayTaskID,
                 logicalID: decision.logicalID

@@ -17,12 +17,13 @@ enum TemporaryPlanningSamples {
         session.dailyPeriodKey = daily
 
         session.postponed.append(contentsOf: [
-            PostponedEntry(title: "資料の見直し", kind: .task, bucket: .monthly, isSample: true),
-            PostponedEntry(title: "月次の打ち合わせ", kind: .event, bucket: .monthly, isSample: true),
-            PostponedEntry(title: "週報の下書き", kind: .task, bucket: .weekly, isSample: true),
-            PostponedEntry(title: "チーム昼食", kind: .event, bucket: .weekly, isSample: true),
-            PostponedEntry(title: "メールの返信", kind: .task, bucket: .daily, isSample: true),
-            PostponedEntry(title: "夕方の散歩", kind: .event, bucket: .daily, isSample: true)
+            PostponedEntry(title: "資料の見直し", kind: .task, bucket: .monthly, originBucket: .monthly, originPeriodKey: "2026-09", iconSymbol: "doc.text", colorID: "peach", isSample: true),
+            PostponedEntry(title: "月次の打ち合わせ", kind: .event, bucket: .monthly, originBucket: .monthly, originPeriodKey: "2026-09", iconSymbol: "person.3", colorID: "rose", isSample: true),
+            PostponedEntry(title: "週報の下書き", kind: .task, bucket: .weekly, originBucket: .weekly, originPeriodKey: "2026-09-14", iconSymbol: "chart.bar", colorID: "yellow", isSample: true),
+            PostponedEntry(title: "チーム昼食", kind: .event, bucket: .weekly, originBucket: .weekly, originPeriodKey: "2026-09-14", iconSymbol: "fork.knife", colorID: "yellow", isSample: true),
+            PostponedEntry(title: "メールの返信", kind: .task, bucket: .daily, originBucket: .daily, originPeriodKey: "2026-10-05", iconSymbol: "envelope", colorID: "mint", isSample: true),
+            PostponedEntry(title: "夕方の散歩", kind: .event, bucket: .daily, originBucket: .daily, originPeriodKey: "2026-10-05", iconSymbol: "figure.walk", colorID: "sky", isSample: true),
+            PostponedEntry(title: "友人と食事に行く", kind: .task, bucket: .daily, originBucket: .monthly, originPeriodKey: "2026-09", iconSymbol: "person.2", colorID: "sky", isSample: true)
         ])
 
         session.periodItems.append(contentsOf: blueprintItems(monthly: monthly, weekly: weekly, daily: daily))
@@ -175,7 +176,7 @@ enum TemporaryPlanningSamples {
         session.addMemory(
             scope: scope,
             kind: .diary,
-            text: "今週は、仕事もプライベートもバタバタして\nいたけれど、なんとか乗り切れた気がする。\n\n忙しい中でも、好きな本を読む時間がとれて\nよかった。\n\n朝のストレッチも3日できて、少し体が軽く\nなったように感じる。\n\n友人と久しぶりに食事に行けて、たくさん\n話せて楽しかった。\n\n今週はうまくいかないこともあったけれど、\nそれも含めていい経験になった。\n\n来週は、少し早めに寝ることと、読書の時間\nをもっとつくりたい。\n\n自分のペースで、ゆっくり進んでいこう。",
+            text: "今週は、仕事もプライベートもバタバタしていたけれど、なんとか乗り切れた気がする。\n\n忙しい中でも、好きな本を読む時間がとれてよかった。\n\n朝のストレッチも3日できて、少し体が軽くなったように感じる。\n\n友人と久しぶりに食事に行けて、たくさん話せて楽しかった。\n\n今週はうまくいかないこともあったけれど、それも含めていい経験になった。\n\n来週は、少し早めに寝ることと、読書の時間をもっとつくりたい。\n\n自分のペースで、ゆっくり進んでいこう。",
             hasPhoto: false,
             title: "なんでも日記",
             saved: true,

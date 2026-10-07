@@ -28,6 +28,9 @@ enum PlanningText {
         case monthlyEmptyTitle, weeklyEmptyTitle, dailyEmptyTitle
         case monthlyEmptyBody, weeklyEmptyBody, dailyEmptyBody
         case photoAndLine, anythingDiary
+        case postponeBoxTitle, postponeTasks, postponeEvents
+        case postponeEditName, postponeMoveWithin, postponeDelete
+        case postponeDeleteConfirm
     }
 
     private static let table: [Key: (ja: String, en: String)] = [
@@ -135,7 +138,17 @@ enum PlanningText {
             "Busy days happen to everyone.\nWould you try one of these for today?"
         ),
         .photoAndLine: ("写真 & 一言", "Photo & one line"),
-        .anythingDiary: ("なんでも日記", "Anything diary")
+        .anythingDiary: ("なんでも日記", "Anything diary"),
+        .postponeBoxTitle: ("先送りボックス", "Postpone Box"),
+        .postponeTasks: ("タスク", "Tasks"),
+        .postponeEvents: ("予定", "Events"),
+        .postponeEditName: ("名称を編集", "Edit name"),
+        .postponeMoveWithin: ("先送りボックス内で移動させる", "Move within Postpone Box"),
+        .postponeDelete: ("削除", "Delete"),
+        .postponeDeleteConfirm: (
+            "削除するともとに戻すことはできません。削除しますか？",
+            "Deleting this item cannot be undone. Delete it?"
+        )
     ]
 
     static var isEnglish: Bool {

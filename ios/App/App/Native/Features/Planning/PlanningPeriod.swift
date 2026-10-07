@@ -135,6 +135,62 @@ enum PeriodCalendar {
         }
     }
 
+    /// Origin line for a postponed item. Uses the reflection period, not the current box.
+    static func postponeProvenance(bucket: PlanningBucket?, key: String?) -> String {
+        guard let bucket, let key, !key.isEmpty else { return "" }
+        let when = provenanceWhen(bucket: bucket, key: key)
+        guard !when.isEmpty else { return "" }
+        return PlanningText.isEnglish ? "From the \(when) reflection" : "\(when)の振り返りより"
+    }
+
+    private static func provenanceWhen(bucket: PlanningBucket, key: String) -> String {
+        if !key.contains("-"), let year = Int(key) {
+            return PlanningText.isEnglish ? "\(year)" : "\(year)年"
+        }
+        switch bucket {
+        case .monthly:
+            let parts = monthParts(key)
+            if PlanningText.isEnglish {
+                return englishMonth(year: parts.year, month: parts.month)
+            }
+            return "\(parts.year)年\(parts.month)月"
+        case .weekly:
+            guard let start = date(from: key) else { return "" }
+            let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
+            if PlanningText.isEnglish {
+                return englishRange(start, end)
+            }
+            return "\(dayLabel(start))〜\(shortDayLabel(end))"
+        case .daily:
+            guard let day = date(from: key) else { return "" }
+            if PlanningText.isEnglish {
+                return englishDay(day)
+            }
+            return dayLabel(day)
+        }
+    }
+
+    private static func englishMonth(year: Int, month: Int) -> String {
+        guard let date = calendar.date(from: DateComponents(year: year, month: month, day: 1)) else { return "" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.calendar = calendar
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: date)
+    }
+
+    private static func englishDay(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.calendar = calendar
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: date)
+    }
+
+    private static func englishRange(_ start: Date, _ end: Date) -> String {
+        "\(englishDay(start))–\(englishDay(end))"
+    }
+
     /// Main-card schedule line: `9/15（火）` or `9/20（日）19:00`.
     static func mainSchedule(periodKey: String, month: Int?, day: Int?, minutes: Int?) -> String? {
         guard let day else { return nil }

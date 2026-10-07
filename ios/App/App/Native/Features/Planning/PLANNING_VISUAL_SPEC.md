@@ -122,6 +122,18 @@ Future and the period pages page with `PlanningHorizontalPager`, a transparent h
 
 `PlanningSystemSheetChrome` is one continuous sheet surface. The × / ✓ row is a real 76 pt header with a clear background. The presented height is the fitted height clamped to the visible area above the keyboard, and only the body viewport shrinks. The fitted measurement stays frozen while the keyboard is up.
 
+## Blueprint refinement
+
+The Planning header keeps the title where it is. Postpone, Help, and User sit in one trailing group with an 8 pt edge gap. User stays the right anchor.
+
+Anything Diary is one TextKit text view. Each sentence wraps by width. Paragraph breaks stay. Ruled lines use that same 28 pt line pitch and continue below the text. There is no leaf decoration and no date on the main card.
+
+Photo & One Line uses a brass stem and lamp bar, a soft downward glow, and a layered ivory frame. The photo is aspect-fit. The frame height follows the image. The caption card is separate, with about 24 pt of horizontal padding.
+
+The list ＋ menu is a 16 pt rounded overlay with no popover arrow. The Monthly goal field is a 76 pt scrolling area whose placeholder is `目標を入れてみよう！`.
+
+Postpone Box cards show a category bubble, the title, the immutable reflection provenance, and a chevron. The action sheet edits the name in place, moves the current bucket only, and confirms deletion. Period arrows do not show a red reflection marker in this phase.
+
 `PlanningTransition` resigns the keyboard, then `NativeGlassFeedback` waits 0.22 s before that control navigates. The wait is per control. Outline Return and Backspace do not use it. The Back control is one 44 pt circle. Outline rows register live `UITextField`s with `PlanningOutlineFocusCoordinator`. Return keeps the current field first responder until the next row is in a window.
 
 ## Navigation contract
