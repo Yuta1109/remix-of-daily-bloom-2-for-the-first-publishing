@@ -94,7 +94,7 @@ describe("planning foundation rules", () => {
     expect(future).toContain("count: 3");
     expect(future).toContain("PlanningSystemSheetChrome");
     expect(future).not.toContain("presentationDetents([.large])");
-    expect(future).toContain("PlanningHorizontalPager");
+    expect(future).toContain("PlanningSwipePageHost");
     expect(future).not.toContain(".tabViewStyle(.page");
     expect(future).toContain("目標は1つ");
   });
@@ -153,7 +153,7 @@ describe("planning period pages", () => {
     expect(shell).not.toContain("NativeFloatingTabBar");
     expect(periodPage).toContain("chevron.left");
     expect(periodPage).toContain("chevron.right");
-    expect(periodPage).toContain("PlanningHorizontalPager");
+    expect(periodPage).toContain("PlanningSwipePageHost");
     expect(periodPage).not.toContain(".tabViewStyle(.page");
     expect(periodPage).not.toContain("DragGesture");
   });
@@ -303,9 +303,9 @@ describe("planning blueprint fidelity", () => {
     expect(chrome).toContain("static let rowCount = 6");
     expect(chrome).toContain("static let columnCount = 7");
     expect(future).toContain("PlanningCalendarGrid.matrix");
-    expect(future).toContain("PlanningHorizontalPager");
-    expect(periodPage).toContain("PlanningHorizontalPager");
-    expect(chrome).toContain("scrollTargetBehavior(.paging)");
+    expect(future).toContain("PlanningSwipePageHost");
+    expect(periodPage).toContain("PlanningSwipePageHost");
+    expect(chrome).toContain("struct PlanningSwipePageHost");
     expect(future).toContain("fixedHeight: 260");
     expect(periodPage).toContain("fixedHeight: bucket == .daily ? 460 : 280");
   });
@@ -697,7 +697,7 @@ describe("planning blueprint 1", () => {
     expect(future).toContain("PlanningSectionIntro(title: \"Future\"");
     expect(planText).toContain("これからの1年を見通して");
     expect(future).toContain("fixedHeight: 260");
-    expect(future).toContain("PlanningHorizontalPager");
+    expect(future).toContain("PlanningSwipePageHost");
     expect(future).not.toContain(".tabViewStyle(.page");
   });
 
@@ -1098,16 +1098,16 @@ describe("planning header icon and sheet geometry", () => {
     expect(surface).not.toContain("ScrollView");
     expect(shell).toContain("PlanningIndex(session: session)");
     expect(shell).toContain(".planningExtendingSurface(PlanningPalette.paper)");
-    expect(shell).toContain(".planningRootSafeArea()");
+    expect(shell).not.toContain(".planningRootSafeArea()");
   });
 
-  it("applies one measured scroll-content inset to pager pages", () => {
-    expect(chrome).toContain("var planningInitialScrollTopInset");
-    expect(chrome).toContain("PlanningViewportMetrics.topContentInset");
-    expect(chrome).toContain("rootSafeTop + PlanningTokens.Header.height");
-    expect(chrome).toContain(".contentMargins(.top, inset, for: .scrollContent)");
-    expect(future).toContain(".planningInitialScrollMargin()");
-    expect(period).toContain(".planningInitialScrollMargin()");
+  it("does not add a second top content margin under the Planning header", () => {
+    expect(chrome).not.toContain("planningInitialScrollTopInset");
+    expect(chrome).not.toContain("PlanningViewportMetrics");
+    expect(chrome).not.toContain("rootSafeTop + PlanningTokens.Header.height");
+    expect(chrome).not.toContain(".contentMargins(.top, inset, for: .scrollContent)");
+    expect(future).not.toContain(".planningInitialScrollMargin()");
+    expect(period).not.toContain(".planningInitialScrollMargin()");
     expect(future).not.toContain(".padding(.top, 72)");
     expect(period).not.toContain(".padding(.top, 72)");
     expect(plans).not.toContain(".planningInitialScrollMargin()");
@@ -1199,12 +1199,12 @@ describe("planning interaction stability", () => {
     expect(icon).not.toContain(".regular.interactive()");
   });
 
-  it("shares one reduced intro gap for Future and the period pages", () => {
+  it("shares Plan's intro gap on every Planning section", () => {
     expect(tokens).toContain("static let topGap: CGFloat = 17.5");
-    expect(tokens).toContain("static let topGap: CGFloat = 11.725");
+    expect(tokens).not.toContain("11.725");
     expect(tokens).toContain("static let titleTop: CGFloat = 35");
-    expect(future).toContain("topGap: PlanningTokens.PeriodIntro.topGap");
-    expect(period).toContain("topGap: PlanningTokens.PeriodIntro.topGap");
+    expect(future).toContain("topGap: PlanningTokens.PlanIntro.topGap");
+    expect(period).toContain("topGap: PlanningTokens.PlanIntro.topGap");
     const planIntro = plans.slice(plans.indexOf("PlanningSectionIntro("), plans.indexOf("PlanningHeadingIconSlot"));
     expect(planIntro).not.toContain("PeriodIntro.topGap");
   });
@@ -1391,24 +1391,24 @@ describe("planning root viewport repair", () => {
     expect(chrome).toContain(".sharedBackgroundVisibility(.hidden)");
   });
 
-  it("keeps separate Plan and period intro gaps", () => {
+  it("keeps one Plan intro gap for Future and period pages", () => {
     expect(tokens).toContain("static let topGap: CGFloat = 17.5");
-    expect(tokens).toContain("static let topGap: CGFloat = 11.725");
+    expect(tokens).not.toContain("11.725");
     expect(chrome).toContain("PlanningTokens.PlanIntro.topGap");
-    expect(future).toContain("topGap: PlanningTokens.PeriodIntro.topGap");
-    expect(periodPage).toContain("topGap: PlanningTokens.PeriodIntro.topGap");
+    expect(future).toContain("topGap: PlanningTokens.PlanIntro.topGap");
+    expect(periodPage).toContain("topGap: PlanningTokens.PlanIntro.topGap");
   });
 
-  it("lets the horizontal pager own width inside a stable viewport", () => {
-    const pager = chrome.slice(chrome.indexOf("struct PlanningHorizontalPager"), chrome.indexOf("struct PlanningSystemSheetChrome"));
-    expect(pager).toContain(".containerRelativeFrame(.horizontal)");
-    expect(pager).not.toContain(".containerRelativeFrame(.vertical)");
-    expect(pager).toContain(".frame(maxHeight: .infinity, alignment: .top)");
-    expect(pager).toContain("ForEach(pages, id: \\.self)");
-    expect(chrome).toContain("enum PlanningViewportMetrics");
-    expect(chrome).toContain("rootSafeTop + PlanningTokens.Header.height");
-    expect(chrome).not.toContain("PlanningSystemTopInsetKey");
-    expect(shell).toContain(".planningRootSafeArea()");
+  it("pages by finger-follow without a horizontal ScrollView", () => {
+    const host = chrome.slice(chrome.indexOf("struct PlanningSwipePageHost"), chrome.indexOf("private struct PlanningHorizontalPanInstaller"));
+    expect(host).toContain("content(selection)");
+    expect(host).toContain("if translation != 0");
+    expect(host).not.toContain("ScrollView(");
+    expect(host).not.toContain(".containerRelativeFrame");
+    expect(host).not.toContain("ForEach(pages, id: \\.self)");
+    expect(chrome).not.toContain("enum PlanningViewportMetrics");
+    expect(chrome).not.toContain("struct PlanningHorizontalPager");
+    expect(shell).not.toContain(".planningRootSafeArea()");
     expect(future).not.toContain("scrollPosition");
     expect(periodPage).not.toContain("ScrollViewReader");
   });
@@ -1430,5 +1430,61 @@ describe("planning root viewport repair", () => {
     expect(models).toContain("func futureCalendar(year: Int)");
     const cell = future.slice(future.indexOf("private struct FutureMonthCell"), future.indexOf("private struct FutureRangeBand"));
     expect(cell).not.toContain("FutureCalendarMarks.winner");
+    expect(cell).toContain("Canvas");
+    expect(cell).toContain("bandRole(column: column, eventID: eventID, rowWinners: winners)");
+    expect(cell).not.toContain("ForEach(0..<PlanningCalendarGrid.rowCount");
+  });
+
+  it("keeps the current vertical page as the Planning scroll root", () => {
+    const plans = readFileSync(`${planningRoot}/PlanPages.swift`, "utf8");
+    expect(plans).toContain("ScrollView");
+    expect(future).toContain("ScrollView");
+    expect(periodPage).toContain("ScrollView");
+    expect(future).not.toContain("ScrollView(.horizontal)");
+    expect(periodPage).not.toContain("ScrollView(.horizontal)");
+    expect(future).not.toContain(".toolbarBackground");
+    expect(periodPage).not.toContain(".toolbarBackground");
+    expect(future).not.toContain(".ultraThinMaterial");
+    expect(periodPage).not.toContain(".ultraThinMaterial");
+    expect(shell).toContain("PlanningSectionPage(session: session)");
+    expect(shell).toContain("PlanningIndex(session: session)");
+  });
+
+  it("changes the logical page only after a horizontal settle", () => {
+    const host = chrome.slice(chrome.indexOf("struct PlanningSwipePageHost"), chrome.indexOf("private struct PlanningHorizontalPanInstaller"));
+    const pan = chrome.slice(chrome.indexOf("private struct PlanningHorizontalPanInstaller"), chrome.indexOf("struct PlanningSystemSheetChrome"));
+    expect(pan).toContain("abs(translation.x) > abs(translation.y)");
+    expect(host).toContain("if !ended");
+    expect(host).toContain("selection = page");
+    expect(host.indexOf("if !ended")).toBeLessThan(host.indexOf("selection = page"));
+    expect(host).toContain(".allowsHitTesting(false)");
+  });
+
+  it("sizes system glass from the symbol and keeps a 44pt hit slot", () => {
+    const icon = glass.slice(glass.indexOf("struct NativeGlassIconButton"), glass.indexOf("// fallback platter"));
+    expect(icon).toContain(".controlSize(.regular)");
+    expect(icon).toContain(".font(.system(size: 17, weight: .semibold))");
+    expect(icon).toContain(".buttonStyle(.glass)");
+    expect(icon).toContain(".buttonBorderShape(.circle)");
+    expect(icon).not.toContain("buttonVisual");
+    expect(icon).not.toContain(".regular.interactive()");
+    expect(glass).toContain(".frame(minWidth: 44, minHeight: 44)");
+    expect(glass).toContain("guard !transitionPending else { return }");
+  });
+
+  it("shows the selected Future year before neighbor preparation", () => {
+    const select = models.slice(models.indexOf("func select("), models.indexOf("func futureCalendar"));
+    expect(select).toContain("isWarm(year: year, revision: revision)");
+    expect(select).not.toContain("prepare(around:");
+    expect(select).toContain("prepareNeighbors(around: year");
+    expect(select).toContain("DispatchQueue.main.async");
+    expect(future).toContain("func prepareNeighbors");
+    expect(models).toContain("let futureCalendars = FutureCalendarCache()");
+  });
+
+  it("clears only the period scroll content for the floating due card", () => {
+    expect(periodPage).toContain(".overlay(alignment: .bottom)");
+    expect(periodPage).toContain(".padding(.bottom, session.isActivePrompt(ReflectionScope.period(bucket, key)) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)");
+    expect(periodPage).not.toContain("safeAreaInset");
   });
 });

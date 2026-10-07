@@ -9,7 +9,7 @@ struct FutureYearPage: View {
     private let pageYears = Array(2020...2036)
 
     var body: some View {
-        PlanningHorizontalPager(pages: pageYears, selection: $session.selectedYear) { year in
+        PlanningSwipePageHost(pages: pageYears, selection: $session.selectedYear) { year in
             yearPage(year)
         }
         .onChange(of: session.selectedYear) { _, _ in
@@ -44,7 +44,7 @@ struct FutureYearPage: View {
     private func yearPage(_ year: Int) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                PlanningSectionIntro(title: "Future", message: PlanningText.string(.futureDescription), topGap: PlanningTokens.PeriodIntro.topGap) {
+                PlanningSectionIntro(title: "Future", message: PlanningText.string(.futureDescription), topGap: PlanningTokens.PlanIntro.topGap) {
                     Image(systemName: "calendar")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(PlanningPalette.ink)
@@ -85,9 +85,7 @@ struct FutureYearPage: View {
             .padding(.trailing, PlanningTokens.Future.trailingInset)
             .padding(.bottom, 12)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .planningScroll()
-        .planningInitialScrollMargin()
     }
 
     private func yearControls(_ year: Int) -> some View {
@@ -320,8 +318,19 @@ final class FutureCalendarCache {
         return built
     }
 
+    func isWarm(year: Int, revision: Int) -> Bool {
+        stored[year]?.revision == revision
+    }
+
     func prepare(around year: Int, events: [PlanningEventRecord], revision: Int) {
         for candidate in [year - 1, year, year + 1] {
+            _ = snapshot(year: candidate, events: events, revision: revision)
+        }
+    }
+
+    /// Neighbors only. The selected year is already on screen.
+    func prepareNeighbors(around year: Int, events: [PlanningEventRecord], revision: Int) {
+        for candidate in [year - 1, year + 1] {
             _ = snapshot(year: candidate, events: events, revision: revision)
         }
     }
@@ -330,35 +339,16 @@ final class FutureCalendarCache {
 private struct FutureMonthCell: View {
     let month: FutureMonthCalendar
 
-    private var weekdays: [String] {
-        let symbols = PeriodCalendar.calendar.veryShortWeekdaySymbols
-        let first = PeriodCalendar.calendar.firstWeekday - 1
-        return (0..<7).map { symbols[(first + $0) % 7] }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(month.month)月")
                 .font(.system(size: PlanningTokens.Future.monthFont, weight: .semibold))
                 .foregroundStyle(PlanningPalette.ink)
-            HStack(spacing: 0) {
-                ForEach(weekdays, id: \.self) { symbol in
-                    Text(symbol)
-                        .font(.system(size: PlanningTokens.Future.weekdayFont))
-                        .foregroundStyle(PlanningPalette.muted)
-                        .frame(maxWidth: .infinity)
-                }
+            Canvas { context, size in
+                drawMonth(&context, size: size)
             }
-            VStack(spacing: 2) {
-                ForEach(0..<PlanningCalendarGrid.rowCount, id: \.self) { row in
-                    let winners = month.winnerIDs[row]
-                    HStack(spacing: 0) {
-                        ForEach(0..<PlanningCalendarGrid.columnCount, id: \.self) { column in
-                            dayCell(day: month.rows[row][column], column: column, winners: winners)
-                        }
-                    }
-                }
-            }
+            .accessibilityElement()
+            .accessibilityLabel("\(month.month)月")
         }
         .padding(.horizontal, 6)
         .padding(.top, 8)
@@ -372,20 +362,42 @@ private struct FutureMonthCell: View {
         )
     }
 
-    private func dayCell(day: Int?, column: Int, winners: [UUID?]) -> some View {
-        let eventID = winners[column]
-        let role = FutureCalendarMarks.bandRole(column: column, eventID: eventID, rowWinners: winners)
-        return ZStack {
-            if let eventID, let role {
-                FutureRangeBand(role: role)
-                    .fill(PlanIconColor.resolved(month.colors[eventID] ?? PlanIconColor.defaultID).color.opacity(0.26))
-                    .padding(.vertical, 1)
-            }
-            Text(day.map(String.init) ?? " ")
-                .font(.system(size: PlanningTokens.Future.dateFont))
-                .foregroundStyle(PlanningPalette.ink)
+    /// One surface for weekday labels, day numbers, and range bands. Reads the snapshot only.
+    private func drawMonth(_ context: inout GraphicsContext, size: CGSize) {
+        let columns = CGFloat(PlanningCalendarGrid.columnCount)
+        let rows = CGFloat(PlanningCalendarGrid.rowCount)
+        let header: CGFloat = 12
+        let cellWidth = size.width / columns
+        let cellHeight = max((size.height - header) / rows, 1)
+        let symbols = PeriodCalendar.calendar.veryShortWeekdaySymbols
+        let first = PeriodCalendar.calendar.firstWeekday - 1
+        for column in 0..<PlanningCalendarGrid.columnCount {
+            let label = context.resolve(
+                Text(symbols[(first + column) % 7])
+                    .font(.system(size: PlanningTokens.Future.weekdayFont))
+                    .foregroundStyle(PlanningPalette.muted)
+            )
+            context.draw(label, at: CGPoint(x: cellWidth * (CGFloat(column) + 0.5), y: header * 0.5), anchor: .center)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        for row in 0..<PlanningCalendarGrid.rowCount {
+            let winners = month.winnerIDs[row]
+            for column in 0..<PlanningCalendarGrid.columnCount {
+                let origin = CGPoint(x: cellWidth * CGFloat(column), y: header + cellHeight * CGFloat(row))
+                let eventID = winners[column]
+                if let eventID, let role = FutureCalendarMarks.bandRole(column: column, eventID: eventID, rowWinners: winners) {
+                    let band = CGRect(x: origin.x, y: origin.y + 1, width: cellWidth, height: max(cellHeight - 2, 1))
+                    let color = PlanIconColor.resolved(month.colors[eventID] ?? PlanIconColor.defaultID).color.opacity(0.26)
+                    context.fill(FutureRangeBand(role: role).path(in: band), with: .color(color))
+                }
+                guard let day = month.rows[row][column] else { continue }
+                let numeral = context.resolve(
+                    Text("\(day)")
+                        .font(.system(size: PlanningTokens.Future.dateFont))
+                        .foregroundStyle(PlanningPalette.ink)
+                )
+                context.draw(numeral, at: CGPoint(x: origin.x + cellWidth / 2, y: origin.y + cellHeight / 2), anchor: .center)
+            }
+        }
     }
 }
 

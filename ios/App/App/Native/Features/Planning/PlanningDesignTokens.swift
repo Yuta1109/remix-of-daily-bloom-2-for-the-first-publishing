@@ -93,11 +93,6 @@ enum PlanningTokens {
         static let topGap: CGFloat = 17.5
     }
 
-    /// Half of the previous Future / period gap (`35 * 0.67`).
-    enum PeriodIntro {
-        static let topGap: CGFloat = 11.725
-    }
-
     enum Search {
         static let height: CGFloat = 38
         static let inset: CGFloat = 16

@@ -44,16 +44,27 @@ struct NativeGlassIconButton: View {
         Group {
             if #available(iOS 26.0, *) {
                 if prominent {
-                    Button(action: invoke) { symbol }
-                        .buttonStyle(.glassProminent)
-                        .buttonBorderShape(.circle)
-                        .tint(theme.accent)
+                    Button(action: invoke) {
+                        Image(systemName: icon.rawValue)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.regular)
+                    .tint(theme.accent)
                 } else {
-                    Button(action: invoke) { symbol }
-                        .buttonStyle(.glass)
-                        .buttonBorderShape(.circle)
+                    Button(action: invoke) {
+                        Image(systemName: icon.rawValue)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(neutral ? Color(uiColor: .label) : PlanningPalette.accent)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.regular)
                 }
             } else {
+                // fallback platter
                 Button(action: invoke) {
                     symbol.modifier(PlanningIconGlass(prominent: prominent, tint: theme.accent))
                 }

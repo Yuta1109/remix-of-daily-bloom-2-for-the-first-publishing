@@ -15,7 +15,7 @@ struct PeriodPlannerPage: View {
     private var periodKey: String { session.periodKey(for: bucket) }
 
     var body: some View {
-        PlanningHorizontalPager(pages: pageKeys, selection: periodSelection) { key in
+        PlanningSwipePageHost(pages: pageKeys, selection: periodSelection) { key in
             periodPage(key)
         }
         .background(PlanningTabBarHeightReader(height: $tabBarHeight))
@@ -72,7 +72,7 @@ struct PeriodPlannerPage: View {
                 PlanningSectionIntro(
                     title: introTitle,
                     message: PlanningText.string(introKey),
-                    topGap: PlanningTokens.PeriodIntro.topGap
+                    topGap: PlanningTokens.PlanIntro.topGap
                 ) {
                     Image(systemName: introSymbol)
                         .font(.system(size: 20, weight: .semibold))
@@ -89,9 +89,7 @@ struct PeriodPlannerPage: View {
             .padding(.bottom, 16)
             .padding(.bottom, session.isActivePrompt(ReflectionScope.period(bucket, key)) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .planningScroll()
-        .planningInitialScrollMargin()
         .planningKeyboardDismiss()
     }
 

@@ -574,124 +574,157 @@ private final class PlanningDiscardAlertController: UIAlertController {
     }
 }
 
-enum PlanningViewportMetrics {
-    /// Header clearance measured from the Planning shell, not from a scrolling descendant.
-    static func topContentInset(rootSafeTop: CGFloat) -> CGFloat {
-        rootSafeTop + PlanningTokens.Header.height
-    }
-}
-
-private struct PlanningInitialScrollTopInsetKey: EnvironmentKey {
-    static let defaultValue: CGFloat = PlanningTokens.Header.height
-}
-
-extension EnvironmentValues {
-    /// Status-bar safe area plus the Planning root header. Initial pager scroll margin only.
-    var planningInitialScrollTopInset: CGFloat {
-        get { self[PlanningInitialScrollTopInsetKey.self] }
-        set { self[PlanningInitialScrollTopInsetKey.self] = newValue }
-    }
-}
-
-extension View {
-    /// Stable root safe-area reading. It does not follow scroll content.
-    func planningRootSafeArea() -> some View {
-        modifier(PlanningRootSafeAreaInset())
-    }
-
-    /// Initial scroll position only. Content can still scroll under the header.
-    func planningInitialScrollMargin() -> some View {
-        modifier(PlanningInitialScrollMargin())
-    }
-}
-
-private struct PlanningRootSafeAreaInset: ViewModifier {
-    @State private var rootSafeTop: CGFloat = 0
-
-    func body(content: Content) -> some View {
-        content
-            .background {
-                PlanningRootSafeAreaReader(top: $rootSafeTop)
-            }
-            .environment(\.planningInitialScrollTopInset, PlanningViewportMetrics.topContentInset(rootSafeTop: rootSafeTop))
-    }
-}
-
-/// Reports the window safe area from the shell, not from a scrolling child.
-private struct PlanningRootSafeAreaReader: UIViewRepresentable {
-    @Binding var top: CGFloat
-
-    func makeUIView(context: Context) -> Reader {
-        let view = Reader()
-        view.onChange = { top = $0 }
-        return view
-    }
-
-    func updateUIView(_ uiView: Reader, context: Context) {
-        uiView.onChange = { top = $0 }
-        uiView.reportIfChanged()
-    }
-
-    final class Reader: UIView {
-        var onChange: (CGFloat) -> Void = { _ in }
-        private var last: CGFloat = -1
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            reportIfChanged()
-        }
-
-        override func safeAreaInsetsDidChange() {
-            super.safeAreaInsetsDidChange()
-            reportIfChanged()
-        }
-
-        func reportIfChanged() {
-            let value = window?.safeAreaInsets.top ?? safeAreaInsets.top
-            guard abs(value - last) > 0.5 else { return }
-            last = value
-            onChange(value)
-        }
-    }
-}
-
-private struct PlanningInitialScrollMargin: ViewModifier {
-    @Environment(\.planningInitialScrollTopInset) private var inset
-
-    func body(content: Content) -> some View {
-        content.contentMargins(.top, inset, for: .scrollContent)
-    }
-}
-
-/// Transparent horizontal pager. Replaces nested paging TabView containers.
-struct PlanningHorizontalPager<Page: Hashable, Content: View>: View {
+/// Current page is a direct vertical ScrollView. Horizontal paging is a finger-follow
+/// offset of that page plus at most one neighbor. There is no horizontal ScrollView.
+struct PlanningSwipePageHost<Page: Hashable, Content: View>: View {
     let pages: [Page]
     @Binding var selection: Page
     @ViewBuilder var content: (Page) -> Content
 
-    private var position: Binding<Page?> {
-        Binding(
-            get: { selection },
-            set: { if let page = $0 { selection = page } }
-        )
-    }
+    @State private var translation: CGFloat = 0
 
     var body: some View {
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: 0) {
-                ForEach(pages, id: \.self) { page in
-                    content(page)
-                        .containerRelativeFrame(.horizontal)
-                        .frame(maxHeight: .infinity, alignment: .top)
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            ZStack(alignment: .topLeading) {
+                if translation != 0, let neighbor = neighbor(for: translation) {
+                    content(neighbor)
+                        .frame(width: width, height: proxy.size.height, alignment: .top)
+                        .offset(x: translation < 0 ? width + translation : translation - width)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                content(selection)
+                    .frame(width: width, height: proxy.size.height, alignment: .top)
+                    .offset(x: translation)
+            }
+            .background {
+                PlanningHorizontalPanInstaller { delta, ended, velocity in
+                    handle(delta: delta, ended: ended, velocity: velocity, width: width)
                 }
             }
-            .scrollTargetLayout()
         }
-        .scrollTargetBehavior(.paging)
-        .scrollPosition(id: position)
-        .scrollIndicators(.hidden)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.clear)
+    }
+
+    private func neighbor(for translation: CGFloat) -> Page? {
+        guard let index = pages.firstIndex(of: selection) else { return nil }
+        if translation < 0 {
+            let next = pages.index(after: index)
+            guard next < pages.endIndex else { return nil }
+            return pages[next]
+        }
+        guard index > pages.startIndex else { return nil }
+        return pages[pages.index(before: index)]
+    }
+
+    private func handle(delta: CGFloat, ended: Bool, velocity: CGFloat, width: CGFloat) {
+        guard let index = pages.firstIndex(of: selection) else { return }
+        let proposed = clamped(delta, index: index)
+        if !ended {
+            translation = proposed
+            return
+        }
+        let threshold = width * 0.28
+        let forward = proposed < -threshold || velocity < -700
+        let backward = proposed > threshold || velocity > 700
+        if forward, pages.index(after: index) < pages.endIndex {
+            commit(pages[pages.index(after: index)], width: width, direction: -1)
+        } else if backward, index > pages.startIndex {
+            commit(pages[pages.index(before: index)], width: width, direction: 1)
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { translation = 0 }
+        }
+    }
+
+    private func clamped(_ delta: CGFloat, index: Int) -> CGFloat {
+        if delta < 0, pages.index(after: index) >= pages.endIndex { return delta * 0.2 }
+        if delta > 0, index <= pages.startIndex { return delta * 0.2 }
+        return delta
+    }
+
+    /// Selection changes only after the slide finishes, then the offset resets without a jump.
+    private func commit(_ page: Page, width: CGFloat, direction: CGFloat) {
+        withAnimation(.easeOut(duration: 0.22)) { translation = direction * width }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                selection = page
+                translation = 0
+            }
+        }
+    }
+}
+
+/// Claims the touch only after it is clearly horizontal, so the vertical ScrollView keeps vertical drags.
+private struct PlanningHorizontalPanInstaller: UIViewRepresentable {
+    var onPan: (CGFloat, Bool, CGFloat) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPan: onPan) }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onPan = onPan
+        DispatchQueue.main.async { context.coordinator.attach(to: uiView) }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onPan: (CGFloat, Bool, CGFloat) -> Void
+        private weak var host: UIView?
+        private var recognizer: UIPanGestureRecognizer?
+
+        init(onPan: @escaping (CGFloat, Bool, CGFloat) -> Void) {
+            self.onPan = onPan
+        }
+
+        func attach(to marker: UIView) {
+            var candidate: UIView? = marker.superview
+            var chosen: UIView?
+            while let current = candidate {
+                if current.bounds.width >= 80, containsScrollView(current) {
+                    chosen = current
+                    break
+                }
+                candidate = current.superview
+            }
+            guard let chosen, host !== chosen else { return }
+            if let recognizer, let host { host.removeGestureRecognizer(recognizer) }
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
+            pan.delegate = self
+            pan.cancelsTouchesInView = true
+            chosen.addGestureRecognizer(pan)
+            recognizer = pan
+            host = chosen
+        }
+
+        private func containsScrollView(_ view: UIView) -> Bool {
+            if view is UIScrollView { return true }
+            return view.subviews.contains(where: containsScrollView)
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let view = pan.view else { return false }
+            let translation = pan.translation(in: view)
+            let velocity = pan.velocity(in: view)
+            return abs(translation.x) > abs(translation.y) || abs(velocity.x) > abs(velocity.y)
+        }
+
+        @objc func panned(_ pan: UIPanGestureRecognizer) {
+            let translation = pan.translation(in: pan.view).x
+            let velocity = pan.velocity(in: pan.view).x
+            if pan.state == .cancelled || pan.state == .failed {
+                onPan(0, true, 0)
+                return
+            }
+            let ended = pan.state == .ended
+            onPan(translation, ended, velocity)
+        }
     }
 }
 

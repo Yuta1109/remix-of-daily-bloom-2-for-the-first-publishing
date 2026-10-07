@@ -516,7 +516,15 @@ final class PlanningSession: ObservableObject {
         guard index.contains(section) else { return }
         self.section = section
         if section == .future {
-            futureCalendars.prepare(around: selectedYear, events: events, revision: futureCalendarRevision)
+            let year = selectedYear
+            let revision = futureCalendarRevision
+            if !futureCalendars.isWarm(year: year, revision: revision) {
+                _ = futureCalendars.snapshot(year: year, events: events, revision: revision)
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.futureCalendars.prepareNeighbors(around: year, events: self.events, revision: revision)
+            }
         }
     }
 
