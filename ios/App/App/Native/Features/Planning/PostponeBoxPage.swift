@@ -104,7 +104,7 @@ private struct PostponeActionSheet: View {
             centerTitle: entry?.title ?? "",
             bodySurface: Color.white
         ) {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(PlanningText.string(.postponeEditName))
                         .font(.system(size: 14, weight: .semibold))
@@ -119,6 +119,7 @@ private struct PostponeActionSheet: View {
                         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(PlanningPalette.line, lineWidth: 1))
                         .onSubmit { resign() }
                 }
+                .padding(.bottom, 20)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(PlanningText.string(.postponeMoveWithin))
                         .font(.system(size: 14, weight: .semibold))
@@ -130,6 +131,7 @@ private struct PostponeActionSheet: View {
                     }
                     .pickerStyle(.segmented)
                 }
+                .padding(.bottom, 22)
                 Button(role: .destructive) {
                     confirmingDelete = true
                 } label: {
@@ -146,18 +148,22 @@ private struct PostponeActionSheet: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .padding(.top, 4)
         }
         .onAppear { title = entry?.title ?? "" }
         .onChange(of: title) { _, newValue in
             session.renamePostponed(entryID, title: newValue)
         }
-        .alert(PlanningText.string(.postponeDeleteConfirm), isPresented: $confirmingDelete) {
-            Button(PlanningText.string(.postponeDelete), role: .destructive) {
+        .onChange(of: confirmingDelete) { _, show in
+            guard show else { return }
+            confirmingDelete = false
+            PlanningDiscardConfirmation.presentDestructive(
+                message: PlanningText.string(.postponeDeleteConfirm),
+                destructiveTitle: PlanningText.string(.postponeDelete)
+            ) {
                 session.postponed.removeAll { $0.id == entryID }
                 dismiss()
             }
-            Button(PlanningText.string(.cancel), role: .cancel) {}
         }
     }
 

@@ -20,16 +20,11 @@ struct PeriodPlannerPage: View {
         }
         .background(PlanningTabBarHeightReader(height: $tabBarHeight))
         .overlay(alignment: .bottom) {
-            if session.isActivePrompt(ReflectionScope.period(bucket, periodKey)),
-               !periodHasSavedMemory(periodKey) {
-                PlanningReflectionDueCard(bucket: bucket, action: {
-                    let scope = ReflectionScope.period(bucket, periodKey)
-                    session.refreshDue(scope)
-                    PlanningTransition.perform { navigation.path.append(PlanningRoute.reflection(scope)) }
-                }, tabBarHeight: tabBarHeight)
-                .padding(.leading, PlanningTokens.contentInset)
-                .padding(.trailing, PlanningTokens.contentInset)
-                .padding(.bottom, 8)
+            if showsReflectionPrompt(periodKey) {
+                reflectionPrompt(periodKey)
+                    .padding(.leading, PlanningTokens.contentInset)
+                    .padding(.trailing, PlanningTokens.contentInset)
+                    .padding(.bottom, 8)
             }
         }
         .onAppear {
@@ -82,6 +77,10 @@ struct PeriodPlannerPage: View {
                 periodBar(key)
                     .padding(.top, 18)
                     .padding(.bottom, 16)
+                if let banner = dailyDemoBanner(key) {
+                    banner
+                        .padding(.bottom, 16)
+                }
                 if bucket == .monthly {
                     monthlyGoal(key)
                         .padding(.bottom, 16)
@@ -90,7 +89,7 @@ struct PeriodPlannerPage: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
-            .padding(.bottom, session.isActivePrompt(ReflectionScope.period(bucket, key)) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)
+            .padding(.bottom, showsReflectionPrompt(key) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)
         }
         .planningScroll()
         .planningKeyboardDismiss()
@@ -136,26 +135,67 @@ struct PeriodPlannerPage: View {
             .buttonStyle(.plain)
             .padding(.horizontal, PlanningTokens.PeriodSelector.arrowZone)
             HStack {
-                Button {
-                    session.shiftPeriod(bucket, by: -1)
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(PlanningPalette.accent)
-                        .frame(width: PlanningTokens.PeriodSelector.arrowZone, height: PlanningTokens.PeriodSelector.arrowZone)
-                }
+                periodArrow(systemName: "chevron.left", direction: -1, key: key)
                 Spacer(minLength: 0)
-                Button {
-                    session.shiftPeriod(bucket, by: 1)
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(PlanningPalette.accent)
-                        .frame(width: PlanningTokens.PeriodSelector.arrowZone, height: PlanningTokens.PeriodSelector.arrowZone)
-                }
+                periodArrow(systemName: "chevron.right", direction: 1, key: key)
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private func periodArrow(systemName: String, direction: Int, key: String) -> some View {
+        Button {
+            session.shiftPeriod(bucket, by: direction)
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(PlanningPalette.accent)
+                .frame(width: PlanningTokens.PeriodSelector.arrowZone, height: PlanningTokens.PeriodSelector.arrowZone)
+                .overlay(alignment: .topTrailing) {
+                    if session.neighborNeedsReflectionCue(bucket: bucket, from: key, direction: direction) {
+                        PeriodArrowAttentionBadge()
+                            .offset(x: 2, y: 2)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func showsReflectionPrompt(_ key: String) -> Bool {
+        session.isActivePrompt(ReflectionScope.period(bucket, key)) && !periodHasSavedMemory(key)
+    }
+
+    @ViewBuilder
+    private func reflectionPrompt(_ key: String) -> some View {
+        let open = {
+            let scope = ReflectionScope.period(bucket, key)
+            session.refreshDue(scope)
+            PlanningTransition.perform { navigation.path.append(PlanningRoute.reflection(scope)) }
+        }
+        if bucket == .daily, session.existingRecord(bucket: bucket, periodKey: key).tutorialReflection {
+            PlanningGlassAction(title: PlanningText.string(.dailyTutorialStart), showsChevron: true, action: open)
+        } else {
+            PlanningReflectionDueCard(bucket: bucket, action: open, tabBarHeight: tabBarHeight)
+        }
+    }
+
+    @ViewBuilder
+    private func dailyDemoBanner(_ key: String) -> some View {
+        if bucket == .daily {
+            let record = session.existingRecord(bucket: bucket, periodKey: key)
+            if record.tutorialReflection, !record.reflectionCompleted {
+                PlanningTutorialBanner(systemImage: "book", text: PlanningText.string(.dailyTutorialReflection))
+            } else if let entry = session.memoryEntries.first(where: { entry in
+                guard entry.isSample, entry.saved, case .period(.daily, key) = entry.scope else { return false }
+                return true
+            }) {
+                if entry.kind == .photoNote {
+                    PlanningTutorialBanner(systemImage: "camera", text: PlanningText.string(.dailyTutorialPhoto))
+                } else if entry.kind == .diary {
+                    PlanningTutorialBanner(systemImage: "book", text: PlanningText.string(.dailyTutorialDiary))
+                }
+            }
+        }
     }
 
     private func periodHasSavedMemory(_ key: String) -> Bool {

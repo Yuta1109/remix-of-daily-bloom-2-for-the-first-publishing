@@ -31,6 +31,12 @@ enum PlanningText {
         case postponeBoxTitle, postponeTasks, postponeEvents
         case postponeEditName, postponeMoveWithin, postponeDelete
         case postponeDeleteConfirm
+        case reflectionToday, reflectionWeek, reflectionMonth, reflectionClassify
+        case reflectionReviewHint, reflectionNone, reflectionNext, reflectionFinish
+        case reflectionKeepMeaning, reflectionPostponeMeaning, reflectionStopMeaning
+        case reflectionStep2Daily, reflectionStep2Weekly, reflectionStep2Monthly, reflectionStep2Body
+        case dailyTutorialReflection, dailyTutorialStart
+        case dailyTutorialPhoto, dailyTutorialDiary
     }
 
     private static let table: [Key: (ja: String, en: String)] = [
@@ -148,7 +154,35 @@ enum PlanningText {
         .postponeDeleteConfirm: (
             "削除するともとに戻すことはできません。削除しますか？",
             "Deleting this item cannot be undone. Delete it?"
-        )
+        ),
+        .reflectionToday: ("今日の振り返り", "Today's reflection"),
+        .reflectionWeek: ("今週の振り返り", "This week's reflection"),
+        .reflectionMonth: ("今月の振り返り", "This month's reflection"),
+        .reflectionClassify: ("維持 / 先送り / 終了", "Keep / Postpone / Stop"),
+        .reflectionReviewHint: (
+            "完了と未完了を確認してから、次の分類へ進みます。",
+            "Check what is done and not done, then continue to classification."
+        ),
+        .reflectionNone: ("なし", "None"),
+        .reflectionNext: ("次へ", "Next"),
+        .reflectionFinish: ("完了", "Done"),
+        .reflectionKeepMeaning: ("このまま続ける", "Keep going"),
+        .reflectionPostponeMeaning: ("後日に回す", "Move to another day"),
+        .reflectionStopMeaning: ("ここで終える", "End it here"),
+        .reflectionStep2Daily: ("今日のタスクを振り返りましょう", "Look back at today's tasks"),
+        .reflectionStep2Weekly: ("今週のタスクを振り返りましょう", "Look back at this week's tasks"),
+        .reflectionStep2Monthly: ("今月のタスクを振り返りましょう", "Look back at this month's tasks"),
+        .reflectionStep2Body: (
+            "それぞれのタスクについて、今後の対応を選びます。選んだ内容は、今後の予定整理に反映されます。",
+            "Choose what happens next for each task. Those choices are reflected in later planning."
+        ),
+        .dailyTutorialReflection: (
+            "チュートリアルとして振り返りの仕方を体験してみましょう！下から振り返りを始めてください！",
+            "Try the reflection tutorial. Start it from the button below."
+        ),
+        .dailyTutorialStart: ("ここから振り返りをはじめる", "Start reflection here"),
+        .dailyTutorialPhoto: ("この日の「写真＆一言」を見てみましょう。", "Take a look at this day's Photo & one line."),
+        .dailyTutorialDiary: ("この日の「なんでも日記」を見てみましょう。", "Take a look at this day's anything diary.")
     ]
 
     static var isEnglish: Bool {

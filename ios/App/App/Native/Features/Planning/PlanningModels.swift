@@ -525,10 +525,20 @@ final class PlanningSession: ObservableObject {
     func badgeCount(for section: PlanningSection) -> Int {
         let fromRecords = reflectionBadgeUnits(for: section)
         let hasRecords = periodRecords.contains { $0.bucket.section == section } || (section == .future && !futureReflections.isEmpty)
+        let demoCues = section == .daily && TemporaryPlanningSamples.enabled ? dailyMemoryDemoCueCount : 0
         if hasRecords {
-            return min(PlanningRules.maximumBadgeCount, fromRecords)
+            return min(PlanningRules.maximumBadgeCount, fromRecords + demoCues)
         }
-        return PlanningRules.displayedReflectionBadge(section: section, obligations: obligations)
+        return min(PlanningRules.maximumBadgeCount, PlanningRules.displayedReflectionBadge(section: section, obligations: obligations) + demoCues)
+    }
+
+    /// Photo and diary samples are tutorial cues only. They are not Reflection obligations.
+    var dailyMemoryDemoCueCount: Int {
+        memoryEntries.filter { entry in
+            guard entry.isSample, entry.saved, entry.kind == .photoNote || entry.kind == .diary else { return false }
+            if case .period(let bucket, _) = entry.scope { return bucket == .daily }
+            return false
+        }.count
     }
 
     func select(_ section: PlanningSection) {

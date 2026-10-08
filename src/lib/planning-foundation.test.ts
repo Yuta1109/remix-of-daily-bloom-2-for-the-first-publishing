@@ -1240,7 +1240,7 @@ describe("planning period lists and reflection windows", () => {
   it("splits reflection into overview, classification, and snapshot detail", () => {
     expect(reflectionPage).toContain("Button(action: action)");
     const overview = reflectionPage.slice(reflectionPage.indexOf("private var overviewPage"), reflectionPage.indexOf("private var classificationPage"));
-    expect(overview).toContain("ReflectionProgressRing");
+    expect(overview).toContain("ReflectionOverviewCard");
     expect(overview).toContain("\"ToDo\"");
     expect(overview).toContain("\"予定\"");
     const classification = reflectionPage.slice(reflectionPage.indexOf("private var classificationPage"), reflectionPage.indexOf("private var detailPage"));
@@ -1274,6 +1274,14 @@ describe("planning period lists and reflection windows", () => {
     expect(body).toContain("SavedPeriodMemory");
     expect(body.indexOf("if let entry")).toBeLessThan(body.indexOf("periodListSection"));
     expect(reflectionPage).toContain("一言を入力");
+    expect(reflectionPage).toContain("PhotoMemoryDisplayView");
+    expect(reflectionPage).toContain("PhotoMemoryAspectPicker");
+    expect(reflection).toContain("enum PhotoMemoryAspectRatio");
+    expect(reflection).toContain("case landscape");
+    expect(reflection).toContain("case portrait");
+    expect(reflection).toContain("case square");
+    expect(reflection).toContain("var photoAspect: PhotoMemoryAspectRatio");
+    expect(reflectionPage).toContain("photoAspect");
     expect(reflectionPage).toContain("PlanningRoute.planningMemory");
     expect(samples).toContain("kind: .photoNote");
     expect(samples).toContain("kind: .diary");
@@ -1335,11 +1343,18 @@ describe("phase C-3 reflection and popups", () => {
     const row = itemSheets.slice(itemSheets.indexOf("func parentTimelineRow"), itemSheets.indexOf("func timelineSpan"));
     expect(row).not.toContain("ellipsis");
     expect(row).not.toContain("Divider(");
+    const rowContent = itemSheets.slice(itemSheets.indexOf("func rowContent"), itemSheets.indexOf("func completionControl"));
+    expect(rowContent).not.toContain("chevron.right");
+    expect(rowContent).toContain("Color.clear.frame(width: 12, height: 12)");
+    expect(rowContent).toContain(".contentShape(Rectangle())");
   });
 
   it("anchors the source popover and keeps the list sheet open", () => {
-    expect(itemSheets).toContain("RoundedRectangle(cornerRadius: 16, style: .continuous)");
+    expect(itemSheets).toContain("RoundedRectangle(cornerRadius: 22, style: .continuous)");
+    expect(itemSheets).toContain("PlanningPlusAnchorKey");
+    expect(itemSheets).toContain(".glassEffect(.regular, in: shape)");
     expect(itemSheets).not.toContain("presentationCompactAdaptation(.popover)");
+    expect(itemSheets).not.toContain(".popover");
     expect(itemSheets).toContain("showingSources = false");
     expect(period).toContain("case .monthly: [.plan, .create, .postpone]");
     expect(period).toContain("case .weekly: [.plan, .create, .postpone, .monthly]");
@@ -1419,7 +1434,8 @@ describe("planning root viewport repair", () => {
   it("floats the reflection due card without shrinking the pager", () => {
     const page = periodPage.slice(periodPage.indexOf("var body: some View"), periodPage.indexOf("private var pageKeys"));
     expect(page).toContain(".overlay(alignment: .bottom)");
-    expect(page).toContain("PlanningReflectionDueCard");
+    expect(page).toContain("reflectionPrompt");
+    expect(periodPage).toContain("PlanningReflectionDueCard");
     expect(page).not.toContain("safeAreaInset");
     expect(periodPage).toContain("PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight)");
   });
@@ -1487,7 +1503,7 @@ describe("planning root viewport repair", () => {
 
   it("clears only the period scroll content for the floating due card", () => {
     expect(periodPage).toContain(".overlay(alignment: .bottom)");
-    expect(periodPage).toContain(".padding(.bottom, session.isActivePrompt(ReflectionScope.period(bucket, key)) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)");
+    expect(periodPage).toContain(".padding(.bottom, showsReflectionPrompt(key) ? PlanningTokens.ReflectionDue.height(tabBar: tabBarHeight) + 24 : 0)");
     expect(periodPage).not.toContain("safeAreaInset");
   });
 });
@@ -1515,18 +1531,69 @@ describe("planning blueprint refinement", () => {
     expect(postpone).not.toContain("プランへ戻す");
     expect(postpone).toContain("PlanningText.string(.postponeMoveWithin)");
     expect(postpone).toContain("PlanningText.string(.postponeDeleteConfirm)");
+    expect(postpone).toContain("presentDestructive");
+    expect(postpone).toContain(".padding(.bottom, 20)");
+    expect(postpone).toContain(".padding(.bottom, 22)");
     expect(planText).toContain("先送りボックス内で移動させる");
     expect(planText).toContain("Move within Postpone Box");
     expect(planText).toContain("Deleting this item cannot be undone. Delete it?");
     expect(planText).toContain("postponeBoxTitle: (\"先送りボックス\", \"Postpone Box\")");
   });
 
-  it("uses the goal placeholder and does not add a reflection arrow badge", () => {
+  it("renders the saved diary title from laid-out line fragments", () => {
+    const reflectionPage = readFileSync(`${planningRoot}/ReflectionPages.swift`, "utf8");
+    const chrome = readFileSync(`${planningRoot}/PlanningChrome.swift`, "utf8");
+    expect(reflectionPage).toContain("PlanningDiaryCard(title: entry.title, text: entry.text)");
+    expect(reflectionPage).toContain("enumerateLineFragments");
+    expect(reflectionPage).not.toContain("Text(\"なんでも日記\")");
+    expect(reflectionPage).toContain("PlanningText.string(.anythingDiary)");
+    expect(chrome).toContain("view.tintColor = .label");
+    expect(chrome).toContain("style: .cancel");
+    expect(chrome).toContain("style: .destructive");
+  });
+
+  it("uses the goal placeholder and marks destination reflections on the period arrows", () => {
     expect(periodPage).toContain("目標を入れてみよう！");
     expect(periodPage).toContain(".frame(height: 76)");
-    expect(periodPage).not.toContain("ReflectionArrowBadge");
+    expect(periodPage).toContain("PeriodArrowAttentionBadge");
     expect(shell).toContain("PlanningTokens.Header.iconGroupGap");
     const photo = samples.slice(samples.indexOf("func seedDemoPhoto"), samples.indexOf("func seedDemoDiary"));
     expect(photo).not.toContain("periodItems.append");
+  });
+
+  it("rebuilds reflection steps and keeps tutorial cues destination-based", () => {
+    const overview = reflectionPage.slice(reflectionPage.indexOf("private var overviewPage"), reflectionPage.indexOf("private var classificationPage"));
+    expect(overview).not.toContain("leaf");
+    expect(overview).toContain("ReflectionOverviewCard");
+    const control = reflectionPage.slice(reflectionPage.indexOf("struct ReflectionDispositionControl"), reflectionPage.indexOf("struct PlanningTutorialBanner"));
+    expect(control).toContain("on ? tone(value) : neutralFill");
+    expect(control).not.toContain(".opacity(0.16)");
+    expect(control).toContain("維持");
+    expect(control).toContain("先送り");
+    expect(control).toContain("終了");
+    expect(reflectionPage).toContain(".disabled(!session.canCompleteReflection(scope))");
+    expect(reflectionPage).toContain("setDraftDecision(itemID: item.id, disposition: value)");
+    expect(periodPage).not.toContain("sparkle");
+    expect(periodPage).not.toContain("✨");
+    expect(periodPage).toContain("PlanningText.string(.dailyTutorialStart)");
+    expect(periodPage).toContain("if bucket == .daily");
+    expect(reflection).toContain("func neighborNeedsReflectionCue");
+    expect(reflection).toContain("func hasUnresolvedReflection");
+    expect(reflection).toContain("func isDailyMemoryDemo");
+    expect(reflection).toContain("static func restored");
+    expect(reflection).toContain("else { return .landscape }");
+    expect(samples).toContain("tutorialReflection: true");
+    expect(samples).toContain("reflectionCompleted: false");
+    const julyRight = shiftPeriod("2026-07", "monthly", 1);
+    const septemberLeft = shiftPeriod("2026-09", "monthly", -1);
+    expect(julyRight).toBe("2026-08");
+    expect(septemberLeft).toBe("2026-08");
+    const unresolved = new Set(["2026-08"]);
+    const cue = (viewing: string, direction: number) => unresolved.has(shiftPeriod(viewing, "monthly", direction));
+    expect(cue("2026-07", 1)).toBe(true);
+    expect(cue("2026-07", -1)).toBe(false);
+    expect(cue("2026-09", -1)).toBe(true);
+    expect(cue("2026-09", 1)).toBe(false);
+    expect(cue("2026-08", 0)).toBe(true);
   });
 });

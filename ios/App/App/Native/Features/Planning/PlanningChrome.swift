@@ -491,6 +491,7 @@ struct PlanningTabBarHeightReader: UIViewRepresentable {
 
 struct PlanningGlassAction: View {
     let title: String
+    var showsChevron = false
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
@@ -510,23 +511,33 @@ struct PlanningGlassAction: View {
         Group {
             if #available(iOS 26.0, *) {
                 Button(action: invoke) {
-                    Text(title)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: PlanningTokens.Editor.ctaHeight)
+                    HStack(spacing: 8) {
+                        Text(title)
+                        if showsChevron {
+                            Image(systemName: "chevron.right")
+                        }
+                    }
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: PlanningTokens.Editor.ctaHeight)
                 }
                 .buttonStyle(.glassProminent)
                 .tint(accent)
             } else {
                 Button(action: invoke) {
-                    Text(title)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: PlanningTokens.Editor.ctaHeight)
-                        .background(accent.opacity(0.92), in: RoundedRectangle(cornerRadius: PlanningTokens.Editor.ctaCorner, style: .continuous))
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: PlanningTokens.Editor.ctaCorner, style: .continuous))
+                    HStack(spacing: 8) {
+                        Text(title)
+                        if showsChevron {
+                            Image(systemName: "chevron.right")
+                        }
+                    }
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: PlanningTokens.Editor.ctaHeight)
+                    .background(accent.opacity(0.92), in: RoundedRectangle(cornerRadius: PlanningTokens.Editor.ctaCorner, style: .continuous))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: PlanningTokens.Editor.ctaCorner, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -556,6 +567,19 @@ enum PlanningDiscardConfirmation {
         presenter.present(alert, animated: true)
     }
 
+    /// Cancel stays label-black. The destructive action stays the system red.
+    static func presentDestructive(message: String, destructiveTitle: String, confirm: @escaping () -> Void) {
+        let alert = PlanningDiscardAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.overrideUserInterfaceStyle = .light
+        alert.view.tintColor = .label
+        alert.addAction(UIAlertAction(title: PlanningText.string(.cancel), style: .cancel))
+        alert.addAction(UIAlertAction(title: destructiveTitle, style: .destructive) { _ in
+            confirm()
+        })
+        guard let presenter = topViewController() else { return }
+        presenter.present(alert, animated: true)
+    }
+
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.flatMap(\.windows).first
@@ -564,6 +588,14 @@ enum PlanningDiscardConfirmation {
             controller = presented
         }
         return controller
+    }
+}
+
+struct PlanningPlusAnchorKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next.width > 1 { value = next }
     }
 }
 
@@ -771,6 +803,7 @@ struct PlanningSystemSheetChrome<Content: View>: View {
             .background(PlanningFocusedFieldScroller())
         }
         .frame(maxWidth: .infinity, alignment: .top)
+        .coordinateSpace(name: "planningSheet")
         .background(alignment: .top) {
             ZStack(alignment: .top) {
                 surface
@@ -830,6 +863,16 @@ struct PlanningSystemSheetChrome<Content: View>: View {
                 NativeGlassIconButton(icon: confirmIcon, accessibilityLabel: confirmIcon == .plus ? "Add" : "Confirm", prominent: true, waitsForGlassFeedback: true, action: onConfirm)
                     .disabled(!confirmEnabled)
                     .opacity(confirmEnabled ? 1 : 0.4)
+                    .background {
+                        if confirmIcon == .plus {
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: PlanningPlusAnchorKey.self,
+                                    value: proxy.frame(in: .named("planningSheet"))
+                                )
+                            }
+                        }
+                    }
             } else {
                 Color.clear.frame(width: 44, height: 44)
             }

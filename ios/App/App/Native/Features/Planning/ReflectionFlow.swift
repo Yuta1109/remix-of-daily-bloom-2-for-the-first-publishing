@@ -17,6 +17,55 @@ enum PlanningMemoryKind: String, Hashable {
     case diary
 }
 
+enum PhotoMemoryAspectRatio: String, Hashable, CaseIterable, Identifiable {
+    case landscape
+    case portrait
+    case square
+
+    var id: String { rawValue }
+
+    /// Older records that never stored a ratio restore as 4:3.
+    static func restored(_ stored: String?) -> PhotoMemoryAspectRatio {
+        guard let stored, let ratio = PhotoMemoryAspectRatio(rawValue: stored) else { return .landscape }
+        return ratio
+    }
+
+    var label: String {
+        switch self {
+        case .landscape: "4:3"
+        case .portrait: "3:4"
+        case .square: "1:1"
+        }
+    }
+
+    /// Width divided by height.
+    var widthOverHeight: CGFloat {
+        switch self {
+        case .landscape: 4.0 / 3.0
+        case .portrait: 3.0 / 4.0
+        case .square: 1
+        }
+    }
+
+    /// Share of the editor content width used by the picker preview.
+    var editorWidthFraction: CGFloat {
+        switch self {
+        case .landscape: 1
+        case .portrait: 0.74
+        case .square: 0.84
+        }
+    }
+
+    /// Share of the display content width used by the outer frame.
+    var displayWidthFraction: CGFloat {
+        switch self {
+        case .landscape: 0.75
+        case .portrait: 0.615
+        case .square: 0.675
+        }
+    }
+}
+
 struct PlanningMemoryEntry: Identifiable, Hashable {
     var id = UUID()
     var scope: ReflectionScope
@@ -26,6 +75,7 @@ struct PlanningMemoryEntry: Identifiable, Hashable {
     var title: String = ""
     var dateText: String = ""
     var imageData: Data? = nil
+    var photoAspect: PhotoMemoryAspectRatio = .landscape
     var saved = false
     /// Temporary local sample. Not a production account record.
     var isSample = false
@@ -184,6 +234,33 @@ extension PlanningSession {
         case .future(let year):
             let due = calendar.date(from: DateComponents(year: year, month: reflectionSchedule.futureMonth, day: reflectionSchedule.futureDay)) ?? now
             return now >= due
+        }
+    }
+
+    /// The arrow cue follows the destination period, and only a completed Reflection clears it.
+    func hasUnresolvedReflection(bucket: PlanningBucket, periodKey: String, now: Date = Date()) -> Bool {
+        if isDailyMemoryDemo(bucket: bucket, periodKey: periodKey) { return false }
+        let record = existingRecord(bucket: bucket, periodKey: periodKey)
+        return ReflectionRules.isActivePrompt(
+            hasMeaningfulActivity: record.hasMeaningfulActivity,
+            due: isDue(ReflectionScope.period(bucket, periodKey), now: now),
+            completed: record.reflectionCompleted,
+            skipped: record.skipped
+        )
+    }
+
+    func neighborNeedsReflectionCue(bucket: PlanningBucket, from key: String, direction: Int, now: Date = Date()) -> Bool {
+        let destination = PeriodCalendar.shift(key, bucket: bucket, by: direction)
+        return hasUnresolvedReflection(bucket: bucket, periodKey: destination, now: now)
+    }
+
+    private func isDailyMemoryDemo(bucket: PlanningBucket, periodKey: String) -> Bool {
+        guard bucket == .daily else { return false }
+        let record = existingRecord(bucket: bucket, periodKey: periodKey)
+        guard !record.hasMeaningfulActivity else { return false }
+        let scope = ReflectionScope.period(bucket, periodKey)
+        return memoryEntries.contains { entry in
+            entry.scope == scope && entry.saved && (entry.kind == .photoNote || entry.kind == .diary)
         }
     }
 
@@ -421,7 +498,7 @@ extension PlanningSession {
         )
     }
 
-    func addMemory(scope: ReflectionScope, kind: PlanningMemoryKind, text: String, hasPhoto: Bool, title: String = "", dateText: String = "", imageData: Data? = nil, saved: Bool = false, isSample: Bool = false) {
+    func addMemory(scope: ReflectionScope, kind: PlanningMemoryKind, text: String, hasPhoto: Bool, title: String = "", dateText: String = "", imageData: Data? = nil, photoAspect: PhotoMemoryAspectRatio = .landscape, saved: Bool = false, isSample: Bool = false) {
         memoryEntries.append(
             PlanningMemoryEntry(
                 scope: scope,
@@ -431,6 +508,7 @@ extension PlanningSession {
                 title: title,
                 dateText: dateText,
                 imageData: imageData,
+                photoAspect: photoAspect,
                 saved: saved,
                 isSample: isSample
             )
@@ -442,13 +520,14 @@ extension PlanningSession {
         memoryEntries[index].saved = true
     }
 
-    func updateMemory(id: UUID, text: String, title: String, dateText: String, hasPhoto: Bool, imageData: Data? = nil) {
+    func updateMemory(id: UUID, text: String, title: String, dateText: String, hasPhoto: Bool, imageData: Data? = nil, photoAspect: PhotoMemoryAspectRatio? = nil) {
         guard let index = memoryEntries.firstIndex(where: { $0.id == id }) else { return }
         memoryEntries[index].text = text
         memoryEntries[index].title = title
         memoryEntries[index].dateText = dateText
         memoryEntries[index].hasPhoto = hasPhoto
         if let imageData { memoryEntries[index].imageData = imageData }
+        if let photoAspect { memoryEntries[index].photoAspect = photoAspect }
     }
 
     func isExplicitEdit(bucket: PlanningBucket, periodKey: String) -> Bool {

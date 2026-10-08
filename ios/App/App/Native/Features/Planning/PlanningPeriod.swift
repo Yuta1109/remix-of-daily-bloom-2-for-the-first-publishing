@@ -32,6 +32,8 @@ struct PeriodReflectionRecord: Identifiable, Hashable {
     var explicitEdit = false
     /// Temporary local sample. Not a production account record.
     var isSample = false
+    /// Daily sample period that teaches Reflection. Not a Photo or Diary memory.
+    var tutorialReflection = false
 
     var id: String { "\(bucket.rawValue):\(periodKey)" }
 }

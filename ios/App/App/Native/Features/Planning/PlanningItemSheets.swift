@@ -107,6 +107,7 @@ struct PeriodItemListSheet: View {
     let periodKey: String
     @State private var kind: PlanningItemKind
     @State private var showingSources = false
+    @State private var plusFrame: CGRect = .zero
     @State private var editingID: EditingNodeID?
     @State private var creating = false
     @State private var picking: PeriodAddSource?
@@ -147,9 +148,10 @@ struct PeriodItemListSheet: View {
             .padding(.top, 8)
             .padding(.bottom, 16)
         }
+        .onPreferenceChange(PlanningPlusAnchorKey.self) { plusFrame = $0 }
         .overlay {
             if showingSources {
-                ZStack(alignment: .topTrailing) {
+                ZStack(alignment: .topLeading) {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
                         .onTapGesture { showingSources = false }
@@ -159,11 +161,9 @@ struct PeriodItemListSheet: View {
                             if source == .create { creating = true } else { picking = source }
                         }
                     }
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PlanningPalette.line.opacity(0.6), lineWidth: 0.5))
-                    .shadow(color: PlanningPalette.ink.opacity(0.16), radius: 16, y: 8)
-                    .padding(.top, PlanningTokens.Sheet.headerHeight + 6)
-                    .padding(.trailing, PlanningTokens.Sheet.horizontalInset)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background { sourceMenuGlass }
+                    .offset(x: sourceMenuOrigin.x, y: sourceMenuOrigin.y)
                 }
             }
         }
@@ -188,18 +188,38 @@ struct PeriodItemListSheet: View {
         }
     }
 
+    private var sourceMenuOrigin: CGPoint {
+        let width: CGFloat = 262
+        guard plusFrame.width > 1 else {
+            return CGPoint(x: 80, y: PlanningTokens.Sheet.headerHeight - 22)
+        }
+        return CGPoint(x: plusFrame.maxX - width, y: plusFrame.minY)
+    }
+
+    @ViewBuilder
+    private var sourceMenuGlass: some View {
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        if #available(iOS 26.0, *) {
+            shape.fill(.clear).glassEffect(.regular, in: shape)
+        } else {
+            shape.fill(.ultraThinMaterial)
+                .overlay(shape.stroke(Color.white.opacity(0.45), lineWidth: 0.6))
+                .shadow(color: PlanningPalette.ink.opacity(0.12), radius: 16, y: 8)
+        }
+    }
+
     private func parentTimelineRow(_ node: PlanningNode, connectsToNext: Bool) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        return HStack(alignment: .top, spacing: 8) {
             VStack(spacing: 0) {
                 completionControl(node)
                     .frame(width: 20, height: 20)
-                    .padding(.top, 14)
-                if connectsToNext {
-                    Color.clear.frame(height: PlanningTokens.PeriodBody.timelineGap)
+                    .frame(height: parentRowHeight)
+                if !node.children.isEmpty {
                     Rectangle()
                         .fill(PlanningPalette.line)
                         .frame(width: PlanningTokens.PeriodBody.timelineWidth, height: timelineSpan(node))
-                    Color.clear.frame(height: PlanningTokens.PeriodBody.timelineGap)
+                } else if connectsToNext {
+                    Color.clear.frame(height: 0)
                 }
             }
             .frame(width: PlanningTokens.PeriodBody.checkboxColumn)
@@ -213,45 +233,48 @@ struct PeriodItemListSheet: View {
         }
     }
 
+    private var parentRowHeight: CGFloat { kind == .event ? 56 : 54 }
+
     private func timelineSpan(_ node: PlanningNode) -> CGFloat {
-        CGFloat(max(node.children.count, 1)) * PlanningTokens.ReflectionSummary.listRowHeight
+        CGFloat(node.children.count) * PlanningTokens.ReflectionSummary.listRowHeight
     }
 
     private func rowContent(_ node: PlanningNode, showsIcon: Bool, opens parent: UUID) -> some View {
         HStack(alignment: .center, spacing: 8) {
             if !showsIcon {
                 completionControl(node)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 36, height: 36)
             }
             Button {
                 editingID = EditingNodeID(id: parent)
             } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(node.title)
-                        .font(.system(size: showsIcon ? 16 : 14, weight: showsIcon ? .semibold : .regular))
-                        .foregroundStyle(PlanningPalette.ink)
-                        .lineLimit(1)
-                    if let line = PeriodCalendar.mainSchedule(periodKey: periodKey, month: node.scheduleMonth, day: node.startDay, minutes: node.startMinutes) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock").font(.system(size: 11, weight: .medium))
-                            Text(line).font(.system(size: 12))
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(node.title)
+                            .font(.system(size: showsIcon ? 16 : 14, weight: showsIcon ? .semibold : .regular))
+                            .foregroundStyle(PlanningPalette.ink)
+                            .lineLimit(1)
+                        if let line = PeriodCalendar.mainSchedule(periodKey: periodKey, month: node.scheduleMonth, day: node.startDay, minutes: node.startMinutes) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock").font(.system(size: 11, weight: .medium))
+                                Text(line).font(.system(size: 12))
+                            }
+                            .foregroundStyle(PlanningPalette.muted)
                         }
-                        .foregroundStyle(PlanningPalette.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if showsIcon, !node.iconSymbol.isEmpty, node.iconSymbol != "circle" {
+                        PlanningCategoryIconBubble(symbol: node.iconSymbol, colorID: node.colorID)
+                    }
+                    if showsIcon {
+                        Color.clear.frame(width: 12, height: 12)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: showsIcon ? parentRowHeight : PlanningTokens.ReflectionSummary.listRowHeight, alignment: .center)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            if showsIcon, !node.iconSymbol.isEmpty, node.iconSymbol != "circle" {
-                PlanningCategoryIconBubble(symbol: node.iconSymbol, colorID: node.colorID)
-            }
-            if showsIcon {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(PlanningPalette.muted)
-            }
         }
-        .frame(minHeight: PlanningTokens.ReflectionSummary.listRowHeight)
     }
 
     private func completionControl(_ node: PlanningNode) -> some View {
@@ -307,19 +330,23 @@ struct PeriodSourcePopover: View {
                 Button {
                     onSelect(source)
                 } label: {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 14) {
                         Image(systemName: icon(source))
+                            .font(.system(size: 22))
+                            .frame(width: 23, height: 23)
                         Text(source.title)
+                            .font(.system(size: 17))
                             .foregroundStyle(PlanningPalette.ink)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: 45)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(14)
-        .frame(width: 260)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 11)
+        .frame(width: 262)
     }
 
     private func icon(_ source: PeriodAddSource) -> String {
@@ -561,8 +588,10 @@ struct PlanningItemEditorSheet: View {
                 dateRow(.end)
                 if kind == .task {
                     formLabel("サブタスク")
-                    ForEach(draft.subtasks) { subtask in
-                        subtaskField(subtask)
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(draft.subtasks) { subtask in
+                            subtaskField(subtask)
+                        }
                     }
                 }
             }
@@ -651,17 +680,22 @@ struct PlanningItemEditorSheet: View {
     }
 
     private func subtaskField(_ subtask: PlanningSubtaskDraft) -> some View {
-        PlanningOutlineTextField(
-            rowID: subtask.id,
-            text: subtaskBinding(subtask.id),
-            focus: subtaskFocus,
-            placeholder: "サブタスク",
-            fontSize: 16,
-            onFocus: {},
-            onSubmit: { submitSubtask(subtask.id) },
-            onEmptyDelete: { deleteEmptySubtask(subtask.id) }
-        )
-        .frame(height: 36)
+        HStack(spacing: 11) {
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .stroke(PlanningPalette.muted.opacity(0.7), lineWidth: 1.25)
+                .frame(width: 15, height: 15)
+            PlanningOutlineTextField(
+                rowID: subtask.id,
+                text: subtaskBinding(subtask.id),
+                focus: subtaskFocus,
+                placeholder: "サブタスク",
+                fontSize: 17,
+                onFocus: {},
+                onSubmit: { submitSubtask(subtask.id) },
+                onEmptyDelete: { deleteEmptySubtask(subtask.id) }
+            )
+        }
+        .frame(minHeight: 33, alignment: .center)
     }
 
     private func subtaskBinding(_ id: UUID) -> Binding<String> {

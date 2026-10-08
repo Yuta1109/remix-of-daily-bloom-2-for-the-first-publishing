@@ -30,7 +30,11 @@ enum TemporaryPlanningSamples {
 
         for bucket in [PlanningBucket.monthly, .weekly, .daily] {
             let current = PeriodCalendar.currentKey(bucket, now: now)
-            seedDemoReflection(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -1))
+            if bucket == .daily {
+                seedDailyTutorialReflection(session, key: PeriodCalendar.shift(current, bucket: bucket, by: -1))
+            } else {
+                seedDemoReflection(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -1))
+            }
             seedDemoPhoto(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -2))
             seedDemoDiary(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -3))
         }
@@ -148,6 +152,32 @@ enum TemporaryPlanningSamples {
                     )
                 },
                 isSample: true
+            )
+        )
+    }
+
+    @MainActor
+    private static func seedDailyTutorialReflection(_ session: PlanningSession, key: String) {
+        if session.periodRecords.contains(where: { $0.bucket == .daily && $0.periodKey == key }) { return }
+        let rows: [(String, PlanningItemKind, Bool)] = [
+            ("今日の準備", .task, false),
+            ("持ち物を確認", .task, false),
+            ("会議", .event, false),
+            ("資料を開く", .event, false)
+        ]
+        let nodes = rows.map { title, kind, completed in
+            PlanningNode(title: title, kind: kind, bucket: .daily, periodKey: key, completed: completed, isSample: true)
+        }
+        session.periodItems.append(contentsOf: nodes)
+        session.store(
+            PeriodReflectionRecord(
+                bucket: .daily,
+                periodKey: key,
+                hasMeaningfulActivity: true,
+                reflectionOutstanding: true,
+                reflectionCompleted: false,
+                isSample: true,
+                tutorialReflection: true
             )
         )
     }
