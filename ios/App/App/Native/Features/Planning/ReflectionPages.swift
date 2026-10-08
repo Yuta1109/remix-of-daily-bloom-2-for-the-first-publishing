@@ -1458,9 +1458,9 @@ final class DiaryPaperView: UIView {
         context.setStrokeColor(UIColor(red: 0.72, green: 0.64, blue: 0.52, alpha: 0.45).cgColor)
         context.setLineWidth(0.6)
         DiaryTextKit.enumerateLines(in: textView) { used in
-            let y = min(used.maxY - 0.3, bounds.height - 0.3)
+            let y = min(used.maxY - 0.3, self.bounds.height - 0.3)
             context.move(to: CGPoint(x: 0, y: y))
-            context.addLine(to: CGPoint(x: bounds.width, y: y))
+            context.addLine(to: CGPoint(x: self.bounds.width, y: y))
         }
         context.strokePath()
     }
