@@ -1486,7 +1486,7 @@ enum DiaryTextKit {
         return view
     }
 
-    static func enumerateLines(in textView: UITextView, body: (CGRect) -> Void) {
+    static func enumerateLines(in textView: UITextView, body: @escaping (CGRect) -> Void) {
         let manager = textView.layoutManager
         manager.ensureLayout(for: textView.textContainer)
         let range = manager.glyphRange(for: textView.textContainer)
