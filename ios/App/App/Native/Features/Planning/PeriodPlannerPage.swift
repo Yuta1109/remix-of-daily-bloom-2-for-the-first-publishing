@@ -77,10 +77,7 @@ struct PeriodPlannerPage: View {
                 periodBar(key)
                     .padding(.top, 18)
                     .padding(.bottom, 16)
-                if let banner = dailyDemoBanner(key) {
-                    banner
-                        .padding(.bottom, 16)
-                }
+                dailyDemoBanner(key)
                 if bucket == .monthly {
                     monthlyGoal(key)
                         .padding(.bottom, 16)
@@ -185,14 +182,17 @@ struct PeriodPlannerPage: View {
             let record = session.existingRecord(bucket: bucket, periodKey: key)
             if record.tutorialReflection, !record.reflectionCompleted {
                 PlanningTutorialBanner(systemImage: "book", text: PlanningText.string(.dailyTutorialReflection))
+                    .padding(.bottom, 16)
             } else if let entry = session.memoryEntries.first(where: { entry in
                 guard entry.isSample, entry.saved, case .period(.daily, key) = entry.scope else { return false }
                 return true
             }) {
                 if entry.kind == .photoNote {
                     PlanningTutorialBanner(systemImage: "camera", text: PlanningText.string(.dailyTutorialPhoto))
+                        .padding(.bottom, 16)
                 } else if entry.kind == .diary {
                     PlanningTutorialBanner(systemImage: "book", text: PlanningText.string(.dailyTutorialDiary))
+                        .padding(.bottom, 16)
                 }
             }
         }
