@@ -1740,14 +1740,16 @@ describe("photo museum and daily attention", () => {
   });
 
   it("keeps museum widths for 4:3, 3:4, and 1:1", () => {
-    expect(reflection).toContain("case .landscape: 0.89");
-    expect(reflection).toContain("case .portrait: 0.755");
-    expect(reflection).toContain("case .square: 0.815");
-    expect(reflection).toContain("case .landscape: 318");
+    expect(reflection).toContain("case .landscape: 0.925");
+    expect(reflection).toContain("case .portrait: 0.80");
+    expect(reflection).toContain("case .square: 0.855");
+    expect(reflection).toContain("case .landscape: 326");
     expect(reflection).toContain("func overlayWidth(usableBody: CGFloat)");
     expect(reflectionPage).toContain("struct PhotoMemoryMuseum");
     expect(reflectionPage).toContain(".renderingMode(.original)");
-    expect(reflectionPage).toContain("min(usableBody * 0.735, 276)");
+    expect(reflectionPage).toContain("min(usableBody * 0.66, 248)");
+    expect(reflectionPage).toContain(".padding(.trailing, indexReserve)");
+    expect(reflectionPage).not.toContain("canvasShift");
     expect(reflectionPage).not.toContain("contentWidth * 0.86");
     expect(reflectionPage).not.toContain("struct GallerySpotlight");
     expect(reflectionPage).not.toContain("struct PhotoMemoryFrame");
@@ -1897,13 +1899,13 @@ describe("photo ratio independence and period-keyed attention", () => {
     expect(reflection).toContain("case .square: (0.104, 0.896, 0.182, 0.935)");
     expect(reflection).toContain("let frameWidth = min(usableBody * targetVisibleFrameFraction, visibleFrameCap)");
     const caption = reflectionPage.slice(reflectionPage.indexOf("struct PhotoMemoryCaptionCard"), reflectionPage.indexOf("struct PhotoMemoryMuseum"));
-    expect(caption).toContain(".font(.system(size: 15, weight: .regular))");
+    expect(caption).toContain(".font(.system(size: 14, weight: .regular))");
     expect(caption).toContain("Color(red: 1, green: 0.992, blue: 0.973)");
     expect(caption).toContain("lineWidth: 0.6");
     expect(caption).toContain("radius: 6, y: 2");
     expect(caption).not.toContain("cornerRadius");
     expect(reflectionPage).toContain("return 20 - tail");
-    expect(reflectionPage).toContain("usableBody - rightEdge");
+    expect(reflectionPage).toContain(".padding(.trailing, indexReserve)");
     expect(reflectionPage).not.toContain("struct GalleryLampHead");
     expect(reflectionPage).not.toContain("struct PhotoMemoryIllumination");
   });
