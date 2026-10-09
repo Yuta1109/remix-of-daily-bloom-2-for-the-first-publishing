@@ -27,11 +27,16 @@ enum TemporaryPlanningSamples {
         ])
 
         session.periodItems.append(contentsOf: blueprintItems(monthly: monthly, weekly: weekly, daily: daily))
+        session.repairSampleScheduleDates()
 
         for bucket in [PlanningBucket.monthly, .weekly, .daily] {
             let current = PeriodCalendar.currentKey(bucket, now: now)
             if bucket == .daily {
                 seedDailyTutorialReflection(session, key: PeriodCalendar.shift(current, bucket: bucket, by: -1))
+                session.registerDailyTutorialPeriods(
+                    photoKey: PeriodCalendar.shift(current, bucket: bucket, by: -2),
+                    diaryKey: PeriodCalendar.shift(current, bucket: bucket, by: -3)
+                )
             } else {
                 seedDemoReflection(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -1))
             }
@@ -60,32 +65,54 @@ enum TemporaryPlanningSamples {
     }
 
     private static func blueprintItems(monthly: String, weekly: String, daily: String) -> [PlanningNode] {
-        [
+        let readParent = monthlyParts(monthly, day: 15)
+        let readFirst = monthlyParts(monthly, day: 12)
+        let meal = monthlyParts(monthly, day: 20)
+        let meeting = monthlyParts(monthly, day: 8)
+        let checkup = monthlyParts(monthly, day: 16)
+        let focus = weekParts(weekly, offset: 2)
+        let weeklyRead = weekParts(weekly, offset: 1)
+        let weeklyReadNext = weekParts(weekly, offset: 3)
+        let weeklyMeal = weekParts(weekly, offset: 5)
+        let weeklyMeeting = weekParts(weekly, offset: 1)
+        let weeklyCheck = weekParts(weekly, offset: 4)
+        let today = PeriodCalendar.dateParts(periodKey: daily, dayOffset: 0)
+        return [
             item("健康的な生活", .task, .monthly, monthly, symbol: "leaf", color: "mint", children: [
                 item("朝のストレッチ", .task, .monthly, monthly)
             ]),
-            item("本を2冊読む", .task, .monthly, monthly, completed: true, symbol: "book", color: "sky", month: 9, day: 15, children: [
-                item("1冊目を読む", .task, .monthly, monthly, month: 9, day: 12),
-                item("2冊目を読む", .task, .monthly, monthly, completed: true, month: 9, day: 15)
+            item("本を2冊読む", .task, .monthly, monthly, completed: true, symbol: "book", color: "sky", month: readParent.month, day: readParent.day, children: [
+                item("1冊目を読む", .task, .monthly, monthly, month: readFirst.month, day: readFirst.day),
+                item("2冊目を読む", .task, .monthly, monthly, completed: true, month: readParent.month, day: readParent.day)
             ]),
-            item("友人と食事に行く", .task, .monthly, monthly, symbol: "fork.knife", color: "yellow", month: 9, day: 20, minutes: 19 * 60),
-            item("定例ミーティング", .event, .monthly, monthly, symbol: "person.3", color: "rose", month: 10, day: 8, minutes: 9 * 60),
-            item("歯科検診", .event, .monthly, monthly, completed: true, symbol: "stethoscope", color: "mint", month: 10, day: 16, minutes: 14 * 60),
-            item("今週の集中作業", .task, .weekly, weekly, symbol: "leaf", color: "mint", month: 10, day: 7, minutes: 10 * 60),
-            item("本を2冊読む", .task, .weekly, weekly, completed: true, symbol: "book", color: "sky", month: 10, day: 6, children: [
-                item("1冊目を読む", .task, .weekly, weekly, month: 10, day: 6),
-                item("2冊目を読む", .task, .weekly, weekly, completed: true, month: 10, day: 8)
+            item("友人と食事に行く", .task, .monthly, monthly, symbol: "fork.knife", color: "yellow", month: meal.month, day: meal.day, minutes: 19 * 60),
+            item("定例ミーティング", .event, .monthly, monthly, symbol: "person.3", color: "rose", month: meeting.month, day: meeting.day, minutes: 9 * 60),
+            item("歯科検診", .event, .monthly, monthly, completed: true, symbol: "stethoscope", color: "mint", month: checkup.month, day: checkup.day, minutes: 14 * 60),
+            item("今週の集中作業", .task, .weekly, weekly, symbol: "leaf", color: "mint", month: focus.month, day: focus.day, minutes: 10 * 60),
+            item("本を2冊読む", .task, .weekly, weekly, completed: true, symbol: "book", color: "sky", month: weeklyRead.month, day: weeklyRead.day, children: [
+                item("1冊目を読む", .task, .weekly, weekly, month: weeklyRead.month, day: weeklyRead.day),
+                item("2冊目を読む", .task, .weekly, weekly, completed: true, month: weeklyReadNext.month, day: weeklyReadNext.day)
             ]),
-            item("友人と食事に行く", .task, .weekly, weekly, symbol: "fork.knife", color: "yellow", month: 10, day: 10, minutes: 19 * 60),
-            item("週の打ち合わせ", .event, .weekly, weekly, symbol: "person.3", color: "rose", month: 10, day: 6, minutes: 9 * 60),
-            item("歯科検診", .event, .weekly, weekly, completed: true, symbol: "stethoscope", color: "mint", month: 10, day: 9, minutes: 14 * 60),
-            item("健康診断を予約する", .task, .daily, daily, completed: true, symbol: "stethoscope", color: "rose", month: 9, day: 10, minutes: 10 * 60, children: [
+            item("友人と食事に行く", .task, .weekly, weekly, symbol: "fork.knife", color: "yellow", month: weeklyMeal.month, day: weeklyMeal.day, minutes: 19 * 60),
+            item("週の打ち合わせ", .event, .weekly, weekly, symbol: "person.3", color: "rose", month: weeklyMeeting.month, day: weeklyMeeting.day, minutes: 9 * 60),
+            item("歯科検診", .event, .weekly, weekly, completed: true, symbol: "stethoscope", color: "mint", month: weeklyCheck.month, day: weeklyCheck.day, minutes: 14 * 60),
+            item("健康診断を予約する", .task, .daily, daily, completed: true, symbol: "stethoscope", color: "rose", month: today?.month, day: today?.day, minutes: 10 * 60, children: [
                 item("持ち物を確認", .task, .daily, daily)
             ]),
             item("会議資料を作る", .task, .daily, daily, symbol: "briefcase", color: "mint"),
-            item("定例ミーティング", .event, .daily, daily, symbol: "person.3", color: "rose", month: 10, day: 7, minutes: 9 * 60),
-            item("歯科検診", .event, .daily, daily, completed: true, symbol: "stethoscope", color: "mint", month: 10, day: 7, minutes: 14 * 60)
+            item("定例ミーティング", .event, .daily, daily, symbol: "person.3", color: "rose", month: today?.month, day: today?.day, minutes: 9 * 60),
+            item("歯科検診", .event, .daily, daily, completed: true, symbol: "stethoscope", color: "mint", month: today?.month, day: today?.day, minutes: 14 * 60)
         ]
+    }
+
+    private static func monthlyParts(_ key: String, day: Int) -> (month: Int, day: Int) {
+        let parts = PeriodCalendar.monthParts(key)
+        return (parts.month, PeriodCalendar.clampedDay(year: parts.year, month: parts.month, day: day))
+    }
+
+    private static func weekParts(_ key: String, offset: Int) -> (month: Int, day: Int) {
+        let parts = PeriodCalendar.dateParts(periodKey: key, dayOffset: offset)
+        return (parts?.month ?? 1, parts?.day ?? 1)
     }
 
     private static func item(
@@ -220,5 +247,38 @@ enum TemporaryPlanningSamples {
             return data
         }
         return Data()
+    }
+}
+
+extension PlanningSession {
+    /// Rewrites known sample schedule dates that fall outside their period. User items are left alone.
+    func repairSampleScheduleDates() {
+        periodItems = repairedSampleDates(periodItems)
+    }
+
+    private func repairedSampleDates(_ nodes: [PlanningNode]) -> [PlanningNode] {
+        nodes.map { node in
+            var node = node
+            node.children = repairedSampleDates(node.children)
+            guard node.isSample, node.startDay != nil else { return node }
+            guard !PeriodCalendar.sampleDateBelongs(bucket: node.bucket, periodKey: node.periodKey, month: node.scheduleMonth, day: node.startDay) else { return node }
+            switch node.bucket {
+            case .monthly:
+                let parts = PeriodCalendar.monthParts(node.periodKey)
+                node.scheduleMonth = parts.month
+                node.startDay = PeriodCalendar.clampedDay(year: parts.year, month: parts.month, day: node.startDay ?? 1)
+            case .daily:
+                if let parts = PeriodCalendar.dateParts(periodKey: node.periodKey, dayOffset: 0) {
+                    node.scheduleMonth = parts.month
+                    node.startDay = parts.day
+                }
+            case .weekly:
+                if let parts = PeriodCalendar.dateParts(periodKey: node.periodKey, dayOffset: 0) {
+                    node.scheduleMonth = parts.month
+                    node.startDay = parts.day
+                }
+            }
+            return node
+        }
     }
 }

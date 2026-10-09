@@ -62,6 +62,50 @@ enum PeriodCalendar {
         String(format: "%04d-%02d", year, month)
     }
 
+    static func daysInMonth(year: Int, month: Int) -> Int {
+        let date = calendar.date(from: DateComponents(year: year, month: month, day: 1)) ?? Date()
+        return calendar.range(of: .day, in: .month, for: date)?.count ?? 28
+    }
+
+    static func clampedDay(year: Int, month: Int, day: Int) -> Int {
+        min(max(day, 1), daysInMonth(year: year, month: month))
+    }
+
+    /// Month and day `offset` days after a period key. Weekly offsets stay inside that week.
+    static func dateParts(periodKey: String, dayOffset: Int) -> (year: Int, month: Int, day: Int)? {
+        guard let start = date(from: periodKey) else { return nil }
+        let date = calendar.date(byAdding: .day, value: dayOffset, to: start) ?? start
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = parts.year, let month = parts.month, let day = parts.day else { return nil }
+        return (year, month, day)
+    }
+
+    static func sampleDateBelongs(bucket: PlanningBucket, periodKey: String, month: Int?, day: Int?) -> Bool {
+        guard let day else { return true }
+        switch bucket {
+        case .monthly:
+            let parts = monthParts(periodKey)
+            return (month ?? parts.month) == parts.month && (1...daysInMonth(year: parts.year, month: parts.month)).contains(day)
+        case .weekly:
+            guard let start = date(from: periodKey) else { return true }
+            let startDay = calendar.startOfDay(for: start)
+            let end = calendar.date(byAdding: .day, value: 6, to: startDay) ?? startDay
+            let year = calendar.component(.year, from: startDay)
+            guard let composed = calendar.date(from: DateComponents(year: year, month: month ?? calendar.component(.month, from: startDay), day: day)) else { return false }
+            let composedDay = calendar.startOfDay(for: composed)
+            if composedDay < startDay {
+                guard let nextYear = calendar.date(from: DateComponents(year: year + 1, month: month ?? 1, day: day)) else { return false }
+                let next = calendar.startOfDay(for: nextYear)
+                return next >= startDay && next <= end
+            }
+            return composedDay >= startDay && composedDay <= end
+        case .daily:
+            guard let date = date(from: periodKey) else { return true }
+            let parts = calendar.dateComponents([.month, .day], from: date)
+            return (month ?? parts.month) == parts.month && day == parts.day
+        }
+    }
+
     static func dayKey(_ date: Date) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 2026, parts.month ?? 1, parts.day ?? 1)

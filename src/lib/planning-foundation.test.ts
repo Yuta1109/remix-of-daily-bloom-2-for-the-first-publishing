@@ -1748,10 +1748,11 @@ describe("photo museum and daily attention", () => {
     expect(reflection).toContain("case .landscape: 0.80");
     expect(reflection).toContain("case .portrait: 0.66");
     expect(reflection).toContain("case .square: 0.72");
-    expect(reflectionPage).toContain("struct GallerySpotlight");
-    expect(reflectionPage).toContain("struct PhotoMemoryIllumination");
-    expect(reflectionPage).toContain("outerWidth * 0.20");
+    expect(reflectionPage).toContain("struct PhotoMemoryMuseum");
+    expect(reflectionPage).toContain(".renderingMode(.original)");
     expect(reflectionPage).toContain("contentWidth * 0.86");
+    expect(reflectionPage).not.toContain("struct GallerySpotlight");
+    expect(reflectionPage).not.toContain("struct PhotoMemoryFrame");
     expect(reflectionPage).not.toContain("layoutPriority");
   });
 
@@ -1788,5 +1789,67 @@ describe("photo museum and daily attention", () => {
     expect(direction(["2026-10-07"], "2026-10-07", 1)).toBe(false);
     expect(direction([], "2026-10-07", -1)).toBe(false);
     expect(direction([], "2026-10-07", 1)).toBe(false);
+  });
+
+  it("uses the ratio overlay assets and a borderless attention badge", () => {
+    expect(reflection).toContain("photo_memory_overlay_4x3");
+    expect(reflection).toContain("photo_memory_overlay_3x4");
+    expect(reflection).toContain("photo_memory_overlay_1x1");
+    expect(reflection).toContain("else { return .landscape }");
+    expect(reflectionPage).toContain(".renderingMode(.original)");
+    expect(reflectionPage).toContain(".interpolation(.high)");
+    expect(reflectionPage).not.toContain(".renderingMode(.template)");
+    const badge = reflectionPage.slice(reflectionPage.indexOf("struct PeriodArrowAttentionBadge"), reflectionPage.indexOf("struct PlanningReflectionDueCard"));
+    expect(badge).toContain("Text(\"!\")");
+    expect(badge).not.toContain(".stroke");
+    expect(badge).not.toContain("lineWidth: 1.25");
+  });
+
+  it("keeps photo and diary tutorial cues until their editors open", () => {
+    expect(reflection).toContain("func registerDailyTutorialPeriods");
+    expect(reflection).toContain("var photoPeriodKey");
+    expect(reflection).toContain("var diaryPeriodKey");
+    expect(reflection).toContain("dailyTutorial.photoPeriodKey");
+    expect(reflection).toContain("dailyTutorial.diaryPeriodKey");
+    expect(reflectionPage).toContain("session.markPhotoTutorialOpened()");
+    expect(reflectionPage).toContain("session.markDiaryTutorialOpened()");
+    expect(periodPage).not.toContain("markPhotoTutorialOpened");
+    expect(periodPage).not.toContain("markDiaryTutorialOpened");
+    const samples = readFileSync(`${planningRoot}/TemporaryPlanningSamples.swift`, "utf8");
+    expect(samples).toContain("registerDailyTutorialPeriods");
+    expect(samples).toContain("by: -2");
+    expect(samples).toContain("by: -3");
+    expect(badge(1, false, false)).toBe(3);
+    expect(badge(1, true, false)).toBe(2);
+    expect(badge(1, false, true)).toBe(2);
+    expect(badge(1, true, true)).toBe(1);
+    expect(badge(0, true, true)).toBe(0);
+  });
+
+  it("derives demo dates from the period and repairs stale samples in place", () => {
+    const period = readFileSync(`${planningRoot}/PlanningPeriod.swift`, "utf8");
+    const samples = readFileSync(`${planningRoot}/TemporaryPlanningSamples.swift`, "utf8");
+    expect(period).toContain("func clampedDay");
+    expect(period).toContain("func dateParts");
+    expect(period).toContain("func sampleDateBelongs");
+    expect(samples).toContain("monthlyParts(monthly, day: 15)");
+    expect(samples).toContain("weekParts(weekly, offset: 2)");
+    expect(samples).toContain("dateParts(periodKey: daily, dayOffset: 0)");
+    expect(samples).toContain("func repairSampleScheduleDates");
+    expect(samples).toContain("guard node.isSample");
+    expect(samples).not.toContain("month: 9");
+    const october = { year: 2026, month: 10, day: 15 };
+    expect(october.month).toBe(10);
+    const weekStart = new Date(Date.UTC(2026, 9, 26));
+    const crossed = new Date(weekStart.getTime() + 6 * 86400000);
+    expect(crossed.getUTCMonth() + 1).toBe(11);
+    expect(crossed.getUTCDate()).toBe(1);
+    const yearWeek = new Date(Date.UTC(2025, 11, 29));
+    const nextYear = new Date(yearWeek.getTime() + 5 * 86400000);
+    expect(nextYear.getUTCFullYear()).toBe(2026);
+    expect(nextYear.getUTCMonth() + 1).toBe(1);
+    const daily = { key: "2026-10-09", month: 10, day: 9 };
+    expect(daily.month).toBe(10);
+    expect(daily.day).toBe(9);
   });
 });

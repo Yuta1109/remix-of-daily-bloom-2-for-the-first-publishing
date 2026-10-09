@@ -447,7 +447,6 @@ struct PeriodArrowAttentionBadge: View {
             .foregroundStyle(Color.white)
             .frame(width: 16, height: 16)
             .background(Color(red: 0.910, green: 0.306, blue: 0.310), in: Circle())
-            .overlay(Circle().stroke(Color.white, lineWidth: 1.25))
     }
 }
 
@@ -1076,29 +1075,13 @@ struct PhotoMemoryDisplayView: View {
     let caption: String
     @State private var contentWidth: CGFloat = 320
 
-    private var outerWidth: CGFloat { max(contentWidth * aspect.displayWidthFraction, 1) }
-    private var apertureWidth: CGFloat { max(outerWidth - PhotoMemoryFrame.inset * 2, 1) }
-    private var apertureHeight: CGFloat { apertureWidth / aspect.widthOverHeight }
-    private var outerHeight: CGFloat { apertureHeight + PhotoMemoryFrame.inset * 2 }
-    private let lampClearance: CGFloat = 62
+    private var overlayWidth: CGFloat { max(contentWidth * aspect.displayWidthFraction, 1) }
+    private var overlayHeight: CGFloat { overlayWidth / aspect.overlayWidthOverHeight }
 
     var body: some View {
         VStack(spacing: 22) {
-            ZStack(alignment: .top) {
-                PhotoMemoryIllumination(frameWidth: outerWidth, frameHeight: outerHeight, clearance: lampClearance)
-                    .frame(width: outerWidth + 48, height: outerHeight + lampClearance)
-                PhotoMemoryFrame(image: image)
-                    .frame(width: outerWidth, height: outerHeight)
-                    .padding(.top, lampClearance)
-                HStack(spacing: 0) {
-                    GallerySpotlight(facesRight: true)
-                    Spacer(minLength: 0)
-                    GallerySpotlight(facesRight: false)
-                }
-                .padding(.horizontal, max(outerWidth * 0.20 - 24, 0))
-                .padding(.top, 2)
-            }
-            .frame(height: outerHeight + lampClearance)
+            PhotoMemoryMuseum(aspect: aspect, image: image)
+                .frame(width: overlayWidth, height: overlayHeight)
             PhotoMemoryCaptionCard(text: caption)
                 .frame(width: contentWidth * 0.86)
         }
@@ -1138,221 +1121,36 @@ struct PhotoMemoryCaptionCard: View {
     }
 }
 
-struct PhotoMemoryFrame: View {
-    static let moulding: CGFloat = 13
-    static let mat: CGFloat = 22
-    static var inset: CGFloat { moulding + mat }
-
+struct PhotoMemoryMuseum: View {
+    let aspect: PhotoMemoryAspectRatio
     let image: UIImage?
-    private let warmEdge = Color(red: 0.847, green: 0.800, blue: 0.710)
-    private let shadow = Color(red: 0.28, green: 0.20, blue: 0.12)
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(shadow.opacity(0.09))
-                .blur(radius: 3)
-                .offset(y: 2)
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 1, green: 0.992, blue: 0.965),
-                            Color(red: 0.957, green: 0.933, blue: 0.875),
-                            warmEdge
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .stroke(warmEdge, lineWidth: 2.5)
-                .padding(PhotoMemoryFrame.moulding - 1)
-            RoundedRectangle(cornerRadius: 1, style: .continuous)
-                .stroke(Color.white.opacity(0.72), lineWidth: 1)
-                .padding(PhotoMemoryFrame.moulding + 1.5)
-            RoundedRectangle(cornerRadius: 1, style: .continuous)
-                .fill(Color(red: 0.973, green: 0.957, blue: 0.914))
-                .padding(PhotoMemoryFrame.moulding)
-            GeometryReader { geo in
-                let apertureWidth = max(geo.size.width - PhotoMemoryFrame.inset * 2, 1)
-                let apertureHeight = max(geo.size.height - PhotoMemoryFrame.inset * 2, 1)
-                ZStack {
-                    RoundedRectangle(cornerRadius: 1, style: .continuous)
-                        .fill(Color.black.opacity(0.08))
-                        .blur(radius: 2)
-                        .padding(1)
-                    Group {
-                        if let image {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                        } else {
-                            Color(red: 0.973, green: 0.957, blue: 0.914)
-                        }
-                    }
-                    .frame(width: apertureWidth, height: apertureHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: 1, style: .continuous))
+        GeometryReader { geo in
+            let aperture = aspect.aperture
+            let width = geo.size.width
+            let height = geo.size.height
+            let apertureWidth = max(width * (aperture.maxX - aperture.minX) + 2, 1)
+            let apertureHeight = max(height * (aperture.maxY - aperture.minY) + 2, 1)
+            let centerX = width * (aperture.minX + aperture.maxX) / 2
+            let centerY = height * (aperture.minY + aperture.maxY) / 2
+            ZStack {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: apertureWidth, height: apertureHeight)
+                        .clipped()
+                        .position(x: centerX, y: centerY)
                 }
-                .frame(width: apertureWidth, height: apertureHeight)
-                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                Image(aspect.overlayAssetName)
+                    .renderingMode(.original)
+                    .interpolation(.high)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: width, height: height)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
-        .shadow(color: shadow.opacity(0.16), radius: 12, x: 1, y: 6)
-        .overlay(alignment: .topLeading) {
-            LinearGradient(colors: [Color.white.opacity(0.55), Color.clear], startPoint: .topLeading, endPoint: .bottom)
-                .frame(height: 14)
-                .allowsHitTesting(false)
-        }
-        .overlay(alignment: .top) {
-            LinearGradient(
-                colors: [Color(red: 1, green: 0.92, blue: 0.69).opacity(0.08), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 90)
-            .allowsHitTesting(false)
-        }
-    }
-}
-
-private struct PhotoMemoryIllumination: View {
-    let frameWidth: CGFloat
-    let frameHeight: CGFloat
-    let clearance: CGFloat
-    private let beam = Color(red: 1, green: 0.922, blue: 0.686)
-
-    var body: some View {
-        Canvas { context, size in
-            let frameLeft = (size.width - frameWidth) / 2
-            let left = CGPoint(x: frameLeft + frameWidth * 0.20, y: 24)
-            let right = CGPoint(x: frameLeft + frameWidth * 0.80, y: 24)
-            drawGlow(context, at: left)
-            drawGlow(context, at: right)
-            drawCone(context, from: left, inward: true, size: size)
-            drawCone(context, from: right, inward: false, size: size)
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func drawGlow(_ context: GraphicsContext, at origin: CGPoint) {
-        context.drawLayer { layer in
-            layer.addFilter(.blur(radius: 12))
-            let rect = CGRect(x: origin.x - 28, y: origin.y - 4, width: 56, height: 42)
-            layer.fill(
-                Path(ellipseIn: rect),
-                with: .color(beam.opacity(0.15))
-            )
-        }
-    }
-
-    private func drawCone(_ context: GraphicsContext, from origin: CGPoint, inward: Bool, size: CGSize) {
-        let frameTop = clearance
-        let endY = min(frameTop + frameHeight * 0.62, size.height)
-        let spread = frameWidth * 0.46
-        let direction: CGFloat = inward ? 1 : -1
-        let endCenter = origin.x + direction * spread * 0.28
-        var path = Path()
-        path.move(to: origin)
-        path.addQuadCurve(
-            to: CGPoint(x: endCenter - spread * 0.5, y: endY),
-            control: CGPoint(x: origin.x + direction * 18, y: frameTop + 8)
-        )
-        path.addQuadCurve(
-            to: CGPoint(x: endCenter + spread * 0.5, y: endY),
-            control: CGPoint(x: endCenter, y: endY + 16)
-        )
-        path.addQuadCurve(
-            to: origin,
-            control: CGPoint(x: origin.x + direction * spread * 0.18, y: frameTop * 0.72)
-        )
-        context.drawLayer { layer in
-            layer.addFilter(.blur(radius: 16))
-            layer.fill(
-                path,
-                with: .linearGradient(
-                    Gradient(stops: [
-                        .init(color: beam.opacity(0.16), location: 0),
-                        .init(color: beam.opacity(0.07), location: 0.45),
-                        .init(color: beam.opacity(0.03), location: 1)
-                    ]),
-                    startPoint: origin,
-                    endPoint: CGPoint(x: endCenter, y: endY)
-                )
-            )
-        }
-    }
-}
-
-struct GallerySpotlight: View {
-    let facesRight: Bool
-
-    var body: some View {
-        let angle: Double = facesRight ? 28 : -28
-        ZStack {
-            Circle()
-                .fill(PhotoMemoryPalette.brassDark.opacity(0.16))
-                .frame(width: 23, height: 23)
-                .blur(radius: 2)
-                .offset(y: 2)
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [PhotoMemoryPalette.brassLight, PhotoMemoryPalette.brass, PhotoMemoryPalette.brassDark],
-                        center: .topLeading,
-                        startRadius: 1,
-                        endRadius: 16
-                    )
-                )
-                .frame(width: 23, height: 23)
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [PhotoMemoryPalette.brassLight, PhotoMemoryPalette.brassDark],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 4.5, height: 14)
-                .rotationEffect(.degrees(angle), anchor: .top)
-                .offset(y: 16)
-            GalleryLampHead()
-                .fill(
-                    LinearGradient(
-                        colors: [PhotoMemoryPalette.brassLight, PhotoMemoryPalette.brass, PhotoMemoryPalette.brassDark],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 16, height: 22)
-                .overlay {
-                    GalleryLampHead()
-                        .stroke(PhotoMemoryPalette.brassLight.opacity(0.85), lineWidth: 1)
-                }
-                .rotationEffect(.degrees(angle))
-                .offset(x: facesRight ? 7 : -7, y: 26)
-            Ellipse()
-                .fill(Color(red: 1, green: 0.95, blue: 0.78))
-                .frame(width: 8, height: 4.5)
-                .rotationEffect(.degrees(angle))
-                .offset(x: facesRight ? 11 : -11, y: 34)
-        }
-        .frame(width: 48, height: 58)
-        .allowsHitTesting(false)
-    }
-}
-
-private struct GalleryLampHead: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let inset = rect.width * 0.18
-        path.move(to: CGPoint(x: rect.minX + inset, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.closeSubpath()
-        return path
     }
 }
 

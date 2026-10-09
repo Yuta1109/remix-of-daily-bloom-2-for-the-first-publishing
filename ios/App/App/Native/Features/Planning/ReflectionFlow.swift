@@ -38,6 +38,32 @@ enum PhotoMemoryAspectRatio: String, Hashable, CaseIterable, Identifiable {
         }
     }
 
+    var overlayAssetName: String {
+        switch self {
+        case .landscape: "photo_memory_overlay_4x3"
+        case .portrait: "photo_memory_overlay_3x4"
+        case .square: "photo_memory_overlay_1x1"
+        }
+    }
+
+    /// Width divided by the overlay image height, so the PNG is never stretched.
+    var overlayWidthOverHeight: CGFloat {
+        switch self {
+        case .landscape: 1402.0 / 1122.0
+        case .portrait: 1122.0 / 1402.0
+        case .square: 1
+        }
+    }
+
+    /// Normalized photo aperture inside the overlay. Values are fractions of the overlay.
+    var aperture: (minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat) {
+        switch self {
+        case .landscape: (0.222, 0.776, 0.330, 0.766)
+        case .portrait: (0.262, 0.736, 0.300, 0.793)
+        case .square: (0.250, 0.750, 0.315, 0.796)
+        }
+    }
+
     /// Width divided by height.
     var widthOverHeight: CGFloat {
         switch self {
@@ -70,6 +96,10 @@ enum PhotoMemoryAspectRatio: String, Hashable, CaseIterable, Identifiable {
 struct DailyTutorialProgress: Hashable {
     var photoMemoryTutorialOpened = false
     var diaryTutorialOpened = false
+    /// Daily period that owns the Photo & One Line tutorial cue. Empty until samples register it.
+    var photoPeriodKey = ""
+    /// Daily period that owns the Anything Diary tutorial cue.
+    var diaryPeriodKey = ""
 
     static func restored(from defaults: UserDefaults = .standard) -> DailyTutorialProgress {
         DailyTutorialProgress(
@@ -284,11 +314,11 @@ extension PlanningSession {
             }
         }
         if bucket == .daily {
-            if !dailyTutorial.photoMemoryTutorialOpened, let photo = dailySamplePeriodKey(kind: .photoNote) {
-                keys.insert(photo)
+            if !dailyTutorial.photoMemoryTutorialOpened, !dailyTutorial.photoPeriodKey.isEmpty {
+                keys.insert(dailyTutorial.photoPeriodKey)
             }
-            if !dailyTutorial.diaryTutorialOpened, let diary = dailySamplePeriodKey(kind: .diary) {
-                keys.insert(diary)
+            if !dailyTutorial.diaryTutorialOpened, !dailyTutorial.diaryPeriodKey.isEmpty {
+                keys.insert(dailyTutorial.diaryPeriodKey)
             }
         }
         return Array(keys)
@@ -306,23 +336,16 @@ extension PlanningSession {
         dailyTutorial.store()
     }
 
-    /// Sample photo and diary days are tutorial cues. They are not ordinary reflections.
-    func dailySamplePeriodKey(kind: PlanningMemoryKind) -> String? {
-        guard TemporaryPlanningSamples.enabled else { return nil }
-        return memoryEntries.first { entry in
-            guard entry.isSample, entry.saved, entry.kind == kind else { return false }
-            if case .period(.daily, _) = entry.scope { return true }
-            return false
-        }.flatMap { entry in
-            if case .period(.daily, let key) = entry.scope { return key }
-            return nil
-        }
+    /// Registers the Daily photo and diary tutorial periods. Does not mark them resolved.
+    func registerDailyTutorialPeriods(photoKey: String, diaryKey: String) {
+        dailyTutorial.photoPeriodKey = photoKey
+        dailyTutorial.diaryPeriodKey = diaryKey
     }
 
     var unresolvedDailyTutorialCueCount: Int {
         var count = 0
-        if dailySamplePeriodKey(kind: .photoNote) != nil, !dailyTutorial.photoMemoryTutorialOpened { count += 1 }
-        if dailySamplePeriodKey(kind: .diary) != nil, !dailyTutorial.diaryTutorialOpened { count += 1 }
+        if !dailyTutorial.photoPeriodKey.isEmpty, !dailyTutorial.photoMemoryTutorialOpened { count += 1 }
+        if !dailyTutorial.diaryPeriodKey.isEmpty, !dailyTutorial.diaryTutorialOpened { count += 1 }
         return count
     }
 
