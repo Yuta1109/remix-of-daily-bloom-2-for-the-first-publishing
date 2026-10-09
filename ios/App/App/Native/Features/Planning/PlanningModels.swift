@@ -505,6 +505,7 @@ final class PlanningSession: ObservableObject {
     @Published var periodRecords: [PeriodReflectionRecord] = []
     @Published var futureReflections: [FutureReflectionRecord] = []
     @Published var memoryEntries: [PlanningMemoryEntry] = []
+    @Published var dailyTutorial = DailyTutorialProgress.restored()
     @Published var reflectionSchedule = ReflectionSchedule()
     @Published var reflectionDraft: ReflectionDraft?
     /// Editor draft handed to the selection page (session only, never persisted).
@@ -525,20 +526,11 @@ final class PlanningSession: ObservableObject {
     func badgeCount(for section: PlanningSection) -> Int {
         let fromRecords = reflectionBadgeUnits(for: section)
         let hasRecords = periodRecords.contains { $0.bucket.section == section } || (section == .future && !futureReflections.isEmpty)
-        let demoCues = section == .daily && TemporaryPlanningSamples.enabled ? dailyMemoryDemoCueCount : 0
+        let tutorialCues = section == .daily ? unresolvedDailyTutorialCueCount : 0
         if hasRecords {
-            return min(PlanningRules.maximumBadgeCount, fromRecords + demoCues)
+            return min(PlanningRules.maximumBadgeCount, fromRecords + tutorialCues)
         }
-        return min(PlanningRules.maximumBadgeCount, PlanningRules.displayedReflectionBadge(section: section, obligations: obligations) + demoCues)
-    }
-
-    /// Photo and diary samples are tutorial cues only. They are not Reflection obligations.
-    var dailyMemoryDemoCueCount: Int {
-        memoryEntries.filter { entry in
-            guard entry.isSample, entry.saved, entry.kind == .photoNote || entry.kind == .diary else { return false }
-            if case .period(let bucket, _) = entry.scope { return bucket == .daily }
-            return false
-        }.count
+        return min(PlanningRules.maximumBadgeCount, PlanningRules.displayedReflectionBadge(section: section, obligations: obligations) + tutorialCues)
     }
 
     func select(_ section: PlanningSection) {
@@ -726,6 +718,13 @@ final class PlanningSession: ObservableObject {
         monthlyPeriodKey = navigation.selectedValues["planning.monthlyPeriod"] ?? ""
         weeklyPeriodKey = navigation.selectedValues["planning.weeklyPeriod"] ?? ""
         dailyPeriodKey = navigation.selectedValues["planning.dailyPeriod"] ?? ""
+        if navigation.selectedValues["planning.tutorial.photoOpened"] == "true" {
+            dailyTutorial.photoMemoryTutorialOpened = true
+        }
+        if navigation.selectedValues["planning.tutorial.diaryOpened"] == "true" {
+            dailyTutorial.diaryTutorialOpened = true
+        }
+        dailyTutorial.store()
         if !index.contains(section) {
             section = .plan
         }
@@ -743,6 +742,9 @@ final class PlanningSession: ObservableObject {
         navigation.selectedValues["planning.monthlyPeriod"] = monthlyPeriodKey
         navigation.selectedValues["planning.weeklyPeriod"] = weeklyPeriodKey
         navigation.selectedValues["planning.dailyPeriod"] = dailyPeriodKey
+        navigation.selectedValues["planning.tutorial.photoOpened"] = dailyTutorial.photoMemoryTutorialOpened ? "true" : "false"
+        navigation.selectedValues["planning.tutorial.diaryOpened"] = dailyTutorial.diaryTutorialOpened ? "true" : "false"
+        dailyTutorial.store()
     }
 
     private func selectedBullets(in bullets: [PlanBullet], ids: Set<UUID>, includeChildren: Bool, force: Bool) -> [PlanBullet] {

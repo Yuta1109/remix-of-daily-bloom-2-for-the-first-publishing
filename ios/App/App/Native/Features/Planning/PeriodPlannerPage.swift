@@ -149,9 +149,10 @@ struct PeriodPlannerPage: View {
                 .foregroundStyle(PlanningPalette.accent)
                 .frame(width: PlanningTokens.PeriodSelector.arrowZone, height: PlanningTokens.PeriodSelector.arrowZone)
                 .overlay(alignment: .topTrailing) {
-                    if session.neighborNeedsReflectionCue(bucket: bucket, from: key, direction: direction) {
+                    if session.directionHasAttention(bucket: bucket, from: key, direction: direction) {
                         PeriodArrowAttentionBadge()
-                            .offset(x: 2, y: 2)
+                            .offset(x: 6, y: -4)
+                            .allowsHitTesting(false)
                     }
                 }
         }

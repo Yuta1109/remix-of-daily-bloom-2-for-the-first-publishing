@@ -31,6 +31,8 @@ enum PlanningText {
         case postponeBoxTitle, postponeTasks, postponeEvents
         case postponeEditName, postponeMoveWithin, postponeDelete
         case postponeDeleteConfirm
+        case subtaskSetDate, subtaskSetTime, subtaskScheduleTitle, subtaskScheduleInvalid
+        case subtaskStartDate, subtaskEndDate, subtaskStartTime, subtaskEndTime
         case reflectionToday, reflectionWeek, reflectionMonth, reflectionClassify
         case reflectionReviewHint, reflectionNone, reflectionNext, reflectionFinish
         case reflectionKeepMeaning, reflectionPostponeMeaning, reflectionStopMeaning
@@ -155,6 +157,14 @@ enum PlanningText {
             "削除するともとに戻すことはできません。削除しますか？",
             "Deleting this item cannot be undone. Delete it?"
         ),
+        .subtaskSetDate: ("日にち指定", "Set date"),
+        .subtaskSetTime: ("時間指定", "Set time"),
+        .subtaskScheduleTitle: ("サブタスクの日時", "Subtask Schedule"),
+        .subtaskScheduleInvalid: ("終了は開始より前にできません。", "The end cannot be earlier than the start."),
+        .subtaskStartDate: ("開始日", "Start date"),
+        .subtaskEndDate: ("終了日", "End date"),
+        .subtaskStartTime: ("開始時間", "Start time"),
+        .subtaskEndTime: ("終了時間", "End time"),
         .reflectionToday: ("今日の振り返り", "Today's reflection"),
         .reflectionWeek: ("今週の振り返り", "This week's reflection"),
         .reflectionMonth: ("今月の振り返り", "This month's reflection"),

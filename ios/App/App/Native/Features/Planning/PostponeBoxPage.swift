@@ -131,7 +131,7 @@ private struct PostponeActionSheet: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                .padding(.bottom, 22)
+                .padding(.bottom, 33)
                 Button(role: .destructive) {
                     confirmingDelete = true
                 } label: {

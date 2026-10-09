@@ -4,6 +4,8 @@ import UIKit
 struct PlanningSubtaskDraft: Identifiable, Equatable {
     var id = UUID()
     var title = ""
+    var startDay: Int?
+    var endDay: Int?
     var startMinutes: Int?
     var endMinutes: Int?
 }
@@ -27,7 +29,7 @@ struct PlanningItemDraft: Equatable {
         startMinutes = node.startMinutes
         endMinutes = node.endMinutes
         subtasks = node.children.map {
-            PlanningSubtaskDraft(id: $0.id, title: $0.title, startMinutes: $0.startMinutes, endMinutes: $0.endMinutes)
+            PlanningSubtaskDraft(id: $0.id, title: $0.title, startDay: $0.startDay, endDay: $0.endDay, startMinutes: $0.startMinutes, endMinutes: $0.endMinutes)
         }
     }
 
@@ -150,8 +152,8 @@ struct PeriodItemListSheet: View {
         }
         .onPreferenceChange(PlanningPlusAnchorKey.self) { plusFrame = $0 }
         .overlay {
-            if showingSources {
-                ZStack(alignment: .topLeading) {
+            ZStack(alignment: .topLeading) {
+                if showingSources {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
                         .onTapGesture { showingSources = false }
@@ -163,9 +165,12 @@ struct PeriodItemListSheet: View {
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     .background { sourceMenuGlass }
+                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .offset(x: sourceMenuOrigin.x, y: sourceMenuOrigin.y)
+                    .transition(.scale(scale: 0.22, anchor: .topTrailing).combined(with: .opacity))
                 }
             }
+            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: showingSources)
         }
         .sheet(isPresented: $creating) {
             PlanningItemEditorSheet(draft: PlanningItemDraft(), isNew: true, bucket: bucket, kind: kind, periodKey: periodKey) { draft in
@@ -175,7 +180,10 @@ struct PeriodItemListSheet: View {
         }
         .sheet(item: $editingID) { editing in
             if let node = session.findNode(editing.id) {
-                PlanningItemEditorSheet(draft: PlanningItemDraft(node: node), isNew: false, bucket: bucket, kind: kind, periodKey: periodKey) { draft in
+                PlanningItemEditorSheet(draft: PlanningItemDraft(node: node), isNew: false, bucket: bucket, kind: kind, periodKey: periodKey, onDelete: {
+                    session.deleteLiveItem(editing.id)
+                    editingID = nil
+                }) { draft in
                     session.saveItem(existingID: editing.id, draft: draft, bucket: bucket, kind: kind, periodKey: periodKey)
                     editingID = nil
                 } onClose: { editingID = nil }
@@ -239,6 +247,16 @@ struct PeriodItemListSheet: View {
         CGFloat(node.children.count) * PlanningTokens.ReflectionSummary.listRowHeight
     }
 
+    private func scheduleLine(_ node: PlanningNode, showsIcon: Bool) -> String? {
+        if showsIcon {
+            return PeriodCalendar.mainSchedule(periodKey: periodKey, month: node.scheduleMonth, day: node.startDay, minutes: node.startMinutes)
+        }
+        let hasStart = node.startDay != nil || node.startMinutes != nil
+        let day = hasStart ? node.startDay : node.endDay
+        let minutes = hasStart ? node.startMinutes : node.endMinutes
+        return PeriodCalendar.subtaskSchedule(bucket: bucket, periodKey: periodKey, month: node.scheduleMonth, day: day, minutes: minutes)
+    }
+
     private func rowContent(_ node: PlanningNode, showsIcon: Bool, opens parent: UUID) -> some View {
         HStack(alignment: .center, spacing: 8) {
             if !showsIcon {
@@ -254,7 +272,7 @@ struct PeriodItemListSheet: View {
                             .font(.system(size: showsIcon ? 16 : 14, weight: showsIcon ? .semibold : .regular))
                             .foregroundStyle(PlanningPalette.ink)
                             .lineLimit(1)
-                        if let line = PeriodCalendar.mainSchedule(periodKey: periodKey, month: node.scheduleMonth, day: node.startDay, minutes: node.startMinutes) {
+                        if let line = scheduleLine(node, showsIcon: showsIcon) {
                             HStack(spacing: 4) {
                                 Image(systemName: "clock").font(.system(size: 11, weight: .medium))
                                 Text(line).font(.system(size: 12))
@@ -338,13 +356,14 @@ struct PeriodSourcePopover: View {
                             .font(.system(size: 17))
                             .foregroundStyle(PlanningPalette.ink)
                     }
+                    .padding(.horizontal, 18)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(minHeight: 45)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 18)
         .padding(.vertical, 11)
         .frame(width: 262)
     }
@@ -523,25 +542,33 @@ private enum PlanningDateField: String, Identifiable {
     var title: String { self == .start ? "開始日時" : "終了日時" }
 }
 
+private struct SubtaskScheduleTarget: Identifiable {
+    let id: UUID
+}
+
 struct PlanningItemEditorSheet: View {
     @State var draft: PlanningItemDraft
     let isNew: Bool
     let bucket: PlanningBucket
     let kind: PlanningItemKind
     let periodKey: String
+    var onDelete: (() -> Void)?
     let onSave: (PlanningItemDraft) -> Void
     let onClose: () -> Void
     @State private var original: PlanningItemDraft
     @State private var confirmDiscard = false
+    @State private var confirmDelete = false
     @State private var editingDate: PlanningDateField?
+    @State private var scheduleTarget: SubtaskScheduleTarget?
     @State private var showingAllIcons = false
     @StateObject private var subtaskFocus = PlanningOutlineFocusCoordinator()
 
-    init(draft: PlanningItemDraft, isNew: Bool, bucket: PlanningBucket, kind: PlanningItemKind, periodKey: String, onSave: @escaping (PlanningItemDraft) -> Void, onClose: @escaping () -> Void) {
+    init(draft: PlanningItemDraft, isNew: Bool, bucket: PlanningBucket, kind: PlanningItemKind, periodKey: String, onDelete: (() -> Void)? = nil, onSave: @escaping (PlanningItemDraft) -> Void, onClose: @escaping () -> Void) {
         self.isNew = isNew
         self.bucket = bucket
         self.kind = kind
         self.periodKey = periodKey
+        self.onDelete = onDelete
         self.onSave = onSave
         self.onClose = onClose
         _draft = State(initialValue: draft)
@@ -594,6 +621,10 @@ struct PlanningItemEditorSheet: View {
                         }
                     }
                 }
+                if onDelete != nil {
+                    deleteButton
+                        .padding(.top, 14)
+                }
             }
             .padding(16)
         }
@@ -616,11 +647,44 @@ struct PlanningItemEditorSheet: View {
             if kind == .task, draft.subtasks.isEmpty { draft.subtasks = [PlanningSubtaskDraft()] }
             original = draft
         }
+        .sheet(item: $scheduleTarget) { target in
+            SubtaskScheduleSheet(
+                bucket: bucket,
+                periodKey: periodKey,
+                draft: subtaskDraftBinding(target.id),
+                onClose: { scheduleTarget = nil }
+            )
+        }
         .onChange(of: confirmDiscard) { _, show in
             guard show else { return }
             confirmDiscard = false
             PlanningDiscardConfirmation.present { onClose() }
         }
+        .onChange(of: confirmDelete) { _, show in
+            guard show else { return }
+            confirmDelete = false
+            PlanningDiscardConfirmation.presentDestructive(
+                message: PlanningText.string(.postponeDeleteConfirm),
+                destructiveTitle: PlanningText.string(.postponeDelete)
+            ) {
+                onDelete?()
+            }
+        }
+    }
+
+    private var deleteButton: some View {
+        Button { confirmDelete = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "trash")
+                Text(PlanningText.string(.postponeDelete))
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .foregroundStyle(Color(red: 0.75, green: 0.22, blue: 0.18))
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(Color(red: 0.75, green: 0.22, blue: 0.18).opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func formLabel(_ text: String) -> some View {
@@ -680,22 +744,48 @@ struct PlanningItemEditorSheet: View {
     }
 
     private func subtaskField(_ subtask: PlanningSubtaskDraft) -> some View {
-        HStack(spacing: 11) {
+        let scheduled = subtask.startDay != nil || subtask.endDay != nil || subtask.startMinutes != nil || subtask.endMinutes != nil
+        return HStack(alignment: .top, spacing: 11) {
             RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                 .stroke(PlanningPalette.muted.opacity(0.7), lineWidth: 1.25)
                 .frame(width: 15, height: 15)
-            PlanningOutlineTextField(
-                rowID: subtask.id,
-                text: subtaskBinding(subtask.id),
-                focus: subtaskFocus,
-                placeholder: "サブタスク",
-                fontSize: 17,
-                onFocus: {},
-                onSubmit: { submitSubtask(subtask.id) },
-                onEmptyDelete: { deleteEmptySubtask(subtask.id) }
-            )
+                .padding(.top, 9)
+            VStack(alignment: .leading, spacing: 4) {
+                PlanningOutlineTextField(
+                    rowID: subtask.id,
+                    text: subtaskBinding(subtask.id),
+                    focus: subtaskFocus,
+                    placeholder: "サブタスク",
+                    fontSize: 17,
+                    onFocus: {},
+                    onSubmit: { submitSubtask(subtask.id) },
+                    onEmptyDelete: { deleteEmptySubtask(subtask.id) }
+                )
+                .frame(minHeight: 33, alignment: .center)
+                Button {
+                    PlanningTransition.perform { scheduleTarget = SubtaskScheduleTarget(id: subtask.id) }
+                } label: {
+                    Text(PlanningText.string(bucket == .daily ? .subtaskSetTime : .subtaskSetDate))
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundStyle(scheduled ? PlanningPalette.accent : PlanningPalette.muted)
+                        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .frame(minHeight: 33, alignment: .center)
+        .padding(.leading, 13)
+    }
+
+    private func subtaskDraftBinding(_ id: UUID) -> Binding<PlanningSubtaskDraft> {
+        Binding(
+            get: { draft.subtasks.first { $0.id == id } ?? PlanningSubtaskDraft(id: id) },
+            set: { value in
+                if let index = draft.subtasks.firstIndex(where: { $0.id == id }) {
+                    draft.subtasks[index] = value
+                }
+            }
+        )
     }
 
     private func subtaskBinding(_ id: UUID) -> Binding<String> {
@@ -733,6 +823,166 @@ struct PlanningItemEditorSheet: View {
     }
 }
 
+private struct SubtaskScheduleSheet: View {
+    let bucket: PlanningBucket
+    let periodKey: String
+    @Binding var draft: PlanningSubtaskDraft
+    let onClose: () -> Void
+    @State private var startDay: Int?
+    @State private var endDay: Int?
+    @State private var startMinutes: Int?
+    @State private var endMinutes: Int?
+    @State private var editingDate: PlanningDateField?
+    @State private var editingTime: PlanningDateField?
+
+    var body: some View {
+        PlanningSystemSheetChrome(
+            onClose: onClose,
+            onConfirm: commit,
+            centerTitle: PlanningText.string(.subtaskScheduleTitle),
+            bodySurface: Color.white
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                if bucket == .daily {
+                    timeButton(.start)
+                    timeButton(.end)
+                } else {
+                    dateButton(.start)
+                    dateButton(.end)
+                }
+            }
+            .padding(16)
+        }
+        .onAppear {
+            startDay = draft.startDay
+            endDay = draft.endDay
+            startMinutes = draft.startMinutes
+            endMinutes = draft.endMinutes
+        }
+        .sheet(item: $editingDate) { field in
+            PlanningDateTimePopup(
+                title: field == .start ? PlanningText.string(.subtaskStartDate) : PlanningText.string(.subtaskEndDate),
+                day: field == .start ? $startDay : $endDay,
+                minutes: field == .start ? $startMinutes : $endMinutes,
+                onClose: { editingDate = nil },
+                onSave: { editingDate = nil }
+            )
+        }
+        .sheet(item: $editingTime) { field in
+            SubtaskTimePopup(
+                title: field == .start ? PlanningText.string(.subtaskStartTime) : PlanningText.string(.subtaskEndTime),
+                minutes: field == .start ? $startMinutes : $endMinutes,
+                onClose: { editingTime = nil }
+            )
+        }
+    }
+
+    private func dateButton(_ field: PlanningDateField) -> some View {
+        let day = field == .start ? startDay : endDay
+        let minutes = field == .start ? startMinutes : endMinutes
+        let line = PeriodCalendar.subtaskSchedule(bucket: bucket, periodKey: periodKey, month: nil, day: day, minutes: minutes)
+        return Button {
+            PlanningTransition.perform { editingDate = field }
+        } label: {
+            scheduleRow(
+                field == .start ? PlanningText.string(.subtaskStartDate) : PlanningText.string(.subtaskEndDate),
+                value: line ?? PlanningText.string(.unset)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func timeButton(_ field: PlanningDateField) -> some View {
+        let minutes = field == .start ? startMinutes : endMinutes
+        let value = minutes.map { String(format: "%d:%02d", $0 / 60, $0 % 60) } ?? PlanningText.string(.unset)
+        return Button {
+            PlanningTransition.perform { editingTime = field }
+        } label: {
+            scheduleRow(
+                field == .start ? PlanningText.string(.subtaskStartTime) : PlanningText.string(.subtaskEndTime),
+                value: value
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func scheduleRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title).foregroundStyle(PlanningPalette.ink)
+            Spacer()
+            Text(value).foregroundStyle(PlanningPalette.muted)
+            Image(systemName: "chevron.right").foregroundStyle(PlanningPalette.muted)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 46)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func commit() {
+        let dayStart = bucket == .daily ? nil : startDay
+        let dayEnd = bucket == .daily ? nil : endDay
+        guard SubtaskScheduleValidation.accepts(
+            bucket: bucket,
+            startDay: dayStart,
+            endDay: dayEnd,
+            startMinutes: startMinutes,
+            endMinutes: endMinutes
+        ) else {
+            PlanningDiscardConfirmation.presentMessage(PlanningText.string(.subtaskScheduleInvalid))
+            return
+        }
+        draft.startDay = dayStart
+        draft.endDay = dayEnd
+        draft.startMinutes = startMinutes
+        draft.endMinutes = endMinutes
+        onClose()
+    }
+}
+
+private struct SubtaskTimePopup: View {
+    let title: String
+    @Binding var minutes: Int?
+    let onClose: () -> Void
+    @State private var date = Date()
+    @State private var enabled = false
+
+    var body: some View {
+        PlanningSystemSheetChrome(onClose: onClose, onConfirm: commit, centerTitle: title, bodySurface: Color.white) {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle(title, isOn: $enabled)
+                if enabled {
+                    DatePicker(title, selection: $date, displayedComponents: .hourAndMinute)
+                }
+            }
+            .padding(16)
+        }
+        .onAppear {
+            enabled = minutes != nil
+            var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+            if let minutes {
+                components.hour = minutes / 60
+                components.minute = minutes % 60
+            } else {
+                components.hour = 10
+                components.minute = 0
+            }
+            date = Calendar.current.date(from: components) ?? Date()
+        }
+    }
+
+    private func commit() {
+        if enabled {
+            let calendar = Calendar.current
+            minutes = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
+        } else {
+            minutes = nil
+        }
+        onClose()
+    }
+}
+
 struct PlanningDateTimePopup: View {
     let title: String
     @Binding var day: Int?
@@ -747,7 +997,7 @@ struct PlanningDateTimePopup: View {
             VStack(alignment: .leading, spacing: 12) {
                 DatePicker("日付", selection: $date, displayedComponents: .date)
                     .datePickerStyle(.graphical)
-                Toggle(title == "開始日時" ? "開始時刻" : "終了時刻", isOn: $timeEnabled)
+                Toggle(title.contains("開始") || title.lowercased().contains("start") ? "開始時刻" : "終了時刻", isOn: $timeEnabled)
                 if timeEnabled {
                     DatePicker("時刻", selection: $date, displayedComponents: .hourAndMinute)
                 }

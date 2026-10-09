@@ -580,6 +580,16 @@ enum PlanningDiscardConfirmation {
         presenter.present(alert, animated: true)
     }
 
+    /// One-button validation alert. The OK action stays label-black.
+    static func presentMessage(_ message: String) {
+        let alert = PlanningDiscardAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.overrideUserInterfaceStyle = .light
+        alert.view.tintColor = .label
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        guard let presenter = topViewController() else { return }
+        presenter.present(alert, animated: true)
+    }
+
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.flatMap(\.windows).first

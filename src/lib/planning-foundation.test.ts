@@ -1533,7 +1533,7 @@ describe("planning blueprint refinement", () => {
     expect(postpone).toContain("PlanningText.string(.postponeDeleteConfirm)");
     expect(postpone).toContain("presentDestructive");
     expect(postpone).toContain(".padding(.bottom, 20)");
-    expect(postpone).toContain(".padding(.bottom, 22)");
+    expect(postpone).toContain(".padding(.bottom, 33)");
     expect(planText).toContain("先送りボックス内で移動させる");
     expect(planText).toContain("Move within Postpone Box");
     expect(planText).toContain("Deleting this item cannot be undone. Delete it?");
@@ -1577,7 +1577,7 @@ describe("planning blueprint refinement", () => {
     expect(periodPage).not.toContain("✨");
     expect(periodPage).toContain("PlanningText.string(.dailyTutorialStart)");
     expect(periodPage).toContain("if bucket == .daily");
-    expect(reflection).toContain("func neighborNeedsReflectionCue");
+    expect(reflection).toContain("func directionHasAttention");
     expect(reflection).toContain("func hasUnresolvedReflection");
     expect(reflection).toContain("func isDailyMemoryDemo");
     expect(reflection).toContain("static func restored");
@@ -1595,5 +1595,198 @@ describe("planning blueprint refinement", () => {
     expect(cue("2026-09", -1)).toBe(true);
     expect(cue("2026-09", 1)).toBe(false);
     expect(cue("2026-08", 0)).toBe(true);
+  });
+});
+
+describe("planning targeted correction", () => {
+  const planningRoot = "ios/App/App/Native/Features/Planning";
+  const itemSheets = readFileSync(`${planningRoot}/PlanningItemSheets.swift`, "utf8");
+  const period = readFileSync(`${planningRoot}/PlanningPeriod.swift`, "utf8");
+  const reflectionPage = readFileSync(`${planningRoot}/ReflectionPages.swift`, "utf8");
+  const postpone = readFileSync(`${planningRoot}/PostponeBoxPage.swift`, "utf8");
+  const models = readFileSync(`${planningRoot}/PlanningModels.swift`, "utf8");
+  const planText = readFileSync(`${planningRoot}/PlanningText.swift`, "utf8");
+
+  function accepts(bucket: string, startDay: number | null, endDay: number | null, startMinutes: number | null, endMinutes: number | null) {
+    if (bucket === "daily") {
+      if (startMinutes == null || endMinutes == null) return true;
+      return endMinutes >= startMinutes;
+    }
+    if (startDay == null || endDay == null) return true;
+    if (endDay > startDay) return true;
+    if (endDay < startDay) return false;
+    if (startMinutes == null || endMinutes == null) return true;
+    return endMinutes >= startMinutes;
+  }
+
+  it("removes the diary title underline and keeps body line rules", () => {
+    const title = reflectionPage.slice(reflectionPage.indexOf("final class DiaryTitleView"), reflectionPage.indexOf("struct PlanningDiaryPaper"));
+    const paper = reflectionPage.slice(reflectionPage.indexOf("struct PlanningDiaryPaper"), reflectionPage.indexOf("struct SavedPeriodMemory"));
+    expect(title).not.toContain("setStrokeColor");
+    expect(title).not.toContain("strokePath");
+    expect(paper).toContain("enumerateLineFragments");
+    expect(paper).toContain("context.strokePath()");
+    expect(reflectionPage).toContain("PlanningDiaryCard(title: entry.title, text: entry.text)");
+  });
+
+  it("makes each source row a full-width hit target and grows the menu from the plus", () => {
+    const menu = itemSheets.slice(itemSheets.indexOf("struct PeriodSourcePopover"), itemSheets.indexOf("private func icon"));
+    expect(menu).toContain(".frame(maxWidth: .infinity, alignment: .leading)");
+    expect(menu).toContain(".contentShape(Rectangle())");
+    expect(menu).toContain(".padding(.horizontal, 18)");
+    expect(menu).toContain(".frame(minHeight: 45)");
+    expect(itemSheets).toContain(".transition(.scale(scale: 0.22, anchor: .topTrailing).combined(with: .opacity))");
+    expect(itemSheets).toContain(".spring(response: 0.28, dampingFraction: 0.86)");
+    expect(itemSheets).toContain(".contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))");
+    expect(itemSheets).not.toContain(".popover");
+  });
+
+  it("keeps subtask schedules optional and restores old nodes without them", () => {
+    const draft = itemSheets.slice(itemSheets.indexOf("struct PlanningSubtaskDraft"), itemSheets.indexOf("struct PlanningItemDraft"));
+    expect(draft).toContain("var startDay: Int?");
+    expect(draft).toContain("var endDay: Int?");
+    expect(draft).not.toContain("startDay = 1");
+    expect(models).toContain("startDay: Int? = nil");
+    expect(models).toContain("endDay: Int? = nil");
+    expect(models).toContain("startMinutes: Int? = nil");
+    expect(itemSheets).toContain("startDay: $0.startDay, endDay: $0.endDay, startMinutes: $0.startMinutes, endMinutes: $0.endMinutes");
+  });
+
+  it("stores monthly and weekly dates with optional times, and daily times only", () => {
+    const save = period.slice(period.indexOf("func saveItem"), period.indexOf("private func eventRecord") > -1 ? period.length : period.length);
+    const child = period.slice(period.indexOf("let children = draft.subtasks"), period.indexOf("if let existingID"));
+    expect(child).toContain("startDay: bucket == .daily ? nil : subtask.startDay");
+    expect(child).toContain("endDay: bucket == .daily ? nil : subtask.endDay");
+    expect(child).toContain("startMinutes: subtask.startMinutes");
+    expect(child).toContain("endMinutes: subtask.endMinutes");
+    expect(period).toContain("if bucket == .daily, day == nil");
+    expect(itemSheets).toContain(".subtaskSetDate");
+    expect(itemSheets).toContain(".subtaskSetTime");
+    expect(itemSheets).toContain("bucket == .daily ? .subtaskSetTime : .subtaskSetDate");
+    expect(planText).toContain("subtaskSetDate: (\"日にち指定\", \"Set date\")");
+    expect(planText).toContain("subtaskSetTime: (\"時間指定\", \"Set time\")");
+    expect(save).toContain("node.startDay = draft.startDay");
+  });
+
+  it("rejects an end that is earlier than the start", () => {
+    expect(period).toContain("enum SubtaskScheduleValidation");
+    expect(period).toContain("return endMinutes >= startMinutes");
+    expect(period).toContain("if endDay < startDay { return false }");
+    expect(itemSheets).toContain("PlanningText.string(.subtaskScheduleInvalid)");
+    expect(accepts("daily", null, null, 600, 540)).toBe(false);
+    expect(accepts("daily", null, null, 600, 600)).toBe(true);
+    expect(accepts("daily", null, null, 600, null)).toBe(true);
+    expect(accepts("monthly", 9, 7, null, null)).toBe(false);
+    expect(accepts("weekly", 7, 9, 18 * 60, 10 * 60)).toBe(true);
+    expect(accepts("monthly", 7, 7, 18 * 60, 10 * 60)).toBe(false);
+    expect(accepts("weekly", 7, 7, null, 600)).toBe(true);
+  });
+
+  it("deletes the live task and event identities", () => {
+    const live = period.slice(period.indexOf("func deleteLiveItem"), period.indexOf("func renameNode"));
+    expect(live).toContain("events.removeAll { $0.id == eventID || $0.sourceEventID == eventID }");
+    expect(live).toContain("$0.eventID == eventID || $0.logicalID == node.logicalID");
+    expect(live).toContain("item.todayTaskID == identity || item.id == identity");
+    expect(live).toContain("item.logicalID == node.logicalID");
+    expect(itemSheets).toContain("session.deleteLiveItem(editing.id)");
+    expect(itemSheets).toContain("editingID = nil");
+    expect(itemSheets).toContain("PlanningText.string(.postponeDeleteConfirm)");
+    expect(itemSheets).toContain("presentDestructive");
+  });
+
+  it("places the first reflection item beside its status label", () => {
+    const group = reflectionPage.slice(reflectionPage.indexOf("private func statusGroup"), reflectionPage.indexOf("private func statusGroup") + 1400);
+    expect(group).toContain("HStack(alignment: .top, spacing: 14)");
+    expect(group).toContain(".frame(width: 70, height: 29)");
+    expect(group.indexOf("VStack(alignment: .leading, spacing: 13)")).toBeLessThan(group.indexOf("ForEach(rows)"));
+    expect(group).toContain("PlanningText.string(.reflectionNone)");
+    expect(group).toContain(".frame(width: 21, height: 21)");
+  });
+
+  it("uses the larger postpone gap before delete", () => {
+    expect(postpone).toContain(".padding(.bottom, 20)");
+    expect(postpone).toContain(".padding(.bottom, 33)");
+    expect(postpone).not.toContain(".padding(.bottom, 22)");
+  });
+});
+
+describe("photo museum and daily attention", () => {
+  const planningRoot = "ios/App/App/Native/Features/Planning";
+  const reflection = readFileSync(`${planningRoot}/ReflectionFlow.swift`, "utf8");
+  const reflectionPage = readFileSync(`${planningRoot}/ReflectionPages.swift`, "utf8");
+  const models = readFileSync(`${planningRoot}/PlanningModels.swift`, "utf8");
+  const periodPage = readFileSync(`${planningRoot}/PeriodPlannerPage.swift`, "utf8");
+
+  function badge(reflectionUnits: number, photoOpen: boolean, diaryOpen: boolean) {
+    let extra = 0;
+    if (!photoOpen) extra += 1;
+    if (!diaryOpen) extra += 1;
+    return Math.min(99, reflectionUnits + extra);
+  }
+
+  function direction(keys: string[], current: string, step: number) {
+    return keys.some((key) => (step < 0 ? key < current : key > current));
+  }
+
+  it("gives the ratio selector three equal slots apart from the preview", () => {
+    const picker = reflectionPage.slice(reflectionPage.indexOf("struct PhotoMemoryAspectPicker"), reflectionPage.indexOf("struct PhotoMemoryPickerCard"));
+    expect(picker).toContain("HStack(spacing: 11)");
+    expect(picker).toContain(".frame(maxWidth: .infinity)");
+    expect(picker).toContain(".frame(height: 54)");
+    expect(picker).not.toContain("layoutPriority");
+    expect(picker).not.toContain("editorWidthFraction");
+    expect(picker).not.toContain("displayWidthFraction");
+    const preview = reflectionPage.slice(reflectionPage.indexOf("struct PhotoMemoryPickerCard"), reflectionPage.indexOf("struct PhotoMemoryGrowingField"));
+    expect(preview).toContain("aspect.editorWidthFraction");
+    expect(reflection).toContain("case .landscape: 1");
+    expect(reflection).toContain("case .portrait: 0.74");
+    expect(reflection).toContain("case .square: 0.84");
+    expect(reflection).toContain("else { return .landscape }");
+  });
+
+  it("keeps museum widths for 4:3, 3:4, and 1:1", () => {
+    expect(reflection).toContain("case .landscape: 0.80");
+    expect(reflection).toContain("case .portrait: 0.66");
+    expect(reflection).toContain("case .square: 0.72");
+    expect(reflectionPage).toContain("struct GallerySpotlight");
+    expect(reflectionPage).toContain("struct PhotoMemoryIllumination");
+    expect(reflectionPage).toContain("outerWidth * 0.20");
+    expect(reflectionPage).toContain("contentWidth * 0.86");
+    expect(reflectionPage).not.toContain("layoutPriority");
+  });
+
+  it("counts unique daily attention and persists tutorial editor opens", () => {
+    expect(models).toContain("unresolvedDailyTutorialCueCount");
+    expect(models).not.toContain("dailyMemoryDemoCueCount");
+    expect(reflection).toContain("struct DailyTutorialProgress");
+    expect(reflection).toContain("planning.tutorial.photoOpened");
+    expect(reflection).toContain("func markPhotoTutorialOpened");
+    expect(reflection).toContain("func markDiaryTutorialOpened");
+    expect(reflectionPage).toContain("session.markPhotoTutorialOpened()");
+    expect(reflectionPage).toContain("session.markDiaryTutorialOpened()");
+    expect(badge(1, false, false)).toBe(3);
+    expect(badge(1, true, false)).toBe(2);
+    expect(badge(1, true, true)).toBe(1);
+    expect(badge(0, true, true)).toBe(0);
+    expect(reflection).toContain("record.reflectionCompleted = true");
+  });
+
+  it("searches every earlier and later period for the red marker", () => {
+    expect(reflection).toContain("func directionHasAttention");
+    expect(reflection).toContain("candidate.compare(key, options: .numeric)");
+    expect(reflection).toContain("direction < 0 ? order == .orderedAscending : order == .orderedDescending");
+    expect(periodPage).toContain("directionHasAttention(bucket: bucket, from: key, direction: direction)");
+    expect(periodPage).toContain(".allowsHitTesting(false)");
+    const keys = ["2026-10-04", "2026-10-05", "2026-10-10", "2026-10-12"];
+    expect(direction(["2026-10-05"], "2026-10-07", -1)).toBe(true);
+    expect(direction(["2026-10-04"], "2026-10-07", -1)).toBe(true);
+    expect(direction(["2026-10-10"], "2026-10-07", 1)).toBe(true);
+    expect(direction(["2026-10-12"], "2026-10-07", 1)).toBe(true);
+    expect(direction(keys, "2026-10-07", -1)).toBe(true);
+    expect(direction(keys, "2026-10-07", 1)).toBe(true);
+    expect(direction(["2026-10-07"], "2026-10-07", -1)).toBe(false);
+    expect(direction(["2026-10-07"], "2026-10-07", 1)).toBe(false);
+    expect(direction([], "2026-10-07", -1)).toBe(false);
+    expect(direction([], "2026-10-07", 1)).toBe(false);
   });
 });

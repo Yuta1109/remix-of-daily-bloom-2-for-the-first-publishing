@@ -56,13 +56,31 @@ enum PhotoMemoryAspectRatio: String, Hashable, CaseIterable, Identifiable {
         }
     }
 
-    /// Share of the display content width used by the outer frame.
+    /// Share of the period-body width used by the outer frame.
     var displayWidthFraction: CGFloat {
         switch self {
-        case .landscape: 0.75
-        case .portrait: 0.615
-        case .square: 0.675
+        case .landscape: 0.80
+        case .portrait: 0.66
+        case .square: 0.72
         }
+    }
+}
+
+/// Persisted Daily tutorial attention. Separate from the sample memories themselves.
+struct DailyTutorialProgress: Hashable {
+    var photoMemoryTutorialOpened = false
+    var diaryTutorialOpened = false
+
+    static func restored(from defaults: UserDefaults = .standard) -> DailyTutorialProgress {
+        DailyTutorialProgress(
+            photoMemoryTutorialOpened: defaults.bool(forKey: "planning.tutorial.photoOpened"),
+            diaryTutorialOpened: defaults.bool(forKey: "planning.tutorial.diaryOpened")
+        )
+    }
+
+    func store(into defaults: UserDefaults = .standard) {
+        defaults.set(photoMemoryTutorialOpened, forKey: "planning.tutorial.photoOpened")
+        defaults.set(diaryTutorialOpened, forKey: "planning.tutorial.diaryOpened")
     }
 }
 
@@ -249,9 +267,63 @@ extension PlanningSession {
         )
     }
 
-    func neighborNeedsReflectionCue(bucket: PlanningBucket, from key: String, direction: Int, now: Date = Date()) -> Bool {
-        let destination = PeriodCalendar.shift(key, bucket: bucket, by: direction)
-        return hasUnresolvedReflection(bucket: bucket, periodKey: destination, now: now)
+    /// True when any unresolved attention item sits strictly before or after the current period.
+    func directionHasAttention(bucket: PlanningBucket, from key: String, direction: Int, now: Date = Date()) -> Bool {
+        guard direction != 0 else { return false }
+        return attentionPeriodKeys(bucket: bucket, now: now).contains { candidate in
+            let order = candidate.compare(key, options: .numeric)
+            return direction < 0 ? order == .orderedAscending : order == .orderedDescending
+        }
+    }
+
+    func attentionPeriodKeys(bucket: PlanningBucket, now: Date = Date()) -> [String] {
+        var keys = Set<String>()
+        for record in periodRecords where record.bucket == bucket {
+            if hasUnresolvedReflection(bucket: bucket, periodKey: record.periodKey, now: now) {
+                keys.insert(record.periodKey)
+            }
+        }
+        if bucket == .daily {
+            if !dailyTutorial.photoMemoryTutorialOpened, let photo = dailySamplePeriodKey(kind: .photoNote) {
+                keys.insert(photo)
+            }
+            if !dailyTutorial.diaryTutorialOpened, let diary = dailySamplePeriodKey(kind: .diary) {
+                keys.insert(diary)
+            }
+        }
+        return Array(keys)
+    }
+
+    func markPhotoTutorialOpened() {
+        guard !dailyTutorial.photoMemoryTutorialOpened else { return }
+        dailyTutorial.photoMemoryTutorialOpened = true
+        dailyTutorial.store()
+    }
+
+    func markDiaryTutorialOpened() {
+        guard !dailyTutorial.diaryTutorialOpened else { return }
+        dailyTutorial.diaryTutorialOpened = true
+        dailyTutorial.store()
+    }
+
+    /// Sample photo and diary days are tutorial cues. They are not ordinary reflections.
+    func dailySamplePeriodKey(kind: PlanningMemoryKind) -> String? {
+        guard TemporaryPlanningSamples.enabled else { return nil }
+        return memoryEntries.first { entry in
+            guard entry.isSample, entry.saved, entry.kind == kind else { return false }
+            if case .period(.daily, _) = entry.scope { return true }
+            return false
+        }.flatMap { entry in
+            if case .period(.daily, let key) = entry.scope { return key }
+            return nil
+        }
+    }
+
+    var unresolvedDailyTutorialCueCount: Int {
+        var count = 0
+        if dailySamplePeriodKey(kind: .photoNote) != nil, !dailyTutorial.photoMemoryTutorialOpened { count += 1 }
+        if dailySamplePeriodKey(kind: .diary) != nil, !dailyTutorial.diaryTutorialOpened { count += 1 }
+        return count
     }
 
     private func isDailyMemoryDemo(bucket: PlanningBucket, periodKey: String) -> Bool {

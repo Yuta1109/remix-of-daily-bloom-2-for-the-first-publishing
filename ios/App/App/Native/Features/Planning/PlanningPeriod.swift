@@ -212,6 +212,35 @@ enum PeriodCalendar {
         return text
     }
 
+    /// Subtask and parent schedule line. Daily with no day shows the time only.
+    static func subtaskSchedule(bucket: PlanningBucket, periodKey: String, month: Int?, day: Int?, minutes: Int?) -> String? {
+        if bucket == .daily, day == nil {
+            guard let minutes else { return nil }
+            return String(format: "%d:%02d", minutes / 60, minutes % 60)
+        }
+        return mainSchedule(periodKey: periodKey, month: month, day: day, minutes: minutes)
+    }
+}
+
+enum SubtaskScheduleValidation {
+    /// Missing start or end is allowed. When both exist, the end must not be earlier.
+    static func accepts(bucket: PlanningBucket, startDay: Int?, endDay: Int?, startMinutes: Int?, endMinutes: Int?) -> Bool {
+        switch bucket {
+        case .daily:
+            guard let startMinutes, let endMinutes else { return true }
+            return endMinutes >= startMinutes
+        case .monthly, .weekly:
+            guard let startDay, let endDay else { return true }
+            if endDay > startDay { return true }
+            if endDay < startDay { return false }
+            guard let startMinutes, let endMinutes else { return true }
+            return endMinutes >= startMinutes
+        }
+    }
+}
+
+extension PeriodCalendar {
+
     static func monthParts(_ key: String) -> (year: Int, month: Int) {
         let pieces = key.split(separator: "-")
         let year = Int(pieces.first ?? "") ?? 2026
@@ -371,10 +400,22 @@ extension PlanningSession {
     }
 
     func deleteNode(_ id: UUID) {
-        if let node = findNode(id) {
-            markActivity(bucket: node.bucket, periodKey: node.periodKey)
+        deleteLiveItem(id)
+    }
+
+    /// Removes the live task or event, including copies that share its identity.
+    func deleteLiveItem(_ id: UUID) {
+        guard let node = findNode(id) else { return }
+        markActivity(bucket: node.bucket, periodKey: node.periodKey)
+        if node.kind == .event, let eventID = node.eventID {
+            events.removeAll { $0.id == eventID || $0.sourceEventID == eventID }
+            periodItems.removeAll { $0.id == id || $0.eventID == eventID || $0.logicalID == node.logicalID }
+            return
         }
-        periodItems = deleting(id, from: periodItems)
+        let identity = node.todayTaskID ?? node.logicalID
+        periodItems.removeAll { item in
+            item.id == id || item.logicalID == node.logicalID || item.todayTaskID == identity || item.id == identity
+        }
     }
 
     func renameNode(_ id: UUID, title: String) {
@@ -522,6 +563,8 @@ extension PlanningSession {
                 logicalID: subtask.id,
                 todayTaskID: bucket == .daily && kind == .task ? subtask.id : nil,
                 colorID: draft.colorID,
+                startDay: bucket == .daily ? nil : subtask.startDay,
+                endDay: bucket == .daily ? nil : subtask.endDay,
                 startMinutes: subtask.startMinutes,
                 endMinutes: subtask.endMinutes
             )
