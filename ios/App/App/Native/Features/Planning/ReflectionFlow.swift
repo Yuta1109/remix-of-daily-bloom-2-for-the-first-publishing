@@ -82,35 +82,93 @@ enum PhotoMemoryAspectRatio: String, Hashable, CaseIterable, Identifiable {
         }
     }
 
-    /// Share of the period-body width used by the outer frame.
-    var displayWidthFraction: CGFloat {
+    /// Visible ivory frame as fractions of the overlay canvas, measured from the PNG alpha.
+    var visibleFrame: (minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat) {
         switch self {
-        case .landscape: 0.80
-        case .portrait: 0.66
-        case .square: 0.72
+        case .landscape: (0.084, 0.919, 0.198, 0.925)
+        case .portrait: (0.107, 0.893, 0.180, 0.910)
+        case .square: (0.104, 0.896, 0.182, 0.935)
         }
+    }
+
+    /// Target width of the visible outer frame, as a share of the usable period body.
+    var targetVisibleFrameFraction: CGFloat {
+        switch self {
+        case .landscape: 0.89
+        case .portrait: 0.755
+        case .square: 0.815
+        }
+    }
+
+    var visibleFrameCap: CGFloat {
+        switch self {
+        case .landscape: 318
+        case .portrait: 272
+        case .square: 292
+        }
+    }
+
+    /// Overlay canvas width that makes the visible frame hit the target. Not the PNG width itself.
+    func overlayWidth(usableBody: CGFloat) -> CGFloat {
+        let frameWidth = min(usableBody * targetVisibleFrameFraction, visibleFrameCap)
+        let span = max(visibleFrame.maxX - visibleFrame.minX, 0.01)
+        return frameWidth / span
+    }
+}
+
+enum DailyAttentionRules {
+    static func unresolvedKeys(reflections: Set<String>, photoKey: String, photoResolvedKey: String, diaryKey: String, diaryResolvedKey: String) -> Set<String> {
+        var keys = reflections
+        if !photoKey.isEmpty, photoResolvedKey != photoKey { keys.insert(photoKey) }
+        if !diaryKey.isEmpty, diaryResolvedKey != diaryKey { keys.insert(diaryKey) }
+        return keys
+    }
+
+    static func showsLeft(_ keys: Set<String>, current: String) -> Bool {
+        keys.contains { $0.compare(current, options: .numeric) == .orderedAscending }
+    }
+
+    static func showsRight(_ keys: Set<String>, current: String) -> Bool {
+        keys.contains { $0.compare(current, options: .numeric) == .orderedDescending }
+    }
+
+    static func badgeCount(_ keys: Set<String>) -> Int {
+        min(99, keys.count)
     }
 }
 
 /// Persisted Daily tutorial attention. Separate from the sample memories themselves.
 struct DailyTutorialProgress: Hashable {
-    var photoMemoryTutorialOpened = false
-    var diaryTutorialOpened = false
-    /// Daily period that owns the Photo & One Line tutorial cue. Empty until samples register it.
-    var photoPeriodKey = ""
-    /// Daily period that owns the Anything Diary tutorial cue.
-    var diaryPeriodKey = ""
+    var anchorKey = ""
+    var reflectionTutorialKey = ""
+    var photoTutorialKey = ""
+    var diaryTutorialKey = ""
+    /// Resolved only when this string equals the registered tutorial key.
+    var resolvedPhotoTutorialKey = ""
+    var resolvedDiaryTutorialKey = ""
 
+    var photoResolved: Bool { !photoTutorialKey.isEmpty && resolvedPhotoTutorialKey == photoTutorialKey }
+    var diaryResolved: Bool { !diaryTutorialKey.isEmpty && resolvedDiaryTutorialKey == diaryTutorialKey }
+
+    /// Legacy opened-booleans are ignored. A flag without this period key must not clear the cue.
     static func restored(from defaults: UserDefaults = .standard) -> DailyTutorialProgress {
         DailyTutorialProgress(
-            photoMemoryTutorialOpened: defaults.bool(forKey: "planning.tutorial.photoOpened"),
-            diaryTutorialOpened: defaults.bool(forKey: "planning.tutorial.diaryOpened")
+            anchorKey: defaults.string(forKey: "planning.tutorial.anchor") ?? "",
+            reflectionTutorialKey: defaults.string(forKey: "planning.tutorial.reflectionKey") ?? "",
+            photoTutorialKey: defaults.string(forKey: "planning.tutorial.photoKey") ?? "",
+            diaryTutorialKey: defaults.string(forKey: "planning.tutorial.diaryKey") ?? "",
+            resolvedPhotoTutorialKey: defaults.string(forKey: "planning.tutorial.resolvedPhotoKey") ?? "",
+            resolvedDiaryTutorialKey: defaults.string(forKey: "planning.tutorial.resolvedDiaryKey") ?? ""
         )
     }
 
     func store(into defaults: UserDefaults = .standard) {
-        defaults.set(photoMemoryTutorialOpened, forKey: "planning.tutorial.photoOpened")
-        defaults.set(diaryTutorialOpened, forKey: "planning.tutorial.diaryOpened")
+        defaults.set(anchorKey, forKey: "planning.tutorial.anchor")
+        defaults.set(reflectionTutorialKey, forKey: "planning.tutorial.reflectionKey")
+        defaults.set(photoTutorialKey, forKey: "planning.tutorial.photoKey")
+        defaults.set(diaryTutorialKey, forKey: "planning.tutorial.diaryKey")
+        defaults.set(resolvedPhotoTutorialKey, forKey: "planning.tutorial.resolvedPhotoKey")
+        defaults.set(resolvedDiaryTutorialKey, forKey: "planning.tutorial.resolvedDiaryKey")
     }
 }
 
@@ -300,53 +358,63 @@ extension PlanningSession {
     /// True when any unresolved attention item sits strictly before or after the current period.
     func directionHasAttention(bucket: PlanningBucket, from key: String, direction: Int, now: Date = Date()) -> Bool {
         guard direction != 0 else { return false }
-        return attentionPeriodKeys(bucket: bucket, now: now).contains { candidate in
-            let order = candidate.compare(key, options: .numeric)
-            return direction < 0 ? order == .orderedAscending : order == .orderedDescending
-        }
+        let keys = Set(attentionPeriodKeys(bucket: bucket, now: now))
+        return direction < 0
+            ? DailyAttentionRules.showsLeft(keys, current: key)
+            : DailyAttentionRules.showsRight(keys, current: key)
     }
 
     func attentionPeriodKeys(bucket: PlanningBucket, now: Date = Date()) -> [String] {
-        var keys = Set<String>()
+        var reflections = Set<String>()
         for record in periodRecords where record.bucket == bucket {
             if hasUnresolvedReflection(bucket: bucket, periodKey: record.periodKey, now: now) {
-                keys.insert(record.periodKey)
+                reflections.insert(record.periodKey)
             }
         }
-        if bucket == .daily {
-            if !dailyTutorial.photoMemoryTutorialOpened, !dailyTutorial.photoPeriodKey.isEmpty {
-                keys.insert(dailyTutorial.photoPeriodKey)
-            }
-            if !dailyTutorial.diaryTutorialOpened, !dailyTutorial.diaryPeriodKey.isEmpty {
-                keys.insert(dailyTutorial.diaryPeriodKey)
-            }
-        }
+        guard bucket == .daily else { return Array(reflections) }
+        let keys = DailyAttentionRules.unresolvedKeys(
+            reflections: reflections,
+            photoKey: dailyTutorial.photoTutorialKey,
+            photoResolvedKey: dailyTutorial.resolvedPhotoTutorialKey,
+            diaryKey: dailyTutorial.diaryTutorialKey,
+            diaryResolvedKey: dailyTutorial.resolvedDiaryTutorialKey
+        )
         return Array(keys)
     }
 
-    func markPhotoTutorialOpened() {
-        guard !dailyTutorial.photoMemoryTutorialOpened else { return }
-        dailyTutorial.photoMemoryTutorialOpened = true
+    func markPhotoTutorialOpened(periodKey: String) {
+        guard periodKey == dailyTutorial.photoTutorialKey, !periodKey.isEmpty else { return }
+        guard dailyTutorial.resolvedPhotoTutorialKey != periodKey else { return }
+        dailyTutorial.resolvedPhotoTutorialKey = periodKey
         dailyTutorial.store()
     }
 
-    func markDiaryTutorialOpened() {
-        guard !dailyTutorial.diaryTutorialOpened else { return }
-        dailyTutorial.diaryTutorialOpened = true
+    func markDiaryTutorialOpened(periodKey: String) {
+        guard periodKey == dailyTutorial.diaryTutorialKey, !periodKey.isEmpty else { return }
+        guard dailyTutorial.resolvedDiaryTutorialKey != periodKey else { return }
+        dailyTutorial.resolvedDiaryTutorialKey = periodKey
         dailyTutorial.store()
     }
 
-    /// Registers the Daily photo and diary tutorial periods. Does not mark them resolved.
-    func registerDailyTutorialPeriods(photoKey: String, diaryKey: String) {
-        dailyTutorial.photoPeriodKey = photoKey
-        dailyTutorial.diaryPeriodKey = diaryKey
+    /// Keeps the first registered tutorial anchor. Later launches do not move the keys.
+    func registerDailyTutorialPeriods(anchorKey: String, reflectionKey: String, photoKey: String, diaryKey: String) {
+        guard dailyTutorial.anchorKey.isEmpty else { return }
+        dailyTutorial.anchorKey = anchorKey
+        dailyTutorial.reflectionTutorialKey = reflectionKey
+        dailyTutorial.photoTutorialKey = photoKey
+        dailyTutorial.diaryTutorialKey = diaryKey
+        dailyTutorial.store()
     }
 
-    var unresolvedDailyTutorialCueCount: Int {
-        var count = 0
-        if !dailyTutorial.photoPeriodKey.isEmpty, !dailyTutorial.photoMemoryTutorialOpened { count += 1 }
-        if !dailyTutorial.diaryPeriodKey.isEmpty, !dailyTutorial.diaryTutorialOpened { count += 1 }
-        return count
+    func setMemoryAspect(id: UUID, photoAspect: PhotoMemoryAspectRatio) {
+        guard let index = memoryEntries.firstIndex(where: { $0.id == id }) else { return }
+        memoryEntries[index].photoAspect = photoAspect
+    }
+
+    func replaceMemoryPhoto(id: UUID, imageData: Data) {
+        guard let index = memoryEntries.firstIndex(where: { $0.id == id }) else { return }
+        memoryEntries[index].imageData = imageData
+        memoryEntries[index].hasPhoto = true
     }
 
     private func isDailyMemoryDemo(bucket: PlanningBucket, periodKey: String) -> Bool {

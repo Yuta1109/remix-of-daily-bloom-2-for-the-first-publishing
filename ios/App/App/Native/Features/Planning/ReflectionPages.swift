@@ -963,6 +963,8 @@ struct PhotoMemoryAspectPicker: View {
                 .buttonStyle(.plain)
             }
         }
+        .animation(.easeOut(duration: 0.2), value: selection)
+        .zIndex(1)
     }
 
     private func aspectGlyph(_ ratio: PhotoMemoryAspectRatio) -> some View {
@@ -1075,16 +1077,30 @@ struct PhotoMemoryDisplayView: View {
     let caption: String
     @State private var contentWidth: CGFloat = 320
 
-    private var overlayWidth: CGFloat { max(contentWidth * aspect.displayWidthFraction, 1) }
+    private var usableBody: CGFloat {
+        max(contentWidth - max(PlanningTokens.Index.columnWidth - 16, 0), 1)
+    }
+    private var overlayWidth: CGFloat { aspect.overlayWidth(usableBody: usableBody) }
     private var overlayHeight: CGFloat { overlayWidth / aspect.overlayWidthOverHeight }
+    private var captionGap: CGFloat {
+        let tail = overlayHeight * (1 - aspect.visibleFrame.maxY)
+        return 20 - tail
+    }
+
+    /// Pulls the canvas left when its glow would cross the reserved index.
+    private var canvasShift: CGFloat {
+        let rightEdge = contentWidth / 2 + overlayWidth / 2
+        return min(0, usableBody - rightEdge)
+    }
 
     var body: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: captionGap) {
             PhotoMemoryMuseum(aspect: aspect, image: image)
                 .frame(width: overlayWidth, height: overlayHeight)
             PhotoMemoryCaptionCard(text: caption)
-                .frame(width: contentWidth * 0.86)
+                .frame(width: min(usableBody * 0.735, 276))
         }
+        .offset(x: canvasShift)
         .frame(maxWidth: .infinity)
         .background {
             GeometryReader { proxy in
@@ -1108,16 +1124,16 @@ struct PhotoMemoryCaptionCard: View {
 
     var body: some View {
         Text(text.isEmpty ? "一言を入力" : text)
-            .font(.system(size: 17.5))
+            .font(.system(size: 15, weight: .regular))
             .foregroundStyle(PhotoMemoryPalette.ink)
-            .lineSpacing(6)
+            .lineSpacing(3.5)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 23)
-            .padding(.vertical, 21)
-            .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(PhotoMemoryPalette.border, lineWidth: 1))
-            .shadow(color: PhotoMemoryPalette.ink.opacity(0.06), radius: 10, y: 4)
+            .padding(.horizontal, 19)
+            .padding(.vertical, 14)
+            .background(Color(red: 1, green: 0.992, blue: 0.973))
+            .overlay(Rectangle().stroke(Color(red: 0.867, green: 0.835, blue: 0.780), lineWidth: 0.6))
+            .shadow(color: PhotoMemoryPalette.ink.opacity(0.07), radius: 6, y: 2)
     }
 }
 
@@ -1478,6 +1494,7 @@ struct PlanningMemoryPage: View {
     @EnvironmentObject private var navigation: TabNavigationState
     let scope: ReflectionScope
     @State private var photo: PhotosPickerItem?
+    @State private var showPhotoPicker = false
     @State private var captionHeight: CGFloat = 64
     @State private var editorWidth: CGFloat = 320
 
@@ -1502,11 +1519,11 @@ struct PlanningMemoryPage: View {
         })
         .planningExtendingSurface(PlanningPalette.paper)
         .onAppear {
-            guard let entry else { return }
+            guard let entry, case .period(.daily, let key) = scope else { return }
             if entry.kind == .photoNote {
-                session.markPhotoTutorialOpened()
+                session.markPhotoTutorialOpened(periodKey: key)
             } else if entry.kind == .diary {
-                session.markDiaryTutorialOpened()
+                session.markDiaryTutorialOpened(periodKey: key)
             }
             session.persist(into: navigation)
         }
@@ -1534,7 +1551,9 @@ struct PlanningMemoryPage: View {
                 .foregroundStyle(PhotoMemoryPalette.taupe)
             PhotoMemoryAspectPicker(selection: aspectBinding(latest))
                 .padding(.top, 24)
-            PhotosPicker(selection: $photo, matching: .images) {
+            Button {
+                showPhotoPicker = true
+            } label: {
                 PhotoMemoryPickerCard(
                     aspect: latest.photoAspect,
                     image: latest.imageData.flatMap { UIImage(data: $0) },
@@ -1542,6 +1561,7 @@ struct PlanningMemoryPage: View {
                 )
             }
             .buttonStyle(.plain)
+            .photosPicker(isPresented: $showPhotoPicker, selection: $photo, matching: .images)
             .padding(.top, 26)
             ZStack(alignment: .topLeading) {
                 if latest.text.isEmpty {
@@ -1593,10 +1613,10 @@ struct PlanningMemoryPage: View {
         }
         .onPreferenceChange(PhotoMemoryWidthKey.self) { editorWidth = $0 }
         .onChange(of: photo) { _, item in
+            guard let item else { return }
             Task {
-                let data = try? await item?.loadTransferable(type: Data.self)
-                let current = session.memoryEntries.first { $0.id == entry.id } ?? entry
-                session.updateMemory(id: entry.id, text: current.text, title: current.title, dateText: current.dateText, hasPhoto: data != nil, imageData: data, photoAspect: current.photoAspect)
+                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+                session.replaceMemoryPhoto(id: entry.id, imageData: data)
             }
         }
     }
@@ -1604,10 +1624,7 @@ struct PlanningMemoryPage: View {
     private func aspectBinding(_ entry: PlanningMemoryEntry) -> Binding<PhotoMemoryAspectRatio> {
         Binding(
             get: { session.memoryEntries.first { $0.id == entry.id }?.photoAspect ?? entry.photoAspect },
-            set: { value in
-                let current = session.memoryEntries.first { $0.id == entry.id } ?? entry
-                session.updateMemory(id: entry.id, text: current.text, title: current.title, dateText: current.dateText, hasPhoto: current.hasPhoto, imageData: current.imageData, photoAspect: value)
-            }
+            set: { session.setMemoryAspect(id: entry.id, photoAspect: $0) }
         )
     }
 

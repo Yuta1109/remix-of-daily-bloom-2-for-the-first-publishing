@@ -1057,7 +1057,9 @@ describe("planning period visual rebuild", () => {
     expect(samples).toContain("by: -1");
     expect(samples).toContain("by: -2");
     expect(samples).toContain("by: -3");
-    expect(samples).toContain("PlanningBucket.monthly, .weekly, .daily");
+    expect(samples).toContain("for bucket in [PlanningBucket.monthly, .weekly]");
+    expect(samples).toContain("seedDemoPhoto(session, bucket: .daily, key: tutorial.photo)");
+    expect(samples).toContain("seedDemoDiary(session, bucket: .daily, key: tutorial.diary)");
     expect(samples).toContain("朝のストレッチ");
     expect(samples).toContain("本を2冊読む");
     expect(samples).toContain("部屋を整理する");
@@ -1717,13 +1719,6 @@ describe("photo museum and daily attention", () => {
   const models = readFileSync(`${planningRoot}/PlanningModels.swift`, "utf8");
   const periodPage = readFileSync(`${planningRoot}/PeriodPlannerPage.swift`, "utf8");
 
-  function badge(reflectionUnits: number, photoOpen: boolean, diaryOpen: boolean) {
-    let extra = 0;
-    if (!photoOpen) extra += 1;
-    if (!diaryOpen) extra += 1;
-    return Math.min(99, reflectionUnits + extra);
-  }
-
   function direction(keys: string[], current: string, step: number) {
     return keys.some((key) => (step < 0 ? key < current : key > current));
   }
@@ -1745,37 +1740,39 @@ describe("photo museum and daily attention", () => {
   });
 
   it("keeps museum widths for 4:3, 3:4, and 1:1", () => {
-    expect(reflection).toContain("case .landscape: 0.80");
-    expect(reflection).toContain("case .portrait: 0.66");
-    expect(reflection).toContain("case .square: 0.72");
+    expect(reflection).toContain("case .landscape: 0.89");
+    expect(reflection).toContain("case .portrait: 0.755");
+    expect(reflection).toContain("case .square: 0.815");
+    expect(reflection).toContain("case .landscape: 318");
+    expect(reflection).toContain("func overlayWidth(usableBody: CGFloat)");
     expect(reflectionPage).toContain("struct PhotoMemoryMuseum");
     expect(reflectionPage).toContain(".renderingMode(.original)");
-    expect(reflectionPage).toContain("contentWidth * 0.86");
+    expect(reflectionPage).toContain("min(usableBody * 0.735, 276)");
+    expect(reflectionPage).not.toContain("contentWidth * 0.86");
     expect(reflectionPage).not.toContain("struct GallerySpotlight");
     expect(reflectionPage).not.toContain("struct PhotoMemoryFrame");
     expect(reflectionPage).not.toContain("layoutPriority");
   });
 
   it("counts unique daily attention and persists tutorial editor opens", () => {
-    expect(models).toContain("unresolvedDailyTutorialCueCount");
+    expect(models).toContain("DailyAttentionRules.badgeCount");
     expect(models).not.toContain("dailyMemoryDemoCueCount");
+    expect(models).not.toContain("unresolvedDailyTutorialCueCount");
     expect(reflection).toContain("struct DailyTutorialProgress");
-    expect(reflection).toContain("planning.tutorial.photoOpened");
-    expect(reflection).toContain("func markPhotoTutorialOpened");
-    expect(reflection).toContain("func markDiaryTutorialOpened");
-    expect(reflectionPage).toContain("session.markPhotoTutorialOpened()");
-    expect(reflectionPage).toContain("session.markDiaryTutorialOpened()");
-    expect(badge(1, false, false)).toBe(3);
-    expect(badge(1, true, false)).toBe(2);
-    expect(badge(1, true, true)).toBe(1);
-    expect(badge(0, true, true)).toBe(0);
+    expect(reflection).toContain("planning.tutorial.resolvedPhotoKey");
+    expect(reflection).not.toContain("defaults.bool(forKey: \"planning.tutorial.photoOpened\")");
+    expect(reflection).toContain("func markPhotoTutorialOpened(periodKey: String)");
+    expect(reflection).toContain("func markDiaryTutorialOpened(periodKey: String)");
+    expect(reflectionPage).toContain("session.markPhotoTutorialOpened(periodKey: key)");
+    expect(reflectionPage).toContain("session.markDiaryTutorialOpened(periodKey: key)");
     expect(reflection).toContain("record.reflectionCompleted = true");
   });
 
   it("searches every earlier and later period for the red marker", () => {
     expect(reflection).toContain("func directionHasAttention");
-    expect(reflection).toContain("candidate.compare(key, options: .numeric)");
-    expect(reflection).toContain("direction < 0 ? order == .orderedAscending : order == .orderedDescending");
+    expect(reflection).toContain("$0.compare(current, options: .numeric) == .orderedAscending");
+    expect(reflection).toContain("DailyAttentionRules.showsLeft");
+    expect(reflection).toContain("DailyAttentionRules.showsRight");
     expect(periodPage).toContain("directionHasAttention(bucket: bucket, from: key, direction: direction)");
     expect(periodPage).toContain(".allowsHitTesting(false)");
     const keys = ["2026-10-04", "2026-10-05", "2026-10-10", "2026-10-12"];
@@ -1807,23 +1804,20 @@ describe("photo museum and daily attention", () => {
 
   it("keeps photo and diary tutorial cues until their editors open", () => {
     expect(reflection).toContain("func registerDailyTutorialPeriods");
-    expect(reflection).toContain("var photoPeriodKey");
-    expect(reflection).toContain("var diaryPeriodKey");
-    expect(reflection).toContain("dailyTutorial.photoPeriodKey");
-    expect(reflection).toContain("dailyTutorial.diaryPeriodKey");
-    expect(reflectionPage).toContain("session.markPhotoTutorialOpened()");
-    expect(reflectionPage).toContain("session.markDiaryTutorialOpened()");
+    expect(reflection).toContain("var photoTutorialKey");
+    expect(reflection).toContain("var diaryTutorialKey");
+    expect(reflection).toContain("dailyTutorial.photoTutorialKey");
+    expect(reflection).toContain("dailyTutorial.diaryTutorialKey");
+    expect(reflection).toContain("guard dailyTutorial.anchorKey.isEmpty else { return }");
+    expect(reflectionPage).toContain("session.markPhotoTutorialOpened(periodKey: key)");
+    expect(reflectionPage).toContain("session.markDiaryTutorialOpened(periodKey: key)");
     expect(periodPage).not.toContain("markPhotoTutorialOpened");
     expect(periodPage).not.toContain("markDiaryTutorialOpened");
     const samples = readFileSync(`${planningRoot}/TemporaryPlanningSamples.swift`, "utf8");
     expect(samples).toContain("registerDailyTutorialPeriods");
     expect(samples).toContain("by: -2");
     expect(samples).toContain("by: -3");
-    expect(badge(1, false, false)).toBe(3);
-    expect(badge(1, true, false)).toBe(2);
-    expect(badge(1, false, true)).toBe(2);
-    expect(badge(1, true, true)).toBe(1);
-    expect(badge(0, true, true)).toBe(0);
+    expect(samples).toContain("session.dailyTutorial.photoTutorialKey");
   });
 
   it("derives demo dates from the period and repairs stale samples in place", () => {
@@ -1851,5 +1845,122 @@ describe("photo museum and daily attention", () => {
     const daily = { key: "2026-10-09", month: 10, day: 9 };
     expect(daily.month).toBe(10);
     expect(daily.day).toBe(9);
+  });
+});
+
+describe("photo ratio independence and period-keyed attention", () => {
+  const planningRoot = "ios/App/App/Native/Features/Planning";
+  const reflection = readFileSync(`${planningRoot}/ReflectionFlow.swift`, "utf8");
+  const reflectionPage = readFileSync(`${planningRoot}/ReflectionPages.swift`, "utf8");
+  const models = readFileSync(`${planningRoot}/PlanningModels.swift`, "utf8");
+
+  const photo = "2026-10-07";
+  const diary = "2026-10-06";
+  const reflectionKey = "2026-10-08";
+
+  function unresolved(reflections: string[], photoResolved = "", diaryResolved = "") {
+    const keys = new Set(reflections);
+    if (photoResolved !== photo) keys.add(photo);
+    if (diaryResolved !== diary) keys.add(diary);
+    return keys;
+  }
+
+  function left(keys: Set<string>, current: string) {
+    return [...keys].some((key) => key < current);
+  }
+
+  function right(keys: Set<string>, current: string) {
+    return [...keys].some((key) => key > current);
+  }
+
+  it("changes ratio without selecting or replacing the photo", () => {
+    const editor = reflectionPage.slice(reflectionPage.indexOf("private func photoEditor"), reflectionPage.indexOf("private func diaryEditor"));
+    expect(editor).toContain("PhotoMemoryAspectPicker(selection: aspectBinding(latest))");
+    expect(editor.indexOf("PhotoMemoryAspectPicker")).toBeLessThan(editor.indexOf("showPhotoPicker = true"));
+    expect(editor).toContain(".photosPicker(isPresented: $showPhotoPicker, selection: $photo, matching: .images)");
+    expect(editor).not.toContain("PhotosPicker(selection:");
+    expect(editor).toContain("session.setMemoryAspect(id: entry.id, photoAspect: $0)");
+    expect(editor).toContain("session.replaceMemoryPhoto(id: entry.id, imageData: data)");
+    expect(editor).toContain("guard let item else { return }");
+    const aspect = reflection.slice(reflection.indexOf("func setMemoryAspect"), reflection.indexOf("func replaceMemoryPhoto"));
+    expect(aspect).toContain("memoryEntries[index].photoAspect = photoAspect");
+    expect(aspect).not.toContain("imageData");
+    const replace = reflection.slice(reflection.indexOf("func replaceMemoryPhoto"), reflection.indexOf("private func isDailyMemoryDemo"));
+    expect(replace).toContain("memoryEntries[index].imageData = imageData");
+    expect(replace).not.toContain("photoAspect");
+    expect(reflection).toContain("else { return .landscape }");
+  });
+
+  it("sizes the visible frame and uses a square museum label", () => {
+    expect(reflection).toContain("case .landscape: (0.084, 0.919, 0.198, 0.925)");
+    expect(reflection).toContain("case .portrait: (0.107, 0.893, 0.180, 0.910)");
+    expect(reflection).toContain("case .square: (0.104, 0.896, 0.182, 0.935)");
+    expect(reflection).toContain("let frameWidth = min(usableBody * targetVisibleFrameFraction, visibleFrameCap)");
+    const caption = reflectionPage.slice(reflectionPage.indexOf("struct PhotoMemoryCaptionCard"), reflectionPage.indexOf("struct PhotoMemoryMuseum"));
+    expect(caption).toContain(".font(.system(size: 15, weight: .regular))");
+    expect(caption).toContain("Color(red: 1, green: 0.992, blue: 0.973)");
+    expect(caption).toContain("lineWidth: 0.6");
+    expect(caption).toContain("radius: 6, y: 2");
+    expect(caption).not.toContain("cornerRadius");
+    expect(reflectionPage).toContain("return 20 - tail");
+    expect(reflectionPage).toContain("usableBody - rightEdge");
+    expect(reflectionPage).not.toContain("struct GalleryLampHead");
+    expect(reflectionPage).not.toContain("struct PhotoMemoryIllumination");
+  });
+
+  it("points both arrows and the daily badge at one unresolved set", () => {
+    const initial = unresolved([reflectionKey]);
+    expect(left(initial, "2026-10-05")).toBe(false);
+    expect(right(initial, "2026-10-05")).toBe(true);
+    expect(left(initial, "2026-10-06")).toBe(false);
+    expect(right(initial, "2026-10-06")).toBe(true);
+    expect(left(initial, "2026-10-07")).toBe(true);
+    expect(right(initial, "2026-10-07")).toBe(true);
+    expect(left(initial, "2026-10-08")).toBe(true);
+    expect(right(initial, "2026-10-08")).toBe(false);
+    expect(left(initial, "2026-10-09")).toBe(true);
+    expect(right(initial, "2026-10-09")).toBe(false);
+    expect(initial.size).toBe(3);
+
+    const photoDone = unresolved([reflectionKey], photo);
+    expect(photoDone.size).toBe(2);
+    expect(left(photoDone, "2026-10-06")).toBe(false);
+    expect(right(photoDone, "2026-10-06")).toBe(true);
+    expect(left(photoDone, "2026-10-08")).toBe(true);
+    expect(right(photoDone, "2026-10-08")).toBe(false);
+
+    const diaryOnly = unresolved([], photo, "");
+    expect([...diaryOnly]).toEqual([diary]);
+    expect(left(diaryOnly, diary)).toBe(false);
+    expect(right(diaryOnly, diary)).toBe(false);
+    expect(diaryOnly.size).toBe(1);
+
+    const reflectionOnly = unresolved([reflectionKey], photo, diary);
+    expect([...reflectionOnly]).toEqual([reflectionKey]);
+    expect(left(reflectionOnly, reflectionKey)).toBe(false);
+    expect(right(reflectionOnly, reflectionKey)).toBe(false);
+    expect(reflectionOnly.size).toBe(1);
+
+    const photoOnly = unresolved([], "", diary);
+    expect(left(photoOnly, "2026-10-06")).toBe(false);
+    expect(right(photoOnly, "2026-10-06")).toBe(true);
+    expect(left(photoOnly, "2026-10-07")).toBe(false);
+    expect(right(photoOnly, "2026-10-07")).toBe(false);
+    expect(left(photoOnly, "2026-10-08")).toBe(true);
+    expect(right(photoOnly, "2026-10-08")).toBe(false);
+    expect(photoOnly.size).toBe(1);
+
+    const unrelated = unresolved([reflectionKey], "2026-10-05", "2026-10-04");
+    expect(unrelated.has(photo)).toBe(true);
+    expect(unrelated.has(diary)).toBe(true);
+    expect(unrelated.size).toBe(3);
+
+    expect(reflection).toContain("guard periodKey == dailyTutorial.photoTutorialKey");
+    expect(reflection).toContain("guard periodKey == dailyTutorial.diaryTutorialKey");
+    expect(models).toContain("DailyAttentionRules.badgeCount(Set(attentionPeriodKeys(bucket: .daily)))");
+    expect(reflection).toContain("DailyAttentionRules.unresolvedKeys");
+    expect(models).toContain("planning.tutorial.anchor");
+    expect(models).toContain("planning.tutorial.resolvedDiaryKey");
+    expect(reflection).toContain("resolvedPhotoTutorialKey: defaults.string(forKey: \"planning.tutorial.resolvedPhotoKey\")");
   });
 });

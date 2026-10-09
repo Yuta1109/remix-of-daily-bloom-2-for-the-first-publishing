@@ -524,13 +524,15 @@ final class PlanningSession: ObservableObject {
     }
 
     func badgeCount(for section: PlanningSection) -> Int {
+        if section == .daily, periodRecords.contains(where: { $0.bucket == .daily }) || !dailyTutorial.anchorKey.isEmpty {
+            return DailyAttentionRules.badgeCount(Set(attentionPeriodKeys(bucket: .daily)))
+        }
         let fromRecords = reflectionBadgeUnits(for: section)
         let hasRecords = periodRecords.contains { $0.bucket.section == section } || (section == .future && !futureReflections.isEmpty)
-        let tutorialCues = section == .daily ? unresolvedDailyTutorialCueCount : 0
         if hasRecords {
-            return min(PlanningRules.maximumBadgeCount, fromRecords + tutorialCues)
+            return min(PlanningRules.maximumBadgeCount, fromRecords)
         }
-        return min(PlanningRules.maximumBadgeCount, PlanningRules.displayedReflectionBadge(section: section, obligations: obligations) + tutorialCues)
+        return min(PlanningRules.maximumBadgeCount, PlanningRules.displayedReflectionBadge(section: section, obligations: obligations))
     }
 
     func select(_ section: PlanningSection) {
@@ -718,11 +720,23 @@ final class PlanningSession: ObservableObject {
         monthlyPeriodKey = navigation.selectedValues["planning.monthlyPeriod"] ?? ""
         weeklyPeriodKey = navigation.selectedValues["planning.weeklyPeriod"] ?? ""
         dailyPeriodKey = navigation.selectedValues["planning.dailyPeriod"] ?? ""
-        if navigation.selectedValues["planning.tutorial.photoOpened"] == "true" {
-            dailyTutorial.photoMemoryTutorialOpened = true
+        if let value = navigation.selectedValues["planning.tutorial.anchor"], !value.isEmpty {
+            dailyTutorial.anchorKey = value
         }
-        if navigation.selectedValues["planning.tutorial.diaryOpened"] == "true" {
-            dailyTutorial.diaryTutorialOpened = true
+        if let value = navigation.selectedValues["planning.tutorial.reflectionKey"], !value.isEmpty {
+            dailyTutorial.reflectionTutorialKey = value
+        }
+        if let value = navigation.selectedValues["planning.tutorial.photoKey"], !value.isEmpty {
+            dailyTutorial.photoTutorialKey = value
+        }
+        if let value = navigation.selectedValues["planning.tutorial.diaryKey"], !value.isEmpty {
+            dailyTutorial.diaryTutorialKey = value
+        }
+        if let value = navigation.selectedValues["planning.tutorial.resolvedPhotoKey"] {
+            dailyTutorial.resolvedPhotoTutorialKey = value
+        }
+        if let value = navigation.selectedValues["planning.tutorial.resolvedDiaryKey"] {
+            dailyTutorial.resolvedDiaryTutorialKey = value
         }
         dailyTutorial.store()
         if !index.contains(section) {
@@ -742,8 +756,12 @@ final class PlanningSession: ObservableObject {
         navigation.selectedValues["planning.monthlyPeriod"] = monthlyPeriodKey
         navigation.selectedValues["planning.weeklyPeriod"] = weeklyPeriodKey
         navigation.selectedValues["planning.dailyPeriod"] = dailyPeriodKey
-        navigation.selectedValues["planning.tutorial.photoOpened"] = dailyTutorial.photoMemoryTutorialOpened ? "true" : "false"
-        navigation.selectedValues["planning.tutorial.diaryOpened"] = dailyTutorial.diaryTutorialOpened ? "true" : "false"
+        navigation.selectedValues["planning.tutorial.anchor"] = dailyTutorial.anchorKey
+        navigation.selectedValues["planning.tutorial.reflectionKey"] = dailyTutorial.reflectionTutorialKey
+        navigation.selectedValues["planning.tutorial.photoKey"] = dailyTutorial.photoTutorialKey
+        navigation.selectedValues["planning.tutorial.diaryKey"] = dailyTutorial.diaryTutorialKey
+        navigation.selectedValues["planning.tutorial.resolvedPhotoKey"] = dailyTutorial.resolvedPhotoTutorialKey
+        navigation.selectedValues["planning.tutorial.resolvedDiaryKey"] = dailyTutorial.resolvedDiaryTutorialKey
         dailyTutorial.store()
     }
 

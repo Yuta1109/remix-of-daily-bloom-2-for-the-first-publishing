@@ -29,20 +29,35 @@ enum TemporaryPlanningSamples {
         session.periodItems.append(contentsOf: blueprintItems(monthly: monthly, weekly: weekly, daily: daily))
         session.repairSampleScheduleDates()
 
-        for bucket in [PlanningBucket.monthly, .weekly, .daily] {
+        let tutorial = session.dailyTutorial.anchorKey.isEmpty
+            ? (
+                anchor: daily,
+                reflection: PeriodCalendar.shift(daily, bucket: .daily, by: -1),
+                photo: PeriodCalendar.shift(daily, bucket: .daily, by: -2),
+                diary: PeriodCalendar.shift(daily, bucket: .daily, by: -3)
+            )
+            : (
+                anchor: session.dailyTutorial.anchorKey,
+                reflection: session.dailyTutorial.reflectionTutorialKey,
+                photo: session.dailyTutorial.photoTutorialKey,
+                diary: session.dailyTutorial.diaryTutorialKey
+            )
+        session.registerDailyTutorialPeriods(
+            anchorKey: tutorial.anchor,
+            reflectionKey: tutorial.reflection,
+            photoKey: tutorial.photo,
+            diaryKey: tutorial.diary
+        )
+
+        for bucket in [PlanningBucket.monthly, .weekly] {
             let current = PeriodCalendar.currentKey(bucket, now: now)
-            if bucket == .daily {
-                seedDailyTutorialReflection(session, key: PeriodCalendar.shift(current, bucket: bucket, by: -1))
-                session.registerDailyTutorialPeriods(
-                    photoKey: PeriodCalendar.shift(current, bucket: bucket, by: -2),
-                    diaryKey: PeriodCalendar.shift(current, bucket: bucket, by: -3)
-                )
-            } else {
-                seedDemoReflection(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -1))
-            }
+            seedDemoReflection(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -1))
             seedDemoPhoto(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -2))
             seedDemoDiary(session, bucket: bucket, key: PeriodCalendar.shift(current, bucket: bucket, by: -3))
         }
+        seedDailyTutorialReflection(session, key: tutorial.reflection)
+        seedDemoPhoto(session, bucket: .daily, key: tutorial.photo)
+        seedDemoDiary(session, bucket: .daily, key: tutorial.diary)
         seedSamplePeriod(session, bucket: .monthly, key: monthly)
         seedSamplePeriod(session, bucket: .weekly, key: weekly)
         seedSamplePeriod(session, bucket: .daily, key: daily)
