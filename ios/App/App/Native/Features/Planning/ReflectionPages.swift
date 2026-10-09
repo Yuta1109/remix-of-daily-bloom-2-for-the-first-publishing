@@ -1084,22 +1084,27 @@ struct PhotoMemoryDisplayView: View {
     private var usableBody: CGFloat {
         max(contentWidth - indexReserve, 1)
     }
+    /// Drawing size of the PNG. Wider than the usable column, but not a layout width.
     private var overlayWidth: CGFloat { aspect.overlayWidth(usableBody: usableBody) }
     private var overlayHeight: CGFloat { overlayWidth / aspect.overlayWidthOverHeight }
     private var captionGap: CGFloat {
         let tail = overlayHeight * (1 - aspect.visibleFrame.maxY)
-        return 20 - tail
+        return max(0, 20 - tail)
     }
 
     var body: some View {
         VStack(spacing: captionGap) {
-            PhotoMemoryMuseum(aspect: aspect, image: image)
-                .frame(width: overlayWidth, height: overlayHeight)
+            Color.clear
+                .frame(width: usableBody, height: overlayHeight)
+                .overlay {
+                    PhotoMemoryMuseum(aspect: aspect, image: image)
+                        .frame(width: overlayWidth, height: overlayHeight)
+                }
             PhotoMemoryCaptionCard(text: caption)
-                .frame(width: min(usableBody * 0.66, 248))
+                .frame(width: min(usableBody * 0.57, 205))
         }
-        .padding(.trailing, indexReserve)
-        .frame(maxWidth: .infinity)
+        .frame(width: usableBody, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             GeometryReader { proxy in
                 Color.clear.preference(key: PhotoMemoryWidthKey.self, value: proxy.size.width)
@@ -1122,13 +1127,13 @@ struct PhotoMemoryCaptionCard: View {
 
     var body: some View {
         Text(text.isEmpty ? "一言を入力" : text)
-            .font(.system(size: 14, weight: .regular))
+            .font(.system(size: 13, weight: .regular))
             .foregroundStyle(PhotoMemoryPalette.ink)
-            .lineSpacing(3)
+            .lineSpacing(2.5)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
             .background(Color(red: 1, green: 0.992, blue: 0.973))
             .overlay(Rectangle().stroke(Color(red: 0.867, green: 0.835, blue: 0.780), lineWidth: 0.6))
             .shadow(color: PhotoMemoryPalette.ink.opacity(0.07), radius: 6, y: 2)

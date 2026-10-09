@@ -94,17 +94,17 @@ enum PhotoMemoryAspectRatio: String, Hashable, CaseIterable, Identifiable {
     /// Target width of the visible outer frame, as a share of the usable period body.
     var targetVisibleFrameFraction: CGFloat {
         switch self {
-        case .landscape: 0.925
-        case .portrait: 0.80
-        case .square: 0.855
+        case .landscape: 0.90
+        case .portrait: 0.775
+        case .square: 0.83
         }
     }
 
     var visibleFrameCap: CGFloat {
         switch self {
-        case .landscape: 326
-        case .portrait: 286
-        case .square: 308
+        case .landscape: 312
+        case .portrait: 270
+        case .square: 290
         }
     }
 
