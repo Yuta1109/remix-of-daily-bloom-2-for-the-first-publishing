@@ -188,7 +188,13 @@ struct TodayRootView: View {
                 .position(homePlus(in: geo))
                 .offset(plusOffset)
                 .gesture(DragGesture(minimumDistance: 14).onEnded { value in
-                    plusOffset = clamped(plusOffset + CGSize(width: value.translation.width, height: value.translation.height), in: geo)
+                    plusOffset = clamped(
+                        CGSize(
+                            width: plusOffset.width + value.translation.width,
+                            height: plusOffset.height + value.translation.height
+                        ),
+                        in: geo
+                    )
                 })
             }
             .coordinateSpace(name: "todayOverlay")
