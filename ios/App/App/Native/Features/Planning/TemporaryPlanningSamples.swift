@@ -61,6 +61,31 @@ enum TemporaryPlanningSamples {
         seedSamplePeriod(session, bucket: .monthly, key: monthly)
         seedSamplePeriod(session, bucket: .weekly, key: weekly)
         seedSamplePeriod(session, bucket: .daily, key: daily)
+        seedTodayContent(session, today: daily)
+    }
+
+    @MainActor
+    private static func seedTodayContent(_ session: PlanningSession, today: String) {
+        guard session.routines.isEmpty else { return }
+        let routine = RoutineDefinition(title: "朝のストレッチ", iconSymbol: "sun.max", everyDay: true, weekdays: [], timeMode: .clock, startMinutes: 7 * 60, endMinutes: nil, isPaused: false, createdAt: Date(), updatedAt: Date())
+        session.routines = [routine]
+        if let date = PeriodCalendar.date(from: today) {
+            let calendar = PeriodCalendar.calendar
+            let start = calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
+            var cursor = start
+            while cursor < calendar.startOfDay(for: date) {
+                if calendar.component(.day, from: cursor) % 2 == 0 {
+                    session.routineCompletions.append(RoutineCompletion(routineID: routine.id, dayKey: PeriodCalendar.dayKey(cursor)))
+                }
+                cursor = calendar.date(byAdding: .day, value: 1, to: cursor) ?? date
+            }
+        }
+        if session.quickMemos.isEmpty {
+            session.quickMemos = [
+                QuickMemo(text: "カフェで見つけたアイデア", minutes: 14 * 60 + 32, iconSymbol: "note.text", createdAt: Date(), dayKey: today)
+            ]
+        }
+        TodayPersistence.store(routines: session.routines, completions: session.routineCompletions, memos: session.quickMemos)
     }
 
     /// Adds a sample period record only when that period has no record yet.

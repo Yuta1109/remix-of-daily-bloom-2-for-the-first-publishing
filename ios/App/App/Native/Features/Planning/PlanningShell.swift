@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PlanningShell: View {
     @EnvironmentObject private var navigation: TabNavigationState
-    @StateObject private var session = PlanningSession()
+    @EnvironmentObject private var session: PlanningSession
     @State private var didRestore = false
 
     var body: some View {

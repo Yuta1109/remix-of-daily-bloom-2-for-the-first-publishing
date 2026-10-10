@@ -1151,6 +1151,7 @@ struct PhotoMemoryMuseum: View {
             let height = geo.size.height
             let apertureWidth = max(width * (aperture.maxX - aperture.minX) + 2, 1)
             let apertureHeight = max(height * (aperture.maxY - aperture.minY) + 2, 1)
+            let window = PhotoMemoryFraming.window(aperture: CGSize(width: apertureWidth, height: apertureHeight), ratio: aspect.widthOverHeight)
             let centerX = width * (aperture.minX + aperture.maxX) / 2
             let centerY = height * (aperture.minY + aperture.maxY) / 2
             ZStack {
@@ -1158,7 +1159,7 @@ struct PhotoMemoryMuseum: View {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: apertureWidth, height: apertureHeight)
+                        .frame(width: window.width, height: window.height)
                         .clipped()
                         .position(x: centerX, y: centerY)
                 }
@@ -1475,9 +1476,7 @@ struct NoActivityMemorySection: View {
 
     private func choiceButton(title: String, kind: PlanningMemoryKind) -> some View {
         Button {
-            if entry == nil {
-                session.addMemory(scope: scope, kind: kind, text: "", hasPhoto: false)
-            }
+            session.prepareMemoryEditor(scope: scope, kind: kind)
             PlanningTransition.perform { navigation.path.append(PlanningRoute.planningMemory(scope)) }
         } label: {
             Text(title)

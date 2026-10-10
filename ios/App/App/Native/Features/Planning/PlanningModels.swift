@@ -510,6 +510,16 @@ final class PlanningSession: ObservableObject {
     @Published var reflectionDraft: ReflectionDraft?
     /// Editor draft handed to the selection page (session only, never persisted).
     @Published var transferSource: PlanTransferSource?
+    @Published var routines: [RoutineDefinition] = TodayPersistence.loadRoutines()
+    @Published var routineCompletions: [RoutineCompletion] = TodayPersistence.loadCompletions()
+    @Published var quickMemos: [QuickMemo] = TodayPersistence.loadMemos()
+    @Published var todayRoutineExpanded = true
+    @Published var todayTasksExpanded = true
+    @Published var todayMemosExpanded = true
+    @Published var todayCopiedOrigins: Set<String> = []
+    /// Local hour when Today rolls to the next date. Settings will edit this later. 0 means midnight.
+    var todayDayBoundaryHour = 0
+    @Published var todayStamp = TodayDayBoundary.dayKey(for: Date(), hour: 0)
 
     init(year: Int = Calendar.current.component(.year, from: Date())) {
         selectedYear = year

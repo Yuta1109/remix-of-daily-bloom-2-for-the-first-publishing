@@ -308,7 +308,7 @@ struct PeriodItemListSheet: View {
     }
 }
 
-private struct PeriodListCheckbox: View {
+struct PeriodListCheckbox: View {
     let square: Bool
     let completed: Bool
     /// Kept so the completed glyph stays the same semantic control as the earlier list.

@@ -38,6 +38,8 @@ final class AppState: ObservableObject {
     @Published var selectedTab: AppTab
 
     let dataAdapter: any NativeDataAdapter
+    /// One Planning/Today task store. Both tabs observe this instance.
+    let planningSession = PlanningSession()
     private var navigationByTab: [AppTab: TabNavigationState]
 
     init(

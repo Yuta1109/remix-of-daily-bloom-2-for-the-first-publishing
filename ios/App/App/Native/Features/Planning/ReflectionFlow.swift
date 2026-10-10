@@ -116,6 +116,19 @@ enum PhotoMemoryAspectRatio: String, Hashable, CaseIterable, Identifiable {
     }
 }
 
+enum PhotoMemoryFraming {
+    /// Largest rectangle of the selected ratio that fits in the aperture.
+    /// The editor already is that ratio, so both views center-crop the same subject.
+    static func window(aperture: CGSize, ratio: CGFloat) -> CGSize {
+        let safeRatio = max(ratio, 0.01)
+        let apertureRatio = aperture.width / max(aperture.height, 1)
+        if apertureRatio > safeRatio {
+            return CGSize(width: aperture.height * safeRatio, height: aperture.height)
+        }
+        return CGSize(width: aperture.width, height: aperture.width / safeRatio)
+    }
+}
+
 enum DailyAttentionRules {
     static func unresolvedKeys(reflections: Set<String>, photoKey: String, photoResolvedKey: String, diaryKey: String, diaryResolvedKey: String) -> Set<String> {
         var keys = reflections
@@ -659,6 +672,17 @@ extension PlanningSession {
             events.filter(\.completed).count,
             events.count
         )
+    }
+
+    /// Unsaved drafts follow the button the user just tapped. A saved memory is left alone.
+    func prepareMemoryEditor(scope: ReflectionScope, kind: PlanningMemoryKind) {
+        if let index = memoryEntries.firstIndex(where: { $0.scope == scope }) {
+            guard !memoryEntries[index].saved else { return }
+            memoryEntries[index].kind = kind
+            if kind == .diary { memoryEntries[index].hasPhoto = false }
+            return
+        }
+        addMemory(scope: scope, kind: kind, text: "", hasPhoto: false)
     }
 
     func addMemory(scope: ReflectionScope, kind: PlanningMemoryKind, text: String, hasPhoto: Bool, title: String = "", dateText: String = "", imageData: Data? = nil, photoAspect: PhotoMemoryAspectRatio = .landscape, saved: Bool = false, isSample: Bool = false) {

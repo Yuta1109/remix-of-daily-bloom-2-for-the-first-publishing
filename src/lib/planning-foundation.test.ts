@@ -232,7 +232,7 @@ describe("planning reflection", () => {
     expect(reflectionPage).toContain(".reflectionResult");
     expect(planText).toContain("振り返り結果");
     expect(reflectionPage).not.toContain("Button(\"Replan\")");
-    expect(reflectionPage).toContain("addMemory");
+    expect(reflectionPage).toContain("prepareMemoryEditor");
     expect(reflectionPage).toContain("updateHistoricalDecision");
     expect(reflectionPage).toContain("PlanningReflectionDueCard");
     expect(reflectionPage).toContain("PlanningTokens.ReflectionDue.height");

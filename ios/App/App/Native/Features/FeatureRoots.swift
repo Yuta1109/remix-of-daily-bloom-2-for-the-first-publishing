@@ -4,9 +4,6 @@ struct PlanningRootView: View {
     var body: some View { PlanningShell() }
 }
 
-struct TodayRootView: View {
-    var body: some View { NativeFeaturePlaceholder(tab: .today) }
-}
 
 struct CalendarRootView: View {
     var body: some View { NativeFeaturePlaceholder(tab: .calendar) }
