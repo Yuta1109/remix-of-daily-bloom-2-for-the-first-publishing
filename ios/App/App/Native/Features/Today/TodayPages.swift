@@ -1095,11 +1095,11 @@ struct TodayPastTasksSheet: View {
         PlanningSystemSheetChrome(
             onClose: { dismiss() },
             onConfirm: {},
-            showsConfirm: false,
             centerTitle: "過去のタスクを追加",
-            subtitle: "過去2週間のタスクから追加できます",
             maximumBody: PlanningTokens.Sheet.maximumBody,
-            bodySurface: .white
+            bodySurface: .white,
+            showsConfirm: false,
+            subtitle: "過去2週間のタスクから追加できます"
         ) {
             let groups = session.pastTaskGroups()
             VStack(alignment: .leading, spacing: 11) {
@@ -1178,7 +1178,8 @@ struct TodayPastTasksSheet: View {
         }
         .foregroundStyle(completed ? Color(red: 0.28, green: 0.55, blue: 0.38) : PlanningPalette.muted)
         .padding(.horizontal, 8)
-        .frame(minWidth: 68, height: 28)
+        .frame(minWidth: 68)
+        .frame(height: 28)
         .background(completed ? Color(red: 0.86, green: 0.93, blue: 0.87) : Color(red: 0.93, green: 0.91, blue: 0.88), in: Capsule())
     }
 }
