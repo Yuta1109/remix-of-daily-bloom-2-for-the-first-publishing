@@ -332,10 +332,12 @@ struct PeriodPlannerPage: View {
                     }
                     .buttonStyle(.plain)
                 } else if kind == .task {
-                    PeriodParentTimeline(nodes: nodes, periodKey: key) { nodeID in
+                    PeriodParentTimeline(nodes: nodes, periodKey: key, bucket: bucket) { nodeID in
                         guard let node = session.findNode(nodeID) else { return }
-                        _ = session.setCompleted(nodeID: nodeID, completed: !node.completed)
-                    } open: {
+                        if session.setCompleted(nodeID: nodeID, completed: !node.completed) {
+                            PlanningHaptics.selection()
+                        }
+                    } open: { _ in
                         addingKind = kind
                     }
                 } else {
@@ -344,10 +346,12 @@ struct PeriodPlannerPage: View {
                             if index > 0 {
                                 Rectangle().fill(PlanningPalette.line).frame(height: 0.5).padding(.leading, PlanningTokens.PeriodBody.checkboxColumn)
                             }
-                            PeriodEventRow(node: node, periodKey: key) { nodeID in
+                            PeriodEventRow(node: node, periodKey: key, bucket: bucket) { nodeID in
                                 guard let node = session.findNode(nodeID) else { return }
-                                _ = session.setCompleted(nodeID: nodeID, completed: !node.completed)
-                            } open: {
+                                if session.setCompleted(nodeID: nodeID, completed: !node.completed) {
+                                    PlanningHaptics.selection()
+                                }
+                            } open: { _ in
                                 addingKind = kind
                             }
                         }
@@ -367,8 +371,9 @@ struct PeriodPlannerPage: View {
 private struct PeriodParentTimeline: View {
     let nodes: [PlanningNode]
     let periodKey: String
+    let bucket: PlanningBucket
     let toggle: (UUID) -> Void
-    let open: () -> Void
+    let open: (UUID) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -386,7 +391,7 @@ private struct PeriodParentTimeline: View {
 
     private func parentBlock(_ node: PlanningNode, connectsToNext: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            PeriodOverviewRow(node: node, periodKey: periodKey, square: true, showsIcon: true, compact: false, toggle: toggle, action: open)
+            PeriodOverviewRow(node: node, periodKey: periodKey, bucket: bucket, square: true, showsIcon: true, compact: false, toggle: toggle, action: { open(node.id) })
             if connectsToNext || !node.children.isEmpty {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(spacing: 0) {
@@ -405,7 +410,7 @@ private struct PeriodParentTimeline: View {
                     if !node.children.isEmpty {
                         VStack(spacing: 0) {
                             ForEach(node.children) { child in
-                                PeriodOverviewRow(node: child, periodKey: periodKey, square: true, showsIcon: false, compact: true, toggle: toggle, action: open)
+                                PeriodOverviewRow(node: child, periodKey: periodKey, bucket: bucket, square: true, showsIcon: false, compact: true, toggle: toggle, action: { open(node.id) })
                             }
                         }
                         .padding(.leading, PlanningTokens.PeriodBody.subtaskIndent)
@@ -419,11 +424,25 @@ private struct PeriodParentTimeline: View {
 private struct PeriodEventRow: View {
     let node: PlanningNode
     let periodKey: String
+    let bucket: PlanningBucket
     let toggle: (UUID) -> Void
-    let open: () -> Void
+    let open: (UUID) -> Void
 
     var body: some View {
-        PeriodOverviewRow(node: node, periodKey: periodKey, square: false, showsIcon: true, compact: false, toggle: toggle, action: open)
+        PeriodOverviewRow(node: node, periodKey: periodKey, bucket: bucket, square: false, showsIcon: true, compact: false, toggle: toggle, action: { open(node.id) })
+    }
+}
+
+/// Today reuses the Daily task timeline. Planning keeps the same private row layout.
+struct PlanningPeriodTaskList: View {
+    let nodes: [PlanningNode]
+    let periodKey: String
+    let bucket: PlanningBucket
+    let onToggle: (UUID) -> Void
+    let onOpen: (UUID) -> Void
+
+    var body: some View {
+        PeriodParentTimeline(nodes: nodes, periodKey: periodKey, bucket: bucket, toggle: onToggle, open: onOpen)
     }
 }
 
@@ -480,6 +499,7 @@ struct PlanningCategoryIconBubble: View {
 private struct PeriodOverviewRow: View {
     let node: PlanningNode
     let periodKey: String
+    let bucket: PlanningBucket
     let square: Bool
     let showsIcon: Bool
     let compact: Bool
@@ -532,7 +552,14 @@ private struct PeriodOverviewRow: View {
     }
 
     private var secondaryText: String? {
-        PeriodCalendar.mainSchedule(periodKey: periodKey, month: node.scheduleMonth, day: node.startDay, minutes: node.startMinutes)
+        if showsIcon {
+            return PeriodCalendar.mainSchedule(periodKey: periodKey, month: node.scheduleMonth, day: node.startDay, minutes: node.startMinutes)
+        }
+        let hasStart = node.startDay != nil || node.startMinutes != nil
+        let day = hasStart ? node.startDay : node.endDay
+        let minutes = hasStart ? node.startMinutes : node.endMinutes
+        let endMinutes = node.startMinutes != nil ? node.endMinutes : nil
+        return PeriodCalendar.subtaskSchedule(bucket: bucket, periodKey: periodKey, month: node.scheduleMonth, day: day, minutes: minutes, endMinutes: endMinutes)
     }
 }
 

@@ -786,6 +786,9 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     var bodySurface: Color? = nil
     /// List popup uses plus. Editors keep the check.
     var confirmIcon: NativeGlassIcon = .check
+    /// Past-task import keeps the close button and omits the confirmation control.
+    var showsConfirm: Bool = true
+    var subtitle: String? = nil
     @ViewBuilder var content: () -> Content
 
     @State private var stableHeight: CGFloat = 280
@@ -797,9 +800,12 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     private var presentedHeight: CGFloat {
         min(max(stableHeight, 1), maximumVisibleSheetHeight)
     }
+    /// Extra row only when a sheet supplies a subtitle. Existing sheets stay at the token height.
+    private var subtitleHeight: CGFloat { subtitle == nil ? 0 : 34 }
+
     /// Header stays intact. Only the body viewport shrinks.
     private var bodyViewportHeight: CGFloat {
-        max(presentedHeight - PlanningTokens.Sheet.headerHeight, 1)
+        max(presentedHeight - PlanningTokens.Sheet.headerHeight - subtitleHeight, 1)
     }
 
     var body: some View {
@@ -827,7 +833,7 @@ struct PlanningSystemSheetChrome<Content: View>: View {
         .background(PlanningSheetViewport(maximumVisible: $maximumVisibleSheetHeight, keyboardObstructing: $keyboardObstructing))
         .onPreferenceChange(PlanningSheetMeasureKey.self) { value in
             guard !keyboardObstructing, value > 1 else { return }
-            let total = value + PlanningTokens.Sheet.headerHeight
+            let total = value + PlanningTokens.Sheet.headerHeight + subtitleHeight
             let cap = maximumBody ?? total
             let next = min(total, cap)
             if abs(next - stableHeight) > 0.5 { stableHeight = next }
@@ -849,46 +855,58 @@ struct PlanningSystemSheetChrome<Content: View>: View {
     }
 
     private var controls: some View {
-        HStack {
-            if showsControls {
-                NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", neutral: true, waitsForGlassFeedback: true, action: onClose)
-            } else {
-                Color.clear.frame(width: 44, height: 44)
-            }
-            Spacer(minLength: 0)
-            if let centerTitle {
-                if let onCenter {
-                    Button(centerTitle, action: onCenter)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color(uiColor: .label))
+        VStack(spacing: 0) {
+            HStack {
+                if showsControls {
+                    NativeGlassIconButton(icon: .close, accessibilityLabel: "Close", neutral: true, waitsForGlassFeedback: true, action: onClose)
                 } else {
-                    Text(centerTitle)
-                        .font(.headline)
-                        .foregroundStyle(Color(uiColor: .label))
-                        .lineLimit(1)
+                    Color.clear.frame(width: 44, height: 44)
                 }
-            }
-            Spacer(minLength: 0)
-            if showsControls {
-                NativeGlassIconButton(icon: confirmIcon, accessibilityLabel: confirmIcon == .plus ? "Add" : "Confirm", prominent: true, waitsForGlassFeedback: true, action: onConfirm)
-                    .disabled(!confirmEnabled)
-                    .opacity(confirmEnabled ? 1 : 0.4)
-                    .background {
-                        if confirmIcon == .plus {
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: PlanningPlusAnchorKey.self,
-                                    value: proxy.frame(in: .named("planningSheet"))
-                                )
+                Spacer(minLength: 0)
+                if let centerTitle {
+                    if let onCenter {
+                        Button(centerTitle, action: onCenter)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Color(uiColor: .label))
+                    } else {
+                        Text(centerTitle)
+                            .font(subtitle == nil ? Font.headline : .system(size: 18, weight: .semibold))
+                            .foregroundStyle(Color(uiColor: .label))
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if showsControls && showsConfirm {
+                    NativeGlassIconButton(icon: confirmIcon, accessibilityLabel: confirmIcon == .plus ? "Add" : "Confirm", prominent: true, waitsForGlassFeedback: true, action: onConfirm)
+                        .disabled(!confirmEnabled)
+                        .opacity(confirmEnabled ? 1 : 0.4)
+                        .background {
+                            if confirmIcon == .plus {
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: PlanningPlusAnchorKey.self,
+                                        value: proxy.frame(in: .named("planningSheet"))
+                                    )
+                                }
                             }
                         }
-                    }
-            } else {
-                Color.clear.frame(width: 44, height: 44)
+                } else {
+                    Color.clear.frame(width: 44, height: 44)
+                }
+            }
+            .padding(.horizontal, PlanningTokens.Sheet.horizontalInset)
+            .frame(height: PlanningTokens.Sheet.headerHeight)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(PlanningPalette.muted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 10)
             }
         }
-        .padding(.horizontal, PlanningTokens.Sheet.horizontalInset)
-        .frame(height: PlanningTokens.Sheet.headerHeight)
+        .frame(height: PlanningTokens.Sheet.headerHeight + subtitleHeight)
         .background(Color.clear)
     }
 }

@@ -81,8 +81,10 @@ enum TemporaryPlanningSamples {
             }
         }
         if session.quickMemos.isEmpty {
+            let base = PeriodCalendar.date(from: today) ?? Date()
+            let created = PeriodCalendar.calendar.date(bySettingHour: 14, minute: 32, second: 0, of: base) ?? base
             session.quickMemos = [
-                QuickMemo(text: "カフェで見つけたアイデア", minutes: 14 * 60 + 32, iconSymbol: "note.text", createdAt: Date(), dayKey: today)
+                QuickMemo(text: "カフェで見つけたアイデア", minutes: 14 * 60 + 32, iconSymbol: "note.text", createdAt: created, dayKey: today)
             ]
         }
         TodayPersistence.store(routines: session.routines, completions: session.routineCompletions, memos: session.quickMemos)

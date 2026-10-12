@@ -1,4 +1,12 @@
 import SwiftUI
+import UIKit
+
+enum PlanningHaptics {
+    /// One light tick for a successful, user-initiated checkbox change.
+    static func selection() {
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+}
 
 enum NativeGlassFeedback {
     /// Visual delay only. It does not decide whether a tap counts, and it does not lock other controls.

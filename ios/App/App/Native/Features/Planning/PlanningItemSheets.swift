@@ -254,7 +254,8 @@ struct PeriodItemListSheet: View {
         let hasStart = node.startDay != nil || node.startMinutes != nil
         let day = hasStart ? node.startDay : node.endDay
         let minutes = hasStart ? node.startMinutes : node.endMinutes
-        return PeriodCalendar.subtaskSchedule(bucket: bucket, periodKey: periodKey, month: node.scheduleMonth, day: day, minutes: minutes)
+        let endMinutes = node.startMinutes != nil ? node.endMinutes : nil
+        return PeriodCalendar.subtaskSchedule(bucket: bucket, periodKey: periodKey, month: node.scheduleMonth, day: day, minutes: minutes, endMinutes: endMinutes)
     }
 
     private func rowContent(_ node: PlanningNode, showsIcon: Bool, opens parent: UUID) -> some View {
@@ -298,7 +299,9 @@ struct PeriodItemListSheet: View {
     private func completionControl(_ node: PlanningNode) -> some View {
         let allowsEdit = PeriodCalendar.allowsCompletionToggle(bucket)
         return Button {
-            _ = session.setCompleted(nodeID: node.id, completed: !node.completed)
+            if session.setCompleted(nodeID: node.id, completed: !node.completed) {
+                PlanningHaptics.selection()
+            }
         } label: {
             PeriodListCheckbox(square: kind != .event, completed: node.completed)
         }

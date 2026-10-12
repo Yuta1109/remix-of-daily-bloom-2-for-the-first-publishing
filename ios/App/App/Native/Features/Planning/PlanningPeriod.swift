@@ -256,11 +256,14 @@ enum PeriodCalendar {
         return text
     }
 
-    /// Subtask and parent schedule line. Daily with no day shows the time only.
-    static func subtaskSchedule(bucket: PlanningBucket, periodKey: String, month: Int?, day: Int?, minutes: Int?) -> String? {
+    /// Subtask schedule line. Daily with no day shows the start time, or the start–end range.
+    static func subtaskSchedule(bucket: PlanningBucket, periodKey: String, month: Int?, day: Int?, minutes: Int?, endMinutes: Int? = nil) -> String? {
         if bucket == .daily, day == nil {
             guard let minutes else { return nil }
-            return String(format: "%d:%02d", minutes / 60, minutes % 60)
+            let startText = String(format: "%d:%02d", minutes / 60, minutes % 60)
+            guard let endMinutes else { return startText }
+            let endText = String(format: "%d:%02d", endMinutes / 60, endMinutes % 60)
+            return "\(startText)〜\(endText)"
         }
         return mainSchedule(periodKey: periodKey, month: month, day: day, minutes: minutes)
     }

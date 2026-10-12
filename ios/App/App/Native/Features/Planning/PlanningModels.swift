@@ -516,7 +516,6 @@ final class PlanningSession: ObservableObject {
     @Published var todayRoutineExpanded = true
     @Published var todayTasksExpanded = true
     @Published var todayMemosExpanded = true
-    @Published var todayCopiedOrigins: Set<String> = []
     /// Local hour when Today rolls to the next date. Settings will edit this later. 0 means midnight.
     var todayDayBoundaryHour = 0
     @Published var todayStamp = TodayDayBoundary.dayKey(for: Date(), hour: 0)

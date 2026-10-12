@@ -32,6 +32,43 @@ struct QuickMemo: Identifiable, Hashable, Codable {
     var iconSymbol: String
     var createdAt: Date
     var dayKey: String
+    var colorID: String = PlanIconColor.defaultID
+
+    init(id: UUID = UUID(), text: String, minutes: Int, iconSymbol: String, createdAt: Date, dayKey: String, colorID: String = PlanIconColor.defaultID) {
+        self.id = id
+        self.text = text
+        self.minutes = minutes
+        self.iconSymbol = iconSymbol
+        self.createdAt = createdAt
+        self.dayKey = dayKey
+        self.colorID = colorID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        text = try container.decode(String.self, forKey: .text)
+        minutes = try container.decode(Int.self, forKey: .minutes)
+        iconSymbol = try container.decode(String.self, forKey: .iconSymbol)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        dayKey = try container.decode(String.self, forKey: .dayKey)
+        colorID = try container.decodeIfPresent(String.self, forKey: .colorID) ?? PlanIconColor.defaultID
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(text, forKey: .text)
+        try container.encode(minutes, forKey: .minutes)
+        try container.encode(iconSymbol, forKey: .iconSymbol)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(dayKey, forKey: .dayKey)
+        try container.encode(colorID, forKey: .colorID)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, text, minutes, iconSymbol, createdAt, dayKey, colorID
+    }
 }
 
 enum TodayWeekChoice: Hashable {
@@ -47,10 +84,46 @@ struct TodayWeekSlice: Hashable {
     var achievedDays: Int
 }
 
+enum TodayHistoryLabel {
+    static func heading(key: String, todayKey: String) -> String {
+        guard let date = PeriodCalendar.date(from: key) else { return key }
+        let calendar = PeriodCalendar.calendar
+        let weekday = calendar.shortWeekdaySymbols[calendar.component(.weekday, from: date) - 1]
+        let month = calendar.component(.month, from: date)
+        let day = calendar.component(.day, from: date)
+        let year = calendar.component(.year, from: date)
+        if key == todayKey { return "今日 \(month)月\(day)日（\(weekday)）" }
+        if key == PeriodCalendar.shift(todayKey, bucket: .daily, by: -1) { return "昨日 \(month)月\(day)日（\(weekday)）" }
+        return "\(year)年\(month)月\(day)日（\(weekday)）"
+    }
+}
+
 enum TodayDayBoundary {
     static func dayKey(for date: Date, hour: Int, calendar: Calendar = PeriodCalendar.calendar) -> String {
         let shifted = calendar.date(byAdding: .hour, value: -max(hour, 0), to: date) ?? date
         return PeriodCalendar.dayKey(shifted)
+    }
+}
+
+enum RoutineAchievementTone {
+    /// Categories use the displayed, rounded percentage. 0 stays neutral; 25 is purple, not red.
+    static func name(for percent: Int) -> String {
+        if percent <= 0 { return "neutral" }
+        if percent < 25 { return "red" }
+        if percent < 50 { return "purple" }
+        if percent < 75 { return "blue" }
+        return "green"
+    }
+
+    /// Months before the routine existed have no achievement. Later months use recorded completions.
+    static func monthAvailable(createdAt: Date, monthKey: String) -> Bool {
+        monthKey >= PeriodCalendar.currentKey(.monthly, now: createdAt)
+    }
+
+    static func monthLabel(_ key: String) -> String {
+        let parts = key.split(separator: "-")
+        let month = parts.count > 1 ? Int(parts[1]) ?? 1 : 1
+        return "\(month)月"
     }
 }
 
@@ -76,6 +149,7 @@ enum TodayAchievement {
         case .weekday(let value):
             var next = everyDay ? [] : days
             if next.contains(value) { next.remove(value) } else { next.insert(value) }
+            if next.isEmpty { return (true, []) }
             return (false, next)
         }
     }
@@ -203,7 +277,17 @@ extension PlanningSession {
 
     func saveMemo(_ memo: QuickMemo, isNew: Bool) {
         var next = memo
-        if isNew { next.createdAt = Date() }
+        if isNew {
+            let now = Date()
+            next.createdAt = now
+            let parts = PeriodCalendar.calendar.dateComponents([.hour, .minute], from: now)
+            next.minutes = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+            next.dayKey = PeriodCalendar.dayKey(now)
+        } else if let existing = quickMemos.first(where: { $0.id == next.id }) {
+            next.createdAt = existing.createdAt
+            next.minutes = existing.minutes
+            next.dayKey = existing.dayKey
+        }
         if let index = quickMemos.firstIndex(where: { $0.id == next.id }) {
             quickMemos[index] = next
         } else {
@@ -230,30 +314,16 @@ extension PlanningSession {
         return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
     }
 
-    func copyTaskToToday(_ source: PlanningNode) {
-        let token = "\(source.id.uuidString)|\(todayStamp)"
-        guard !todayCopiedOrigins.contains(token) else { return }
-        var copy = source
-        copy.id = UUID()
-        copy.logicalID = UUID()
-        copy.periodKey = todayStamp
-        copy.bucket = .daily
-        copy.todayTaskID = UUID()
-        copy.completed = false
-        copy.isSample = false
-        copy.children = source.children.map { child in
-            var next = child
-            next.id = UUID()
-            next.logicalID = UUID()
-            next.periodKey = todayStamp
-            next.bucket = .daily
-            next.todayTaskID = UUID()
-            next.completed = false
-            next.isSample = false
-            return next
+    func todayImportDraft(from source: PlanningNode) -> PlanningItemDraft {
+        var draft = PlanningItemDraft(node: source)
+        draft.startDay = nil
+        draft.endDay = nil
+        draft.startMinutes = nil
+        draft.endMinutes = nil
+        draft.subtasks = source.children.map { child in
+            PlanningSubtaskDraft(id: UUID(), title: child.title, startDay: nil, endDay: nil, startMinutes: nil, endMinutes: nil)
         }
-        periodItems.append(copy)
-        todayCopiedOrigins.insert(token)
+        return draft
     }
 
     func routineMonthRate(_ routine: RoutineDefinition, now: Date = Date()) -> Int {
