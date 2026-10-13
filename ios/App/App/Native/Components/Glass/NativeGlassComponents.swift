@@ -171,7 +171,8 @@ struct PlanningMenuChoice: Identifiable {
 
 /// System menu. iOS 26 draws the trigger with Liquid Glass; the system owns the presentation.
 struct PlanningNativeAddMenu: View {
-    var diameter: CGFloat = 52
+    /// Visible glass circle. `.controlSize(.large)` is omitted because it adds padding around this frame.
+    static let diameter: CGFloat = 50
     var accessibilityLabel: String
     let actions: [PlanningMenuChoice]
 
@@ -193,8 +194,7 @@ struct PlanningNativeAddMenu: View {
         Image(systemName: "plus")
             .font(.system(size: 21, weight: .semibold))
             .foregroundStyle(Color.white)
-            .frame(minWidth: 44, minHeight: 44)
-            .frame(width: diameter, height: diameter)
+            .frame(width: Self.diameter, height: Self.diameter)
             .background {
                 if #available(iOS 26.0, *) {
                     Color.clear
@@ -211,7 +211,6 @@ private struct PlanningNativeMenuStyle: ViewModifier {
             content
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.circle)
-                .controlSize(.large)
                 .tint(PlanningPalette.accent)
         } else {
             content.buttonStyle(.plain)

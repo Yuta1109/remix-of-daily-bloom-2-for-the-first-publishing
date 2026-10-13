@@ -1640,7 +1640,9 @@ describe("planning targeted correction", () => {
     const menu = glassMenu.slice(glassMenu.indexOf("struct PlanningNativeAddMenu"), glassMenu.indexOf("struct NativePeriodSelector"));
     expect(menu).toContain("Menu {");
     expect(menu).toContain("Label(item.title, systemImage: item.symbol)");
-    expect(menu).toContain(".frame(minWidth: 44, minHeight: 44)");
+    expect(menu).toContain("static let diameter: CGFloat = 50");
+    expect(menu).toContain(".frame(width: Self.diameter, height: Self.diameter)");
+    expect(menu).not.toMatch(/^\s*\.controlSize\(\.large\)/m);
     expect(menu).toContain(".buttonStyle(.glassProminent)");
     expect(glassMenu).not.toContain("PlanningGlassMorphMenu");
     expect(itemSheets).toContain("PlanningNativeAddMenu(");
