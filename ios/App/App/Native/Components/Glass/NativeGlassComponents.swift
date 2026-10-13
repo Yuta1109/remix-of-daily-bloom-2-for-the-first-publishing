@@ -193,8 +193,13 @@ struct PlanningGlassMorphMenu: View {
     let actions: [PlanningMorphAction]
     @Namespace private var morph
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showsMenuContent = false
+    @State private var contentGeneration = 0
 
     private var anchor: Alignment { expandsUpward ? .bottomTrailing : .topTrailing }
+    private var menuHeight: CGFloat { CGFloat(max(actions.count, 1)) * 48 + 12 }
+    /// Keeps the menu rectangle from sharing the button's frame.
+    private let laneGap: CGFloat = 12
 
     var body: some View {
         if #available(iOS 26.0, *) {
@@ -208,27 +213,62 @@ struct PlanningGlassMorphMenu: View {
         PlanningGlassMorph.update($isPresented, to: value, reduceMotion: reduceMotion)
     }
 
-    /// Spacing matches Apple's morph sample. The circle and menu share a corner, so each
-    /// inserted effect is within this distance of the effect being removed.
+    /// The container stays this size so opening does not grow a rectangle in place.
+    /// Spacing covers the distance between the button and the offset menu.
     @available(iOS 26.0, *)
     private var glassContainer: some View {
-        GlassEffectContainer(spacing: 40.0) {
+        GlassEffectContainer(spacing: 320) {
             ZStack(alignment: anchor) {
                 if isPresented {
-                    PlanningMorphMenuRows(actions: actions) { setPresented(false) }
-                        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                        .glassEffectID("\(identity).menu", in: morph)
-                        .glassEffectTransition(.matchedGeometry)
+                    destinationGlass
                 } else {
-                    PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) {
-                        setPresented(true)
-                    }
-                    .background(Circle().fill(PlanningPalette.accent))
-                    .glassEffect(.regular.interactive(), in: Circle())
-                    .glassEffectID("\(identity).source", in: morph)
-                    .glassEffectTransition(.matchedGeometry)
+                    sourceGlass
                 }
             }
+            .frame(width: 262, height: menuHeight + sourceDiameter + laneGap, alignment: anchor)
+        }
+        .onChange(of: isPresented) { _, presented in
+            revealMenuContent(presented)
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private var sourceGlass: some View {
+        PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) {
+            setPresented(true)
+        }
+        .background(Circle().fill(PlanningPalette.accent))
+        .glassEffect(.regular.interactive(), in: Circle())
+        .glassEffectID("\(identity).source", in: morph)
+        .glassEffectTransition(.matchedGeometry)
+    }
+
+    @available(iOS 26.0, *)
+    private var destinationGlass: some View {
+        ZStack {
+            Color.clear.frame(width: 262, height: menuHeight)
+            PlanningMorphMenuRows(actions: actions) { setPresented(false) }
+                .opacity(showsMenuContent ? 1 : 0)
+                .allowsHitTesting(showsMenuContent)
+        }
+        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .glassEffectID("\(identity).menu", in: morph)
+        .glassEffectTransition(.matchedGeometry)
+        .padding(expandsUpward ? .bottom : .top, sourceDiameter + laneGap)
+    }
+
+    private func revealMenuContent(_ presented: Bool) {
+        contentGeneration += 1
+        let generation = contentGeneration
+        if !presented || reduceMotion {
+            showsMenuContent = presented
+            return
+        }
+        showsMenuContent = false
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 320_000_000)
+            guard generation == contentGeneration, isPresented else { return }
+            showsMenuContent = true
         }
     }
 

@@ -73,7 +73,8 @@ describe("today and routine foundation", () => {
     expect(sheets).toContain("PlanningGlassMorphMenu(");
     expect(sheets).toContain("expandsUpward: false");
     expect(glass).toContain("struct PlanningGlassMorphMenu");
-    expect(glass).toContain("GlassEffectContainer(spacing: 40.0)");
+    expect(glass).toContain("GlassEffectContainer(spacing: 320)");
+    expect(glass).toContain("sourceDiameter + laneGap");
     expect(glass).toContain("glassEffectID(\"\\(identity).source\", in: morph)");
     expect(glass).toContain("glassEffectID(\"\\(identity).menu\", in: morph)");
     expect(glass).toContain("glassEffectTransition(.matchedGeometry)");
