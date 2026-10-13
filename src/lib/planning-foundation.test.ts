@@ -1361,7 +1361,7 @@ describe("phase C-3 reflection and popups", () => {
     expect(itemSheets).not.toContain("presentationCompactAdaptation(.popover)");
     expect(itemSheets).not.toContain(".popover");
     expect(itemSheets).not.toContain(".transition(.scale");
-    expect(itemSheets).toContain("showingSources = false");
+    expect(itemSheets).toContain("PlanningGlassMorph.update($showingSources, to: false");
     expect(period).toContain("case .monthly: [.plan, .create, .postpone]");
     expect(period).toContain("case .weekly: [.plan, .create, .postpone, .monthly]");
     expect(period).toContain("case .daily: [.periods, .create, .postpone]");

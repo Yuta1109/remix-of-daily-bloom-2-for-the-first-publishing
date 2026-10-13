@@ -5,6 +5,7 @@ struct TodayRootView: View {
     @EnvironmentObject private var navigation: TabNavigationState
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingMenu = false
     @State private var creatingTask = false
     @State private var creatingMemo = false
@@ -33,7 +34,7 @@ struct TodayRootView: View {
             if showingMenu {
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()
-                    .onTapGesture { showingMenu = false }
+                    .onTapGesture { PlanningGlassMorph.update($showingMenu, to: false, reduceMotion: reduceMotion) }
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -58,8 +59,12 @@ struct TodayRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { session.refreshTodayStamp() }
         }
-        .onChange(of: appState.selectedTab) { _, _ in showingMenu = false }
-        .onChange(of: navigation.path.count) { _, _ in showingMenu = false }
+        .onChange(of: appState.selectedTab) { _, _ in
+            PlanningGlassMorph.update($showingMenu, to: false, reduceMotion: reduceMotion)
+        }
+        .onChange(of: navigation.path.count) { _, _ in
+            PlanningGlassMorph.update($showingMenu, to: false, reduceMotion: reduceMotion)
+        }
         .onDisappear { showingMenu = false }
         .sheet(isPresented: $creatingTask) { newTaskSheet }
         .sheet(isPresented: Binding(get: { editingTask != nil }, set: { if !$0 { editingTask = nil } })) {
@@ -544,7 +549,7 @@ struct TodayRoutineDetailPage: View {
         }
         return VStack(alignment: .leading, spacing: 12) {
             routineSectionTitle("月ごとの達成率の変化", trailing: "過去6か月")
-            HStack(alignment: .bottom, spacing: 6) {
+            HStack(alignment: .bottom, spacing: 10) {
                 VStack(spacing: 6) {
                     VStack {
                         Text("100%")
@@ -555,10 +560,11 @@ struct TodayRoutineDetailPage: View {
                     }
                     .font(.system(size: 11))
                     .foregroundStyle(PlanningPalette.muted)
-                    .frame(width: 36, height: 108, alignment: .trailing)
+                    .frame(maxWidth: .infinity, maxHeight: 108, alignment: .trailing)
                     Color.clear.frame(height: 16)
                 }
                 .padding(.top, 26)
+                .frame(width: 36)
                 HStack(alignment: .bottom, spacing: 6) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                         monthColumn(row.key, percent: row.percent, current: row.key == current)

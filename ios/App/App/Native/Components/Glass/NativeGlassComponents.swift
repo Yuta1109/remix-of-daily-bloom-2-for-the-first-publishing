@@ -162,6 +162,19 @@ struct NativeGlassTextButton: View {
     }
 }
 
+enum PlanningGlassMorph {
+    static func update(_ presented: Binding<Bool>, to value: Bool, reduceMotion: Bool) {
+        guard presented.wrappedValue != value else { return }
+        if reduceMotion {
+            presented.wrappedValue = value
+        } else {
+            withAnimation(.smooth(duration: 0.5)) {
+                presented.wrappedValue = value
+            }
+        }
+    }
+}
+
 struct PlanningMorphAction: Identifiable {
     let id: String
     let title: String
@@ -169,8 +182,8 @@ struct PlanningMorphAction: Identifiable {
     let action: () -> Void
 }
 
-/// One glass surface that replaces its circular source. iOS 26 morphs that surface with
-/// `glassEffectTransition(.matchedGeometry)`. Earlier systems swap in a material menu.
+/// Closed and open glass effects are separate views. iOS 26 morphs them when one
+/// leaves the container and the other enters it. Earlier systems show one material surface.
 struct PlanningGlassMorphMenu: View {
     @Binding var isPresented: Bool
     var identity: String
@@ -181,67 +194,54 @@ struct PlanningGlassMorphMenu: View {
     @Namespace private var morph
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        morphBody
-            .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.86), value: isPresented)
-    }
+    private var anchor: Alignment { expandsUpward ? .bottomTrailing : .topTrailing }
 
-    @ViewBuilder
-    private var morphBody: some View {
+    var body: some View {
         if #available(iOS 26.0, *) {
-            PlanningGlassMorphSurface(
-                isPresented: $isPresented,
-                identity: identity,
-                sourceDiameter: sourceDiameter,
-                expandsUpward: expandsUpward,
-                accessibilityLabel: accessibilityLabel,
-                actions: actions,
-                morph: morph
-            )
+            glassContainer
         } else {
-            fallback
+            materialFallback
         }
     }
 
-    private var fallback: some View {
-        ZStack(alignment: expandsUpward ? .bottomTrailing : .topTrailing) {
-            if isPresented {
-                PlanningMorphMenuRows(actions: actions) { isPresented = false }
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.45), lineWidth: 0.6))
-            } else {
-                PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) { isPresented = true }
+    private func setPresented(_ value: Bool) {
+        PlanningGlassMorph.update($isPresented, to: value, reduceMotion: reduceMotion)
+    }
+
+    /// Spacing matches Apple's morph sample. The circle and menu share a corner, so each
+    /// inserted effect is within this distance of the effect being removed.
+    @available(iOS 26.0, *)
+    private var glassContainer: some View {
+        GlassEffectContainer(spacing: 40.0) {
+            ZStack(alignment: anchor) {
+                if isPresented {
+                    PlanningMorphMenuRows(actions: actions) { setPresented(false) }
+                        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .glassEffectID("\(identity).menu", in: morph)
+                        .glassEffectTransition(.matchedGeometry)
+                } else {
+                    PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) {
+                        setPresented(true)
+                    }
                     .background(Circle().fill(PlanningPalette.accent))
+                    .glassEffect(.regular.interactive(), in: Circle())
+                    .glassEffectID("\(identity).source", in: morph)
+                    .glassEffectTransition(.matchedGeometry)
+                }
             }
         }
     }
-}
 
-@available(iOS 26.0, *)
-private struct PlanningGlassMorphSurface: View {
-    @Binding var isPresented: Bool
-    var identity: String
-    var sourceDiameter: CGFloat
-    var expandsUpward: Bool
-    var accessibilityLabel: String
-    let actions: [PlanningMorphAction]
-    var morph: Namespace.ID
-
-    var body: some View {
-        GlassEffectContainer(spacing: 0) {
-            ZStack(alignment: expandsUpward ? .bottomTrailing : .topTrailing) {
-                if isPresented {
-                    PlanningMorphMenuRows(actions: actions) { isPresented = false }
-                        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                        .glassEffectID(identity, in: morph)
-                        .glassEffectTransition(.matchedGeometry)
-                } else {
-                    PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) { isPresented = true }
-                        .background(Circle().fill(PlanningPalette.accent))
-                        .glassEffect(.regular.interactive(), in: Circle())
-                        .glassEffectID(identity, in: morph)
-                        .glassEffectTransition(.matchedGeometry)
+    private var materialFallback: some View {
+        ZStack(alignment: anchor) {
+            if isPresented {
+                PlanningMorphMenuRows(actions: actions) { setPresented(false) }
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            } else {
+                PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) {
+                    setPresented(true)
                 }
+                .background(Circle().fill(PlanningPalette.accent))
             }
         }
     }

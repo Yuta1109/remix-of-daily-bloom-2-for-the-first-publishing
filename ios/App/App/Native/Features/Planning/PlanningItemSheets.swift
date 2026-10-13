@@ -113,6 +113,7 @@ struct PeriodItemListSheet: View {
     @State private var creating = false
     @State private var picking: PeriodAddSource?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(session: PlanningSession, bucket: PlanningBucket, kind: PlanningItemKind, periodKey: String) {
         self.session = session
@@ -153,7 +154,7 @@ struct PeriodItemListSheet: View {
             if showingSources {
                 Color.black.opacity(0.001)
                     .contentShape(Rectangle())
-                    .onTapGesture { showingSources = false }
+                    .onTapGesture { PlanningGlassMorph.update($showingSources, to: false, reduceMotion: reduceMotion) }
             }
         }
         .overlay(alignment: .topTrailing) {
