@@ -162,6 +162,142 @@ struct NativeGlassTextButton: View {
     }
 }
 
+struct PlanningMorphAction: Identifiable {
+    let id: String
+    let title: String
+    let symbol: String
+    let action: () -> Void
+}
+
+/// One glass surface that replaces its circular source. iOS 26 morphs that surface with
+/// `glassEffectTransition(.matchedGeometry)`. Earlier systems swap in a material menu.
+struct PlanningGlassMorphMenu: View {
+    @Binding var isPresented: Bool
+    var identity: String
+    var sourceDiameter: CGFloat = 52
+    var expandsUpward = true
+    var accessibilityLabel: String
+    let actions: [PlanningMorphAction]
+    @Namespace private var morph
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        morphBody
+            .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.86), value: isPresented)
+    }
+
+    @ViewBuilder
+    private var morphBody: some View {
+        if #available(iOS 26.0, *) {
+            PlanningGlassMorphSurface(
+                isPresented: $isPresented,
+                identity: identity,
+                sourceDiameter: sourceDiameter,
+                expandsUpward: expandsUpward,
+                accessibilityLabel: accessibilityLabel,
+                actions: actions,
+                morph: morph
+            )
+        } else {
+            fallback
+        }
+    }
+
+    private var fallback: some View {
+        ZStack(alignment: expandsUpward ? .bottomTrailing : .topTrailing) {
+            if isPresented {
+                PlanningMorphMenuRows(actions: actions) { isPresented = false }
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color.white.opacity(0.45), lineWidth: 0.6))
+            } else {
+                PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) { isPresented = true }
+                    .background(Circle().fill(PlanningPalette.accent))
+            }
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+private struct PlanningGlassMorphSurface: View {
+    @Binding var isPresented: Bool
+    var identity: String
+    var sourceDiameter: CGFloat
+    var expandsUpward: Bool
+    var accessibilityLabel: String
+    let actions: [PlanningMorphAction]
+    var morph: Namespace.ID
+
+    var body: some View {
+        GlassEffectContainer(spacing: 0) {
+            ZStack(alignment: expandsUpward ? .bottomTrailing : .topTrailing) {
+                if isPresented {
+                    PlanningMorphMenuRows(actions: actions) { isPresented = false }
+                        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .glassEffectID(identity, in: morph)
+                        .glassEffectTransition(.matchedGeometry)
+                } else {
+                    PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) { isPresented = true }
+                        .background(Circle().fill(PlanningPalette.accent))
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .glassEffectID(identity, in: morph)
+                        .glassEffectTransition(.matchedGeometry)
+                }
+            }
+        }
+    }
+}
+
+private struct PlanningMorphSourceButton: View {
+    let diameter: CGFloat
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: diameter > 48 ? 24 : 20, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: diameter, height: diameter)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+private struct PlanningMorphMenuRows: View {
+    let actions: [PlanningMorphAction]
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(actions) { item in
+                Button {
+                    close()
+                    item.action()
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 20))
+                            .frame(width: 23, height: 23)
+                        Text(item.title)
+                            .font(.system(size: 17))
+                            .foregroundStyle(PlanningPalette.ink)
+                    }
+                    .padding(.horizontal, 18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 48)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.title)
+            }
+        }
+        .padding(.vertical, 6)
+        .frame(width: 262)
+    }
+}
+
 struct NativePeriodSelector: View {
     let title: String
     var action: () -> Void

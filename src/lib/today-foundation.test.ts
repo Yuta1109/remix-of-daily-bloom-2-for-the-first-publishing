@@ -59,17 +59,39 @@ describe("today and routine foundation", () => {
 
   it("uses a fixed glass add control and the shared task editor", () => {
     const main = today.slice(0, today.indexOf("struct TodayRoutineListPage"));
+    const sheets = readFileSync("ios/App/App/Native/Features/Planning/PlanningItemSheets.swift", "utf8");
     expect(main).not.toContain("DragGesture");
     expect(main).not.toContain("plusOffset");
-    expect(today).toContain("GlassEffectContainer");
-    expect(today).toContain("glassEffectID(\"today-add\", in: morph)");
-    expect(today).toContain("glassEffectTransition(.matchedGeometry)");
-    expect(today).toContain(".ultraThinMaterial");
+    expect(main).toContain("ZStack(alignment: .top)");
+    expect(main).toContain(".frame(height: PlanningTokens.Header.height, alignment: .center)");
+    expect(main).toContain(".frame(height: PlanningTokens.Header.height + 30, alignment: .center)");
+    expect(main).toContain("Text(\"Today\")");
+    expect(main).toContain(".font(.system(size: 15.5))");
+    expect(today).toContain("PlanningGlassMorphMenu(");
+    expect(today).toContain("identity: \"today-add\"");
+    expect(today).toContain("expandsUpward: true");
+    expect(sheets).toContain("PlanningGlassMorphMenu(");
+    expect(sheets).toContain("expandsUpward: false");
+    expect(glass).toContain("struct PlanningGlassMorphMenu");
+    expect(glass).toContain("GlassEffectContainer(spacing: 0)");
+    expect(glass).toContain("glassEffectID(identity, in: morph)");
+    expect(glass).toContain("glassEffectTransition(.matchedGeometry)");
+    expect(glass).toContain(".glassEffect(.regular.interactive(), in: Circle())");
+    expect(glass).toContain(".glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 22, style: .continuous))");
+    expect(glass).toContain("if isPresented");
+    expect(glass).toContain(".ultraThinMaterial");
+    expect(glass).toContain(".frame(minHeight: 48)");
+    expect(glass).toContain(".contentShape(Rectangle())");
+    expect(glass).toContain(".padding(.horizontal, 18)");
+    expect(glass).toContain(".frame(width: 262)");
     expect(today).not.toContain("triangle");
+    expect(today).not.toContain("TodayGlassAddControl");
     expect(today).toContain("PlanningItemEditorSheet");
     expect(today).toContain("今日のタスクを追加");
     expect(today).toContain("クイックメモを追加");
-    expect(today).toContain("追加時間");
+    expect(today).toContain("追加した時間");
+    expect(today).toContain("Added at");
+    expect(today).not.toContain("追加時間");
     expect(today).toContain("showsConfirm: false");
     expect(today).toContain("session.todayImportDraft(from: node)");
     expect(today).toContain("onClose: { copying = nil }");
@@ -152,6 +174,33 @@ describe("today and routine foundation", () => {
     expect(today).toContain("過去6か月");
     expect(today).toContain("Text(\"100%\")");
     expect(today).toContain("Text(\"0%\")");
+    const column = today.slice(today.indexOf("func monthColumn"), today.indexOf("func weekCard"));
+    expect(column.indexOf("ZStack(alignment: .bottom)")).toBeLessThan(column.indexOf("percent.map"));
+    expect(column).toContain("monthBarLabelGap");
+    expect(column).toContain("?? \"—\"");
+    const week = today.slice(today.indexOf("func weekCard"), today.indexOf("func routineSectionTitle"));
+    expect(week).toContain("Text(\"\\(rate)%\")");
+    expect(week).toContain(".frame(height: 84)");
+    expect(week).not.toContain("monthBarLabelGap");
+    expect(fillWidth(200, 0)).toBe(0);
+    expect(fillWidth(200, 1)).toBe(13);
+    expect(fillWidth(200, 25)).toBe(50);
+    expect(fillWidth(200, 50)).toBe(100);
+    expect(fillWidth(200, 75)).toBe(150);
+    expect(fillWidth(200, 99)).toBe(198);
+    expect(fillWidth(200, 100)).toBe(200);
+    expect(today).toContain("trackWidth * progress");
+    expect(today).toContain("isolatesTrailingGlass: true");
+    const chrome = readFileSync("ios/App/App/Native/Features/Planning/PlanningChrome.swift", "utf8");
+    expect(chrome).toContain("isolatesTrailingGlass");
+    expect(chrome).toContain(".sharedBackgroundVisibility(.hidden)");
+    expect(chrome).toContain("trailing.frame(width: 44, height: 44)");
+    expect(glass).toContain(".frame(minWidth: 44, minHeight: 44)");
+    const memo = today.slice(today.indexOf("struct TodayMemoSheet"), today.indexOf("struct TodayPastTasksSheet"));
+    expect(memo).toContain("if !isNew");
+    expect(memo).toContain("cornerRadius: 14");
+    expect(memo).toContain("postponeDeleteConfirm");
+    expect(memo).toContain(".frame(height: 52)");
     expect(today).toContain("RoutineAchievementTone.monthLabel");
     expect(today).toContain("if !isNew");
     expect(today).toContain("TodayFixedAddButton");
@@ -167,6 +216,13 @@ describe("today and routine foundation", () => {
     expect(periodPage).toContain("subtaskSchedule(bucket: bucket");
   });
 });
+
+function fillWidth(trackWidth, percent) {
+  const progress = Math.min(Math.max(percent, 0), 100) / 100;
+  if (percent <= 0) return 0;
+  if (percent >= 100) return trackWidth;
+  return Math.max(13, trackWidth * progress);
+}
 
 function dailySchedule(day, minutes, endMinutes) {
   if (day == null) {

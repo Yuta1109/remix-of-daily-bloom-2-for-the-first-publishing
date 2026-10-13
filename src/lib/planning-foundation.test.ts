@@ -1336,7 +1336,8 @@ describe("phase C-3 reflection and popups", () => {
 
   it("rebuilds the list popup around a plus and a parent timeline", () => {
     expect(itemSheets).toContain("centerTitle: \"ToDo・予定\"");
-    expect(itemSheets).toContain("confirmIcon: .plus");
+    expect(itemSheets).toContain("PlanningGlassMorphMenu(");
+    expect(itemSheets).toContain("accessibilityLabel: \"追加\"");
     expect(itemSheets).toContain("checkmark.square.fill");
     expect(itemSheets).toContain("checkmark.circle.fill");
     expect(itemSheets).toContain("connectsToNext");
@@ -1352,11 +1353,14 @@ describe("phase C-3 reflection and popups", () => {
   });
 
   it("anchors the source popover and keeps the list sheet open", () => {
-    expect(itemSheets).toContain("RoundedRectangle(cornerRadius: 22, style: .continuous)");
-    expect(itemSheets).toContain("PlanningPlusAnchorKey");
-    expect(itemSheets).toContain(".glassEffect(.regular, in: shape)");
+    const glassMenu = readFileSync("ios/App/App/Native/Components/Glass/NativeGlassComponents.swift", "utf8");
+    expect(itemSheets).toContain("PlanningGlassMorphMenu(");
+    expect(itemSheets).toContain("expandsUpward: false");
+    expect(itemSheets).toContain("showsConfirm: false");
+    expect(glassMenu).toContain("glassEffectTransition(.matchedGeometry)");
     expect(itemSheets).not.toContain("presentationCompactAdaptation(.popover)");
     expect(itemSheets).not.toContain(".popover");
+    expect(itemSheets).not.toContain(".transition(.scale");
     expect(itemSheets).toContain("showingSources = false");
     expect(period).toContain("case .monthly: [.plan, .create, .postpone]");
     expect(period).toContain("case .weekly: [.plan, .create, .postpone, .monthly]");
@@ -1632,14 +1636,15 @@ describe("planning targeted correction", () => {
   });
 
   it("makes each source row a full-width hit target and grows the menu from the plus", () => {
-    const menu = itemSheets.slice(itemSheets.indexOf("struct PeriodSourcePopover"), itemSheets.indexOf("private func icon"));
+    const glassMenu = readFileSync("ios/App/App/Native/Components/Glass/NativeGlassComponents.swift", "utf8");
+    const menu = glassMenu.slice(glassMenu.indexOf("struct PlanningMorphMenuRows"), glassMenu.indexOf("struct NativePeriodSelector"));
     expect(menu).toContain(".frame(maxWidth: .infinity, alignment: .leading)");
     expect(menu).toContain(".contentShape(Rectangle())");
     expect(menu).toContain(".padding(.horizontal, 18)");
-    expect(menu).toContain(".frame(minHeight: 45)");
-    expect(itemSheets).toContain(".transition(.scale(scale: 0.22, anchor: .topTrailing).combined(with: .opacity))");
-    expect(itemSheets).toContain(".spring(response: 0.28, dampingFraction: 0.86)");
-    expect(itemSheets).toContain(".contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))");
+    expect(menu).toContain(".frame(minHeight: 48)");
+    expect(glassMenu).toContain("glassEffectTransition(.matchedGeometry)");
+    expect(glassMenu).toContain("if isPresented");
+    expect(itemSheets).toContain("PlanningGlassMorphMenu(");
     expect(itemSheets).not.toContain(".popover");
   });
 

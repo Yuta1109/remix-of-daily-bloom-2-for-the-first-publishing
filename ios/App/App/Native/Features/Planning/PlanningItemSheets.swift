@@ -109,7 +109,6 @@ struct PeriodItemListSheet: View {
     let periodKey: String
     @State private var kind: PlanningItemKind
     @State private var showingSources = false
-    @State private var plusFrame: CGRect = .zero
     @State private var editingID: EditingNodeID?
     @State private var creating = false
     @State private var picking: PeriodAddSource?
@@ -125,11 +124,11 @@ struct PeriodItemListSheet: View {
     var body: some View {
         PlanningSystemSheetChrome(
             onClose: { dismiss() },
-            onConfirm: { showingSources = true },
+            onConfirm: {},
             centerTitle: "ToDo・予定",
             maximumBody: PlanningTokens.Sheet.maximumBody,
             bodySurface: Color.white,
-            confirmIcon: .plus
+            showsConfirm: false
         ) {
             VStack(alignment: .leading, spacing: 8) {
                 Picker("種類", selection: $kind) {
@@ -150,27 +149,30 @@ struct PeriodItemListSheet: View {
             .padding(.top, 8)
             .padding(.bottom, 16)
         }
-        .onPreferenceChange(PlanningPlusAnchorKey.self) { plusFrame = $0 }
         .overlay {
-            ZStack(alignment: .topLeading) {
-                if showingSources {
-                    Color.black.opacity(0.001)
-                        .contentShape(Rectangle())
-                        .onTapGesture { showingSources = false }
-                    PeriodSourcePopover(bucket: bucket) { source in
-                        showingSources = false
+            if showingSources {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .onTapGesture { showingSources = false }
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            PlanningGlassMorphMenu(
+                isPresented: $showingSources,
+                identity: "planning-source-\(bucket.rawValue)",
+                sourceDiameter: PlanningTokens.Sheet.controlDiameter,
+                expandsUpward: false,
+                accessibilityLabel: "追加",
+                actions: PeriodCalendar.addSources(for: bucket).map { source in
+                    PlanningMorphAction(id: source.rawValue, title: source.title, symbol: Self.sourceSymbol(source)) {
                         PlanningTransition.perform {
                             if source == .create { creating = true } else { picking = source }
                         }
                     }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background { sourceMenuGlass }
-                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .offset(x: sourceMenuOrigin.x, y: sourceMenuOrigin.y)
-                    .transition(.scale(scale: 0.22, anchor: .topTrailing).combined(with: .opacity))
                 }
-            }
-            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: showingSources)
+            )
+            .padding(.top, PlanningTokens.Sheet.headerTop)
+            .padding(.trailing, PlanningTokens.Sheet.horizontalInset)
         }
         .sheet(isPresented: $creating) {
             PlanningItemEditorSheet(draft: PlanningItemDraft(), isNew: true, bucket: bucket, kind: kind, periodKey: periodKey) { draft in
@@ -196,23 +198,12 @@ struct PeriodItemListSheet: View {
         }
     }
 
-    private var sourceMenuOrigin: CGPoint {
-        let width: CGFloat = 262
-        guard plusFrame.width > 1 else {
-            return CGPoint(x: 80, y: PlanningTokens.Sheet.headerHeight - 22)
-        }
-        return CGPoint(x: plusFrame.maxX - width, y: plusFrame.minY)
-    }
-
-    @ViewBuilder
-    private var sourceMenuGlass: some View {
-        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
-        if #available(iOS 26.0, *) {
-            shape.fill(.clear).glassEffect(.regular, in: shape)
-        } else {
-            shape.fill(.ultraThinMaterial)
-                .overlay(shape.stroke(Color.white.opacity(0.45), lineWidth: 0.6))
-                .shadow(color: PlanningPalette.ink.opacity(0.12), radius: 16, y: 8)
+    private static func sourceSymbol(_ source: PeriodAddSource) -> String {
+        switch source {
+        case .plan: "list.bullet"
+        case .create: "plus"
+        case .postpone: "clock.arrow.circlepath"
+        case .monthly, .periods: "calendar"
         }
     }
 
@@ -338,46 +329,6 @@ struct PeriodListCheckbox: View {
         }
         .frame(width: 18, height: 18)
         .accessibilityIdentifier(completed ? (square ? Self.taskComplete : Self.eventComplete) : (square ? "square" : "circle"))
-    }
-}
-
-struct PeriodSourcePopover: View {
-    let bucket: PlanningBucket
-    let onSelect: (PeriodAddSource) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(PeriodCalendar.addSources(for: bucket)) { source in
-                Button {
-                    onSelect(source)
-                } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: icon(source))
-                            .font(.system(size: 22))
-                            .frame(width: 23, height: 23)
-                        Text(source.title)
-                            .font(.system(size: 17))
-                            .foregroundStyle(PlanningPalette.ink)
-                    }
-                    .padding(.horizontal, 18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: 45)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.vertical, 11)
-        .frame(width: 262)
-    }
-
-    private func icon(_ source: PeriodAddSource) -> String {
-        switch source {
-        case .plan: "list.bullet"
-        case .create: "plus"
-        case .postpone: "clock.arrow.circlepath"
-        case .monthly, .periods: "calendar"
-        }
     }
 }
 

@@ -37,13 +37,20 @@ struct TodayRootView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            TodayAddControl(showingMenu: $showingMenu, onTask: {
-                showingMenu = false
-                creatingTask = true
-            }, onMemo: {
-                showingMenu = false
-                creatingMemo = true
-            })
+            PlanningGlassMorphMenu(
+                isPresented: $showingMenu,
+                identity: "today-add",
+                expandsUpward: true,
+                accessibilityLabel: "追加",
+                actions: [
+                    PlanningMorphAction(id: "task", title: "今日のタスクを追加", symbol: "checkmark") {
+                        creatingTask = true
+                    },
+                    PlanningMorphAction(id: "memo", title: "クイックメモを追加", symbol: "pencil") {
+                        creatingMemo = true
+                    }
+                ]
+            )
             .padding(.trailing, 16)
             .padding(.bottom, 14)
         }
@@ -72,7 +79,7 @@ struct TodayRootView: View {
     }
 
     private var todayHeader: some View {
-        HStack(alignment: .center, spacing: PlanningTokens.Header.buttonStackSpacing) {
+        ZStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Today")
                     .font(.system(size: PlanningTokens.Header.titleSize, weight: .bold))
@@ -83,11 +90,14 @@ struct TodayRootView: View {
                     .foregroundStyle(PlanningPalette.muted)
                     .lineLimit(1)
             }
-            Spacer(minLength: 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: PlanningTokens.Header.height + 30, alignment: .center)
             HStack(alignment: .center, spacing: PlanningTokens.Header.iconGroupGap) {
+                Spacer(minLength: 0)
                 NativeGlassIconButton(icon: .clock, accessibilityLabel: "過去のタスク") { showingPast = true }
                 NativeGlassIconButton(icon: .user, accessibilityLabel: "User") {}
             }
+            .frame(height: PlanningTokens.Header.height, alignment: .center)
         }
         .padding(.horizontal, PlanningTokens.contentInset)
         .frame(maxWidth: .infinity)
@@ -324,7 +334,7 @@ enum TodayFormatting {
 
     static var addedTimeLabel: String {
         let language = Bundle.main.preferredLocalizations.first ?? "ja"
-        return language.hasPrefix("en") ? "Added" : "追加時間"
+        return language.hasPrefix("en") ? "Added at" : "追加した時間"
     }
 }
 
@@ -351,7 +361,7 @@ struct TodayRoutineListPage: View {
         }
         .planningScroll()
         .planningExtendingSurface(PlanningPalette.paper)
-        .planningPageChrome(title: "ルーティン一覧", onBack: { navigation.pop() }) {
+        .planningPageChrome(title: "ルーティン一覧", onBack: { navigation.pop() }, isolatesTrailingGlass: true) {
             NativeGlassIconButton(icon: .user, accessibilityLabel: "User") {}
         }
         .overlay(alignment: .bottomTrailing) {
@@ -496,17 +506,19 @@ struct TodayRoutineDetailPage: View {
                     .minimumScaleFactor(0.7)
                     .frame(minWidth: 108, alignment: .leading)
                 VStack(alignment: .trailing, spacing: 8) {
-                    Capsule()
-                        .fill(RoutineAchievementColor.neutral)
-                        .frame(height: 13)
-                        .overlay(alignment: .leading) {
-                            if rate > 0 {
+                    GeometryReader { geo in
+                        let fillWidth = RoutineProgressGeometry.fillWidth(trackWidth: geo.size.width, percent: rate)
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(RoutineAchievementColor.neutral)
+                            if fillWidth > 0 {
                                 Capsule()
                                     .fill(RoutineAchievementColor.color(percent: rate))
-                                    .frame(maxWidth: .infinity)
-                                    .scaleEffect(x: CGFloat(rate) / 100, y: 1, anchor: .leading)
+                                    .frame(width: fillWidth, height: 13)
                             }
                         }
+                    }
+                    .frame(height: 13)
+                    .clipShape(Capsule())
                     Text("\(achieved) / \(elapsed) 日")
                         .font(.system(size: 14))
                         .foregroundStyle(PlanningPalette.muted)
@@ -533,16 +545,20 @@ struct TodayRoutineDetailPage: View {
         return VStack(alignment: .leading, spacing: 12) {
             routineSectionTitle("月ごとの達成率の変化", trailing: "過去6か月")
             HStack(alignment: .bottom, spacing: 6) {
-                VStack {
-                    Text("100%")
-                    Spacer(minLength: 0)
-                    Text("50%")
-                    Spacer(minLength: 0)
-                    Text("0%")
+                VStack(spacing: 6) {
+                    VStack {
+                        Text("100%")
+                        Spacer(minLength: 0)
+                        Text("50%")
+                        Spacer(minLength: 0)
+                        Text("0%")
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(PlanningPalette.muted)
+                    .frame(width: 36, height: 108, alignment: .trailing)
+                    Color.clear.frame(height: 16)
                 }
-                .font(.system(size: 11))
-                .foregroundStyle(PlanningPalette.muted)
-                .frame(width: 36, height: 118, alignment: .trailing)
+                .padding(.top, 26)
                 HStack(alignment: .bottom, spacing: 6) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                         monthColumn(row.key, percent: row.percent, current: row.key == current)
@@ -556,11 +572,6 @@ struct TodayRoutineDetailPage: View {
 
     private func monthColumn(_ key: String, percent: Int?, current: Bool) -> some View {
         VStack(spacing: 6) {
-            Text(percent.map { "\($0)%" } ?? "—")
-                .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                .foregroundStyle(PlanningPalette.muted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     Rectangle().fill(PlanningPalette.line.opacity(0.7)).frame(height: 0.6)
@@ -569,21 +580,31 @@ struct TodayRoutineDetailPage: View {
                     Spacer()
                     Rectangle().fill(PlanningPalette.line.opacity(0.9)).frame(height: 0.8)
                 }
-                if let percent, percent > 0 {
-                    UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 5)
-                        .fill(RoutineAchievementColor.color(percent: percent, historical: !current))
-                        .frame(height: max(4, 108 * CGFloat(percent) / 100))
-                        .padding(.horizontal, 4)
+                .frame(height: 108)
+                VStack(spacing: monthBarLabelGap) {
+                    Text(percent.map { "\($0)%" } ?? "—")
+                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .foregroundStyle(PlanningPalette.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    if let percent, percent > 0 {
+                        UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 5)
+                            .fill(RoutineAchievementColor.color(percent: percent, historical: !current))
+                            .frame(width: 30, height: 108 * CGFloat(percent) / 100)
+                    }
                 }
             }
-            .frame(height: 108)
+            .frame(height: 134, alignment: .bottom)
             Text(RoutineAchievementTone.monthLabel(key))
                 .font(.system(size: 12, weight: current ? .bold : .regular))
                 .foregroundStyle(current ? PlanningPalette.ink : PlanningPalette.muted)
                 .lineLimit(1)
+                .frame(height: 16)
         }
         .frame(maxWidth: .infinity)
     }
+
+    private var monthBarLabelGap: CGFloat { 5 }
 
     private func weekCard(_ routine: RoutineDefinition) -> some View {
         let achieved = Set(session.routineCompletions.filter { $0.routineID == routine.id }.map(\.dayKey))
@@ -867,6 +888,16 @@ enum RoutineIconTint {
     }
 }
 
+enum RoutineProgressGeometry {
+    /// Capsule fill. Widths below the track height become a circle so both ends stay round.
+    static func fillWidth(trackWidth: CGFloat, percent: Int) -> CGFloat {
+        let progress = min(max(CGFloat(percent), 0), 100) / 100
+        if percent <= 0 { return 0 }
+        if percent >= 100 { return trackWidth }
+        return max(13, trackWidth * progress)
+    }
+}
+
 enum RoutineAchievementColor {
     static let neutral = Color(red: 0.847, green: 0.816, blue: 0.761)
     static let blue = Color(red: 0.263, green: 0.529, blue: 0.949)
@@ -1074,9 +1105,18 @@ struct TodayMemoSheet: View {
                             onDelete(draft.id)
                         }
                     } label: {
-                        Label("削除", systemImage: "trash").frame(maxWidth: .infinity).frame(height: 52)
+                        HStack(spacing: 8) {
+                            Image(systemName: "trash")
+                            Text(PlanningText.string(.postponeDelete))
+                                .font(.system(size: 17, weight: .semibold))
+                        }
+                        .foregroundStyle(Color(red: 0.75, green: 0.22, blue: 0.18))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color(red: 0.75, green: 0.22, blue: 0.18).opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .padding(.top, 14)
                 }
             }
             .padding(16)
@@ -1181,114 +1221,5 @@ struct TodayPastTasksSheet: View {
         .frame(minWidth: 68)
         .frame(height: 28)
         .background(completed ? Color(red: 0.86, green: 0.93, blue: 0.87) : Color(red: 0.93, green: 0.91, blue: 0.88), in: Capsule())
-    }
-}
-
-private struct TodayAddControl: View {
-    @Binding var showingMenu: Bool
-    let onTask: () -> Void
-    let onMemo: () -> Void
-
-    var body: some View {
-        if #available(iOS 26.0, *) {
-            TodayGlassAddControl(showingMenu: $showingMenu, onTask: onTask, onMemo: onMemo)
-        } else {
-            TodayFallbackAddControl(showingMenu: $showingMenu, onTask: onTask, onMemo: onMemo)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-private struct TodayGlassAddControl: View {
-    @Binding var showingMenu: Bool
-    let onTask: () -> Void
-    let onMemo: () -> Void
-    @Namespace private var morph
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        GlassEffectContainer {
-            if showingMenu {
-                TodayAddMenuRows(onTask: onTask, onMemo: onMemo)
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .glassEffectID("today-add", in: morph)
-                    .glassEffectTransition(.matchedGeometry)
-            } else {
-                plusButton
-                    .glassEffect(.regular.tint(PlanningPalette.accent).interactive(), in: Circle())
-                    .glassEffectID("today-add", in: morph)
-                    .glassEffectTransition(.matchedGeometry)
-            }
-        }
-        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.86), value: showingMenu)
-    }
-
-    private var plusButton: some View {
-        Button { showingMenu = true } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(Color.white)
-                .frame(width: 52, height: 52)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("追加")
-    }
-}
-
-private struct TodayFallbackAddControl: View {
-    @Binding var showingMenu: Bool
-    let onTask: () -> Void
-    let onMemo: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            if showingMenu {
-                TodayAddMenuRows(onTask: onTask, onMemo: onMemo)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .transition(.scale(scale: 0.22, anchor: .bottomTrailing).combined(with: .opacity))
-            } else {
-                Button { showingMenu = true } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(Color.white)
-                        .frame(width: 52, height: 52)
-                        .background(Circle().fill(PlanningPalette.accent))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("追加")
-            }
-        }
-        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.86), value: showingMenu)
-    }
-}
-
-private struct TodayAddMenuRows: View {
-    let onTask: () -> Void
-    let onMemo: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            row("今日のタスクを追加", symbol: "checkmark", action: onTask)
-            row("クイックメモを追加", symbol: "pencil", action: onMemo)
-        }
-        .frame(width: 250)
-    }
-
-    private func row(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: symbol).frame(width: 22)
-                Text(title).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(PlanningPalette.ink)
-            .padding(.horizontal, 18)
-            .frame(minHeight: 48)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }

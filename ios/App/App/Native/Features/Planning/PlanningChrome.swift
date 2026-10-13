@@ -82,9 +82,10 @@ extension View {
     func planningPageChrome<Trailing: View>(
         title: String,
         onBack: @escaping () -> Void,
+        isolatesTrailingGlass: Bool = false,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        modifier(PlanningPageChrome(title: title, onBack: onBack, trailing: AnyView(trailing())))
+        modifier(PlanningPageChrome(title: title, onBack: onBack, trailing: AnyView(trailing()), isolatesTrailingGlass: isolatesTrailingGlass))
     }
 }
 
@@ -111,6 +112,7 @@ private struct PlanningPageChrome: ViewModifier {
     let title: String
     let onBack: () -> Void
     let trailing: AnyView?
+    var isolatesTrailingGlass = false
 
     func body(content: Content) -> some View {
         content
@@ -130,8 +132,15 @@ private struct PlanningPageChrome: ViewModifier {
                     }
                 }
                 if let trailing {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        trailing
+                    if #available(iOS 26.0, *), isolatesTrailingGlass {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            trailing.frame(width: 44, height: 44)
+                        }
+                        .sharedBackgroundVisibility(.hidden)
+                    } else {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            trailing
+                        }
                     }
                 }
             }
