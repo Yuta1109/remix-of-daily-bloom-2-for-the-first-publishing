@@ -108,12 +108,10 @@ struct PeriodItemListSheet: View {
     let bucket: PlanningBucket
     let periodKey: String
     @State private var kind: PlanningItemKind
-    @State private var showingSources = false
     @State private var editingID: EditingNodeID?
     @State private var creating = false
     @State private var picking: PeriodAddSource?
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(session: PlanningSession, bucket: PlanningBucket, kind: PlanningItemKind, periodKey: String) {
         self.session = session
@@ -150,28 +148,14 @@ struct PeriodItemListSheet: View {
             .padding(.top, 8)
             .padding(.bottom, 16)
         }
-        .overlay {
-            if showingSources {
-                Color.black.opacity(0.001)
-                    .contentShape(Rectangle())
-                    .onTapGesture { PlanningGlassMorph.update($showingSources, to: false, reduceMotion: reduceMotion) }
-            }
-        }
         .overlay(alignment: .topTrailing) {
-            PlanningGlassMorphMenu(
-                isPresented: $showingSources,
-                identity: "planning-source-\(bucket.rawValue)",
-                sourceDiameter: PlanningTokens.Sheet.controlDiameter,
-                expandsUpward: false,
-                accessibilityLabel: "追加",
-                actions: PeriodCalendar.addSources(for: bucket).map { source in
-                    PlanningMorphAction(id: source.rawValue, title: source.title, symbol: Self.sourceSymbol(source)) {
-                        PlanningTransition.perform {
-                            if source == .create { creating = true } else { picking = source }
-                        }
+            PlanningNativeAddMenu(diameter: PlanningTokens.Sheet.controlDiameter, accessibilityLabel: "追加", actions: PeriodCalendar.addSources(for: bucket).map { source in
+                PlanningMenuChoice(id: source.rawValue, title: source.title, symbol: Self.sourceSymbol(source)) {
+                    PlanningTransition.perform {
+                        if source == .create { creating = true } else { picking = source }
                     }
                 }
-            )
+            })
             .padding(.top, PlanningTokens.Sheet.headerTop)
             .padding(.trailing, PlanningTokens.Sheet.horizontalInset)
         }

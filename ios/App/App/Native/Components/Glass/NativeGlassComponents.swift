@@ -162,179 +162,60 @@ struct NativeGlassTextButton: View {
     }
 }
 
-enum PlanningGlassMorph {
-    static func update(_ presented: Binding<Bool>, to value: Bool, reduceMotion: Bool) {
-        guard presented.wrappedValue != value else { return }
-        if reduceMotion {
-            presented.wrappedValue = value
-        } else {
-            withAnimation(.smooth(duration: 0.5)) {
-                presented.wrappedValue = value
-            }
-        }
-    }
-}
-
-struct PlanningMorphAction: Identifiable {
+struct PlanningMenuChoice: Identifiable {
     let id: String
     let title: String
     let symbol: String
     let action: () -> Void
 }
 
-/// Closed and open glass effects are separate views. iOS 26 morphs them when one
-/// leaves the container and the other enters it. Earlier systems show one material surface.
-struct PlanningGlassMorphMenu: View {
-    @Binding var isPresented: Bool
-    var identity: String
-    var sourceDiameter: CGFloat = 52
-    var expandsUpward = true
+/// System menu. iOS 26 draws the trigger with Liquid Glass; the system owns the presentation.
+struct PlanningNativeAddMenu: View {
+    var diameter: CGFloat = 52
     var accessibilityLabel: String
-    let actions: [PlanningMorphAction]
-    @Namespace private var morph
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showsMenuContent = false
-    @State private var contentGeneration = 0
-
-    private var anchor: Alignment { expandsUpward ? .bottomTrailing : .topTrailing }
-    private var menuHeight: CGFloat { CGFloat(max(actions.count, 1)) * 48 + 12 }
-    /// Keeps the menu rectangle from sharing the button's frame.
-    private let laneGap: CGFloat = 12
+    let actions: [PlanningMenuChoice]
 
     var body: some View {
-        if #available(iOS 26.0, *) {
-            glassContainer
-        } else {
-            materialFallback
-        }
-    }
-
-    private func setPresented(_ value: Bool) {
-        PlanningGlassMorph.update($isPresented, to: value, reduceMotion: reduceMotion)
-    }
-
-    /// The container stays this size so opening does not grow a rectangle in place.
-    /// Spacing covers the distance between the button and the offset menu.
-    @available(iOS 26.0, *)
-    private var glassContainer: some View {
-        GlassEffectContainer(spacing: 320) {
-            ZStack(alignment: anchor) {
-                if isPresented {
-                    destinationGlass
-                } else {
-                    sourceGlass
+        Menu {
+            ForEach(actions) { item in
+                Button(action: item.action) {
+                    Label(item.title, systemImage: item.symbol)
                 }
             }
-            .frame(width: 262, height: menuHeight + sourceDiameter + laneGap, alignment: anchor)
+        } label: {
+            plusLabel
         }
-        .onChange(of: isPresented) { _, presented in
-            revealMenuContent(presented)
-        }
-    }
-
-    @available(iOS 26.0, *)
-    private var sourceGlass: some View {
-        PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) {
-            setPresented(true)
-        }
-        .background(Circle().fill(PlanningPalette.accent))
-        .glassEffect(.regular.interactive(), in: Circle())
-        .glassEffectID("\(identity).source", in: morph)
-        .glassEffectTransition(.matchedGeometry)
-    }
-
-    @available(iOS 26.0, *)
-    private var destinationGlass: some View {
-        ZStack {
-            Color.clear.frame(width: 262, height: menuHeight)
-            PlanningMorphMenuRows(actions: actions) { setPresented(false) }
-                .opacity(showsMenuContent ? 1 : 0)
-                .allowsHitTesting(showsMenuContent)
-        }
-        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .glassEffectID("\(identity).menu", in: morph)
-        .glassEffectTransition(.matchedGeometry)
-        .padding(expandsUpward ? .bottom : .top, sourceDiameter + laneGap)
-    }
-
-    private func revealMenuContent(_ presented: Bool) {
-        contentGeneration += 1
-        let generation = contentGeneration
-        if !presented || reduceMotion {
-            showsMenuContent = presented
-            return
-        }
-        showsMenuContent = false
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 320_000_000)
-            guard generation == contentGeneration, isPresented else { return }
-            showsMenuContent = true
-        }
-    }
-
-    private var materialFallback: some View {
-        ZStack(alignment: anchor) {
-            if isPresented {
-                PlanningMorphMenuRows(actions: actions) { setPresented(false) }
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            } else {
-                PlanningMorphSourceButton(diameter: sourceDiameter, accessibilityLabel: accessibilityLabel) {
-                    setPresented(true)
-                }
-                .background(Circle().fill(PlanningPalette.accent))
-            }
-        }
-    }
-}
-
-private struct PlanningMorphSourceButton: View {
-    let diameter: CGFloat
-    let accessibilityLabel: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: diameter > 48 ? 24 : 20, weight: .semibold))
-                .foregroundStyle(Color.white)
-                .frame(width: diameter, height: diameter)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
+        .modifier(PlanningNativeMenuStyle())
         .accessibilityLabel(accessibilityLabel)
     }
+
+    private var plusLabel: some View {
+        Image(systemName: "plus")
+            .font(.system(size: 21, weight: .semibold))
+            .foregroundStyle(Color.white)
+            .frame(minWidth: 44, minHeight: 44)
+            .frame(width: diameter, height: diameter)
+            .background {
+                if #available(iOS 26.0, *) {
+                    Color.clear
+                } else {
+                    Circle().fill(PlanningPalette.accent)
+                }
+            }
+    }
 }
 
-private struct PlanningMorphMenuRows: View {
-    let actions: [PlanningMorphAction]
-    let close: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(actions) { item in
-                Button {
-                    close()
-                    item.action()
-                } label: {
-                    HStack(spacing: 14) {
-                        Image(systemName: item.symbol)
-                            .font(.system(size: 20))
-                            .frame(width: 23, height: 23)
-                        Text(item.title)
-                            .font(.system(size: 17))
-                            .foregroundStyle(PlanningPalette.ink)
-                    }
-                    .padding(.horizontal, 18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: 48)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.title)
-            }
+private struct PlanningNativeMenuStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
+                .tint(PlanningPalette.accent)
+        } else {
+            content.buttonStyle(.plain)
         }
-        .padding(.vertical, 6)
-        .frame(width: 262)
     }
 }
 

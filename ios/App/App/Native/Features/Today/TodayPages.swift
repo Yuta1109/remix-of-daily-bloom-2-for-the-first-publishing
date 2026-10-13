@@ -5,8 +5,6 @@ struct TodayRootView: View {
     @EnvironmentObject private var navigation: TabNavigationState
     @EnvironmentObject private var appState: AppState
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showingMenu = false
     @State private var creatingTask = false
     @State private var creatingMemo = false
     @State private var editingTask: UUID?
@@ -30,28 +28,15 @@ struct TodayRootView: View {
         }
         .planningExtendingSurface(PlanningPalette.paper)
         .navigationBarHidden(true)
-        .overlay {
-            if showingMenu {
-                Color.black.opacity(0.001)
-                    .ignoresSafeArea()
-                    .onTapGesture { PlanningGlassMorph.update($showingMenu, to: false, reduceMotion: reduceMotion) }
-            }
-        }
         .overlay(alignment: .bottomTrailing) {
-            PlanningGlassMorphMenu(
-                isPresented: $showingMenu,
-                identity: "today-add",
-                expandsUpward: true,
-                accessibilityLabel: "追加",
-                actions: [
-                    PlanningMorphAction(id: "task", title: "今日のタスクを追加", symbol: "checkmark") {
-                        creatingTask = true
-                    },
-                    PlanningMorphAction(id: "memo", title: "クイックメモを追加", symbol: "pencil") {
-                        creatingMemo = true
-                    }
-                ]
-            )
+            PlanningNativeAddMenu(accessibilityLabel: "追加", actions: [
+                PlanningMenuChoice(id: "task", title: TodayFormatting.todayAddTaskTitle, symbol: "checkmark") {
+                    creatingTask = true
+                },
+                PlanningMenuChoice(id: "memo", title: TodayFormatting.todayAddMemoTitle, symbol: "note.text") {
+                    creatingMemo = true
+                }
+            ])
             .padding(.trailing, 16)
             .padding(.bottom, 14)
         }
@@ -59,13 +44,6 @@ struct TodayRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { session.refreshTodayStamp() }
         }
-        .onChange(of: appState.selectedTab) { _, _ in
-            PlanningGlassMorph.update($showingMenu, to: false, reduceMotion: reduceMotion)
-        }
-        .onChange(of: navigation.path.count) { _, _ in
-            PlanningGlassMorph.update($showingMenu, to: false, reduceMotion: reduceMotion)
-        }
-        .onDisappear { showingMenu = false }
         .sheet(isPresented: $creatingTask) { newTaskSheet }
         .sheet(isPresented: Binding(get: { editingTask != nil }, set: { if !$0 { editingTask = nil } })) {
             if let editingTask { taskEditor(editingTask) }
@@ -335,6 +313,16 @@ enum TodayFormatting {
         let endDay = calendar.component(.day, from: end)
         if startMonth == endMonth { return "\(startMonth)/\(startDay)-\(endDay)" }
         return "\(startMonth)/\(startDay)-\(endMonth)/\(endDay)"
+    }
+
+    static var todayAddTaskTitle: String {
+        let language = Bundle.main.preferredLocalizations.first ?? "ja"
+        return language.hasPrefix("en") ? "Add Today's Task" : "今日のタスクを追加"
+    }
+
+    static var todayAddMemoTitle: String {
+        let language = Bundle.main.preferredLocalizations.first ?? "ja"
+        return language.hasPrefix("en") ? "Add Quick Memo" : "クイックメモを追加"
     }
 
     static var addedTimeLabel: String {
