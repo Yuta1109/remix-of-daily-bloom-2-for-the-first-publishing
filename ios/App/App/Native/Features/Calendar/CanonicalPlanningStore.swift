@@ -621,7 +621,7 @@ enum CanonicalPlanningEngine {
         for record in records {
             if document.payloads.contains(where: { $0.legacyWebID == record.id || $0.id == record.id }) { continue }
             let frequency = CanonicalRepeatFrequency(rawValue: record.repeatFrequency ?? "none") ?? .none
-            let created = createItem(document, CanonicalCreateInput(
+            let created = createItem(&document, CanonicalCreateInput(
                 legacyWebID: record.id,
                 kind: .event,
                 origin: .daily,
