@@ -6,6 +6,8 @@ import SwiftUI
 private struct LegacyImportOutcome {
     var inserted: Int
     var skipped: Int
+    var unsupported: Int
+    var persistedLegacyCount: Int
     var wrote: Bool
 }
 
@@ -17,6 +19,7 @@ struct LegacyCalendarDiagnosticSheet: View {
     @State private var report: LegacyDiagnosticReport?
     @State private var snapshot: LegacyWebViewDataReader.Snapshot?
     @State private var outcome: LegacyImportOutcome?
+    @State private var confirmImport = false
 
     var body: some View {
         NavigationStack {
@@ -42,7 +45,7 @@ struct LegacyCalendarDiagnosticSheet: View {
                                 .foregroundStyle(PlanningPalette.muted)
                         }
                         if report.eligibleForFutureImport && outcome == nil {
-                            Button(action: importEvents) {
+                            Button { confirmImport = true } label: {
                                 Text(importing ? "取り込んでいます" : "旧カレンダーデータを取り込む")
                                     .font(.system(size: 17, weight: .semibold))
                                     .frame(maxWidth: .infinity)
@@ -50,11 +53,23 @@ struct LegacyCalendarDiagnosticSheet: View {
                             }
                             .buttonStyle(.bordered)
                             .disabled(importing)
+                            .confirmationDialog(
+                                report.owner == .differentOwner ? "別のアカウントの印が付いた予定です" : "この端末の旧カレンダーをコピーします",
+                                isPresented: $confirmImport,
+                                titleVisibility: .visible
+                            ) {
+                                Button("取り込む", action: importEvents)
+                                Button("キャンセル", role: .cancel) {}
+                            } message: {
+                                Text("以前のアプリに保存された予定を、今のアプリの中へコピーします。元のデータは削除しません。")
+                            }
                         }
                         if let outcome {
-                            line("追加", "\(outcome.inserted)件")
-                            line("重複のためスキップ", "\(outcome.skipped)件")
-                            line("保存", outcome.wrote ? "保存しました" : "新しい予定はありません")
+                            line("今回追加", "\(outcome.inserted)件")
+                            line("重複スキップ", "\(outcome.skipped)件")
+                            line("未対応・取り込み不可", "\(outcome.unsupported)件")
+                            line("取り込み済み", "\(outcome.persistedLegacyCount)件")
+                            line("保存状態", outcome.wrote ? "保存確認済み" : "保存失敗")
                         }
                     }
                 }
@@ -88,12 +103,29 @@ struct LegacyCalendarDiagnosticSheet: View {
         guard !importing, let snapshot, let report, report.eligibleForFutureImport else { return }
         importing = true
         let records = LegacyCalendarClassification.calendarRecords(v3Raw: snapshot.v3Raw, calendarEventsRaw: snapshot.calendarEventsRaw)
-        var inserted = 0
+        var stats = CanonicalPlanningStore.LegacyImportStats()
         let wrote = appState.canonicalPlanning.mutate { document in
-            inserted = CanonicalPlanningStore.importLegacy(&document, records)
+            stats = CanonicalPlanningStore.importLegacy(&document, records)
         }
-        let skipped = max(0, records.count - inserted)
-        outcome = LegacyImportOutcome(inserted: inserted, skipped: skipped, wrote: wrote)
+        let reloaded = CanonicalPlanningPersistence.load()
+        let persisted: Int
+        let saved: Bool
+        switch reloaded {
+        case .loaded(let document):
+            persisted = document.payloads.filter { $0.legacyWebID != nil }.count
+            let changed = stats.inserted + stats.exclusionsAdded + stats.overridesAdded
+            saved = wrote || (changed == 0 && appState.canonicalPlanning.state != .unreadable)
+        case .absent, .unreadable:
+            persisted = 0
+            saved = false
+        }
+        outcome = LegacyImportOutcome(
+            inserted: stats.inserted,
+            skipped: stats.skipped,
+            unsupported: stats.unsupported,
+            persistedLegacyCount: persisted,
+            wrote: saved
+        )
         importing = false
     }
 

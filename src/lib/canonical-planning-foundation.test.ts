@@ -13,6 +13,7 @@ import {
   effectiveItems,
   emptyDocument,
   excludeOccurrence,
+  applyLegacyCalendarImport,
   importLegacyRecords,
   instancesCovering,
   isScheduledStart,
@@ -628,5 +629,52 @@ describe("canonical planning foundation", () => {
 
     const restored = JSON.parse(JSON.stringify(produced));
     expect(productionDocument(decodeDocument(restored)).reflectionSnapshots.map((row) => row.id)).toEqual(["genuine", "mixed", "unknown", "empty-decisions"]);
+  });
+
+  it("imports calendar events with exclusions and leaves later edits in place", () => {
+    const document = store();
+    document.reflectionSnapshots.push({ id: "keep", completed: true, decisionIDs: ["other"] });
+    const first = applyLegacyCalendarImport(document, [
+      { id: "once", title: "Once", date: "2026-10-13", startTime: "09:00", endTime: "10:00", color: "red", reminders: ["15m"], allDay: false },
+      { id: "span", title: "Span", date: "2026-10-13", endDate: "2026-10-15", allDay: true, color: "teal" },
+      { id: "weekly", title: "Weekly", date: "2026-10-07", endDate: "2026-10-07", startTime: "18:00", repeat: "weekly", color: "gray", excludeDates: ["2026-10-21", "2026-11-04", "2027-01-06"] },
+      { id: "edit", title: "Moved", date: "2026-10-28", startTime: "19:00", recurrenceMasterId: "weekly", recurrenceDate: "2026-10-28" },
+      { id: "bad", title: "Recolored", date: "2026-11-04", color: "blue", recurrenceMasterId: "weekly", recurrenceDate: "2026-11-04" },
+    ]);
+    expect(first.inserted).toBe(3);
+    expect(first.unsupported).toBe(1);
+    expect(first.overridesAdded).toBe(1);
+    expect(first.exclusionsAdded).toBe(2);
+    expect(document.legacyMigration).toBe("unresolved");
+    const weekly = document.payloads.find((row) => row.legacyWebID === "weekly");
+    expect(weekly?.legacyColorKey).toBe("gray");
+    expect(weekly?.startMinutes).toBe(18 * 60);
+    expect(document.payloads.find((row) => row.legacyWebID === "once")?.reminders).toEqual(["15m"]);
+    expect(document.payloads.find((row) => row.legacyWebID === "span")?.endDate).toBe("2026-10-15");
+    expect(document.occurrenceOverrides.filter((row) => row.logicalID === weekly?.id && row.excluded).map((row) => row.occurrenceDate).sort()).toEqual(["2026-10-21", "2027-01-06"]);
+    expect(document.occurrenceOverrides.find((row) => row.occurrenceDate === "2026-10-28")?.title).toBe("Moved");
+    expect(calendarDays(document, "2026-10-21").some((row) => row.logicalID === weekly?.id)).toBe(false);
+    expect(calendarDays(document, "2026-10-14").some((row) => row.logicalID === weekly?.id)).toBe(true);
+    expect(calendarDays(document, "2027-01-06").some((row) => row.logicalID === weekly?.id)).toBe(false);
+    expect(document.reflectionSnapshots).toEqual([{ id: "keep", completed: true, decisionIDs: ["other"] }]);
+    if (weekly) weekly.title = "User edit";
+    const second = applyLegacyCalendarImport(document, [
+      { id: "weekly", title: "Weekly", date: "2026-10-07", repeat: "weekly", excludeDates: ["2026-10-21", "2026-11-04", "2027-01-06"] },
+      { id: "edit", title: "Moved", date: "2026-10-28", recurrenceMasterId: "weekly", recurrenceDate: "2026-10-28" },
+    ]);
+    expect(second.inserted).toBe(0);
+    expect(second.exclusionsAdded).toBe(1);
+    expect(second.overridesAdded).toBe(0);
+    expect(document.payloads.find((row) => row.legacyWebID === "weekly")?.title).toBe("User edit");
+    expect(document.occurrenceOverrides.filter((row) => row.logicalID === weekly?.id)).toHaveLength(4);
+
+    const memory = {
+      value: "{",
+      read(key: string) { return key === STORAGE_KEY ? this.value : undefined; },
+      write() { throw new Error("must not write"); },
+    };
+    const blocked = openCanonicalStore(memory);
+    expect(blocked.mutate((doc) => { applyLegacyCalendarImport(doc, [{ id: "once", title: "Once", date: "2026-10-13" }]); })).toBe(false);
+    expect(memory.value).toBe("{");
   });
 });

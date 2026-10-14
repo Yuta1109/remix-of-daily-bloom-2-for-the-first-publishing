@@ -664,6 +664,10 @@ export interface LegacyCalendarRecord {
   liveActivity?: boolean;
   liveActivityLead?: string;
   updatedAt?: string;
+  excludeDates?: string[];
+  recurrenceMasterId?: string;
+  recurrenceDate?: string;
+  icon?: string;
 }
 
 function minutesOf(clock?: string): number | undefined {
@@ -684,6 +688,7 @@ export function importLegacyRecords(document: CanonicalDocument, records: Legacy
       origin: "daily",
       originPeriodKey: record.date,
       title: record.title,
+      iconSymbol: record.icon,
       colorID: mapped,
       legacyColorKey: record.color,
       location: record.location,
@@ -702,6 +707,97 @@ export function importLegacyRecords(document: CanonicalDocument, records: Legacy
     if (created) inserted += 1;
   }
   return inserted;
+}
+
+export interface LegacyImportStats {
+  inserted: number;
+  skipped: number;
+  unsupported: number;
+  exclusionsAdded: number;
+  overridesAdded: number;
+}
+
+function sameList(left?: string[], right?: string[]): boolean {
+  const a = left ?? [];
+  const b = right ?? [];
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+/**
+ * Series rows become payloads. `excludeDates` become occurrence exclusions.
+ * A detached exception (`recurrenceMasterId` + `recurrenceDate`) becomes an
+ * occurrence override when every changed field fits that model.
+ * An existing payload is not rewritten. An existing override is not replaced.
+ */
+export function applyLegacyCalendarImport(document: CanonicalDocument, records: LegacyCalendarRecord[]): LegacyImportStats {
+  const series = records.filter((row) => !row.recurrenceMasterId);
+  const exceptions = records.filter((row) => row.recurrenceMasterId && row.recurrenceDate);
+  const stats: LegacyImportStats = { inserted: 0, skipped: 0, unsupported: 0, exclusionsAdded: 0, overridesAdded: 0 };
+  stats.unsupported += records.filter((row) => row.recurrenceMasterId && !row.recurrenceDate).length;
+  for (const row of series) {
+    const existed = document.payloads.some((payload) => payload.legacyWebID === row.id || payload.id === row.id);
+    if (existed) stats.skipped += 1;
+    else if (importLegacyRecords(document, [row]) === 1) stats.inserted += 1;
+    else stats.unsupported += 1;
+  }
+  for (const row of exceptions) {
+    const master = document.payloads.find((payload) => payload.legacyWebID === row.recurrenceMasterId || payload.id === row.recurrenceMasterId);
+    const date = row.recurrenceDate;
+    if (!master || !date) {
+      stats.unsupported += 1;
+      continue;
+    }
+    const masterSpan = spanDays(master.startDate ?? "", master.endDate ?? master.startDate ?? "");
+    const exceptionEnd = row.endDate ?? row.date;
+    const exceptionSpan = row.date ? spanDays(row.date, exceptionEnd) : -1;
+    const colorMismatch = row.color !== undefined && row.color !== master.legacyColorKey;
+    const iconMismatch = row.icon !== undefined && row.icon !== master.iconSymbol;
+    const allDayMismatch = row.allDay !== undefined && row.allDay !== master.allDay;
+    const spanMismatch = row.date !== undefined && exceptionSpan !== masterSpan;
+    if (colorMismatch || iconMismatch || allDayMismatch || spanMismatch) {
+      stats.unsupported += 1;
+      continue;
+    }
+    if (document.occurrenceOverrides.some((item) => item.logicalID === master.id && item.occurrenceDate === date)) {
+      stats.skipped += 1;
+      continue;
+    }
+    editOccurrence(document, master.id, date, {
+      title: row.title !== master.title ? row.title : undefined,
+      location: row.location !== master.location ? row.location : undefined,
+      memo: row.notes !== master.memo ? row.notes : undefined,
+      startMinutes: minutesOf(row.startTime),
+      endMinutes: minutesOf(row.endTime),
+      reminders: sameList(row.reminders, master.reminders) ? undefined : row.reminders,
+      liveActivity: row.liveActivity,
+      liveActivityLead: row.liveActivityLead,
+    });
+    stats.overridesAdded += 1;
+  }
+  for (const row of series) {
+    const master = document.payloads.find((payload) => payload.legacyWebID === row.id || payload.id === row.id);
+    if (!master) continue;
+    const blocked = new Set(
+      exceptions
+        .filter((item) => item.recurrenceMasterId === row.id)
+        .filter((item) => {
+          const colorMismatch = item.color !== undefined && item.color !== master.legacyColorKey;
+          const iconMismatch = item.icon !== undefined && item.icon !== master.iconSymbol;
+          return colorMismatch || iconMismatch;
+        })
+        .map((item) => item.recurrenceDate)
+        .filter((item): item is string => !!item),
+    );
+    for (const date of row.excludeDates ?? []) {
+      if (blocked.has(date)) continue;
+      if (exceptions.some((item) => item.recurrenceMasterId === row.id && item.recurrenceDate === date && !blocked.has(date))) continue;
+      if (document.occurrenceOverrides.some((item) => item.logicalID === master.id && item.occurrenceDate === date)) continue;
+      excludeOccurrence(document, master.id, date);
+      stats.exclusionsAdded += 1;
+    }
+  }
+  document.legacyMigration = "unresolved";
+  return stats;
 }
 
 export function calendarDays(document: CanonicalDocument, day: string): EffectiveItem[] {

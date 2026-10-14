@@ -275,7 +275,11 @@ enum LegacyCalendarClassification {
             repeatEndDate: row["repeatEndDate"] as? String,
             liveActivity: row["liveActivity"] as? Bool,
             liveActivityLead: row["liveActivityLead"] as? String,
-            updatedAt: row["updatedAt"] as? String
+            updatedAt: row["updatedAt"] as? String,
+            excludeDates: (row["excludeDates"] as? [Any])?.compactMap { $0 as? String },
+            recurrenceMasterId: row["recurrenceMasterId"] as? String,
+            recurrenceDate: row["recurrenceDate"] as? String,
+            icon: row["icon"] as? String
         )
     }
 }
