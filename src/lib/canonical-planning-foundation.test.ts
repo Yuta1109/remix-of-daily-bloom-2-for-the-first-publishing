@@ -1,0 +1,518 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import {
+  calendarDays,
+  completeReflection,
+  createItem,
+  dayCompletionKey,
+  decodeDocument,
+  deleteLevel,
+  editLevel,
+  editOccurrence,
+  editPayload,
+  effectiveItems,
+  emptyDocument,
+  excludeOccurrence,
+  importLegacyRecords,
+  instancesCovering,
+  isScheduledStart,
+  LEGACY_COLOR_MAP,
+  probeLegacyWebViewCalendar,
+  projectedKeys,
+  repeatAllowedForSpan,
+  restoreDocument,
+  setCompleted,
+  setEventCompletion,
+  UNRESOLVED_LEGACY_COLORS,
+  type CanonicalDocument,
+} from "./canonical-planning-foundation";
+
+function store(): CanonicalDocument {
+  return emptyDocument();
+}
+
+describe("canonical planning foundation", () => {
+  it("projects a monthly task into covered weeks and days, once", () => {
+    const document = store();
+    createItem(document, {
+      id: "task-month",
+      kind: "task",
+      origin: "monthly",
+      originPeriodKey: "2026-10",
+      title: "Span",
+      startDate: "2026-10-30",
+      endDate: "2026-11-03",
+      todayTaskID: "today-1",
+    });
+    expect(projectedKeys(document, document.payloads[0], "weekly")).toEqual(["2026-10-26", "2026-11-02"]);
+    expect(projectedKeys(document, document.payloads[0], "daily")).toEqual([
+      "2026-10-30",
+      "2026-10-31",
+      "2026-11-01",
+      "2026-11-02",
+      "2026-11-03",
+    ]);
+    expect(projectedKeys(document, document.payloads[0], "monthly")).toEqual(["2026-10", "2026-11"]);
+    expect(effectiveItems(document, "daily", "2026-10-30")).toHaveLength(1);
+  });
+
+  it("keeps a weekly task out of monthly", () => {
+    const document = store();
+    createItem(document, {
+      id: "task-week",
+      kind: "task",
+      origin: "weekly",
+      originPeriodKey: "2026-10-26",
+      title: "Week",
+      startDate: "2026-10-30",
+      endDate: "2026-10-30",
+    });
+    expect(projectedKeys(document, document.payloads[0], "daily")).toEqual(["2026-10-30"]);
+    expect(projectedKeys(document, document.payloads[0], "monthly")).toEqual([]);
+    expect(projectedKeys(document, document.payloads[0], "future")).toEqual([]);
+  });
+
+  it("shares daily and today completion on one payload", () => {
+    const document = store();
+    createItem(document, {
+      id: "task-day",
+      kind: "task",
+      origin: "daily",
+      originPeriodKey: "2026-10-13",
+      title: "Today",
+      startDate: "2026-10-13",
+      todayTaskID: "shared-today",
+    });
+    setCompleted(document, "task-day", true);
+    const daily = effectiveItems(document, "daily", "2026-10-13")[0];
+    expect(daily.completed).toBe(true);
+    expect(daily.todayTaskID).toBe("shared-today");
+    expect(document.payloads[0].completed).toBe(true);
+    expect(projectedKeys(document, document.payloads[0], "weekly")).toEqual([]);
+  });
+
+  it("projects a future event through months, weeks, and days, including another year", () => {
+    const document = store();
+    createItem(document, {
+      id: "event-future",
+      kind: "event",
+      origin: "future",
+      originPeriodKey: "2026",
+      title: "Cross year",
+      startDate: "2026-12-30",
+      endDate: "2027-01-02",
+    });
+    const payload = document.payloads[0];
+    expect(projectedKeys(document, payload, "future")).toEqual(["2026", "2027"]);
+    expect(projectedKeys(document, payload, "monthly")).toEqual(["2026-12", "2027-01"]);
+    expect(projectedKeys(document, payload, "daily")).toContain("2026-12-31");
+    expect(projectedKeys(document, payload, "daily")).toContain("2027-01-01");
+  });
+
+  it("projects a monthly event into weeks and days without a second daily row", () => {
+    const document = store();
+    createItem(document, {
+      id: "event-month",
+      kind: "event",
+      origin: "monthly",
+      originPeriodKey: "2026-10",
+      title: "Trip",
+      startDate: "2026-10-30",
+      endDate: "2026-11-03",
+      startMinutes: 22 * 60,
+      endMinutes: 60,
+    });
+    const payload = document.payloads[0];
+    expect(projectedKeys(document, payload, "weekly")).toEqual(["2026-10-26", "2026-11-02"]);
+    expect(projectedKeys(document, payload, "daily")).toHaveLength(5);
+    expect(calendarDays(document, "2026-10-30")).toHaveLength(1);
+    expect(calendarDays(document, "2026-11-03")).toHaveLength(1);
+  });
+
+  it("projects a weekly event into days only", () => {
+    const document = store();
+    createItem(document, {
+      id: "event-week",
+      kind: "event",
+      origin: "weekly",
+      originPeriodKey: "2026-10-26",
+      title: "Week event",
+      startDate: "2026-10-30",
+      endDate: "2026-10-31",
+    });
+    expect(projectedKeys(document, document.payloads[0], "daily")).toEqual(["2026-10-30", "2026-10-31"]);
+    expect(projectedKeys(document, document.payloads[0], "monthly")).toEqual([]);
+    expect(projectedKeys(document, document.payloads[0], "future")).toEqual([]);
+  });
+
+  it("keeps a calendar-created event on daily", () => {
+    const document = store();
+    createItem(document, {
+      id: "event-cal",
+      kind: "event",
+      origin: "daily",
+      originPeriodKey: "2026-10-13",
+      title: "Calendar",
+      startDate: "2026-10-13",
+      endDate: "2026-10-14",
+      startMinutes: 22 * 60,
+      endMinutes: 60,
+    });
+    expect(calendarDays(document, "2026-10-13")).toHaveLength(1);
+    expect(calendarDays(document, "2026-10-14")).toHaveLength(1);
+    expect(projectedKeys(document, document.payloads[0], "weekly")).toEqual([]);
+    expect(projectedKeys(document, document.payloads[0], "monthly")).toEqual([]);
+    expect(projectedKeys(document, document.payloads[0], "future")).toEqual([]);
+  });
+
+  it("leaves an undated task on its origin period", () => {
+    const document = store();
+    createItem(document, {
+      id: "undated",
+      kind: "task",
+      origin: "monthly",
+      originPeriodKey: "2026-10",
+      title: "No date",
+    });
+    expect(projectedKeys(document, document.payloads[0], "monthly")).toEqual(["2026-10"]);
+    expect(projectedKeys(document, document.payloads[0], "weekly")).toEqual([]);
+    expect(projectedKeys(document, document.payloads[0], "daily")).toEqual([]);
+  });
+
+  it("deletes one level and does not recreate it", () => {
+    const document = store();
+    createItem(document, {
+      id: "linked",
+      kind: "event",
+      origin: "monthly",
+      originPeriodKey: "2026-10",
+      title: "Linked",
+      startDate: "2026-10-13",
+      endDate: "2026-10-13",
+    });
+    deleteLevel(document, "linked", "monthly", "2026-10");
+    expect(projectedKeys(document, document.payloads[0], "monthly")).toEqual([]);
+    expect(projectedKeys(document, document.payloads[0], "daily")).toEqual(["2026-10-13"]);
+    expect(document.payloads).toHaveLength(1);
+    deleteLevel(document, "linked", "daily", "2026-10-13");
+    expect(projectedKeys(document, document.payloads[0], "daily")).toEqual([]);
+    expect(document.payloads).toHaveLength(1);
+    deleteLevel(document, "linked", "daily", "2026-10-13");
+    expect(document.tombstones).toHaveLength(2);
+  });
+
+  it("keeps a daily override when the source title changes", () => {
+    const document = store();
+    createItem(document, {
+      id: "edit",
+      kind: "event",
+      origin: "monthly",
+      originPeriodKey: "2026-10",
+      title: "Source",
+      startDate: "2026-10-13",
+      endDate: "2026-10-13",
+    });
+    editLevel(document, "edit", "daily", "2026-10-13", { title: "Daily only" });
+    editPayload(document, "edit", { title: "Source changed" });
+    expect(effectiveItems(document, "monthly", "2026-10")[0].title).toBe("Source changed");
+    expect(effectiveItems(document, "daily", "2026-10-13")[0].title).toBe("Daily only");
+    expect(document.payloads[0].title).toBe("Source changed");
+    expect(calendarDays(document, "2026-10-13")[0].title).toBe(effectiveItems(document, "daily", "2026-10-13")[0].title);
+  });
+
+  it("edits or excludes one occurrence and leaves the next one", () => {
+    const document = store();
+    createItem(document, {
+      id: "series",
+      kind: "event",
+      origin: "daily",
+      originPeriodKey: "2026-10-13",
+      title: "Standup",
+      startDate: "2026-10-13",
+      endDate: "2026-10-13",
+      recurrence: { frequency: "daily", endDate: "2026-10-15" },
+    });
+    editOccurrence(document, "series", "2026-10-13", { title: "Moved" });
+    expect(calendarDays(document, "2026-10-13")[0].title).toBe("Moved");
+    expect(calendarDays(document, "2026-10-14")[0].title).toBe("Standup");
+    excludeOccurrence(document, "series", "2026-10-14");
+    expect(calendarDays(document, "2026-10-14")).toEqual([]);
+    expect(calendarDays(document, "2026-10-15")).toHaveLength(1);
+    expect(document.payloads).toHaveLength(1);
+    expect(document.payloads[0].recurrence.frequency).toBe("daily");
+  });
+
+  it("restores a document idempotently and fills missing fields", () => {
+    const document = store();
+    createItem(document, {
+      id: "keep",
+      kind: "task",
+      origin: "daily",
+      originPeriodKey: "2026-10-13",
+      title: "Keep",
+      startDate: "2026-10-13",
+    });
+    const encoded = JSON.stringify(document);
+    const first = restoreDocument(encoded);
+    const second = restoreDocument(JSON.stringify(first));
+    expect(second.payloads.map((row) => row.id)).toEqual(["keep"]);
+    const legacy = decodeDocument({
+      schemaVersion: 1,
+      payloads: [
+        {
+          id: "old",
+          kind: "event",
+          origin: "daily",
+          originPeriodKey: "2026-01-01",
+          title: "Old",
+          iconSymbol: "calendar",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    } as unknown as CanonicalDocument);
+    expect(legacy.payloads[0].location).toBe("");
+    expect(legacy.payloads[0].memo).toBe("");
+    expect(legacy.payloads[0].reminders).toEqual([]);
+    expect(legacy.payloads[0].recurrence.frequency).toBe("none");
+    expect(legacy.payloads[0].allDay).toBe(false);
+    expect(restoreDocument("{")).toEqual(emptyDocument());
+  });
+
+  it("does not rewrite a completed reflection snapshot", () => {
+    const document = store();
+    createItem(document, {
+      id: "series",
+      kind: "event",
+      origin: "daily",
+      originPeriodKey: "2026-10-13",
+      title: "Standup",
+      startDate: "2026-10-13",
+      recurrence: { frequency: "weekly" },
+    });
+    expect(completeReflection(document, "daily:2026-10-13", ["series"])).toBe(true);
+    expect(completeReflection(document, "daily:2026-10-13", ["other"])).toBe(false);
+    editPayload(document, "series", { title: "Renamed" });
+    excludeOccurrence(document, "series", "2026-10-13");
+    expect(document.reflectionSnapshots).toEqual([{ id: "daily:2026-10-13", completed: true, decisionIDs: ["series"] }]);
+    expect(document.payloads).toHaveLength(1);
+  });
+
+  it("imports a legacy snapshot once and does not guess unmapped colors", () => {
+    expect(probeLegacyWebViewCalendar()).toBe("unresolved");
+    const document = store();
+    const records = [
+      {
+        id: "web-1",
+        title: "Blue",
+        date: "2026-10-13",
+        allDay: true,
+        color: "blue",
+        notes: "memo",
+        location: "Hall",
+        repeat: "weekly" as const,
+      },
+      { id: "web-2", title: "Red", date: "2026-10-14", color: "red" },
+    ];
+    expect(importLegacyRecords(document, records)).toBe(2);
+    expect(importLegacyRecords(document, records)).toBe(0);
+    expect(document.payloads[0].colorID).toBe(LEGACY_COLOR_MAP.blue);
+    expect(document.payloads[0].allDay).toBe(true);
+    expect(document.payloads[0].startMinutes).toBeUndefined();
+    expect(document.payloads[0].origin).toBe("daily");
+    expect(document.payloads[1].colorID).toBeUndefined();
+    expect(document.payloads[1].legacyColorKey).toBe("red");
+    expect(UNRESOLVED_LEGACY_COLORS).toEqual(["red", "teal", "gray"]);
+    createItem(document, {
+      id: "native",
+      legacyWebID: "web-3",
+      kind: "event",
+      origin: "daily",
+      originPeriodKey: "2026-10-15",
+      title: "Native newer",
+      startDate: "2026-10-15",
+      updatedAt: "2026-10-20T00:00:00.000Z",
+    });
+    importLegacyRecords(document, [{ id: "web-3", title: "Old web", date: "2026-10-15", updatedAt: "2026-10-01T00:00:00.000Z" }]);
+    expect(document.payloads.find((row) => row.legacyWebID === "web-3")?.title).toBe("Native newer");
+  });
+
+  it("keeps the live Planning session off this store", () => {
+    const session = readFileSync("ios/App/App/Native/Features/Planning/PlanningModels.swift", "utf8");
+    const period = readFileSync("ios/App/App/Native/Features/Planning/PlanningPeriod.swift", "utf8");
+    const storeSource = readFileSync("ios/App/App/Native/Features/Calendar/CanonicalPlanningStore.swift", "utf8");
+    expect(session).toContain("func persist(into navigation: TabNavigationState)");
+    expect(session).not.toContain("CanonicalPlanningStore");
+    expect(period).toContain("func deleteLiveItem");
+    expect(storeSource).toContain("essences.canonical-planning.v1");
+    expect(storeSource).toContain("probeLegacyWebViewCalendar");
+    expect(storeSource).toContain("unresolved");
+    expect(storeSource).not.toMatch(/func deleteLiveItem/);
+    expect(storeSource).not.toContain("WKWebsiteDataStore");
+  });
+
+  it("completes one displayed day without copying the event or the series", () => {
+    const document = store();
+    createItem(document, {
+      id: "once",
+      kind: "event",
+      origin: "daily",
+      originPeriodKey: "2026-10-13",
+      title: "Once",
+      startDate: "2026-10-13",
+      endDate: "2026-10-13",
+    });
+    expect(setEventCompletion(document, "once", "2026-10-13", true)).toBe(true);
+    expect(setEventCompletion(document, "once", "2026-10-13", true)).toBe(true);
+    expect(document.dayCompletions).toHaveLength(1);
+    expect(calendarDays(document, "2026-10-13")[0].completed).toBe(true);
+    setEventCompletion(document, "once", "2026-10-13", false);
+    expect(calendarDays(document, "2026-10-13")[0].completed).toBe(false);
+    expect(document.payloads).toHaveLength(1);
+    expect(document.payloads[0].title).toBe("Once");
+    expect(document.payloads[0].recurrence.frequency).toBe("none");
+  });
+
+  it("keeps each day of a span and each recurring date independent", () => {
+    const document = store();
+    createItem(document, {
+      id: "span",
+      kind: "event",
+      origin: "monthly",
+      originPeriodKey: "2026-10",
+      title: "Trip",
+      startDate: "2026-10-13",
+      endDate: "2026-10-15",
+    });
+    editOccurrence(document, "span", "2026-10-13", { title: "Trip note", location: "Kyoto" });
+    setEventCompletion(document, "span", "2026-10-13", true);
+    setEventCompletion(document, "span", "2026-10-15", true);
+    expect(calendarDays(document, "2026-10-13")[0].completed).toBe(true);
+    expect(calendarDays(document, "2026-10-14")[0].completed).toBe(false);
+    expect(calendarDays(document, "2026-10-15")[0].completed).toBe(true);
+    expect(calendarDays(document, "2026-10-14")[0].location).toBe("Kyoto");
+    expect(document.occurrenceOverrides[0].title).toBe("Trip note");
+    expect(document.payloads).toHaveLength(1);
+
+    createItem(document, {
+      id: "series",
+      kind: "event",
+      origin: "daily",
+      originPeriodKey: "2026-10-13",
+      title: "Standup",
+      startDate: "2026-10-13",
+      endDate: "2026-10-13",
+      recurrence: { frequency: "daily", endDate: "2026-10-16" },
+    });
+    setEventCompletion(document, "series", "2026-10-13", true);
+    expect(calendarDays(document, "2026-10-13")[0].completed).toBe(true);
+    expect(calendarDays(document, "2026-10-14")[0].completed).toBe(false);
+    expect(document.payloads.find((row) => row.id === "series")?.recurrence.frequency).toBe("daily");
+    expect(dayCompletionKey("series", "2026-10-13")).toBe("series|day|2026-10-13");
+  });
+
+  it("separates overlapping multi-day instances and does not share their checks", () => {
+    const document = store();
+    createItem(document, {
+      id: "overlap",
+      kind: "event",
+      origin: "daily",
+      originPeriodKey: "2026-10-13",
+      title: "Block",
+      startDate: "2026-10-13",
+      endDate: "2026-10-15",
+      recurrence: { frequency: "daily", endDate: "2026-10-16" },
+    });
+    expect(repeatAllowedForSpan("2026-10-13", "2026-10-15", "daily")).toBe(false);
+    expect(instancesCovering(document.payloads[0], "2026-10-15")).toEqual(["2026-10-13", "2026-10-14", "2026-10-15"]);
+    editOccurrence(document, "overlap", "2026-10-13", { title: "First block" });
+    setEventCompletion(document, "overlap", "2026-10-15", true);
+    expect(calendarDays(document, "2026-10-15")).toHaveLength(1);
+    expect(calendarDays(document, "2026-10-15")[0].completed).toBe(true);
+    expect(calendarDays(document, "2026-10-15")[0].title).toBe("Block");
+    expect(calendarDays(document, "2026-10-13")[0].completed).toBe(false);
+    expect(calendarDays(document, "2026-10-13")[0].title).toBe("First block");
+    expect(document.payloads.filter((row) => row.id === "overlap")).toHaveLength(1);
+  });
+
+  it("drops overrides outside a shortened span and keeps tombstones, horizon exceptions, and reflection", () => {
+    const document = store();
+    createItem(document, {
+      id: "range",
+      kind: "event",
+      origin: "monthly",
+      originPeriodKey: "2026-10",
+      title: "Range",
+      startDate: "2026-10-13",
+      endDate: "2026-10-15",
+    });
+    editLevel(document, "range", "daily", "2026-10-15", { memo: "last day" });
+    deleteLevel(document, "range", "weekly", "2026-10-12");
+    expect(completeReflection(document, "monthly:2026-10", ["range"])).toBe(true);
+    editPayload(document, "range", { endDate: "2026-10-14" });
+    expect(document.levelOverrides).toEqual([]);
+    expect(calendarDays(document, "2026-10-15")).toEqual([]);
+    expect(document.tombstones).toEqual([{ logicalID: "range", level: "weekly", periodKey: "2026-10-12" }]);
+    expect(document.reflectionSnapshots).toEqual([{ id: "monthly:2026-10", completed: true, decisionIDs: ["range"] }]);
+    editPayload(document, "range", { endDate: "2026-10-16" });
+    expect(projectedKeys(document, document.payloads[0], "daily").filter((key) => key === "2026-10-16")).toEqual(["2026-10-16"]);
+    expect(new Set(projectedKeys(document, document.payloads[0], "daily")).size).toBe(projectedKeys(document, document.payloads[0], "daily").length);
+
+    editPayload(document, "range", { startDate: "2026-10-30", endDate: "2026-11-02" });
+    editLevel(document, "range", "daily", "2026-11-02", { memo: "november" });
+    editPayload(document, "range", { endDate: "2026-10-31" });
+    expect(document.levelOverrides).toEqual([]);
+    expect(calendarDays(document, "2026-10-30")).toHaveLength(1);
+
+    editPayload(document, "range", { startDate: "2026-12-30", endDate: "2027-01-02" });
+    editLevel(document, "range", "daily", "2027-01-02", { memo: "next year" });
+    editPayload(document, "range", { endDate: "2026-12-31" });
+    expect(document.levelOverrides).toEqual([]);
+    expect(calendarDays(document, "2026-12-30")).toHaveLength(1);
+    expect(calendarDays(document, "2027-01-02")).toEqual([]);
+
+    const before = document.payloads[0].endDate;
+    editPayload(document, "range", { endDate: "2026-01-01" });
+    expect(document.payloads[0].endDate).toBe(before);
+
+    createItem(document, {
+      id: "far",
+      kind: "event",
+      origin: "daily",
+      originPeriodKey: "2026-01-01",
+      title: "Far",
+      startDate: "2026-01-01",
+      endDate: "2026-01-01",
+      recurrence: { frequency: "daily" },
+    });
+    editOccurrence(document, "far", "2027-06-01", { title: "Beyond horizon" });
+    expect(isScheduledStart(document.payloads.find((row) => row.id === "far")!, "2027-06-01")).toBe(true);
+    editPayload(document, "far", { title: "Far renamed" });
+    expect(document.occurrenceOverrides.some((row) => row.logicalID === "far" && row.title === "Beyond horizon")).toBe(true);
+    editPayload(document, "far", { recurrence: { frequency: "daily", endDate: "2026-06-01" } });
+    expect(document.occurrenceOverrides.some((row) => row.logicalID === "far")).toBe(false);
+    expect(document.reflectionSnapshots[0].decisionIDs).toEqual(["range"]);
+  });
+
+  it("fills day completions when an older document omits them", () => {
+    const legacy = decodeDocument({
+      schemaVersion: 1,
+      payloads: [
+        {
+          id: "old",
+          kind: "event",
+          origin: "daily",
+          originPeriodKey: "2026-01-01",
+          title: "Old",
+          iconSymbol: "calendar",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          completed: true,
+          startDate: "2026-01-01",
+          endDate: "2026-01-01",
+        },
+      ],
+    } as unknown as CanonicalDocument);
+    expect(legacy.dayCompletions).toEqual([]);
+    expect(calendarDays(legacy, "2026-01-01")[0].completed).toBe(false);
+    expect(legacy.payloads[0].completed).toBe(true);
+  });
+});

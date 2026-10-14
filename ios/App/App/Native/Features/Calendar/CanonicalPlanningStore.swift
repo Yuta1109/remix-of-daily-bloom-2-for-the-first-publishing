@@ -1,0 +1,846 @@
+import Foundation
+
+/// Additive planning/calendar foundation.
+///
+/// `PlanningSession` remains the live screen store. The existing cascade delete is unchanged.
+/// Switch-over later means: stop writing `periodItems` / `events` as copies, read
+/// `effectiveItems` instead, and persist this document rather than only navigation keys.
+/// Do not call these methods from Planning or Today screens in this phase.
+///
+/// The Windows twin is `src/lib/canonical-planning-foundation.ts`.
+
+enum CanonicalPlanningLevel: String, Codable, CaseIterable {
+    case future, monthly, weekly, daily
+}
+
+enum CanonicalPlanningKind: String, Codable {
+    case task, event
+}
+
+enum CanonicalRepeatFrequency: String, Codable {
+    case none, daily, weekly, monthly, monthlyWeekday, yearly
+}
+
+struct CanonicalDate: Codable, Hashable, Comparable {
+    var year: Int
+    var month: Int
+    var day: Int
+
+    var key: String { String(format: "%04d-%02d-%02d", year, month, day) }
+
+    static func < (lhs: CanonicalDate, rhs: CanonicalDate) -> Bool { lhs.key < rhs.key }
+
+    static func parse(_ key: String) -> CanonicalDate? {
+        let pieces = key.split(separator: "-")
+        guard pieces.count == 3, let year = Int(pieces[0]), let month = Int(pieces[1]), let day = Int(pieces[2]) else { return nil }
+        return CanonicalDate(year: year, month: month, day: day)
+    }
+}
+
+struct CanonicalRecurrenceRule: Codable, Hashable {
+    var frequency: CanonicalRepeatFrequency
+    var endDate: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case frequency, endDate
+    }
+
+    init(frequency: CanonicalRepeatFrequency = .none, endDate: String? = nil) {
+        self.frequency = frequency
+        self.endDate = endDate
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(frequency, forKey: .frequency)
+        try container.encodeIfPresent(endDate, forKey: .endDate)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        frequency = try container.decodeIfPresent(CanonicalRepeatFrequency.self, forKey: .frequency) ?? .none
+        endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
+    }
+}
+
+struct CanonicalPayload: Codable, Identifiable, Hashable {
+    var id: String
+    var legacyWebID: String?
+    var kind: CanonicalPlanningKind
+    var origin: CanonicalPlanningLevel
+    var originPeriodKey: String
+    var title: String
+    var iconSymbol: String
+    var colorID: String?
+    var legacyColorKey: String?
+    var location: String
+    var memo: String
+    var allDay: Bool
+    var startDate: String?
+    var endDate: String?
+    var startMinutes: Int?
+    var endMinutes: Int?
+    var reminders: [String]
+    var recurrence: CanonicalRecurrenceRule
+    var liveActivity: Bool
+    var liveActivityLead: String?
+    var updatedAt: String
+    var todayTaskID: String?
+    var completed: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id, legacyWebID, kind, origin, originPeriodKey, title, iconSymbol, colorID, legacyColorKey
+        case location, memo, allDay, startDate, endDate, startMinutes, endMinutes, reminders, recurrence
+        case liveActivity, liveActivityLead, updatedAt, todayTaskID, completed
+    }
+
+    init(
+        id: String,
+        legacyWebID: String?,
+        kind: CanonicalPlanningKind,
+        origin: CanonicalPlanningLevel,
+        originPeriodKey: String,
+        title: String,
+        iconSymbol: String,
+        colorID: String?,
+        legacyColorKey: String?,
+        location: String,
+        memo: String,
+        allDay: Bool,
+        startDate: String?,
+        endDate: String?,
+        startMinutes: Int?,
+        endMinutes: Int?,
+        reminders: [String],
+        recurrence: CanonicalRecurrenceRule,
+        liveActivity: Bool,
+        liveActivityLead: String?,
+        updatedAt: String,
+        todayTaskID: String?,
+        completed: Bool
+    ) {
+        self.id = id
+        self.legacyWebID = legacyWebID
+        self.kind = kind
+        self.origin = origin
+        self.originPeriodKey = originPeriodKey
+        self.title = title
+        self.iconSymbol = iconSymbol
+        self.colorID = colorID
+        self.legacyColorKey = legacyColorKey
+        self.location = location
+        self.memo = memo
+        self.allDay = allDay
+        self.startDate = startDate
+        self.endDate = endDate
+        self.startMinutes = startMinutes
+        self.endMinutes = endMinutes
+        self.reminders = reminders
+        self.recurrence = recurrence
+        self.liveActivity = liveActivity
+        self.liveActivityLead = liveActivityLead
+        self.updatedAt = updatedAt
+        self.todayTaskID = todayTaskID
+        self.completed = completed
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(legacyWebID, forKey: .legacyWebID)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(origin, forKey: .origin)
+        try container.encode(originPeriodKey, forKey: .originPeriodKey)
+        try container.encode(title, forKey: .title)
+        try container.encode(iconSymbol, forKey: .iconSymbol)
+        try container.encodeIfPresent(colorID, forKey: .colorID)
+        try container.encodeIfPresent(legacyColorKey, forKey: .legacyColorKey)
+        try container.encode(location, forKey: .location)
+        try container.encode(memo, forKey: .memo)
+        try container.encode(allDay, forKey: .allDay)
+        try container.encodeIfPresent(startDate, forKey: .startDate)
+        try container.encodeIfPresent(endDate, forKey: .endDate)
+        try container.encodeIfPresent(startMinutes, forKey: .startMinutes)
+        try container.encodeIfPresent(endMinutes, forKey: .endMinutes)
+        try container.encode(reminders, forKey: .reminders)
+        try container.encode(recurrence, forKey: .recurrence)
+        try container.encode(liveActivity, forKey: .liveActivity)
+        try container.encodeIfPresent(liveActivityLead, forKey: .liveActivityLead)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(todayTaskID, forKey: .todayTaskID)
+        try container.encode(completed, forKey: .completed)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        legacyWebID = try container.decodeIfPresent(String.self, forKey: .legacyWebID)
+        kind = try container.decode(CanonicalPlanningKind.self, forKey: .kind)
+        origin = try container.decode(CanonicalPlanningLevel.self, forKey: .origin)
+        originPeriodKey = try container.decode(String.self, forKey: .originPeriodKey)
+        title = try container.decode(String.self, forKey: .title)
+        iconSymbol = try container.decodeIfPresent(String.self, forKey: .iconSymbol) ?? "calendar"
+        colorID = try container.decodeIfPresent(String.self, forKey: .colorID)
+        legacyColorKey = try container.decodeIfPresent(String.self, forKey: .legacyColorKey)
+        location = try container.decodeIfPresent(String.self, forKey: .location) ?? ""
+        memo = try container.decodeIfPresent(String.self, forKey: .memo) ?? ""
+        allDay = try container.decodeIfPresent(Bool.self, forKey: .allDay) ?? false
+        startDate = try container.decodeIfPresent(String.self, forKey: .startDate)
+        endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
+        startMinutes = try container.decodeIfPresent(Int.self, forKey: .startMinutes)
+        endMinutes = try container.decodeIfPresent(Int.self, forKey: .endMinutes)
+        reminders = try container.decodeIfPresent([String].self, forKey: .reminders) ?? []
+        recurrence = try container.decodeIfPresent(CanonicalRecurrenceRule.self, forKey: .recurrence) ?? CanonicalRecurrenceRule()
+        liveActivity = try container.decodeIfPresent(Bool.self, forKey: .liveActivity) ?? false
+        liveActivityLead = try container.decodeIfPresent(String.self, forKey: .liveActivityLead)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
+        todayTaskID = try container.decodeIfPresent(String.self, forKey: .todayTaskID)
+        completed = try container.decodeIfPresent(Bool.self, forKey: .completed) ?? false
+    }
+}
+
+struct CanonicalTombstone: Codable, Hashable {
+    var logicalID: String
+    var level: CanonicalPlanningLevel
+    var periodKey: String
+}
+
+struct CanonicalLevelOverride: Codable, Hashable {
+    var logicalID: String
+    var level: CanonicalPlanningLevel
+    var periodKey: String
+    var title: String?
+    var iconSymbol: String?
+    var colorID: String?
+    var location: String?
+    var memo: String?
+    var reminders: [String]?
+    var liveActivity: Bool?
+    var liveActivityLead: String?
+}
+
+struct CanonicalOccurrenceOverride: Codable, Hashable {
+    var logicalID: String
+    var occurrenceDate: String
+    var excluded: Bool
+    var title: String?
+    var location: String?
+    var memo: String?
+    var startMinutes: Int?
+    var endMinutes: Int?
+    var reminders: [String]?
+    var liveActivity: Bool?
+    var liveActivityLead: String?
+}
+
+struct CanonicalDayCompletion: Codable, Hashable {
+    var logicalID: String
+    var date: String
+    var completed: Bool
+}
+
+struct CanonicalReflectionSnapshot: Codable, Hashable {
+    var id: String
+    var completed: Bool
+    var decisionIDs: [String]
+}
+
+struct CanonicalPlanningDocument: Codable {
+    static let schemaVersion = 1
+    var schemaVersion: Int
+    /// Remains unresolved. A missing WebKit reader must not be stored as a finished migration.
+    var legacyMigration: String
+    var payloads: [CanonicalPayload]
+    var tombstones: [CanonicalTombstone]
+    var levelOverrides: [CanonicalLevelOverride]
+    var occurrenceOverrides: [CanonicalOccurrenceOverride]
+    var dayCompletions: [CanonicalDayCompletion]
+    var reflectionSnapshots: [CanonicalReflectionSnapshot]
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, legacyMigration, payloads, tombstones, levelOverrides, occurrenceOverrides, dayCompletions, reflectionSnapshots
+    }
+
+    init(
+        schemaVersion: Int,
+        legacyMigration: String,
+        payloads: [CanonicalPayload],
+        tombstones: [CanonicalTombstone],
+        levelOverrides: [CanonicalLevelOverride],
+        occurrenceOverrides: [CanonicalOccurrenceOverride],
+        dayCompletions: [CanonicalDayCompletion],
+        reflectionSnapshots: [CanonicalReflectionSnapshot]
+    ) {
+        self.schemaVersion = schemaVersion
+        self.legacyMigration = legacyMigration
+        self.payloads = payloads
+        self.tombstones = tombstones
+        self.levelOverrides = levelOverrides
+        self.occurrenceOverrides = occurrenceOverrides
+        self.dayCompletions = dayCompletions
+        self.reflectionSnapshots = reflectionSnapshots
+    }
+
+    static func empty() -> CanonicalPlanningDocument {
+        CanonicalPlanningDocument(
+            schemaVersion: schemaVersion,
+            legacyMigration: "unresolved",
+            payloads: [],
+            tombstones: [],
+            levelOverrides: [],
+            occurrenceOverrides: [],
+            dayCompletions: [],
+            reflectionSnapshots: []
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(legacyMigration, forKey: .legacyMigration)
+        try container.encode(payloads, forKey: .payloads)
+        try container.encode(tombstones, forKey: .tombstones)
+        try container.encode(levelOverrides, forKey: .levelOverrides)
+        try container.encode(occurrenceOverrides, forKey: .occurrenceOverrides)
+        try container.encode(dayCompletions, forKey: .dayCompletions)
+        try container.encode(reflectionSnapshots, forKey: .reflectionSnapshots)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 0
+        legacyMigration = "unresolved"
+        payloads = try container.decodeIfPresent([CanonicalPayload].self, forKey: .payloads) ?? []
+        tombstones = try container.decodeIfPresent([CanonicalTombstone].self, forKey: .tombstones) ?? []
+        levelOverrides = try container.decodeIfPresent([CanonicalLevelOverride].self, forKey: .levelOverrides) ?? []
+        occurrenceOverrides = try container.decodeIfPresent([CanonicalOccurrenceOverride].self, forKey: .occurrenceOverrides) ?? []
+        dayCompletions = try container.decodeIfPresent([CanonicalDayCompletion].self, forKey: .dayCompletions) ?? []
+        reflectionSnapshots = try container.decodeIfPresent([CanonicalReflectionSnapshot].self, forKey: .reflectionSnapshots) ?? []
+    }
+}
+
+struct CanonicalEffectiveItem: Hashable {
+    var logicalID: String
+    var kind: CanonicalPlanningKind
+    var level: CanonicalPlanningLevel
+    var periodKey: String
+    var occurrenceKey: String
+    var title: String
+    var iconSymbol: String
+    var colorID: String?
+    var location: String
+    var memo: String
+    var allDay: Bool
+    var startDate: String?
+    var endDate: String?
+    var startMinutes: Int?
+    var endMinutes: Int?
+    var reminders: [String]
+    var liveActivity: Bool
+    var liveActivityLead: String?
+    var completed: Bool
+    var todayTaskID: String?
+}
+
+struct CanonicalCreateInput {
+    var id: String = UUID().uuidString
+    var legacyWebID: String?
+    var kind: CanonicalPlanningKind
+    var origin: CanonicalPlanningLevel
+    var originPeriodKey: String
+    var title: String
+    var iconSymbol: String = "calendar"
+    var colorID: String?
+    var legacyColorKey: String?
+    var location: String = ""
+    var memo: String = ""
+    var allDay: Bool = false
+    var startDate: String?
+    var endDate: String?
+    var startMinutes: Int?
+    var endMinutes: Int?
+    var reminders: [String] = []
+    var recurrence: CanonicalRecurrenceRule = CanonicalRecurrenceRule()
+    var liveActivity: Bool = false
+    var liveActivityLead: String?
+    var updatedAt: String = ""
+    var todayTaskID: String?
+    var completed: Bool = false
+}
+
+struct LegacyCalendarRecord: Codable {
+    var id: String
+    var title: String
+    var date: String
+    var endDate: String?
+    var allDay: Bool?
+    var startTime: String?
+    var endTime: String?
+    var color: String?
+    var location: String?
+    var notes: String?
+    var reminders: [String]?
+    var repeatFrequency: String?
+    var repeatEndDate: String?
+    var liveActivity: Bool?
+    var liveActivityLead: String?
+    var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, date, endDate, allDay, startTime, endTime, color, location, notes, reminders
+        case repeatFrequency = "repeat"
+        case repeatEndDate, liveActivity, liveActivityLead, updatedAt
+    }
+}
+
+enum CanonicalPlanningCalendar {
+    static let horizonDays = 400
+
+    static var calendar: Calendar {
+        var value = Calendar(identifier: .gregorian)
+        value.locale = Locale(identifier: "ja_JP")
+        value.firstWeekday = 2
+        return value
+    }
+
+    static func date(_ day: CanonicalDate) -> Date? {
+        calendar.date(from: DateComponents(year: day.year, month: day.month, day: day.day))
+    }
+
+    static func day(from date: Date) -> CanonicalDate {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return CanonicalDate(year: parts.year ?? 2026, month: parts.month ?? 1, day: parts.day ?? 1)
+    }
+
+    static func addDays(_ day: CanonicalDate, _ count: Int) -> CanonicalDate {
+        guard let date = date(day), let moved = calendar.date(byAdding: .day, value: count, to: date) else { return day }
+        return self.day(from: moved)
+    }
+
+    static func weekStart(_ day: CanonicalDate) -> CanonicalDate {
+        guard let date = date(day) else { return day }
+        let start = calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
+        return self.day(from: start)
+    }
+
+    static func periodKey(_ level: CanonicalPlanningLevel, _ day: CanonicalDate) -> String {
+        switch level {
+        case .future: String(day.year)
+        case .monthly: String(format: "%04d-%02d", day.year, day.month)
+        case .weekly: weekStart(day).key
+        case .daily: day.key
+        }
+    }
+}
+
+enum LegacyCalendarColorMap {
+    /// Shared hue families from `EVENT_COLORS` and `PlanIconColor`.
+    /// blue 212° → sky, green 145° → mint, orange 25° → peach, pink 335° → rose, purple 265° → lavender.
+    static let resolved = ["blue": "sky", "green": "mint", "orange": "peach", "pink": "rose", "purple": "lavender"]
+    /// red 0°, teal 180°, and gray have no Planning pastel.
+    static let unresolved = ["red", "teal", "gray"]
+}
+
+enum CanonicalPlanningEngine {
+    static func projectedKeys(_ document: CanonicalPlanningDocument, _ payload: CanonicalPayload, _ level: CanonicalPlanningLevel) -> [String] {
+        guard flows(payload.kind, payload.origin, level) else { return [] }
+        guard payload.startDate != nil else {
+            if level == payload.origin, !tombstoned(document, payload.id, level, payload.originPeriodKey) {
+                return [payload.originPeriodKey]
+            }
+            return []
+        }
+        var keys = Set<String>()
+        for row in coveredDates(document, payload) {
+            guard let day = CanonicalDate.parse(row.date) else { continue }
+            let key = CanonicalPlanningCalendar.periodKey(level, day)
+            if !tombstoned(document, payload.id, level, key) { keys.insert(key) }
+        }
+        return keys.sorted()
+    }
+
+    static func effectiveItems(_ document: CanonicalPlanningDocument, _ level: CanonicalPlanningLevel, _ key: String) -> [CanonicalEffectiveItem] {
+        var items: [CanonicalEffectiveItem] = []
+        var seen = Set<String>()
+        for payload in document.payloads {
+            guard projectedKeys(document, payload, level).contains(key), !seen.contains(payload.id) else { continue }
+            seen.insert(payload.id)
+            let levelOverride = document.levelOverrides.first { $0.logicalID == payload.id && $0.level == level && $0.periodKey == key }
+            let covering = level == .daily
+                ? instancesCovering(payload, key).filter { start in
+                    !document.occurrenceOverrides.contains { $0.logicalID == payload.id && $0.occurrenceDate == start && $0.excluded }
+                }
+                : []
+            let occurrenceDate = covering.count == 1
+                ? covering[0]
+                : coveredDates(document, payload).first { row in
+                    guard let day = CanonicalDate.parse(row.date) else { return false }
+                    return CanonicalPlanningCalendar.periodKey(level, day) == key
+                }?.occurrenceDate ?? payload.originPeriodKey
+            let occurrence = covering.count == 1
+                ? document.occurrenceOverrides.first { $0.logicalID == payload.id && $0.occurrenceDate == occurrenceDate && !$0.excluded }
+                : covering.count > 1 ? nil : document.occurrenceOverrides.first { $0.logicalID == payload.id && $0.occurrenceDate == occurrenceDate && !$0.excluded }
+            items.append(CanonicalEffectiveItem(
+                logicalID: payload.id,
+                kind: payload.kind,
+                level: level,
+                periodKey: key,
+                occurrenceKey: "\(payload.id)|\(occurrenceDate)",
+                title: occurrence?.title ?? levelOverride?.title ?? payload.title,
+                iconSymbol: levelOverride?.iconSymbol ?? payload.iconSymbol,
+                colorID: levelOverride?.colorID ?? payload.colorID,
+                location: occurrence?.location ?? levelOverride?.location ?? payload.location,
+                memo: occurrence?.memo ?? levelOverride?.memo ?? payload.memo,
+                allDay: payload.allDay,
+                startDate: payload.startDate,
+                endDate: payload.endDate,
+                startMinutes: occurrence?.startMinutes ?? payload.startMinutes,
+                endMinutes: occurrence?.endMinutes ?? payload.endMinutes,
+                reminders: occurrence?.reminders ?? levelOverride?.reminders ?? payload.reminders,
+                liveActivity: occurrence?.liveActivity ?? levelOverride?.liveActivity ?? payload.liveActivity,
+                liveActivityLead: occurrence?.liveActivityLead ?? levelOverride?.liveActivityLead ?? payload.liveActivityLead,
+                completed: payload.kind == .event
+                    ? (level == .daily && document.dayCompletions.contains { $0.logicalID == payload.id && $0.date == key && $0.completed })
+                    : payload.completed,
+                todayTaskID: payload.todayTaskID
+            ))
+        }
+        return items
+    }
+
+    static func createItem(_ document: inout CanonicalPlanningDocument, _ input: CanonicalCreateInput) -> CanonicalPayload? {
+        if let start = input.startDate, let end = input.endDate ?? input.startDate, end < start { return nil }
+        let payload = CanonicalPayload(
+            id: input.id,
+            legacyWebID: input.legacyWebID,
+            kind: input.kind,
+            origin: input.origin,
+            originPeriodKey: input.originPeriodKey,
+            title: input.title,
+            iconSymbol: input.iconSymbol,
+            colorID: input.colorID,
+            legacyColorKey: input.legacyColorKey,
+            location: input.location,
+            memo: input.memo,
+            allDay: input.allDay,
+            startDate: input.startDate,
+            endDate: input.endDate ?? input.startDate,
+            startMinutes: input.allDay ? nil : input.startMinutes,
+            endMinutes: input.allDay ? nil : input.endMinutes,
+            reminders: input.reminders,
+            recurrence: input.recurrence,
+            liveActivity: input.liveActivity,
+            liveActivityLead: input.liveActivityLead,
+            updatedAt: input.updatedAt,
+            todayTaskID: input.todayTaskID,
+            completed: input.completed
+        )
+        document.payloads.append(payload)
+        return payload
+    }
+
+    static func deleteLevel(_ document: inout CanonicalPlanningDocument, _ logicalID: String, _ level: CanonicalPlanningLevel, _ key: String) {
+        guard !tombstoned(document, logicalID, level, key) else { return }
+        document.tombstones.append(CanonicalTombstone(logicalID: logicalID, level: level, periodKey: key))
+    }
+
+    static func editPayload(_ document: inout CanonicalPlanningDocument, _ logicalID: String, _ update: (inout CanonicalPayload) -> Void) {
+        guard let index = document.payloads.firstIndex(where: { $0.id == logicalID }) else { return }
+        var next = document.payloads[index]
+        update(&next)
+        if let start = next.startDate, let end = next.endDate, end < start { return }
+        next.id = logicalID
+        document.payloads[index] = next
+        pruneStaleDateOverrides(&document, logicalID)
+    }
+
+    static func editLevel(_ document: inout CanonicalPlanningDocument, _ logicalID: String, _ level: CanonicalPlanningLevel, _ key: String, _ update: (inout CanonicalLevelOverride) -> Void) {
+        if let index = document.levelOverrides.firstIndex(where: { $0.logicalID == logicalID && $0.level == level && $0.periodKey == key }) {
+            update(&document.levelOverrides[index])
+        } else {
+            var row = CanonicalLevelOverride(logicalID: logicalID, level: level, periodKey: key)
+            update(&row)
+            document.levelOverrides.append(row)
+        }
+    }
+
+    static func editOccurrence(_ document: inout CanonicalPlanningDocument, _ logicalID: String, _ occurrenceDate: String, _ update: (inout CanonicalOccurrenceOverride) -> Void) {
+        if let index = document.occurrenceOverrides.firstIndex(where: { $0.logicalID == logicalID && $0.occurrenceDate == occurrenceDate }) {
+            document.occurrenceOverrides[index].excluded = false
+            update(&document.occurrenceOverrides[index])
+        } else {
+            var row = CanonicalOccurrenceOverride(logicalID: logicalID, occurrenceDate: occurrenceDate, excluded: false)
+            update(&row)
+            document.occurrenceOverrides.append(row)
+        }
+    }
+
+    static func excludeOccurrence(_ document: inout CanonicalPlanningDocument, _ logicalID: String, _ occurrenceDate: String) {
+        if let index = document.occurrenceOverrides.firstIndex(where: { $0.logicalID == logicalID && $0.occurrenceDate == occurrenceDate }) {
+            document.occurrenceOverrides[index].excluded = true
+        } else {
+            document.occurrenceOverrides.append(CanonicalOccurrenceOverride(logicalID: logicalID, occurrenceDate: occurrenceDate, excluded: true))
+        }
+    }
+
+    static func setCompleted(_ document: inout CanonicalPlanningDocument, _ logicalID: String, _ completed: Bool) {
+        guard let index = document.payloads.firstIndex(where: { $0.id == logicalID }), document.payloads[index].kind == .task else { return }
+        document.payloads[index].completed = completed
+    }
+
+    @discardableResult
+    static func setEventCompletion(_ document: inout CanonicalPlanningDocument, _ logicalID: String, _ date: String, _ completed: Bool) -> Bool {
+        guard let payload = document.payloads.first(where: { $0.id == logicalID }), payload.kind == .event, dayIsCovered(payload, date) else { return false }
+        if let index = document.dayCompletions.firstIndex(where: { $0.logicalID == logicalID && $0.date == date }) {
+            document.dayCompletions[index].completed = completed
+            return true
+        }
+        document.dayCompletions.append(CanonicalDayCompletion(logicalID: logicalID, date: date, completed: completed))
+        return true
+    }
+
+    static func pruneStaleDateOverrides(_ document: inout CanonicalPlanningDocument, _ logicalID: String) {
+        guard let payload = document.payloads.first(where: { $0.id == logicalID }) else { return }
+        document.occurrenceOverrides.removeAll { $0.logicalID == logicalID && !isScheduledStart(payload, $0.occurrenceDate) }
+        document.dayCompletions.removeAll { $0.logicalID == logicalID && !dayIsCovered(payload, $0.date) }
+        document.levelOverrides.removeAll { $0.logicalID == logicalID && !periodStillCovered(payload, $0.level, $0.periodKey) }
+    }
+
+    static func completeReflection(_ document: inout CanonicalPlanningDocument, _ id: String, _ decisionIDs: [String]) -> Bool {
+        guard !document.reflectionSnapshots.contains(where: { $0.id == id }) else { return false }
+        document.reflectionSnapshots.append(CanonicalReflectionSnapshot(id: id, completed: true, decisionIDs: decisionIDs))
+        return true
+    }
+
+    static func calendarDays(_ document: CanonicalPlanningDocument, _ day: String) -> [CanonicalEffectiveItem] {
+        effectiveItems(document, .daily, day)
+    }
+
+    static func importLegacy(_ document: inout CanonicalPlanningDocument, _ records: [LegacyCalendarRecord]) -> Int {
+        var inserted = 0
+        for record in records {
+            if document.payloads.contains(where: { $0.legacyWebID == record.id || $0.id == record.id }) { continue }
+            let frequency = CanonicalRepeatFrequency(rawValue: record.repeatFrequency ?? "none") ?? .none
+            let created = createItem(document, CanonicalCreateInput(
+                legacyWebID: record.id,
+                kind: .event,
+                origin: .daily,
+                originPeriodKey: record.date,
+                title: record.title,
+                colorID: record.color.flatMap { LegacyCalendarColorMap.resolved[$0] },
+                legacyColorKey: record.color,
+                location: record.location ?? "",
+                memo: record.notes ?? "",
+                allDay: record.allDay ?? false,
+                startDate: record.date,
+                endDate: record.endDate ?? record.date,
+                startMinutes: minutes(record.startTime),
+                endMinutes: minutes(record.endTime),
+                reminders: record.reminders ?? [],
+                recurrence: CanonicalRecurrenceRule(frequency: frequency, endDate: record.repeatEndDate),
+                liveActivity: record.liveActivity ?? false,
+                liveActivityLead: record.liveActivityLead,
+                updatedAt: record.updatedAt ?? ""
+            ))
+            if created != nil { inserted += 1 }
+        }
+        document.legacyMigration = "unresolved"
+        return inserted
+    }
+
+    private static func flows(_ kind: CanonicalPlanningKind, _ origin: CanonicalPlanningLevel, _ level: CanonicalPlanningLevel) -> Bool {
+        let allowed: [CanonicalPlanningLevel]
+        if kind == .task {
+            switch origin {
+            case .future: allowed = [.future]
+            case .monthly: allowed = [.monthly, .weekly, .daily]
+            case .weekly: allowed = [.weekly, .daily]
+            case .daily: allowed = [.daily]
+            }
+        } else {
+            switch origin {
+            case .future: allowed = [.future, .monthly, .weekly, .daily]
+            case .monthly: allowed = [.monthly, .weekly, .daily]
+            case .weekly: allowed = [.weekly, .daily]
+            case .daily: allowed = [.daily]
+            }
+        }
+        return allowed.contains(level)
+    }
+
+    private static func tombstoned(_ document: CanonicalPlanningDocument, _ logicalID: String, _ level: CanonicalPlanningLevel, _ key: String) -> Bool {
+        document.tombstones.contains { $0.logicalID == logicalID && $0.level == level && $0.periodKey == key }
+    }
+
+    private static func spanDays(_ start: String, _ end: String) -> Int {
+        guard var cursor = CanonicalDate.parse(start), let last = CanonicalDate.parse(end) else { return 0 }
+        var count = 0
+        while cursor < last && count < 4000 {
+            count += 1
+            cursor = CanonicalPlanningCalendar.addDays(cursor, 1)
+        }
+        return count
+    }
+
+    private static func weekdayOccurrence(_ day: CanonicalDate) -> Int { ((day.day - 1) / 7) + 1 }
+
+    private static func matchesMonthlyWeekday(_ start: CanonicalDate, _ target: CanonicalDate) -> Bool {
+        guard let startDate = CanonicalPlanningCalendar.date(start), let targetDate = CanonicalPlanningCalendar.date(target) else { return false }
+        let calendar = CanonicalPlanningCalendar.calendar
+        guard calendar.component(.weekday, from: startDate) == calendar.component(.weekday, from: targetDate) else { return false }
+        let want = weekdayOccurrence(start)
+        let got = weekdayOccurrence(target)
+        if got == want { return true }
+        if want >= 5 {
+            let next = CanonicalPlanningCalendar.addDays(target, 7)
+            return next.month != target.month
+        }
+        return false
+    }
+
+    private static func matches(_ start: CanonicalDate, _ cursor: CanonicalDate, _ frequency: CanonicalRepeatFrequency) -> Bool {
+        switch frequency {
+        case .none: return start == cursor
+        case .daily: return true
+        case .weekly:
+            guard let left = CanonicalPlanningCalendar.date(start), let right = CanonicalPlanningCalendar.date(cursor) else { return false }
+            return CanonicalPlanningCalendar.calendar.component(.weekday, from: left) == CanonicalPlanningCalendar.calendar.component(.weekday, from: right)
+        case .monthly: return cursor.day == start.day
+        case .monthlyWeekday: return matchesMonthlyWeekday(start, cursor)
+        case .yearly: return cursor.month == start.month && cursor.day == start.day
+        }
+    }
+
+    /// Editor gate from the WebView. A stored rule that fails this check is still projected.
+    static func repeatAllowedForSpan(_ start: String, _ end: String, _ frequency: CanonicalRepeatFrequency) -> Bool {
+        repeatAllowed(start, end, frequency)
+    }
+
+    private static func repeatAllowed(_ start: String, _ end: String, _ frequency: CanonicalRepeatFrequency) -> Bool {
+        let span = spanDays(start, end)
+        if frequency == .daily && span >= 1 { return false }
+        if frequency == .weekly && span >= 7 { return false }
+        return true
+    }
+
+    private static func occurrenceStarts(_ payload: CanonicalPayload) -> [String] {
+        guard let startKey = payload.startDate else { return [] }
+        let endKey = payload.endDate ?? startKey
+        guard endKey >= startKey else { return [] }
+        let frequency = payload.recurrence.frequency
+        if frequency == .none { return [startKey] }
+        guard let start = CanonicalDate.parse(startKey) else { return [] }
+        let limitKey = payload.recurrence.endDate ?? CanonicalPlanningCalendar.addDays(start, CanonicalPlanningCalendar.horizonDays).key
+        guard var cursor = CanonicalDate.parse(startKey), let limit = CanonicalDate.parse(limitKey) else { return [] }
+        var starts: [String] = []
+        while cursor <= limit && starts.count < CanonicalPlanningCalendar.horizonDays {
+            if matches(start, cursor, frequency) { starts.append(cursor.key) }
+            cursor = CanonicalPlanningCalendar.addDays(cursor, 1)
+        }
+        return starts
+    }
+
+    static func isScheduledStart(_ payload: CanonicalPayload, _ date: String) -> Bool {
+        guard let startKey = payload.startDate, date >= startKey else { return false }
+        let endKey = payload.endDate ?? startKey
+        guard endKey >= startKey else { return false }
+        if payload.recurrence.frequency == .none { return date == startKey }
+        if let limit = payload.recurrence.endDate, date > limit { return false }
+        guard let start = CanonicalDate.parse(startKey), let cursor = CanonicalDate.parse(date) else { return false }
+        return matches(start, cursor, payload.recurrence.frequency)
+    }
+
+    static func instancesCovering(_ payload: CanonicalPayload, _ day: String) -> [String] {
+        guard let startKey = payload.startDate, let dayDate = CanonicalDate.parse(day) else { return [] }
+        let endKey = payload.endDate ?? startKey
+        guard endKey >= startKey else { return [] }
+        if payload.recurrence.frequency == .none {
+            return day >= startKey && day <= endKey ? [startKey] : []
+        }
+        let span = spanDays(startKey, endKey)
+        var cursor = CanonicalPlanningCalendar.addDays(dayDate, -span)
+        if let start = CanonicalDate.parse(startKey), cursor < start { cursor = start }
+        var starts: [String] = []
+        while cursor.key <= day {
+            if isScheduledStart(payload, cursor.key) { starts.append(cursor.key) }
+            cursor = CanonicalPlanningCalendar.addDays(cursor, 1)
+        }
+        return starts
+    }
+
+    static func dayIsCovered(_ payload: CanonicalPayload, _ day: String) -> Bool {
+        !instancesCovering(payload, day).isEmpty
+    }
+
+    private static func periodStillCovered(_ payload: CanonicalPayload, _ level: CanonicalPlanningLevel, _ key: String) -> Bool {
+        guard payload.startDate != nil else { return level == payload.origin && key == payload.originPeriodKey }
+        switch level {
+        case .daily:
+            return dayIsCovered(payload, key)
+        case .weekly:
+            guard let start = CanonicalDate.parse(key) else { return true }
+            return (0..<7).contains { offset in dayIsCovered(payload, CanonicalPlanningCalendar.addDays(start, offset).key) }
+        case .monthly:
+            let pieces = key.split(separator: "-")
+            guard pieces.count == 2, let year = Int(pieces[0]), let month = Int(pieces[1]) else { return true }
+            let count = CanonicalPlanningCalendar.calendar.range(of: .day, in: .month, for: CanonicalPlanningCalendar.calendar.date(from: DateComponents(year: year, month: month, day: 1)) ?? Date())?.count ?? 28
+            return (1...count).contains { day in dayIsCovered(payload, String(format: "%04d-%02d-%02d", year, month, day)) }
+        case .future:
+            guard let year = Int(key) else { return true }
+            return (1...12).contains { month in periodStillCovered(payload, .monthly, String(format: "%04d-%02d", year, month)) }
+        }
+    }
+
+    private static func coveredDates(_ document: CanonicalPlanningDocument, _ payload: CanonicalPayload) -> [(date: String, occurrenceDate: String)] {
+        guard let startKey = payload.startDate else { return [] }
+        let endKey = payload.endDate ?? startKey
+        guard endKey >= startKey else { return [] }
+        let length = spanDays(startKey, payload.endDate ?? startKey)
+        var rows: [(date: String, occurrenceDate: String)] = []
+        for start in occurrenceStarts(payload) {
+            if document.occurrenceOverrides.contains(where: { $0.logicalID == payload.id && $0.occurrenceDate == start && $0.excluded }) { continue }
+            guard var cursor = CanonicalDate.parse(start) else { continue }
+            for _ in 0...length {
+                rows.append((cursor.key, start))
+                cursor = CanonicalPlanningCalendar.addDays(cursor, 1)
+            }
+        }
+        return rows
+    }
+
+    private static func minutes(_ clock: String?) -> Int? {
+        guard let clock else { return nil }
+        let pieces = clock.split(separator: ":")
+        guard pieces.count == 2, let hour = Int(pieces[0]), let minute = Int(pieces[1]) else { return nil }
+        return hour * 60 + minute
+    }
+}
+
+enum CanonicalPlanningPersistence {
+    static let storageKey = "essences.canonical-planning.v1"
+
+    enum LoadResult {
+        case absent
+        case loaded(CanonicalPlanningDocument)
+        case unreadable
+    }
+
+    static func save(_ document: CanonicalPlanningDocument, defaults: UserDefaults = .standard) {
+        guard let data = try? JSONEncoder().encode(document) else { return }
+        defaults.set(data, forKey: storageKey)
+    }
+
+    static func load(defaults: UserDefaults = .standard) -> LoadResult {
+        guard let data = defaults.data(forKey: storageKey) else { return .absent }
+        guard let document = try? JSONDecoder().decode(CanonicalPlanningDocument.self, from: data),
+              document.schemaVersion == CanonicalPlanningDocument.schemaVersion else { return .unreadable }
+        return .loaded(document)
+    }
+}
+
+enum LegacyWebViewCalendarAccess {
+    /// WebView records live in WKWebView LevelDB (`essences-app-data-v3`, leftover `calendar-events`).
+    /// `AppDelegate` installs `NativeAppRoot` and does not create that web view.
+    /// Swift cannot decode that store. This probe does not write an empty calendar or delete legacy data.
+    static func probeLegacyWebViewCalendar() -> String { "unresolved" }
+}

@@ -1,0 +1,704 @@
+/**
+ * Windows-executable twin of
+ * `ios/App/App/Native/Features/Calendar/CanonicalPlanningStore.swift`.
+ *
+ * The Swift store is the native source of truth. This module is not written
+ * by the app and is not a second live store. It exists so the projection,
+ * tombstone, override, and recurrence rules can be tested here. There is no
+ * XCTest target in the Xcode project.
+ *
+ * Planning screens still use `PlanningSession`. Do not route them here.
+ */
+
+export const CANONICAL_SCHEMA_VERSION = 1;
+export const PROJECTION_HORIZON_DAYS = 400;
+export const STORAGE_KEY = "essences.canonical-planning.v1";
+
+export type PlanningLevel = "future" | "monthly" | "weekly" | "daily";
+export type PlanningKind = "task" | "event";
+export type RepeatFrequency = "none" | "daily" | "weekly" | "monthly" | "monthlyWeekday" | "yearly";
+
+export interface YMD {
+  year: number;
+  month: number;
+  day: number;
+}
+
+export interface RecurrenceRule {
+  frequency: RepeatFrequency;
+  endDate?: string;
+}
+
+export interface CanonicalPayload {
+  id: string;
+  legacyWebID?: string;
+  kind: PlanningKind;
+  origin: PlanningLevel;
+  originPeriodKey: string;
+  title: string;
+  iconSymbol: string;
+  colorID?: string;
+  legacyColorKey?: string;
+  location: string;
+  memo: string;
+  allDay: boolean;
+  startDate?: string;
+  endDate?: string;
+  startMinutes?: number;
+  endMinutes?: number;
+  reminders: string[];
+  recurrence: RecurrenceRule;
+  liveActivity: boolean;
+  liveActivityLead?: string;
+  updatedAt: string;
+  todayTaskID?: string;
+  completed: boolean;
+}
+
+export interface Tombstone {
+  logicalID: string;
+  level: PlanningLevel;
+  periodKey: string;
+}
+
+export interface LevelOverride {
+  logicalID: string;
+  level: PlanningLevel;
+  periodKey: string;
+  title?: string;
+  iconSymbol?: string;
+  colorID?: string;
+  location?: string;
+  memo?: string;
+  reminders?: string[];
+  liveActivity?: boolean;
+  liveActivityLead?: string;
+}
+
+export interface OccurrenceOverride {
+  logicalID: string;
+  /** Scheduled instance start, not every covered day. */
+  occurrenceDate: string;
+  excluded: boolean;
+  title?: string;
+  location?: string;
+  memo?: string;
+  startMinutes?: number;
+  endMinutes?: number;
+  reminders?: string[];
+  liveActivity?: boolean;
+  liveActivityLead?: string;
+}
+
+/** Completion for one displayed local day. Independent of the scheduled instance start. */
+export interface DayCompletion {
+  logicalID: string;
+  date: string;
+  completed: boolean;
+}
+
+export interface ReflectionSnapshot {
+  id: string;
+  completed: true;
+  decisionIDs: string[];
+}
+
+export interface CanonicalDocument {
+  schemaVersion: number;
+  /** Stays unresolved until a native reader for WebKit localStorage exists. */
+  legacyMigration: "unresolved";
+  payloads: CanonicalPayload[];
+  tombstones: Tombstone[];
+  levelOverrides: LevelOverride[];
+  occurrenceOverrides: OccurrenceOverride[];
+  dayCompletions: DayCompletion[];
+  reflectionSnapshots: ReflectionSnapshot[];
+}
+
+export interface EffectiveItem {
+  logicalID: string;
+  kind: PlanningKind;
+  level: PlanningLevel;
+  periodKey: string;
+  occurrenceKey: string;
+  title: string;
+  iconSymbol: string;
+  colorID?: string;
+  location: string;
+  memo: string;
+  allDay: boolean;
+  startDate?: string;
+  endDate?: string;
+  startMinutes?: number;
+  endMinutes?: number;
+  reminders: string[];
+  liveActivity: boolean;
+  liveActivityLead?: string;
+  completed: boolean;
+  todayTaskID?: string;
+}
+
+export interface CreateInput {
+  id?: string;
+  legacyWebID?: string;
+  kind: PlanningKind;
+  origin: PlanningLevel;
+  originPeriodKey: string;
+  title: string;
+  iconSymbol?: string;
+  colorID?: string;
+  legacyColorKey?: string;
+  location?: string;
+  memo?: string;
+  allDay?: boolean;
+  startDate?: string;
+  endDate?: string;
+  startMinutes?: number;
+  endMinutes?: number;
+  reminders?: string[];
+  recurrence?: RecurrenceRule;
+  liveActivity?: boolean;
+  liveActivityLead?: string;
+  updatedAt?: string;
+  todayTaskID?: string;
+  completed?: boolean;
+}
+
+/**
+ * Hue families shared by `EVENT_COLORS` and `PlanIconColor`.
+ * red (0°), teal (180°), and gray have no Planning pastel. They stay unresolved.
+ */
+export const LEGACY_COLOR_MAP: Record<string, string> = {
+  blue: "sky",
+  green: "mint",
+  orange: "peach",
+  pink: "rose",
+  purple: "lavender",
+};
+
+export const UNRESOLVED_LEGACY_COLORS = ["red", "teal", "gray"] as const;
+
+export function emptyDocument(): CanonicalDocument {
+  return {
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
+    legacyMigration: "unresolved",
+    payloads: [],
+    tombstones: [],
+    levelOverrides: [],
+    occurrenceOverrides: [],
+    dayCompletions: [],
+    reflectionSnapshots: [],
+  };
+}
+
+export function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+export function ymdKey(date: YMD): string {
+  return `${pad(date.year)}-${pad(date.month)}-${pad(date.day)}`;
+}
+
+export function parseYMD(key: string): YMD {
+  const [year, month, day] = key.split("-").map(Number);
+  return { year, month, day };
+}
+
+export function addDays(date: YMD, days: number): YMD {
+  const value = new Date(date.year, date.month - 1, date.day);
+  value.setDate(value.getDate() + days);
+  return { year: value.getFullYear(), month: value.getMonth() + 1, day: value.getDate() };
+}
+
+export function compareYMD(left: YMD, right: YMD): number {
+  return ymdKey(left).localeCompare(ymdKey(right));
+}
+
+export function weekStart(date: YMD): YMD {
+  const value = new Date(date.year, date.month - 1, date.day);
+  const delta = value.getDay() === 0 ? 6 : value.getDay() - 1;
+  return addDays(date, -delta);
+}
+
+export function periodKey(level: PlanningLevel, date: YMD): string {
+  if (level === "future") return String(date.year);
+  if (level === "monthly") return `${pad(date.year)}-${pad(date.month)}`;
+  if (level === "weekly") return ymdKey(weekStart(date));
+  return ymdKey(date);
+}
+
+/** Scheduled instance. A multi-day instance shares this key across its covered days. */
+export function occurrenceKey(logicalID: string, occurrenceDate: string): string {
+  return `${logicalID}|${occurrenceDate}`;
+}
+
+/** Displayed local day. Completion uses this, so overlapping instances do not share a check. */
+export function dayCompletionKey(logicalID: string, date: string): string {
+  return `${logicalID}|day|${date}`;
+}
+
+function flows(kind: PlanningKind, origin: PlanningLevel, level: PlanningLevel): boolean {
+  const task: Record<PlanningLevel, PlanningLevel[]> = {
+    future: ["future"],
+    monthly: ["monthly", "weekly", "daily"],
+    weekly: ["weekly", "daily"],
+    daily: ["daily"],
+  };
+  const event: Record<PlanningLevel, PlanningLevel[]> = {
+    future: ["future", "monthly", "weekly", "daily"],
+    monthly: ["monthly", "weekly", "daily"],
+    weekly: ["weekly", "daily"],
+    daily: ["daily"],
+  };
+  return (kind === "task" ? task : event)[origin].includes(level);
+}
+
+function spanDays(start: string, end: string): number {
+  let count = 0;
+  let cursor = parseYMD(start);
+  const last = parseYMD(end);
+  while (compareYMD(cursor, last) < 0) {
+    count += 1;
+    cursor = addDays(cursor, 1);
+  }
+  return count;
+}
+
+function weekdayOccurrence(date: YMD): number {
+  return Math.floor((date.day - 1) / 7) + 1;
+}
+
+function matchesMonthlyWeekday(seriesStart: YMD, target: YMD): boolean {
+  const start = new Date(seriesStart.year, seriesStart.month - 1, seriesStart.day);
+  const day = new Date(target.year, target.month - 1, target.day);
+  if (day.getDay() !== start.getDay()) return false;
+  const want = weekdayOccurrence(seriesStart);
+  const got = weekdayOccurrence(target);
+  if (got === want) return true;
+  if (want >= 5) {
+    const next = addDays(target, 7);
+    return next.month !== target.month;
+  }
+  return false;
+}
+
+function matchesFrequency(start: YMD, cursor: YMD, frequency: RepeatFrequency): boolean {
+  if (frequency === "daily") return true;
+  if (frequency === "weekly") {
+    const left = new Date(start.year, start.month - 1, start.day).getDay();
+    const right = new Date(cursor.year, cursor.month - 1, cursor.day).getDay();
+    return left === right;
+  }
+  if (frequency === "monthly") return cursor.day === start.day;
+  if (frequency === "monthlyWeekday") return matchesMonthlyWeekday(start, cursor);
+  if (frequency === "yearly") return cursor.month === start.month && cursor.day === start.day;
+  return ymdKey(cursor) === ymdKey(start);
+}
+
+/** Editor gate from the WebView. The store still keeps a rule that fails this check. */
+export function repeatAllowedForSpan(start: string, end: string, frequency: RepeatFrequency): boolean {
+  const span = spanDays(start, end);
+  if (frequency === "daily" && span >= 1) return false;
+  if (frequency === "weekly" && span >= 7) return false;
+  return true;
+}
+
+/** Instance starts inside the projection window. The stored rule is not truncated to this window. */
+function occurrenceStarts(payload: CanonicalPayload): string[] {
+  if (!payload.startDate) return [];
+  const end = payload.endDate ?? payload.startDate;
+  if (compareYMD(parseYMD(end), parseYMD(payload.startDate)) < 0) return [];
+  const frequency = payload.recurrence.frequency;
+  if (frequency === "none") return [payload.startDate];
+  const limit = payload.recurrence.endDate ?? ymdKey(addDays(parseYMD(payload.startDate), PROJECTION_HORIZON_DAYS));
+  const starts: string[] = [];
+  let cursor = parseYMD(payload.startDate);
+  const last = parseYMD(limit);
+  while (compareYMD(cursor, last) <= 0 && starts.length < PROJECTION_HORIZON_DAYS) {
+    if (matchesFrequency(parseYMD(payload.startDate), cursor, frequency)) starts.push(ymdKey(cursor));
+    cursor = addDays(cursor, 1);
+  }
+  return starts;
+}
+
+/** True when `date` is a generated instance start, including dates past the projection horizon. */
+export function isScheduledStart(payload: CanonicalPayload, date: string): boolean {
+  if (!payload.startDate || date < payload.startDate) return false;
+  const end = payload.endDate ?? payload.startDate;
+  if (end < payload.startDate) return false;
+  if (payload.recurrence.frequency === "none") return date === payload.startDate;
+  if (payload.recurrence.endDate && date > payload.recurrence.endDate) return false;
+  return matchesFrequency(parseYMD(payload.startDate), parseYMD(date), payload.recurrence.frequency);
+}
+
+/** Scheduled starts whose span includes this local day. Not limited to the projection horizon. */
+export function instancesCovering(payload: CanonicalPayload, day: string): string[] {
+  if (!payload.startDate) return [];
+  const end = payload.endDate ?? payload.startDate;
+  if (end < payload.startDate) return [];
+  const span = spanDays(payload.startDate, end);
+  const frequency = payload.recurrence.frequency;
+  if (frequency === "none") {
+    return day >= payload.startDate && day <= end ? [payload.startDate] : [];
+  }
+  let cursor = addDays(parseYMD(day), -span);
+  const seriesStart = parseYMD(payload.startDate);
+  if (compareYMD(cursor, seriesStart) < 0) cursor = seriesStart;
+  const last = parseYMD(day);
+  const starts: string[] = [];
+  while (compareYMD(cursor, last) <= 0) {
+    const key = ymdKey(cursor);
+    if (isScheduledStart(payload, key)) starts.push(key);
+    cursor = addDays(cursor, 1);
+  }
+  return starts;
+}
+
+export function dayIsCovered(payload: CanonicalPayload, day: string): boolean {
+  return instancesCovering(payload, day).length > 0;
+}
+
+function isExcluded(logicalID: string, occurrenceDate: string, overrides: OccurrenceOverride[]): boolean {
+  return overrides.some((row) => row.logicalID === logicalID && row.occurrenceDate === occurrenceDate && row.excluded);
+}
+
+function coveredDatesFor(document: CanonicalDocument, payload: CanonicalPayload): { date: string; occurrenceDate: string }[] {
+  if (!payload.startDate) return [];
+  const end = payload.endDate ?? payload.startDate;
+  if (end < payload.startDate) return [];
+  const length = spanDays(payload.startDate, end);
+  const rows: { date: string; occurrenceDate: string }[] = [];
+  for (const start of occurrenceStarts(payload)) {
+    if (isExcluded(payload.id, start, document.occurrenceOverrides)) continue;
+    let cursor = parseYMD(start);
+    for (let index = 0; index <= length; index += 1) {
+      rows.push({ date: ymdKey(cursor), occurrenceDate: start });
+      cursor = addDays(cursor, 1);
+    }
+  }
+  return rows;
+}
+
+function tombstoned(document: CanonicalDocument, logicalID: string, level: PlanningLevel, key: string): boolean {
+  return document.tombstones.some((row) => row.logicalID === logicalID && row.level === level && row.periodKey === key);
+}
+
+export function projectedKeys(document: CanonicalDocument, payload: CanonicalPayload, level: PlanningLevel): string[] {
+  if (!flows(payload.kind, payload.origin, level)) return [];
+  if (!payload.startDate) {
+    return level === payload.origin && !tombstoned(document, payload.id, level, payload.originPeriodKey)
+      ? [payload.originPeriodKey]
+      : [];
+  }
+  const keys = new Set<string>();
+  for (const row of coveredDatesFor(document, payload)) {
+    const key = periodKey(level, parseYMD(row.date));
+    if (!tombstoned(document, payload.id, level, key)) keys.add(key);
+  }
+  return [...keys];
+}
+
+function defined<T>(value: T | undefined, fallback: T): T {
+  return value === undefined ? fallback : value;
+}
+
+export function effectiveItems(document: CanonicalDocument, level: PlanningLevel, key: string): EffectiveItem[] {
+  const items: EffectiveItem[] = [];
+  for (const payload of document.payloads) {
+    if (!projectedKeys(document, payload, level).includes(key)) continue;
+    const levelOverride = document.levelOverrides.find(
+      (row) => row.logicalID === payload.id && row.level === level && row.periodKey === key,
+    );
+    const displayedDay = level === "daily" ? key : undefined;
+    const covering = displayedDay ? instancesCovering(payload, displayedDay).filter((start) => !isExcluded(payload.id, start, document.occurrenceOverrides)) : [];
+    const occurrenceDate = covering.length === 1
+      ? covering[0]
+      : payload.startDate
+        ? coveredDatesFor(document, payload).find((row) => periodKey(level, parseYMD(row.date)) === key)?.occurrenceDate
+        : payload.originPeriodKey;
+    const occurrence = covering.length === 1
+      ? document.occurrenceOverrides.find((row) => row.logicalID === payload.id && row.occurrenceDate === occurrenceDate && !row.excluded)
+      : covering.length > 1
+        ? undefined
+        : document.occurrenceOverrides.find((row) => row.logicalID === payload.id && row.occurrenceDate === occurrenceDate && !row.excluded);
+    items.push({
+      logicalID: payload.id,
+      kind: payload.kind,
+      level,
+      periodKey: key,
+      occurrenceKey: occurrenceKey(payload.id, occurrenceDate ?? payload.originPeriodKey),
+      title: defined(occurrence?.title, defined(levelOverride?.title, payload.title)),
+      iconSymbol: defined(levelOverride?.iconSymbol, payload.iconSymbol),
+      colorID: defined(levelOverride?.colorID, payload.colorID),
+      location: defined(occurrence?.location, defined(levelOverride?.location, payload.location)),
+      memo: defined(occurrence?.memo, defined(levelOverride?.memo, payload.memo)),
+      allDay: payload.allDay,
+      startDate: payload.startDate,
+      endDate: payload.endDate,
+      startMinutes: defined(occurrence?.startMinutes, payload.startMinutes),
+      endMinutes: defined(occurrence?.endMinutes, payload.endMinutes),
+      reminders: defined(occurrence?.reminders, defined(levelOverride?.reminders, payload.reminders)),
+      liveActivity: defined(occurrence?.liveActivity, defined(levelOverride?.liveActivity, payload.liveActivity)),
+      liveActivityLead: defined(occurrence?.liveActivityLead, defined(levelOverride?.liveActivityLead, payload.liveActivityLead)),
+      completed: payload.kind === "event"
+        ? displayedDay ? document.dayCompletions.some((row) => row.logicalID === payload.id && row.date === displayedDay && row.completed) : false
+        : payload.completed,
+      todayTaskID: payload.todayTaskID,
+    });
+  }
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.logicalID)) return false;
+    seen.add(item.logicalID);
+    return true;
+  });
+}
+
+export function createItem(document: CanonicalDocument, input: CreateInput): CanonicalPayload | null {
+  if (input.startDate && input.endDate && input.endDate < input.startDate) return null;
+  const payload: CanonicalPayload = {
+    id: input.id ?? crypto.randomUUID(),
+    legacyWebID: input.legacyWebID,
+    kind: input.kind,
+    origin: input.origin,
+    originPeriodKey: input.originPeriodKey,
+    title: input.title,
+    iconSymbol: input.iconSymbol ?? "calendar",
+    colorID: input.colorID,
+    legacyColorKey: input.legacyColorKey,
+    location: input.location ?? "",
+    memo: input.memo ?? "",
+    allDay: input.allDay ?? false,
+    startDate: input.startDate,
+    endDate: input.endDate ?? input.startDate,
+    startMinutes: input.allDay ? undefined : input.startMinutes,
+    endMinutes: input.allDay ? undefined : input.endMinutes,
+    reminders: input.reminders ?? [],
+    recurrence: input.recurrence ?? { frequency: "none" },
+    liveActivity: input.liveActivity ?? false,
+    liveActivityLead: input.liveActivityLead,
+    updatedAt: input.updatedAt ?? new Date(0).toISOString(),
+    todayTaskID: input.todayTaskID,
+    completed: input.completed ?? false,
+  };
+  document.payloads.push(payload);
+  return payload;
+}
+
+export function deleteLevel(document: CanonicalDocument, logicalID: string, level: PlanningLevel, key: string): void {
+  if (tombstoned(document, logicalID, level, key)) return;
+  document.tombstones.push({ logicalID, level, periodKey: key });
+}
+
+export function editPayload(document: CanonicalDocument, logicalID: string, patch: Partial<CanonicalPayload>): void {
+  const payload = document.payloads.find((row) => row.id === logicalID);
+  if (!payload) return;
+  const next = { ...payload, ...patch, id: payload.id, origin: payload.origin, kind: payload.kind };
+  if (next.startDate && next.endDate && next.endDate < next.startDate) return;
+  Object.assign(payload, next);
+  pruneStaleDateOverrides(document, logicalID);
+}
+
+function periodStillCovered(payload: CanonicalPayload, level: PlanningLevel, key: string): boolean {
+  if (!payload.startDate) return level === payload.origin && key === payload.originPeriodKey;
+  if (level === "daily") return dayIsCovered(payload, key);
+  if (level === "monthly" && /^\d{4}-\d{2}$/.test(key)) {
+    const [year, month] = key.split("-").map(Number);
+    const last = new Date(year, month, 0).getDate();
+    for (let day = 1; day <= last; day += 1) {
+      if (dayIsCovered(payload, `${key}-${pad(day)}`)) return true;
+    }
+    return false;
+  }
+  if (level === "weekly" && /^\d{4}-\d{2}-\d{2}$/.test(key)) {
+    for (let offset = 0; offset < 7; offset += 1) {
+      if (dayIsCovered(payload, ymdKey(addDays(parseYMD(key), offset)))) return true;
+    }
+    return false;
+  }
+  if (level === "future" && /^\d{4}$/.test(key)) {
+    for (let month = 1; month <= 12; month += 1) {
+      if (periodStillCovered(payload, "monthly", `${key}-${pad(month)}`)) return true;
+    }
+    return false;
+  }
+  return true;
+}
+
+/** Drops date-scoped overrides the new span no longer covers. Tombstones and reflection stay. */
+export function pruneStaleDateOverrides(document: CanonicalDocument, logicalID: string): void {
+  const payload = document.payloads.find((row) => row.id === logicalID);
+  if (!payload) return;
+  document.occurrenceOverrides = document.occurrenceOverrides.filter(
+    (row) => row.logicalID !== logicalID || isScheduledStart(payload, row.occurrenceDate),
+  );
+  document.dayCompletions = document.dayCompletions.filter(
+    (row) => row.logicalID !== logicalID || dayIsCovered(payload, row.date),
+  );
+  document.levelOverrides = document.levelOverrides.filter(
+    (row) => row.logicalID !== logicalID || periodStillCovered(payload, row.level, row.periodKey),
+  );
+}
+
+export function editLevel(
+  document: CanonicalDocument,
+  logicalID: string,
+  level: PlanningLevel,
+  key: string,
+  patch: Omit<LevelOverride, "logicalID" | "level" | "periodKey">,
+): void {
+  const existing = document.levelOverrides.find(
+    (row) => row.logicalID === logicalID && row.level === level && row.periodKey === key,
+  );
+  if (existing) Object.assign(existing, patch);
+  else document.levelOverrides.push({ logicalID, level, periodKey: key, ...patch });
+}
+
+export function editOccurrence(
+  document: CanonicalDocument,
+  logicalID: string,
+  occurrenceDate: string,
+  patch: Omit<OccurrenceOverride, "logicalID" | "occurrenceDate" | "excluded">,
+): void {
+  const existing = document.occurrenceOverrides.find(
+    (row) => row.logicalID === logicalID && row.occurrenceDate === occurrenceDate,
+  );
+  if (existing) Object.assign(existing, patch, { excluded: false });
+  else document.occurrenceOverrides.push({ logicalID, occurrenceDate, excluded: false, ...patch });
+}
+
+export function excludeOccurrence(document: CanonicalDocument, logicalID: string, occurrenceDate: string): void {
+  const existing = document.occurrenceOverrides.find(
+    (row) => row.logicalID === logicalID && row.occurrenceDate === occurrenceDate,
+  );
+  if (existing) existing.excluded = true;
+  else document.occurrenceOverrides.push({ logicalID, occurrenceDate, excluded: true });
+}
+
+/** Task completion shared by Today and Planning Daily. Events use `setEventCompletion`. */
+export function setCompleted(document: CanonicalDocument, logicalID: string, completed: boolean): void {
+  const payload = document.payloads.find((row) => row.id === logicalID);
+  if (!payload || payload.kind !== "task") return;
+  payload.completed = completed;
+}
+
+/** One displayed local day. Does not change the series, other days, or instance overrides. */
+export function setEventCompletion(document: CanonicalDocument, logicalID: string, date: string, completed: boolean): boolean {
+  const payload = document.payloads.find((row) => row.id === logicalID);
+  if (!payload || payload.kind !== "event" || !dayIsCovered(payload, date)) return false;
+  const existing = document.dayCompletions.find((row) => row.logicalID === logicalID && row.date === date);
+  if (existing) {
+    existing.completed = completed;
+    return true;
+  }
+  document.dayCompletions.push({ logicalID, date, completed });
+  return true;
+}
+
+export function completeReflection(document: CanonicalDocument, id: string, decisionIDs: string[]): boolean {
+  if (document.reflectionSnapshots.some((row) => row.id === id)) return false;
+  document.reflectionSnapshots.push({ id, completed: true, decisionIDs: [...decisionIDs] });
+  return true;
+}
+
+export function decodeDocument(raw: Partial<CanonicalDocument> | null | undefined): CanonicalDocument {
+  const document = emptyDocument();
+  if (!raw || raw.schemaVersion !== CANONICAL_SCHEMA_VERSION) return document;
+  document.legacyMigration = "unresolved";
+  document.payloads = (raw.payloads ?? []).map((row) => ({
+    ...row,
+    location: row.location ?? "",
+    memo: row.memo ?? "",
+    allDay: row.allDay ?? false,
+    reminders: row.reminders ?? [],
+    recurrence: row.recurrence ?? { frequency: "none" },
+    liveActivity: row.liveActivity ?? false,
+    completed: row.completed ?? false,
+    iconSymbol: row.iconSymbol ?? "calendar",
+  }));
+  document.tombstones = raw.tombstones ?? [];
+  document.levelOverrides = raw.levelOverrides ?? [];
+  document.occurrenceOverrides = raw.occurrenceOverrides ?? [];
+  document.dayCompletions = raw.dayCompletions ?? [];
+  document.reflectionSnapshots = raw.reflectionSnapshots ?? [];
+  return document;
+}
+
+export function restoreDocument(encoded: string): CanonicalDocument {
+  try {
+    return decodeDocument(JSON.parse(encoded) as Partial<CanonicalDocument>);
+  } catch {
+    return emptyDocument();
+  }
+}
+
+/**
+ * Native Swift does not read WKWebView localStorage.
+ * `AppDelegate` installs `NativeAppRoot` and never creates the Capacitor web view.
+ * V3 data lives under the WebKit key `essences-app-data-v3`; leftover events use `calendar-events`.
+ * Both are LevelDB website data, not a JSON file. This probe stays unresolved and does not invent an empty import.
+ */
+export function probeLegacyWebViewCalendar(): "unresolved" {
+  return "unresolved";
+}
+
+export interface LegacyCalendarRecord {
+  id: string;
+  title: string;
+  date: string;
+  endDate?: string;
+  allDay?: boolean;
+  startTime?: string;
+  endTime?: string;
+  color?: string;
+  location?: string;
+  notes?: string;
+  reminders?: string[];
+  repeat?: RepeatFrequency;
+  repeatEndDate?: string;
+  liveActivity?: boolean;
+  liveActivityLead?: string;
+  updatedAt?: string;
+}
+
+function minutesOf(clock?: string): number | undefined {
+  if (!clock || clock.length < 4) return undefined;
+  const [hour, minute] = clock.split(":").map(Number);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return undefined;
+  return hour * 60 + minute;
+}
+
+export function importLegacyRecords(document: CanonicalDocument, records: LegacyCalendarRecord[]): number {
+  let inserted = 0;
+  for (const record of records) {
+    if (document.payloads.some((row) => row.legacyWebID === record.id || row.id === record.id)) continue;
+    const mapped = record.color ? LEGACY_COLOR_MAP[record.color] : undefined;
+    const created = createItem(document, {
+      legacyWebID: record.id,
+      kind: "event",
+      origin: "daily",
+      originPeriodKey: record.date,
+      title: record.title,
+      colorID: mapped,
+      legacyColorKey: record.color,
+      location: record.location,
+      memo: record.notes,
+      allDay: record.allDay ?? false,
+      startDate: record.date,
+      endDate: record.endDate ?? record.date,
+      startMinutes: minutesOf(record.startTime),
+      endMinutes: minutesOf(record.endTime),
+      reminders: record.reminders,
+      recurrence: { frequency: record.repeat ?? "none", endDate: record.repeatEndDate },
+      liveActivity: record.liveActivity,
+      liveActivityLead: record.liveActivityLead,
+      updatedAt: record.updatedAt,
+    });
+    if (created) inserted += 1;
+  }
+  return inserted;
+}
+
+export function calendarDays(document: CanonicalDocument, day: string): EffectiveItem[] {
+  return effectiveItems(document, "daily", day);
+}
