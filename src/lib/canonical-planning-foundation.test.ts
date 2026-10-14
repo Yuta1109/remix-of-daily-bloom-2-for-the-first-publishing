@@ -631,43 +631,70 @@ describe("canonical planning foundation", () => {
     expect(productionDocument(decodeDocument(restored)).reflectionSnapshots.map((row) => row.id)).toEqual(["genuine", "mixed", "unknown", "empty-decisions"]);
   });
 
-  it("imports calendar events with exclusions and leaves later edits in place", () => {
+  it("imports a complete supported series and defers a series with an unsupported day", () => {
     const document = store();
     document.reflectionSnapshots.push({ id: "keep", completed: true, decisionIDs: ["other"] });
+    const weekly = { id: "weekly", title: "Weekly", date: "2026-10-07", endDate: "2026-10-07", startTime: "18:00", repeat: "weekly" as const, color: "gray", icon: "calendar", allDay: false, excludeDates: ["2026-10-21", "2027-01-06"] };
+    const moved = { id: "edit", title: "Moved", date: "2026-10-28", endDate: "2026-10-28", startTime: "19:00", location: "Hall", recurrenceMasterId: "weekly", recurrenceDate: "2026-10-28", color: "gray", icon: "calendar", allDay: false };
     const first = applyLegacyCalendarImport(document, [
       { id: "once", title: "Once", date: "2026-10-13", startTime: "09:00", endTime: "10:00", color: "red", reminders: ["15m"], allDay: false },
       { id: "span", title: "Span", date: "2026-10-13", endDate: "2026-10-15", allDay: true, color: "teal" },
-      { id: "weekly", title: "Weekly", date: "2026-10-07", endDate: "2026-10-07", startTime: "18:00", repeat: "weekly", color: "gray", excludeDates: ["2026-10-21", "2026-11-04", "2027-01-06"] },
-      { id: "edit", title: "Moved", date: "2026-10-28", startTime: "19:00", recurrenceMasterId: "weekly", recurrenceDate: "2026-10-28" },
-      { id: "bad", title: "Recolored", date: "2026-11-04", color: "blue", recurrenceMasterId: "weekly", recurrenceDate: "2026-11-04" },
+      weekly,
+      moved,
+      { id: "recolor", title: "Recolor", date: "2026-11-04", endDate: "2026-11-04", color: "blue", recurrenceMasterId: "paint", recurrenceDate: "2026-11-04" },
+      { id: "paint", title: "Paint", date: "2026-10-07", endDate: "2026-10-07", repeat: "weekly", color: "gray" },
     ]);
     expect(first.inserted).toBe(3);
-    expect(first.unsupported).toBe(1);
+    expect(first.deferred).toBe(1);
     expect(first.overridesAdded).toBe(1);
     expect(first.exclusionsAdded).toBe(2);
-    expect(document.legacyMigration).toBe("unresolved");
-    const weekly = document.payloads.find((row) => row.legacyWebID === "weekly");
-    expect(weekly?.legacyColorKey).toBe("gray");
-    expect(weekly?.startMinutes).toBe(18 * 60);
+    expect(document.payloads.some((row) => row.legacyWebID === "paint")).toBe(false);
     expect(document.payloads.find((row) => row.legacyWebID === "once")?.reminders).toEqual(["15m"]);
-    expect(document.payloads.find((row) => row.legacyWebID === "span")?.endDate).toBe("2026-10-15");
-    expect(document.occurrenceOverrides.filter((row) => row.logicalID === weekly?.id && row.excluded).map((row) => row.occurrenceDate).sort()).toEqual(["2026-10-21", "2027-01-06"]);
+    const stored = document.payloads.find((row) => row.legacyWebID === "weekly");
+    expect(stored?.legacyColorKey).toBe("gray");
+    expect(calendarDays(document, "2026-10-21").some((row) => row.logicalID === stored?.id)).toBe(false);
+    expect(calendarDays(document, "2026-10-14").some((row) => row.logicalID === stored?.id)).toBe(true);
+    expect(calendarDays(document, "2027-01-06").some((row) => row.logicalID === stored?.id)).toBe(false);
     expect(document.occurrenceOverrides.find((row) => row.occurrenceDate === "2026-10-28")?.title).toBe("Moved");
-    expect(calendarDays(document, "2026-10-21").some((row) => row.logicalID === weekly?.id)).toBe(false);
-    expect(calendarDays(document, "2026-10-14").some((row) => row.logicalID === weekly?.id)).toBe(true);
-    expect(calendarDays(document, "2027-01-06").some((row) => row.logicalID === weekly?.id)).toBe(false);
+    expect(document.occurrenceOverrides.find((row) => row.occurrenceDate === "2026-10-28")?.location).toBe("Hall");
     expect(document.reflectionSnapshots).toEqual([{ id: "keep", completed: true, decisionIDs: ["other"] }]);
-    if (weekly) weekly.title = "User edit";
-    const second = applyLegacyCalendarImport(document, [
-      { id: "weekly", title: "Weekly", date: "2026-10-07", repeat: "weekly", excludeDates: ["2026-10-21", "2026-11-04", "2027-01-06"] },
-      { id: "edit", title: "Moved", date: "2026-10-28", recurrenceMasterId: "weekly", recurrenceDate: "2026-10-28" },
-    ]);
+    expect(document.legacyMigration).toBe("unresolved");
+    if (stored) stored.title = "User edit";
+    const second = applyLegacyCalendarImport(document, [weekly, moved]);
     expect(second.inserted).toBe(0);
-    expect(second.exclusionsAdded).toBe(1);
-    expect(second.overridesAdded).toBe(0);
+    expect(second.skipped).toBe(1);
+    expect(second.exclusionsAdded).toBe(0);
     expect(document.payloads.find((row) => row.legacyWebID === "weekly")?.title).toBe("User edit");
-    expect(document.occurrenceOverrides.filter((row) => row.logicalID === weekly?.id)).toHaveLength(4);
-
+    const orphan = applyLegacyCalendarImport(document, [
+      { id: "child", title: "Lost", date: "2026-10-01", recurrenceMasterId: "missing", recurrenceDate: "2026-10-01" },
+    ]);
+    expect(orphan.unsupported).toBe(1);
+    expect(orphan.inserted).toBe(0);
+    const partial = store();
+    applyLegacyCalendarImport(partial, [weekly]);
+    partial.payloads[0].title = "Kept";
+    const flagged = applyLegacyCalendarImport(partial, [
+      weekly,
+      { id: "icon", title: "Icon", date: "2026-10-28", endDate: "2026-10-28", icon: "star", recurrenceMasterId: "weekly", recurrenceDate: "2026-10-28" },
+    ]);
+    expect(flagged.reconciliation).toBe(1);
+    expect(flagged.inserted).toBe(0);
+    expect(partial.payloads[0].title).toBe("Kept");
+    for (const change of [
+      { color: "blue" },
+      { icon: "star" },
+      { allDay: true },
+      { endDate: "2026-10-16" },
+    ]) {
+      const fresh = store();
+      const stats = applyLegacyCalendarImport(fresh, [
+        { id: "series", title: "Series", date: "2026-10-07", endDate: "2026-10-07", repeat: "weekly", color: "gray", icon: "calendar", allDay: false },
+        { id: "day", title: "Day", date: "2026-10-14", endDate: "2026-10-14", color: "gray", icon: "calendar", allDay: false, recurrenceMasterId: "series", recurrenceDate: "2026-10-14", ...change },
+      ]);
+      expect(stats.deferred).toBe(1);
+      expect(stats.inserted).toBe(0);
+      expect(fresh.payloads).toEqual([]);
+    }
     const memory = {
       value: "{",
       read(key: string) { return key === STORAGE_KEY ? this.value : undefined; },

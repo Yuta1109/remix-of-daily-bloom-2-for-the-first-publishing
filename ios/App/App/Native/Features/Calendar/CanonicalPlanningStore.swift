@@ -632,83 +632,143 @@ enum CanonicalPlanningEngine {
         var inserted = 0
         var skipped = 0
         var unsupported = 0
+        var deferred = 0
+        var reconciliation = 0
         var exclusionsAdded = 0
         var overridesAdded = 0
     }
 
-    /// Existing payloads and occurrence overrides are left as stored.
-    /// Missing exclusions and supported one-day edits are added.
+    struct LegacyPreflightSummary {
+        var candidates = 0
+        var importable = 0
+        var alreadyImported = 0
+        var deferred = 0
+        var malformed = 0
+        var reconciliation = 0
+    }
+
+    /// Counts series rows only. Does not write.
+    static func summarizeLegacy(_ document: CanonicalPlanningDocument, _ records: [LegacyCalendarRecord]) -> LegacyPreflightSummary {
+        let series = records.filter { $0.recurrenceMasterId == nil }
+        let known = Set(series.map(\.id))
+        var summary = LegacyPreflightSummary()
+        summary.candidates = series.count
+        summary.malformed = records.filter { record in
+            guard let master = record.recurrenceMasterId else { return false }
+            return !known.contains(master)
+        }.count
+        for row in series {
+            let children = records.filter { $0.recurrenceMasterId == row.id }
+            switch verdict(document, row, children) {
+            case .fullySupported: summary.importable += 1
+            case .alreadyImported: summary.alreadyImported += 1
+            case .unsupportedOccurrenceChanges: summary.deferred += 1
+            case .requiresReconciliation: summary.reconciliation += 1
+            case .malformedSeries: summary.malformed += 1
+            }
+        }
+        return summary
+    }
+
+    private enum SeriesVerdict {
+        case fullySupported
+        case unsupportedOccurrenceChanges
+        case malformedSeries
+        case alreadyImported
+        case requiresReconciliation
+    }
+
+    private static func childUnsupported(_ series: LegacyCalendarRecord, _ child: LegacyCalendarRecord) -> Bool {
+        let colorMismatch = child.color != nil && child.color != series.color
+        let iconMismatch = child.icon != nil && child.icon != series.icon
+        let allDayMismatch = child.allDay != nil && child.allDay != series.allDay
+        let seriesEnd = series.endDate ?? series.date
+        let childEnd = child.endDate ?? child.date
+        let seriesSpan = spanDays(series.date, seriesEnd)
+        let childSpan = spanDays(child.date, childEnd)
+        let spanMismatch = childEnd < child.date || seriesEnd < series.date || childSpan != seriesSpan
+        return colorMismatch || iconMismatch || allDayMismatch || spanMismatch
+    }
+
+    private static func verdict(
+        _ document: CanonicalPlanningDocument,
+        _ row: LegacyCalendarRecord,
+        _ children: [LegacyCalendarRecord]
+    ) -> SeriesVerdict {
+        let exists = document.payloads.contains { $0.legacyWebID == row.id || $0.id == row.id }
+        if children.contains(where: { $0.recurrenceDate == nil || childUnsupported(row, $0) }) {
+            return exists ? .requiresReconciliation : .unsupportedOccurrenceChanges
+        }
+        return exists ? .alreadyImported : .fullySupported
+    }
+
+    /// Writes a series only when every one-day change fits. Does not rewrite an existing payload.
     static func importLegacy(_ document: inout CanonicalPlanningDocument, _ records: [LegacyCalendarRecord]) -> LegacyImportStats {
         var stats = LegacyImportStats()
         let series = records.filter { $0.recurrenceMasterId == nil }
-        let exceptions = records.filter { $0.recurrenceMasterId != nil && $0.recurrenceDate != nil }
-        stats.unsupported += records.filter { $0.recurrenceMasterId != nil && $0.recurrenceDate == nil }.count
-        for record in series {
-            if document.payloads.contains(where: { $0.legacyWebID == record.id || $0.id == record.id }) {
-                stats.skipped += 1
+        let known = Set(series.map(\.id))
+        stats.unsupported = records.filter { record in
+            guard let master = record.recurrenceMasterId else { return false }
+            return !known.contains(master)
+        }.count
+        for row in series {
+            let children = records.filter { $0.recurrenceMasterId == row.id }
+            switch verdict(document, row, children) {
+            case .unsupportedOccurrenceChanges:
+                stats.deferred += 1
                 continue
-            }
-            let frequency = CanonicalRepeatFrequency(rawValue: record.repeatFrequency ?? "none") ?? .none
-            let created = createItem(&document, CanonicalCreateInput(
-                legacyWebID: record.id,
-                kind: .event,
-                origin: .daily,
-                originPeriodKey: record.date,
-                title: record.title,
-                iconSymbol: record.icon ?? "calendar",
-                colorID: record.color.flatMap { LegacyCalendarColorMap.resolved[$0] },
-                legacyColorKey: record.color,
-                location: record.location ?? "",
-                memo: record.notes ?? "",
-                allDay: record.allDay ?? false,
-                startDate: record.date,
-                endDate: record.endDate ?? record.date,
-                startMinutes: minutes(record.startTime),
-                endMinutes: minutes(record.endTime),
-                reminders: record.reminders ?? [],
-                recurrence: CanonicalRecurrenceRule(frequency: frequency, endDate: record.repeatEndDate),
-                liveActivity: record.liveActivity ?? false,
-                liveActivityLead: record.liveActivityLead,
-                updatedAt: record.updatedAt ?? ""
-            ))
-            if created != nil { stats.inserted += 1 } else { stats.unsupported += 1 }
-        }
-        for record in exceptions {
-            guard let date = record.recurrenceDate,
-                  let master = document.payloads.first(where: { $0.legacyWebID == record.recurrenceMasterId || $0.id == record.recurrenceMasterId }) else {
+            case .requiresReconciliation:
+                stats.reconciliation += 1
+                continue
+            case .malformedSeries:
                 stats.unsupported += 1
                 continue
-            }
-            let masterSpan = spanDays(master.startDate ?? "", master.endDate ?? master.startDate ?? "")
-            let exceptionSpan = spanDays(record.date, record.endDate ?? record.date)
-            let colorMismatch = record.color != nil && record.color != master.legacyColorKey
-            let iconMismatch = record.icon != nil && record.icon != master.iconSymbol
-            let allDayMismatch = record.allDay != nil && record.allDay != master.allDay
-            if colorMismatch || iconMismatch || allDayMismatch || exceptionSpan != masterSpan {
-                stats.unsupported += 1
-                continue
-            }
-            if document.occurrenceOverrides.contains(where: { $0.logicalID == master.id && $0.occurrenceDate == date }) {
+            case .fullySupported:
+                let frequency = CanonicalRepeatFrequency(rawValue: row.repeatFrequency ?? "none") ?? .none
+                let created = createItem(&document, CanonicalCreateInput(
+                    legacyWebID: row.id,
+                    kind: .event,
+                    origin: .daily,
+                    originPeriodKey: row.date,
+                    title: row.title,
+                    iconSymbol: row.icon ?? "calendar",
+                    colorID: row.color.flatMap { LegacyCalendarColorMap.resolved[$0] },
+                    legacyColorKey: row.color,
+                    location: row.location ?? "",
+                    memo: row.notes ?? "",
+                    allDay: row.allDay ?? false,
+                    startDate: row.date,
+                    endDate: row.endDate ?? row.date,
+                    startMinutes: minutes(row.startTime),
+                    endMinutes: minutes(row.endTime),
+                    reminders: row.reminders ?? [],
+                    recurrence: CanonicalRecurrenceRule(frequency: frequency, endDate: row.repeatEndDate),
+                    liveActivity: row.liveActivity ?? false,
+                    liveActivityLead: row.liveActivityLead,
+                    updatedAt: row.updatedAt ?? ""
+                ))
+                if created != nil { stats.inserted += 1 } else { stats.unsupported += 1 }
+            case .alreadyImported:
                 stats.skipped += 1
-                continue
             }
-            editOccurrence(&document, master.id, date) { row in
-                if record.title != master.title { row.title = record.title }
-                if record.location != master.location { row.location = record.location }
-                if record.notes != master.memo { row.memo = record.notes }
-                row.startMinutes = minutes(record.startTime)
-                row.endMinutes = minutes(record.endTime)
-                if record.reminders != master.reminders { row.reminders = record.reminders }
-                row.liveActivity = record.liveActivity
-                row.liveActivityLead = record.liveActivityLead
+            guard let master = document.payloads.first(where: { $0.legacyWebID == row.id || $0.id == row.id }) else { continue }
+            for child in children {
+                guard let date = child.recurrenceDate else { continue }
+                if document.occurrenceOverrides.contains(where: { $0.logicalID == master.id && $0.occurrenceDate == date }) { continue }
+                editOccurrence(&document, master.id, date) { override in
+                    if child.title != master.title { override.title = child.title }
+                    if child.location != master.location { override.location = child.location }
+                    if child.notes != master.memo { override.memo = child.notes }
+                    override.startMinutes = minutes(child.startTime)
+                    override.endMinutes = minutes(child.endTime)
+                    if child.reminders != master.reminders { override.reminders = child.reminders }
+                    override.liveActivity = child.liveActivity
+                    override.liveActivityLead = child.liveActivityLead
+                }
+                stats.overridesAdded += 1
             }
-            stats.overridesAdded += 1
-        }
-        for record in series {
-            guard let master = document.payloads.first(where: { $0.legacyWebID == record.id || $0.id == record.id }) else { continue }
-            for date in record.excludeDates ?? [] {
-                let replaced = exceptions.contains { $0.recurrenceMasterId == record.id && $0.recurrenceDate == date }
-                if replaced { continue }
+            for date in row.excludeDates ?? [] {
+                if children.contains(where: { $0.recurrenceDate == date }) { continue }
                 if document.occurrenceOverrides.contains(where: { $0.logicalID == master.id && $0.occurrenceDate == date }) { continue }
                 excludeOccurrence(&document, master.id, date)
                 stats.exclusionsAdded += 1

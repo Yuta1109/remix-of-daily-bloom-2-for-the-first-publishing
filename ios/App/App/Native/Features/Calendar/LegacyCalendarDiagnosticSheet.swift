@@ -7,6 +7,8 @@ private struct LegacyImportOutcome {
     var inserted: Int
     var skipped: Int
     var unsupported: Int
+    var deferred: Int
+    var reconciliation: Int
     var persistedLegacyCount: Int
     var wrote: Bool
 }
@@ -20,6 +22,8 @@ struct LegacyCalendarDiagnosticSheet: View {
     @State private var snapshot: LegacyWebViewDataReader.Snapshot?
     @State private var outcome: LegacyImportOutcome?
     @State private var confirmImport = false
+    @State private var preflight = CanonicalPlanningStore.LegacyPreflightSummary()
+    @State private var persistedCount = 0
 
     var body: some View {
         NavigationStack {
@@ -44,7 +48,12 @@ struct LegacyCalendarDiagnosticSheet: View {
                                 .font(.system(size: 14))
                                 .foregroundStyle(PlanningPalette.muted)
                         }
-                        if report.eligibleForFutureImport && outcome == nil {
+                        if preflight.deferred > 0 {
+                            Text("一部の繰り返し予定には、現在のアプリで再現できない変更が含まれています。これらは取り込まず、旧データに残します。")
+                                .font(.system(size: 14))
+                                .foregroundStyle(PlanningPalette.muted)
+                        }
+                        if preflight.importable > 0 && outcome == nil {
                             Button { confirmImport = true } label: {
                                 Text(importing ? "取り込んでいます" : "旧カレンダーデータを取り込む")
                                     .font(.system(size: 17, weight: .semibold))
@@ -68,6 +77,8 @@ struct LegacyCalendarDiagnosticSheet: View {
                             line("今回追加", "\(outcome.inserted)件")
                             line("重複スキップ", "\(outcome.skipped)件")
                             line("未対応・取り込み不可", "\(outcome.unsupported)件")
+                            line("見送った繰り返し", "\(outcome.deferred)件")
+                            line("再確認が必要", "\(outcome.reconciliation)件")
                             line("取り込み済み", "\(outcome.persistedLegacyCount)件")
                             line("保存状態", outcome.wrote ? "保存確認済み" : "保存失敗")
                         }
@@ -95,36 +106,33 @@ struct LegacyCalendarDiagnosticSheet: View {
             self.snapshot = snapshot
             outcome = nil
             report = snapshot.report(signedInUid: uid)
+            let records = LegacyCalendarClassification.calendarRecords(v3Raw: snapshot.v3Raw, calendarEventsRaw: snapshot.calendarEventsRaw)
+            preflight = CanonicalPlanningStore.summarizeLegacy(appState.canonicalPlanning.document, records)
+            persistedCount = reloadedLegacyCount()
             reading = false
         }
     }
 
     private func importEvents() {
-        guard !importing, let snapshot, let report, report.eligibleForFutureImport else { return }
+        guard !importing, let snapshot, preflight.importable > 0 else { return }
         importing = true
         let records = LegacyCalendarClassification.calendarRecords(v3Raw: snapshot.v3Raw, calendarEventsRaw: snapshot.calendarEventsRaw)
         var stats = CanonicalPlanningStore.LegacyImportStats()
         let wrote = appState.canonicalPlanning.mutate { document in
             stats = CanonicalPlanningStore.importLegacy(&document, records)
         }
-        let reloaded = CanonicalPlanningPersistence.load()
-        let persisted: Int
-        let saved: Bool
-        switch reloaded {
-        case .loaded(let document):
-            persisted = document.payloads.filter { $0.legacyWebID != nil }.count
-            let changed = stats.inserted + stats.exclusionsAdded + stats.overridesAdded
-            saved = wrote || (changed == 0 && appState.canonicalPlanning.state != .unreadable)
-        case .absent, .unreadable:
-            persisted = 0
-            saved = false
-        }
+        let persisted = reloadedLegacyCount()
+        let changed = stats.inserted + stats.exclusionsAdded + stats.overridesAdded
+        persistedCount = max(persisted, 0)
+        preflight = CanonicalPlanningStore.summarizeLegacy(appState.canonicalPlanning.document, records)
         outcome = LegacyImportOutcome(
             inserted: stats.inserted,
             skipped: stats.skipped,
             unsupported: stats.unsupported,
-            persistedLegacyCount: persisted,
-            wrote: saved
+            deferred: stats.deferred,
+            reconciliation: stats.reconciliation,
+            persistedLegacyCount: max(persisted, 0),
+            wrote: persisted >= 0 && (wrote || changed == 0)
         )
         importing = false
     }
@@ -138,7 +146,11 @@ struct LegacyCalendarDiagnosticSheet: View {
             line("WebViewストレージ", storageLabel(report.status))
             line("V3データ", report.v3Present ? "検出" : "なし")
             line("旧Calendarデータ", report.calendarEventsPresent ? "検出" : "なし")
-            line("予定候補", "\(report.candidateCount)件")
+            line("予定候補", "\(preflight.candidates)件")
+            line("取り込める予定", "\(preflight.importable)件")
+                            line("取り込み済み", "\(persistedCount)件")
+                            line("見送った繰り返し", "\(preflight.deferred)件")
+                            line("再確認が必要", "\(preflight.reconciliation)件")
             line("重複候補", "\(report.duplicateCount)件")
             line("形式の問題", "\(report.malformedCount)件")
             line("アカウント", ownerLabel(report.owner))
@@ -167,6 +179,17 @@ struct LegacyCalendarDiagnosticSheet: View {
         case .unsupportedFormat: return "未対応の形式です"
         case .readFailed: return "読み取りに失敗しました"
         case .readInProgress: return "別の確認が進行中です"
+        }
+    }
+
+    private func reloadedLegacyCount() -> Int {
+        switch CanonicalPlanningPersistence.load() {
+        case .loaded(let document):
+            return document.payloads.filter { $0.legacyWebID != nil }.count
+        case .absent:
+            return 0
+        case .unreadable:
+            return -1
         }
     }
 
