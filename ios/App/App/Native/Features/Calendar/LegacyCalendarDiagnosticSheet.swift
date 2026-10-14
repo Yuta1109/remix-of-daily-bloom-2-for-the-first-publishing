@@ -22,7 +22,7 @@ struct LegacyCalendarDiagnosticSheet: View {
     @State private var snapshot: LegacyWebViewDataReader.Snapshot?
     @State private var outcome: LegacyImportOutcome?
     @State private var confirmImport = false
-    @State private var preflight = CanonicalPlanningStore.LegacyPreflightSummary()
+    @State private var preflight = CanonicalPlanningEngine.LegacyPreflightSummary()
     @State private var persistedCount = 0
 
     var body: some View {
@@ -107,7 +107,7 @@ struct LegacyCalendarDiagnosticSheet: View {
             outcome = nil
             report = snapshot.report(signedInUid: uid)
             let records = LegacyCalendarClassification.calendarRecords(v3Raw: snapshot.v3Raw, calendarEventsRaw: snapshot.calendarEventsRaw)
-            preflight = CanonicalPlanningStore.summarizeLegacy(appState.canonicalPlanning.document, records)
+            preflight = CanonicalPlanningEngine.summarizeLegacy(appState.canonicalPlanning.document, records)
             persistedCount = reloadedLegacyCount()
             reading = false
         }
@@ -117,14 +117,14 @@ struct LegacyCalendarDiagnosticSheet: View {
         guard !importing, let snapshot, preflight.importable > 0 else { return }
         importing = true
         let records = LegacyCalendarClassification.calendarRecords(v3Raw: snapshot.v3Raw, calendarEventsRaw: snapshot.calendarEventsRaw)
-        var stats = CanonicalPlanningStore.LegacyImportStats()
+        var stats = CanonicalPlanningEngine.LegacyImportStats()
         let wrote = appState.canonicalPlanning.mutate { document in
-            stats = CanonicalPlanningStore.importLegacy(&document, records)
+            stats = CanonicalPlanningEngine.importLegacy(&document, records)
         }
         let persisted = reloadedLegacyCount()
         let changed = stats.inserted + stats.exclusionsAdded + stats.overridesAdded
         persistedCount = max(persisted, 0)
-        preflight = CanonicalPlanningStore.summarizeLegacy(appState.canonicalPlanning.document, records)
+        preflight = CanonicalPlanningEngine.summarizeLegacy(appState.canonicalPlanning.document, records)
         outcome = LegacyImportOutcome(
             inserted: stats.inserted,
             skipped: stats.skipped,
