@@ -4,6 +4,7 @@ struct PlanningShell: View {
     @EnvironmentObject private var navigation: TabNavigationState
     @EnvironmentObject private var session: PlanningSession
     @State private var didRestore = false
+    @State private var showLegacyDiagnostic = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -15,8 +16,11 @@ struct PlanningShell: View {
             PlanningHeader(
                 onPostpone: { navigation.path.append(PlanningRoute.postponeBox) },
                 onHelp: { navigation.path.append(PlanningRoute.help) },
-                onUser: {}
+                onUser: { showLegacyDiagnostic = true }
             )
+        }
+        .sheet(isPresented: $showLegacyDiagnostic) {
+            LegacyCalendarDiagnosticSheet()
         }
         .planningExtendingSurface(PlanningPalette.paper)
         .planningKeyboardDismiss()

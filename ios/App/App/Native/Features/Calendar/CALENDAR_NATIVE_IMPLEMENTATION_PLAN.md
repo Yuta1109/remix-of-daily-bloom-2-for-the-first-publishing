@@ -357,11 +357,31 @@ UI acceptance, on a later Simulator build (not claimed from Windows):
 
 ---
 
+## Stage 3A — Verified Legacy Data Access
+
+Repository evidence, not a device run:
+
+1. **Origin.** `capacitor.config.ts` and `ios/App/App/capacitor.config.json` set `appId` `com.confast.essences` and do not set `server.hostname`, `server.iosScheme`, or `server.url`. Capacitor 8’s defaults for those omitted fields are scheme `capacitor` and host `localhost`, so the historical document origin is `capacitor://localhost`. The repo does not contain `http://localhost` or `https://localhost` as the app server.
+2. **Storage.** Both keys are `localStorage` in that origin’s `WKWebsiteDataStore`. `STORAGE_KEY` is `essences-app-data-v3` (`src/lib/v3/types.ts`). `calendar-events` is the leftover array in `events-store.ts`. V3 `events` is the calendar map. The same document also holds plans, tasks, notes, and routines. Those are not calendar events. `essences-cloud-owner-v1` (`cloud-session.ts`) is the local owner uid. The V3 blob itself is not per-user; stashes use `essences-app-data-v3:uid:`.
+3. **Container.** `PRODUCT_BUNDLE_IDENTIFIER` is `com.confast.essences` in `project.pbxproj`. An in-place update with that id keeps the app container, including the default website data store. That survival is the platform rule, not something this repo has executed on a phone.
+4. **Assets.** `AppDelegate` shows `NativeAppRoot` and does not create a Capacitor web view. `project.pbxproj` does not copy `dist` or `public`. The old JavaScript bundle is not in the native target.
+5. **Bridge.** `LegacyWebViewDataReader` is not referenced by `AppState`. It loads an inert HTML response on `capacitor://localhost` through a `WKURLSchemeHandler`, then calls `localStorage.getItem` only. It does not call `setItem`, `removeItem`, or `clear`, and it does not write `essences.canonical-planning.v1`.
+6. **Extraction.** The reader returns raw strings plus a coarse status. `classifyLegacyStorage` in `src/lib/legacy-webview-read.ts` is the tested validator. V3 schema 3 events win on the same id. `calendar-events` adds ids V3 does not have. `isSample: true` is skipped. Titles are not a sample test. Colors `red`, `teal`, and `gray` stay as stored. `startAt` stays the original local wall-clock string.
+7. **Validation.** Absent keys are `accessibleButEmpty`, which is not a finished migration. Invalid JSON is `malformedData`. Another `schemaVersion` is `unsupportedFormat`. A failed navigation is `inaccessibleOrigin`. None of these set `legacyMigration`.
+8. **Account.** Do not import until the signed-in uid equals `essences-cloud-owner-v1`. If that key is missing, or the uid differs, keep the rows local and unassigned. A previous user’s stash key can still be in the same WebView.
+9. **Samples.** Canonical production saves already drop `isSample` payloads. This reader uses the same flag. Tutorial Planning rows are not in these WebView keys.
+10. **PlanningSession.** `persist(into:)` writes navigation and tutorial keys only. `periodItems`, `events`, and `periodRecords` are memory. Routines and quick memos are `TodayPersistence` UserDefaults. A future cutover must copy non-sample in-memory Planning rows once before replacing the session. Do not open an empty canonical document over that memory.
+11. **Device checks.** Confirm `capacitor://localhost` still has the keys after an update, that the inert handler can read them, and that the read does not change `localStorage` length.
+12. **Blockers.** The reader has not run on WebKit. An older install that used a different scheme would be a different origin. Owner mismatch blocks automatic import.
+13. **Stage 3A-2 diagnostic.** Planning’s existing User button opens `LegacyCalendarDiagnosticSheet`. It is not behind `#if DEBUG`. Remove it before a public release. The sheet calls `LegacyWebViewDataReader.read()` only after a tap. Swift `LegacyCalendarClassification` applies the same rules as `classifyLegacyStorage`: schema 3, V3 id precedence, explicit `isSample` skip, malformed versus empty. `LegacyCalendarClassification.owner` compares `essences-cloud-owner-v1` with `Auth.auth().currentUser?.uid` and returns `matchingOwner`, `differentOwner`, `missingOwner`, `unauthenticated`, or `invalidOwnerMarker`. The uid is not shown. Eligible for a future import only when status is `availableWithData` and the owner matches. Import is not called. A fresh Simulator with no prior WebView data can report empty; that does not prove an upgrade. The iPhone check is an in-place TestFlight update, then Planning → User → 旧カレンダーデータを確認. This has not been run on a phone.
+
+---
+
 ## M. Unresolved blockers and decisions
 
 Blockers:
 
-1. WebView localStorage cannot be read from the native shell. Shipping Calendar before an explicit export shows an empty native calendar to users who still have WebView events. Do not pretend migration ran.
+1. `LegacyWebViewDataReader` can target `capacitor://localhost`, but no device has confirmed the keys are still there. Shipping Calendar before that read shows an empty native calendar to users who still have WebView events. Do not pretend migration ran.
 2. Live Activity start while the process is suspended still depends on the existing push path. Local scheduling cannot replace it.
 
 Decisions locked in Phase 2A. Visuals are not implemented yet.
