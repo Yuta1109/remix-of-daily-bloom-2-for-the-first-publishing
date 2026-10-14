@@ -3,16 +3,26 @@ import SwiftUI
 
 /// Temporary TestFlight check. Remove or replace before a public release.
 /// Planning header User button is the only entry. It does not run at launch.
+private struct LegacyImportOutcome {
+    var inserted: Int
+    var skipped: Int
+    var wrote: Bool
+}
+
 struct LegacyCalendarDiagnosticSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     @State private var reading = false
+    @State private var importing = false
     @State private var report: LegacyDiagnosticReport?
+    @State private var snapshot: LegacyWebViewDataReader.Snapshot?
+    @State private var outcome: LegacyImportOutcome?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("以前のアプリに保存された予定を確認します。データの変更や取り込みは行いません。")
+                    Text("以前のアプリに保存された予定を確認します。確認だけではデータは変わりません。取り込みは次のボタンを押したときだけ行います。")
                         .font(.system(size: 15))
                         .foregroundStyle(PlanningPalette.muted)
                     Button(action: start) {
@@ -23,9 +33,29 @@ struct LegacyCalendarDiagnosticSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(PlanningPalette.accent)
-                    .disabled(reading)
+                    .disabled(reading || importing)
                     if let report {
                         result(report)
+                        if report.owner == .differentOwner {
+                            Text("この端末の旧データは、今のアカウントと一致しない印が付いています。バージョン1.1の予定は端末内のデータなので、取り込みは止めません。")
+                                .font(.system(size: 14))
+                                .foregroundStyle(PlanningPalette.muted)
+                        }
+                        if report.eligibleForFutureImport && outcome == nil {
+                            Button(action: importEvents) {
+                                Text(importing ? "取り込んでいます" : "旧カレンダーデータを取り込む")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 48)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(importing)
+                        }
+                        if let outcome {
+                            line("追加", "\(outcome.inserted)件")
+                            line("重複のためスキップ", "\(outcome.skipped)件")
+                            line("保存", outcome.wrote ? "保存しました" : "新しい予定はありません")
+                        }
                     }
                 }
                 .padding(20)
@@ -47,9 +77,24 @@ struct LegacyCalendarDiagnosticSheet: View {
         let uid = Auth.auth().currentUser?.uid
         Task {
             let snapshot = await LegacyWebViewDataReader().read()
+            self.snapshot = snapshot
+            outcome = nil
             report = snapshot.report(signedInUid: uid)
             reading = false
         }
+    }
+
+    private func importEvents() {
+        guard !importing, let snapshot, let report, report.eligibleForFutureImport else { return }
+        importing = true
+        let records = LegacyCalendarClassification.calendarRecords(v3Raw: snapshot.v3Raw, calendarEventsRaw: snapshot.calendarEventsRaw)
+        var inserted = 0
+        let wrote = appState.canonicalPlanning.mutate { document in
+            inserted = CanonicalPlanningStore.importLegacy(&document, records)
+        }
+        let skipped = max(0, records.count - inserted)
+        outcome = LegacyImportOutcome(inserted: inserted, skipped: skipped, wrote: wrote)
+        importing = false
     }
 
     @ViewBuilder

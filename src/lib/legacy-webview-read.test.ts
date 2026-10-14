@@ -103,7 +103,9 @@ describe("legacy webview read classification", () => {
     expect(ready.eligibleForFutureImport).toBe(true);
     expect(ready.importExecuted).toBe(false);
     expect(ready.candidateCount).toBe(1);
-    expect(legacyDiagnosticReport(v3, null, "uid-b", "uid-a").eligibleForFutureImport).toBe(false);
+    expect(legacyDiagnosticReport(v3, null, "uid-b", "uid-a").eligibleForFutureImport).toBe(true);
+    expect(legacyDiagnosticReport(v3, null, "uid-b", "uid-a").owner).toBe("differentOwner");
+    expect(legacyDiagnosticReport(v3, null, null, null).eligibleForFutureImport).toBe(true);
     expect(legacyDiagnosticReport(v3, null, null, "uid-a").owner).toBe("missingOwner");
     expect(legacyDiagnosticReport(null, null, "uid-a", "uid-a").status).toBe("accessibleButEmpty");
     expect(legacyDiagnosticReport(null, "[]", "uid-a", null).owner).toBe("unauthenticated");

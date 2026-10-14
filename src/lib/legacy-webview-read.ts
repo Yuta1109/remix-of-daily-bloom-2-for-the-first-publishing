@@ -265,7 +265,7 @@ export function legacyDiagnosticReport(
     duplicateCount: classified.duplicateCount,
     malformedCount: classified.malformedCount,
     owner,
-    eligibleForFutureImport: classified.status === "availableWithData" && owner === "matchingOwner",
+    eligibleForFutureImport: classified.status === "availableWithData" && classified.candidateCount > 0,
     importExecuted: false,
   };
 }

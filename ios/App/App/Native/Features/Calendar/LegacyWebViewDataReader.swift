@@ -209,6 +209,75 @@ enum LegacyCalendarClassification {
                 : candidates > 0 ? .availableWithData : .accessibleButEmpty
         return (status, candidates, duplicates, malformed)
     }
+
+    /// Calendar events only. V3 wins on id. `isSample` rows are omitted.
+    static func calendarRecords(v3Raw: String?, calendarEventsRaw: String?) -> [LegacyCalendarRecord] {
+        var records: [LegacyCalendarRecord] = []
+        var seen = Set<String>()
+        if let v3Raw,
+           let data = v3Raw.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           (object["schemaVersion"] as? Int) == 3,
+           let events = object["events"] as? [String: Any] {
+            for value in events.values {
+                guard let row = value as? [String: Any], (row["isSample"] as? Bool) != true,
+                      let id = row["id"] as? String, let title = row["title"] as? String,
+                      seen.insert(id).inserted else { continue }
+                records.append(record(id: id, title: title, row: row, v3: true))
+            }
+        }
+        if let calendarEventsRaw,
+           let data = calendarEventsRaw.data(using: .utf8),
+           let list = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+            for value in list {
+                guard let row = value as? [String: Any], (row["isSample"] as? Bool) != true,
+                      let id = row["id"] as? String, let title = row["title"] as? String,
+                      seen.insert(id).inserted else { continue }
+                records.append(record(id: id, title: title, row: row, v3: false))
+            }
+        }
+        return records
+    }
+
+    private static func record(id: String, title: String, row: [String: Any], v3: Bool) -> LegacyCalendarRecord {
+        let startAt = row["startAt"] as? String
+        let endAt = row["endAt"] as? String
+        let allDay = row["allDay"] as? Bool
+        let date = v3 ? startAt.flatMap { $0.count >= 10 ? String($0.prefix(10)) : nil } : row["date"] as? String
+        let startTime = v3
+            ? ((allDay == true) ? nil : startAt.flatMap { $0.count >= 16 ? String($0.dropFirst(11).prefix(5)) : nil })
+            : row["startTime"] as? String
+        let endTime = v3
+            ? ((allDay == true) ? nil : endAt.flatMap { $0.count >= 16 ? String($0.dropFirst(11).prefix(5)) : nil })
+            : row["endTime"] as? String
+        let endDate = v3 ? endAt.flatMap { $0.count >= 10 ? String($0.prefix(10)) : nil } : row["endDate"] as? String
+        let repeatValue: String?
+        if v3, let recurrence = row["recurrence"] as? [String: Any] {
+            repeatValue = recurrence["freq"] as? String
+        } else {
+            repeatValue = row["repeat"] as? String
+        }
+        let reminders = (row["reminders"] as? [Any])?.compactMap { $0 as? String }
+            ?? (row["reminder"] as? String).map { [$0] }
+        return LegacyCalendarRecord(
+            id: id,
+            title: title,
+            date: date ?? "",
+            endDate: endDate,
+            allDay: allDay,
+            startTime: startTime,
+            endTime: endTime,
+            color: row["color"] as? String,
+            location: row["location"] as? String,
+            notes: (v3 ? row["note"] : row["notes"]) as? String,
+            reminders: reminders,
+            repeatFrequency: repeatValue,
+            repeatEndDate: row["repeatEndDate"] as? String,
+            liveActivity: row["liveActivity"] as? Bool,
+            liveActivityLead: row["liveActivityLead"] as? String,
+            updatedAt: row["updatedAt"] as? String
+        )
+    }
 }
 
 struct LegacyDiagnosticReport {
@@ -238,7 +307,7 @@ extension LegacyWebViewDataReader.Snapshot {
             duplicateCount: classified.duplicateCount,
             malformedCount: classified.malformedCount,
             owner: owner,
-            eligibleForFutureImport: status == .availableWithData && owner == .matchingOwner,
+            eligibleForFutureImport: status == .availableWithData && classified.candidateCount > 0,
             importExecuted: false
         )
     }
