@@ -17,7 +17,10 @@ import {
   instancesCovering,
   isScheduledStart,
   LEGACY_COLOR_MAP,
+  STORAGE_KEY,
+  openCanonicalStore,
   probeLegacyWebViewCalendar,
+  productionDocument,
   projectedKeys,
   repeatAllowedForSpan,
   restoreDocument,
@@ -514,5 +517,116 @@ describe("canonical planning foundation", () => {
     expect(legacy.dayCompletions).toEqual([]);
     expect(calendarDays(legacy, "2026-01-01")[0].completed).toBe(false);
     expect(legacy.payloads[0].completed).toBe(true);
+  });
+
+  it("persists production rows and leaves samples, corrupt bytes, and migration unresolved", () => {
+    const writes: string[] = [];
+    const memory = {
+      value: undefined as string | undefined,
+      read(key: string) {
+        return key === STORAGE_KEY ? this.value : undefined;
+      },
+      write(key: string, value: string) {
+        if (key === STORAGE_KEY) {
+          this.value = value;
+          writes.push(value);
+        }
+      },
+    };
+    const opened = openCanonicalStore(memory);
+    expect(opened.state).toBe("absent");
+    expect(opened.mutate(() => undefined)).toBe(false);
+    expect(memory.value).toBeUndefined();
+
+    expect(opened.mutate((document) => {
+      createItem(document, {
+        id: "real",
+        kind: "event",
+        origin: "daily",
+        originPeriodKey: "2026-10-13",
+        title: "夕方の散歩",
+        startDate: "2026-10-13",
+        endDate: "2026-10-14",
+        recurrence: { frequency: "weekly" },
+      });
+      createItem(document, {
+        id: "sample",
+        kind: "event",
+        origin: "daily",
+        originPeriodKey: "2026-10-13",
+        title: "夕方の散歩",
+        startDate: "2026-10-13",
+        isSample: true,
+      });
+      editOccurrence(document, "real", "2026-10-13", { location: "Park" });
+      excludeOccurrence(document, "real", "2026-10-20");
+      setEventCompletion(document, "real", "2026-10-13", true);
+      deleteLevel(document, "real", "monthly", "2026-10");
+      completeReflection(document, "daily:2026-10-13", ["real"]);
+    })).toBe(true);
+    expect(opened.state).toBe("loaded");
+    expect(opened.document.payloads.map((row) => row.id)).toEqual(["real", "sample"]);
+    expect(opened.mutate(() => undefined)).toBe(false);
+    expect(writes).toHaveLength(1);
+
+    const stored = JSON.parse(memory.value ?? "{}") as { legacyMigration: string; payloads: { id: string }[] };
+    expect(stored.legacyMigration).toBe("unresolved");
+    expect(stored.payloads.map((row) => row.id)).toEqual(["real"]);
+
+    const restored = openCanonicalStore(memory);
+    expect(restored.state).toBe("loaded");
+    expect(restored.document.payloads.map((row) => row.id)).toEqual(["real"]);
+    expect(restored.document.occurrenceOverrides.map((row) => row.occurrenceDate).sort()).toEqual(["2026-10-13", "2026-10-20"]);
+    expect(restored.document.dayCompletions).toEqual([{ logicalID: "real", date: "2026-10-13", completed: true }]);
+    expect(restored.document.tombstones).toEqual([{ logicalID: "real", level: "monthly", periodKey: "2026-10" }]);
+    expect(restored.document.reflectionSnapshots).toEqual([{ id: "daily:2026-10-13", completed: true, decisionIDs: ["real"] }]);
+    expect(restored.document.legacyMigration).toBe("unresolved");
+    expect(restored.mutate(() => undefined)).toBe(false);
+    expect(writes).toHaveLength(1);
+
+    const corrupt = { value: "{", read(key: string) { return key === STORAGE_KEY ? this.value : undefined; }, write() { throw new Error("must not write"); } };
+    const blocked = openCanonicalStore(corrupt);
+    expect(blocked.state).toBe("unreadable");
+    expect(blocked.mutate((document) => { createItem(document, { id: "x", kind: "task", origin: "daily", originPeriodKey: "2026-10-13", title: "No" }); })).toBe(false);
+    expect(corrupt.value).toBe("{");
+
+    const wrongVersion = {
+      value: JSON.stringify({ schemaVersion: 99, payloads: [{ id: "keep-me", title: "Real" }] }),
+      read(key: string) { return key === STORAGE_KEY ? this.value : undefined; },
+      write() { throw new Error("must not write"); },
+    };
+    expect(openCanonicalStore(wrongVersion).state).toBe("unreadable");
+    expect(productionDocument(opened.document).payloads.map((row) => row.title)).toEqual(["夕方の散歩"]);
+  });
+
+  it("keeps genuine reflection history and drops only verified sample snapshots", () => {
+    const document = store();
+    createItem(document, { id: "real", kind: "task", origin: "daily", originPeriodKey: "2026-10-13", title: "夕方の散歩" });
+    createItem(document, { id: "sample", kind: "task", origin: "daily", originPeriodKey: "2026-10-13", title: "夕方の散歩", isSample: true });
+    completeReflection(document, "sample-only", ["sample"]);
+    completeReflection(document, "genuine", ["real"]);
+    completeReflection(document, "mixed", ["real", "sample"]);
+    completeReflection(document, "unknown", ["already-gone"]);
+    completeReflection(document, "empty-decisions", []);
+    const produced = productionDocument(document);
+    expect(produced.reflectionSnapshots.map((row) => row.id)).toEqual(["genuine", "mixed", "unknown", "empty-decisions"]);
+    expect(produced.reflectionSnapshots.find((row) => row.id === "mixed")?.decisionIDs).toEqual(["real"]);
+    expect(produced.reflectionSnapshots.find((row) => row.id === "unknown")?.decisionIDs).toEqual(["already-gone"]);
+    expect(produced.payloads.map((row) => row.id)).toEqual(["real"]);
+
+    const memory = {
+      value: undefined as string | undefined,
+      read(key: string) { return key === STORAGE_KEY ? this.value : undefined; },
+      write(key: string, value: string) { if (key === STORAGE_KEY) this.value = value; },
+    };
+    const samplesOnly = openCanonicalStore(memory);
+    expect(samplesOnly.mutate((doc) => {
+      createItem(doc, { id: "demo", kind: "event", origin: "daily", originPeriodKey: "2026-10-13", title: "Demo", isSample: true });
+      completeReflection(doc, "demo-reflection", ["demo"]);
+    })).toBe(false);
+    expect(memory.value).toBeUndefined();
+
+    const restored = JSON.parse(JSON.stringify(produced));
+    expect(productionDocument(decodeDocument(restored)).reflectionSnapshots.map((row) => row.id)).toEqual(["genuine", "mixed", "unknown", "empty-decisions"]);
   });
 });

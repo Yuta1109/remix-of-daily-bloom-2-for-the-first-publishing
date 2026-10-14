@@ -87,11 +87,13 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
     var updatedAt: String
     var todayTaskID: String?
     var completed: Bool
+    /// Tutorial row. Production saves omit it. Real rows stay even if the title matches a sample.
+    var isSample: Bool
 
     private enum CodingKeys: String, CodingKey {
         case id, legacyWebID, kind, origin, originPeriodKey, title, iconSymbol, colorID, legacyColorKey
         case location, memo, allDay, startDate, endDate, startMinutes, endMinutes, reminders, recurrence
-        case liveActivity, liveActivityLead, updatedAt, todayTaskID, completed
+        case liveActivity, liveActivityLead, updatedAt, todayTaskID, completed, isSample
     }
 
     init(
@@ -117,7 +119,8 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
         liveActivityLead: String?,
         updatedAt: String,
         todayTaskID: String?,
-        completed: Bool
+        completed: Bool,
+        isSample: Bool = false
     ) {
         self.id = id
         self.legacyWebID = legacyWebID
@@ -142,6 +145,7 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
         self.updatedAt = updatedAt
         self.todayTaskID = todayTaskID
         self.completed = completed
+        self.isSample = isSample
     }
 
     func encode(to encoder: Encoder) throws {
@@ -169,6 +173,7 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(todayTaskID, forKey: .todayTaskID)
         try container.encode(completed, forKey: .completed)
+        try container.encode(isSample, forKey: .isSample)
     }
 
     init(from decoder: Decoder) throws {
@@ -196,6 +201,7 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
         todayTaskID = try container.decodeIfPresent(String.self, forKey: .todayTaskID)
         completed = try container.decodeIfPresent(Bool.self, forKey: .completed) ?? false
+        isSample = try container.decodeIfPresent(Bool.self, forKey: .isSample) ?? false
     }
 }
 
@@ -366,6 +372,7 @@ struct CanonicalCreateInput {
     var updatedAt: String = ""
     var todayTaskID: String?
     var completed: Bool = false
+    var isSample: Bool = false
 }
 
 struct LegacyCalendarRecord: Codable {
@@ -533,7 +540,8 @@ enum CanonicalPlanningEngine {
             liveActivityLead: input.liveActivityLead,
             updatedAt: input.updatedAt,
             todayTaskID: input.todayTaskID,
-            completed: input.completed
+            completed: input.completed,
+            isSample: input.isSample
         )
         document.payloads.append(payload)
         return payload
@@ -835,6 +843,89 @@ enum CanonicalPlanningPersistence {
         guard let document = try? JSONDecoder().decode(CanonicalPlanningDocument.self, from: data),
               document.schemaVersion == CanonicalPlanningDocument.schemaVersion else { return .unreadable }
         return .loaded(document)
+    }
+
+    /// Explicit `isSample` rows only. A matching title is not enough to drop a record.
+    static func productionDocument(_ document: CanonicalPlanningDocument) -> CanonicalPlanningDocument {
+        let sampleIDs = Set(document.payloads.filter(\.isSample).map(\.id))
+        var copy = document
+        copy.legacyMigration = "unresolved"
+        copy.payloads = document.payloads.filter { !$0.isSample }
+        copy.tombstones = document.tombstones.filter { !sampleIDs.contains($0.logicalID) }
+        copy.levelOverrides = document.levelOverrides.filter { !sampleIDs.contains($0.logicalID) }
+        copy.occurrenceOverrides = document.occurrenceOverrides.filter { !sampleIDs.contains($0.logicalID) }
+        copy.dayCompletions = document.dayCompletions.filter { !sampleIDs.contains($0.logicalID) }
+        copy.reflectionSnapshots = productionReflectionSnapshots(document, sampleIDs: sampleIDs)
+        return copy
+    }
+
+    /// Sample-only when every decision id is a payload still marked `isSample`.
+    /// Mixed snapshots keep the other ids. Empty or unknown ids stay.
+    private static func productionReflectionSnapshots(
+        _ document: CanonicalPlanningDocument,
+        sampleIDs: Set<String>
+    ) -> [CanonicalReflectionSnapshot] {
+        document.reflectionSnapshots.compactMap { row in
+            let decisionIDs = row.decisionIDs.filter { !sampleIDs.contains($0) }
+            if !row.decisionIDs.isEmpty && decisionIDs.isEmpty { return nil }
+            return CanonicalReflectionSnapshot(id: row.id, completed: row.completed, decisionIDs: decisionIDs)
+        }
+    }
+
+    static func isProductionEmpty(_ document: CanonicalPlanningDocument) -> Bool {
+        let produced = productionDocument(document)
+        return produced.payloads.isEmpty
+            && produced.tombstones.isEmpty
+            && produced.levelOverrides.isEmpty
+            && produced.occurrenceOverrides.isEmpty
+            && produced.dayCompletions.isEmpty
+            && produced.reflectionSnapshots.isEmpty
+    }
+}
+
+/// Loaded beside `PlanningSession`. Screens do not read it yet.
+@MainActor
+final class CanonicalPlanningController {
+    enum HoldState {
+        case absent
+        case loaded
+        case unreadable
+    }
+
+    private(set) var state: HoldState
+    private(set) var document: CanonicalPlanningDocument
+    private let defaults: UserDefaults
+    private var lastWritten: Data?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        switch CanonicalPlanningPersistence.load(defaults: defaults) {
+        case .absent:
+            state = .absent
+            document = .empty()
+        case .unreadable:
+            state = .unreadable
+            document = .empty()
+        case .loaded(let loaded):
+            state = .loaded
+            document = loaded
+            lastWritten = try? JSONEncoder().encode(CanonicalPlanningPersistence.productionDocument(loaded))
+        }
+    }
+
+    /// Writes only when the production snapshot changes. Never replaces unreadable bytes.
+    @discardableResult
+    func mutate(_ change: (inout CanonicalPlanningDocument) -> Void) -> Bool {
+        guard state != .unreadable else { return false }
+        change(&document)
+        document.legacyMigration = "unresolved"
+        let produced = CanonicalPlanningPersistence.productionDocument(document)
+        if state == .absent && CanonicalPlanningPersistence.isProductionEmpty(produced) { return false }
+        guard let encoded = try? JSONEncoder().encode(produced), encoded != lastWritten else { return false }
+        defaults.set(encoded, forKey: CanonicalPlanningPersistence.storageKey)
+        lastWritten = encoded
+        state = .loaded
+        return true
     }
 }
 

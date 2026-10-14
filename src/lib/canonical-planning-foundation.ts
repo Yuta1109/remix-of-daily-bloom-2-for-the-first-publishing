@@ -53,6 +53,8 @@ export interface CanonicalPayload {
   updatedAt: string;
   todayTaskID?: string;
   completed: boolean;
+  /** In-memory tutorial row. Never written to production canonical storage. */
+  isSample?: boolean;
 }
 
 export interface Tombstone {
@@ -162,6 +164,7 @@ export interface CreateInput {
   updatedAt?: string;
   todayTaskID?: string;
   completed?: boolean;
+  isSample?: boolean;
 }
 
 /**
@@ -480,6 +483,7 @@ export function createItem(document: CanonicalDocument, input: CreateInput): Can
     updatedAt: input.updatedAt ?? new Date(0).toISOString(),
     todayTaskID: input.todayTaskID,
     completed: input.completed ?? false,
+    isSample: input.isSample ?? false,
   };
   document.payloads.push(payload);
   return payload;
@@ -615,6 +619,7 @@ export function decodeDocument(raw: Partial<CanonicalDocument> | null | undefine
     liveActivity: row.liveActivity ?? false,
     completed: row.completed ?? false,
     iconSymbol: row.iconSymbol ?? "calendar",
+    isSample: row.isSample ?? false,
   }));
   document.tombstones = raw.tombstones ?? [];
   document.levelOverrides = raw.levelOverrides ?? [];
@@ -701,4 +706,101 @@ export function importLegacyRecords(document: CanonicalDocument, records: Legacy
 
 export function calendarDays(document: CanonicalDocument, day: string): EffectiveItem[] {
   return effectiveItems(document, "daily", day);
+}
+
+export type CanonicalLoadState = "absent" | "loaded" | "unreadable";
+
+export interface CanonicalMemory {
+  read(key: string): string | undefined;
+  write(key: string, value: string): void;
+}
+
+/** Drops explicit sample rows. Titles are never used as the signal. */
+export function productionDocument(document: CanonicalDocument): CanonicalDocument {
+  const sampleIDs = new Set(document.payloads.filter((row) => row.isSample).map((row) => row.id));
+  return {
+    schemaVersion: CANONICAL_SCHEMA_VERSION,
+    legacyMigration: "unresolved",
+    payloads: document.payloads.filter((row) => !row.isSample).map((row) => ({ ...row, isSample: false })),
+    tombstones: document.tombstones.filter((row) => !sampleIDs.has(row.logicalID)),
+    levelOverrides: document.levelOverrides.filter((row) => !sampleIDs.has(row.logicalID)),
+    occurrenceOverrides: document.occurrenceOverrides.filter((row) => !sampleIDs.has(row.logicalID)),
+    dayCompletions: document.dayCompletions.filter((row) => !sampleIDs.has(row.logicalID)),
+    reflectionSnapshots: productionReflectionSnapshots(document, sampleIDs),
+  };
+}
+
+/**
+ * A snapshot is sample-only when every decision id is a payload still marked `isSample`.
+ * Mixed snapshots keep the other ids. Empty or unknown ids stay: they are not sample proof.
+ */
+function productionReflectionSnapshots(document: CanonicalDocument, sampleIDs: Set<string>): ReflectionSnapshot[] {
+  return document.reflectionSnapshots.flatMap((row) => {
+    const decisionIDs = row.decisionIDs.filter((id) => !sampleIDs.has(id));
+    if (row.decisionIDs.length > 0 && decisionIDs.length === 0) return [];
+    return [{ ...row, decisionIDs }];
+  });
+}
+
+function productionIsEmpty(document: CanonicalDocument): boolean {
+  const produced = productionDocument(document);
+  return (
+    produced.payloads.length === 0 &&
+    produced.tombstones.length === 0 &&
+    produced.levelOverrides.length === 0 &&
+    produced.occurrenceOverrides.length === 0 &&
+    produced.dayCompletions.length === 0 &&
+    produced.reflectionSnapshots.length === 0
+  );
+}
+
+export interface OpenCanonicalStore {
+  state: CanonicalLoadState;
+  document: CanonicalDocument;
+  /** False when the bytes were unreadable or the production snapshot did not change. */
+  mutate(change: (document: CanonicalDocument) => void): boolean;
+}
+
+/**
+ * Loads `essences.canonical-planning.v1` without writing.
+ * Absent and unreadable stay distinct. Unreadable bytes are never replaced.
+ */
+export function openCanonicalStore(memory: CanonicalMemory): OpenCanonicalStore {
+  const raw = memory.read(STORAGE_KEY);
+  let state: CanonicalLoadState = "absent";
+  let document = emptyDocument();
+  if (raw !== undefined) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<CanonicalDocument>;
+      if (parsed.schemaVersion !== CANONICAL_SCHEMA_VERSION) state = "unreadable";
+      else {
+        state = "loaded";
+        document = decodeDocument(parsed);
+      }
+    } catch {
+      state = "unreadable";
+    }
+  }
+  let lastWritten = state === "loaded" ? JSON.stringify(productionDocument(document)) : undefined;
+  return {
+    get state() {
+      return state;
+    },
+    get document() {
+      return document;
+    },
+    mutate(change) {
+      if (state === "unreadable") return false;
+      change(document);
+      document.legacyMigration = "unresolved";
+      const produced = productionDocument(document);
+      if (state === "absent" && productionIsEmpty(produced)) return false;
+      const encoded = JSON.stringify(produced);
+      if (encoded === lastWritten) return false;
+      memory.write(STORAGE_KEY, encoded);
+      lastWritten = encoded;
+      state = "loaded";
+      return true;
+    },
+  };
 }

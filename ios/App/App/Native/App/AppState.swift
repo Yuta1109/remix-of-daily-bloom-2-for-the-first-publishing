@@ -40,6 +40,8 @@ final class AppState: ObservableObject {
     let dataAdapter: any NativeDataAdapter
     /// One Planning/Today task store. Both tabs observe this instance.
     let planningSession = PlanningSession()
+    /// Durable canonical document. Not read by Planning or Today screens yet.
+    let canonicalPlanning = CanonicalPlanningController()
     private var navigationByTab: [AppTab: TabNavigationState]
 
     init(
