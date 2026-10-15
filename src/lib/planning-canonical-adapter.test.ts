@@ -36,7 +36,7 @@ describe("planning canonical adapter", () => {
       { id: "sample", kind: "task", origin: "daily", originPeriodKey: "2026-10-13", title: "Event 1", isSample: true },
       { id: "real-task", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Event 1" },
     ]);
-    expect(preview).toEqual({ samplesExcluded: 1, collisions: 1, ready: 1, writes: 0 });
+    expect(preview).toEqual({ samplesExcluded: 1, collisions: 1, blocked: 0, ready: 1, writes: 0, activationAllowed: true });
     expect(JSON.stringify(document)).toBe(before);
     expect(document.payloads.map((row) => row.legacyWebID)).toEqual(["legacy-1", "legacy-2", "legacy-3", "legacy-4", "legacy-5", "legacy-6"]);
     expect(effectivePeriod(document, "monthly", "2026-10").map((row) => row.logicalID)).toEqual([]);
@@ -72,5 +72,13 @@ describe("planning canonical adapter", () => {
     expect(completeEventDay(document, "future", "2026-10-13", true)).toBe(true);
     expect(calendarDays(document, "2026-10-14").find((row) => row.logicalID === "future")?.completed).toBe(false);
     expect(document.payloads).toHaveLength(6);
+    const beforeBlock = JSON.stringify(document);
+    const blocked = previewNativeHandoff(document, [
+      { id: "parent", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Parent", childCount: 2, reflectionDisposition: "keep" },
+    ]);
+    expect(blocked.blocked).toBe(1);
+    expect(blocked.activationAllowed).toBe(false);
+    expect(blocked.ready).toBe(0);
+    expect(JSON.stringify(document)).toBe(beforeBlock);
   });
 });
