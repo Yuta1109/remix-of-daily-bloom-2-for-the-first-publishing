@@ -132,6 +132,24 @@ export interface CanonicalDocument {
   dayCompletions: DayCompletion[];
   reflectionSnapshots: ReflectionSnapshot[];
   reflectionDecisions: ReflectionDecision[];
+  postponeEntries: PostponeEntry[];
+}
+
+/** Box row. Display fields can diverge from the payload. The payload is not copied. */
+export interface PostponeEntry {
+  id: string;
+  logicalID: string;
+  kind: PlanningKind;
+  section: PlanningLevel;
+  originLevel: PlanningLevel;
+  originPeriodKey: string;
+  occurrenceDate?: string;
+  title: string;
+  iconSymbol: string;
+  colorID?: string;
+  reflectionDecisionID?: string;
+  order: number;
+  isSample?: boolean;
 }
 
 export interface EffectiveItem {
@@ -213,6 +231,7 @@ export function emptyDocument(): CanonicalDocument {
     dayCompletions: [],
     reflectionSnapshots: [],
     reflectionDecisions: [],
+    postponeEntries: [],
   };
 }
 
@@ -640,6 +659,102 @@ export function completeReflection(document: CanonicalDocument, id: string, deci
   return true;
 }
 
+function postponeKey(logicalID: string, occurrenceDate?: string): string {
+  return `${logicalID}|${occurrenceDate ?? ""}`;
+}
+
+/** Adds a box entry. Does not remove the source payload. A recurring series without an occurrence date is rejected. */
+export function postponeItem(
+  document: CanonicalDocument,
+  input: Omit<PostponeEntry, "order" | "kind" | "title" | "iconSymbol"> & Partial<Pick<PostponeEntry, "title" | "iconSymbol" | "order">>,
+): boolean {
+  const payload = document.payloads.find((row) => row.id === input.logicalID);
+  if (!payload || payload.isSample) return false;
+  if (payload.recurrence.frequency !== "none" && !input.occurrenceDate) return false;
+  if (document.postponeEntries.some((row) => postponeKey(row.logicalID, row.occurrenceDate) === postponeKey(input.logicalID, input.occurrenceDate))) {
+    return true;
+  }
+  document.postponeEntries.push({
+    id: input.id,
+    logicalID: input.logicalID,
+    kind: payload.kind,
+    section: input.section,
+    originLevel: input.originLevel,
+    originPeriodKey: input.originPeriodKey,
+    occurrenceDate: input.occurrenceDate,
+    title: input.title ?? payload.title,
+    iconSymbol: input.iconSymbol ?? payload.iconSymbol,
+    colorID: input.colorID ?? payload.colorID,
+    reflectionDecisionID: input.reflectionDecisionID,
+    order: input.order ?? document.postponeEntries.length,
+    isSample: false,
+  });
+  return true;
+}
+
+export function listPostponed(document: CanonicalDocument): PostponeEntry[] {
+  return [...document.postponeEntries].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+}
+
+export function removePostponedEntry(document: CanonicalDocument, id: string): boolean {
+  const before = document.postponeEntries.length;
+  document.postponeEntries = document.postponeEntries.filter((row) => row.id !== id);
+  return document.postponeEntries.length !== before;
+}
+
+/** Places the referenced payload at the destination and removes the box row. Children follow a postponed parent. */
+export function restorePostponedItem(document: CanonicalDocument, entryID: string, level: PlanningLevel, periodKey: string): boolean {
+  const entry = document.postponeEntries.find((row) => row.id === entryID);
+  if (!entry) return false;
+  const payload = document.payloads.find((row) => row.id === entry.logicalID);
+  if (!payload) return false;
+  if (payload.recurrence.frequency === "none") {
+    const ids = new Set([payload.id, ...document.payloads.filter((row) => row.parentID === payload.id).map((row) => row.id)]);
+    for (const row of document.payloads) {
+      if (!ids.has(row.id)) continue;
+      row.origin = level;
+      row.originPeriodKey = periodKey;
+      if (level === "daily" || level === "weekly") {
+        row.startDate = periodKey;
+        row.endDate = periodKey;
+      }
+    }
+    document.tombstones = document.tombstones.filter((row) => !(ids.has(row.logicalID) && row.level === level && row.periodKey === periodKey));
+  }
+  document.postponeEntries = document.postponeEntries.filter((row) => row.id !== entryID);
+  return true;
+}
+
+/** Writes the snapshot and postpone rows together. A failed check writes nothing. A second call writes nothing. */
+export function completeReflectionWithPostponements(
+  document: CanonicalDocument,
+  snapshotID: string,
+  decisions: ReflectionDecision[],
+): boolean {
+  if (document.reflectionSnapshots.some((row) => row.id === snapshotID)) return false;
+  for (const decision of decisions) {
+    if (decision.disposition !== "postpone") continue;
+    const payload = document.payloads.find((row) => row.id === decision.logicalID);
+    if (!payload || payload.isSample) return false;
+    if (payload.recurrence.frequency !== "none" && !decision.occurrenceDate) return false;
+  }
+  for (const decision of decisions) {
+    recordReflectionDecision(document, decision);
+    if (decision.disposition !== "postpone") continue;
+    postponeItem(document, {
+      id: `box:${decision.id}`,
+      logicalID: decision.logicalID,
+      section: decision.level === "future" ? "monthly" : decision.level,
+      originLevel: decision.level === "future" ? "monthly" : decision.level,
+      originPeriodKey: decision.periodKey,
+      occurrenceDate: decision.occurrenceDate,
+      reflectionDecisionID: decision.id,
+    });
+  }
+  document.reflectionSnapshots.push({ id: snapshotID, completed: true, decisionIDs: decisions.map((row) => row.logicalID) });
+  return true;
+}
+
 export function decodeDocument(raw: Partial<CanonicalDocument> | null | undefined): CanonicalDocument {
   const document = emptyDocument();
   if (!raw || raw.schemaVersion !== CANONICAL_SCHEMA_VERSION) return document;
@@ -659,6 +774,7 @@ export function decodeDocument(raw: Partial<CanonicalDocument> | null | undefine
     childOrder: row.childOrder,
   }));
   document.reflectionDecisions = raw.reflectionDecisions ?? [];
+  document.postponeEntries = raw.postponeEntries ?? [];
   document.tombstones = raw.tombstones ?? [];
   document.levelOverrides = raw.levelOverrides ?? [];
   document.occurrenceOverrides = raw.occurrenceOverrides ?? [];
@@ -932,6 +1048,7 @@ export function productionDocument(document: CanonicalDocument): CanonicalDocume
     dayCompletions: document.dayCompletions.filter((row) => !sampleIDs.has(row.logicalID)),
     reflectionSnapshots: productionReflectionSnapshots(document, sampleIDs),
     reflectionDecisions: document.reflectionDecisions.filter((row) => !row.isSample && !sampleIDs.has(row.logicalID)),
+    postponeEntries: document.postponeEntries.filter((row) => !row.isSample && !sampleIDs.has(row.logicalID)),
   };
 }
 
@@ -955,7 +1072,9 @@ function productionIsEmpty(document: CanonicalDocument): boolean {
     produced.levelOverrides.length === 0 &&
     produced.occurrenceOverrides.length === 0 &&
     produced.dayCompletions.length === 0 &&
-    produced.reflectionSnapshots.length === 0
+    produced.reflectionSnapshots.length === 0 &&
+    produced.reflectionDecisions.length === 0 &&
+    produced.postponeEntries.length === 0
   );
 }
 

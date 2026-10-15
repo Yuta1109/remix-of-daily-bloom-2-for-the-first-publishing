@@ -24,8 +24,10 @@ export interface NativePlanningCandidate {
   parentID?: string;
   /** Plan documents are still outside the canonical model. */
   planDocument?: boolean;
-  /** Postpone Box membership is still outside the canonical model. */
+  /** Native Postpone Box row. Convertible when logicalID is present. */
   postponeBox?: boolean;
+  logicalID?: string;
+  originPeriodKeyForBox?: string;
 }
 
 export interface HandoffPreview {
@@ -50,11 +52,13 @@ export function previewNativeHandoff(document: CanonicalDocument, rows: NativePl
       samplesExcluded += 1;
       continue;
     }
-    if (row.planDocument || row.postponeBox) {
+    if (row.planDocument || (row.postponeBox && !row.logicalID)) {
       blocked += 1;
       continue;
     }
-    const taken = document.payloads.some((payload) => payload.id === row.id || payload.legacyWebID === row.id);
+    const taken = row.postponeBox
+      ? document.postponeEntries.some((entry) => entry.id === row.id || entry.logicalID === row.logicalID)
+      : document.payloads.some((payload) => payload.id === row.id || payload.legacyWebID === row.id);
     if (taken) collisions += 1;
     else ready += 1;
   }

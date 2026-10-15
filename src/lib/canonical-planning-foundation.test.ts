@@ -23,6 +23,10 @@ import {
   probeLegacyWebViewCalendar,
   productionDocument,
   recordReflectionDecision,
+  postponeItem,
+  restorePostponedItem,
+  completeReflectionWithPostponements,
+  listPostponed,
   projectedKeys,
   repeatAllowedForSpan,
   restoreDocument,
@@ -745,5 +749,79 @@ describe("canonical planning foundation", () => {
     expect(legacy.payloads[0].legacyWebID).toBe("web-1");
     expect(legacy.reflectionDecisions).toEqual([]);
     expect(legacy.payloads[0].parentID).toBeUndefined();
+    expect(legacy.postponeEntries).toEqual([]);
+  });
+
+  it("stores postpone entries without copying or moving the six imported events", () => {
+    const doc = emptyDocument();
+    const events = ["e1", "e2", "e3", "e4", "e5", "e6"].map((id, index) => {
+      createItem(doc, {
+        id,
+        legacyWebID: `web-${id}`,
+        kind: "event",
+        origin: "daily",
+        originPeriodKey: `2026-10-0${index + 1}`,
+        title: `Event ${index + 1}`,
+        startDate: `2026-10-0${index + 1}`,
+        endDate: `2026-10-0${index + 1}`,
+        legacyColorKey: index % 2 === 0 ? "red" : "teal",
+        recurrence: { frequency: "none" },
+        reminders: ["at-start"],
+        liveActivity: index === 0,
+      });
+      return id;
+    });
+    const before = JSON.stringify(doc.payloads);
+    createItem(doc, { id: "parent", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Read two books", startDate: "2026-10-14", endDate: "2026-10-14" });
+    createItem(doc, { id: "a", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Book 1", parentID: "parent", childOrder: 0, completed: false, startDate: "2026-10-14", endDate: "2026-10-14" });
+    createItem(doc, { id: "b", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Book 2", parentID: "parent", childOrder: 1, completed: true, startDate: "2026-10-14", endDate: "2026-10-14" });
+    expect(listPostponed(doc)).toEqual([]);
+    expect(postponeItem(doc, { id: "missing", logicalID: "nope", section: "daily", originLevel: "daily", originPeriodKey: "2026-10-14" })).toBe(false);
+    expect(postponeItem(doc, { id: "box-1", logicalID: "parent", section: "monthly", originLevel: "monthly", originPeriodKey: "2026-10" })).toBe(true);
+    expect(postponeItem(doc, { id: "box-1b", logicalID: "parent", section: "monthly", originLevel: "monthly", originPeriodKey: "2026-10" })).toBe(true);
+    expect(listPostponed(doc)).toHaveLength(1);
+    expect(listPostponed(doc)[0].logicalID).toBe("parent");
+    const kept = completeReflectionWithPostponements(doc, "daily:2026-10-14", [
+      { id: "k", level: "daily", periodKey: "2026-10-14", logicalID: "a", disposition: "keep", completed: false },
+      { id: "s", level: "daily", periodKey: "2026-10-14", logicalID: "b", disposition: "stop", completed: true },
+    ]);
+    expect(kept).toBe(true);
+    expect(listPostponed(doc).map((row) => row.logicalID)).toEqual(["parent"]);
+    expect(doc.payloads.find((row) => row.id === "b")?.completed).toBe(true);
+    expect(completeReflectionWithPostponements(doc, "daily:2026-10-14", [
+      { id: "again", level: "daily", periodKey: "2026-10-14", logicalID: "a", disposition: "postpone", completed: false },
+    ])).toBe(false);
+    expect(doc.reflectionSnapshots).toHaveLength(1);
+    createItem(doc, { id: "series", kind: "event", origin: "daily", originPeriodKey: "2026-10-07", title: "Series", startDate: "2026-10-07", recurrence: { frequency: "weekly" } });
+    const series = JSON.stringify(doc.payloads.find((row) => row.id === "series"));
+    expect(postponeItem(doc, { id: "series-box", logicalID: "series", section: "daily", originLevel: "daily", originPeriodKey: "2026-10-07" })).toBe(false);
+    expect(postponeItem(doc, { id: "one-day", logicalID: "series", section: "daily", originLevel: "daily", originPeriodKey: "2026-10-14", occurrenceDate: "2026-10-14" })).toBe(true);
+    expect(JSON.stringify(doc.payloads.find((row) => row.id === "series"))).toBe(series);
+    expect(restorePostponedItem(doc, "box-1", "weekly", "2026-10-12")).toBe(true);
+    expect(restorePostponedItem(doc, "box-1", "weekly", "2026-10-12")).toBe(false);
+    expect(doc.payloads.find((row) => row.id === "parent")?.origin).toBe("weekly");
+    expect(doc.payloads.find((row) => row.id === "a")?.parentID).toBe("parent");
+    expect(doc.payloads.find((row) => row.id === "b")?.childOrder).toBe(1);
+    expect(doc.payloads.find((row) => row.id === "b")?.completed).toBe(true);
+    expect(effectiveItems(doc, "monthly", "2026-10").some((row) => row.logicalID === "parent")).toBe(false);
+    expect(effectiveItems(doc, "daily", "2026-10-12").some((row) => row.logicalID === "parent")).toBe(true);
+    expect(doc.reflectionSnapshots[0].decisionIDs).toEqual(["a", "b"]);
+    const sample = emptyDocument();
+    createItem(sample, { id: "sample-task", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "資料の見直し", isSample: true });
+    sample.postponeEntries.push({ id: "sample-box", logicalID: "sample-task", kind: "task", section: "daily", originLevel: "daily", originPeriodKey: "2026-10-14", title: "資料の見直し", iconSymbol: "circle", order: 0, isSample: true });
+    sample.postponeEntries.push({ id: "real-box", logicalID: "unknown", kind: "task", section: "daily", originLevel: "daily", originPeriodKey: "2026-10-14", title: "資料の見直し", iconSymbol: "circle", order: 1 });
+    expect(productionDocument(sample).postponeEntries.map((row) => row.id)).toEqual(["real-box"]);
+    const restored = decodeDocument(JSON.parse(JSON.stringify(doc)));
+    expect(restored.payloads.filter((row) => events.includes(row.id)).map((row) => ({ id: row.id, legacy: row.legacyWebID, color: row.legacyColorKey, recurrence: row.recurrence.frequency }))).toEqual(
+      events.map((id, index) => ({ id, legacy: `web-${id}`, color: index % 2 === 0 ? "red" : "teal", recurrence: "none" })),
+    );
+    expect(JSON.stringify(restored.payloads.filter((row) => events.includes(row.id)))).toBe(before);
+    const failed = emptyDocument();
+    createItem(failed, { id: "series2", kind: "event", origin: "daily", originPeriodKey: "2026-10-07", title: "Series", startDate: "2026-10-07", recurrence: { frequency: "weekly" } });
+    expect(completeReflectionWithPostponements(failed, "daily:2026-10-07", [
+      { id: "bad", level: "daily", periodKey: "2026-10-07", logicalID: "series2", disposition: "postpone", completed: false },
+    ])).toBe(false);
+    expect(failed.reflectionSnapshots).toEqual([]);
+    expect(failed.postponeEntries).toEqual([]);
   });
 });

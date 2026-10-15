@@ -276,6 +276,22 @@ struct CanonicalReflectionDecision: Codable, Hashable {
     var isSample: Bool = false
 }
 
+struct CanonicalPostponeEntry: Codable, Hashable {
+    var id: String
+    var logicalID: String
+    var kind: CanonicalPlanningKind
+    var section: CanonicalPlanningLevel
+    var originLevel: CanonicalPlanningLevel
+    var originPeriodKey: String
+    var occurrenceDate: String?
+    var title: String
+    var iconSymbol: String
+    var colorID: String?
+    var reflectionDecisionID: String?
+    var order: Int
+    var isSample: Bool = false
+}
+
 struct CanonicalPlanningDocument: Codable {
     static let schemaVersion = 1
     var schemaVersion: Int
@@ -288,9 +304,10 @@ struct CanonicalPlanningDocument: Codable {
     var dayCompletions: [CanonicalDayCompletion]
     var reflectionSnapshots: [CanonicalReflectionSnapshot]
     var reflectionDecisions: [CanonicalReflectionDecision]
+    var postponeEntries: [CanonicalPostponeEntry]
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, legacyMigration, payloads, tombstones, levelOverrides, occurrenceOverrides, dayCompletions, reflectionSnapshots, reflectionDecisions
+        case schemaVersion, legacyMigration, payloads, tombstones, levelOverrides, occurrenceOverrides, dayCompletions, reflectionSnapshots, reflectionDecisions, postponeEntries
     }
 
     init(
@@ -302,7 +319,8 @@ struct CanonicalPlanningDocument: Codable {
         occurrenceOverrides: [CanonicalOccurrenceOverride],
         dayCompletions: [CanonicalDayCompletion],
         reflectionSnapshots: [CanonicalReflectionSnapshot],
-        reflectionDecisions: [CanonicalReflectionDecision] = []
+        reflectionDecisions: [CanonicalReflectionDecision] = [],
+        postponeEntries: [CanonicalPostponeEntry] = []
     ) {
         self.schemaVersion = schemaVersion
         self.legacyMigration = legacyMigration
@@ -313,6 +331,7 @@ struct CanonicalPlanningDocument: Codable {
         self.dayCompletions = dayCompletions
         self.reflectionSnapshots = reflectionSnapshots
         self.reflectionDecisions = reflectionDecisions
+        self.postponeEntries = postponeEntries
     }
 
     static func empty() -> CanonicalPlanningDocument {
@@ -339,6 +358,7 @@ struct CanonicalPlanningDocument: Codable {
         try container.encode(dayCompletions, forKey: .dayCompletions)
         try container.encode(reflectionSnapshots, forKey: .reflectionSnapshots)
         try container.encode(reflectionDecisions, forKey: .reflectionDecisions)
+        try container.encode(postponeEntries, forKey: .postponeEntries)
     }
 
     init(from decoder: Decoder) throws {
@@ -352,6 +372,7 @@ struct CanonicalPlanningDocument: Codable {
         dayCompletions = try container.decodeIfPresent([CanonicalDayCompletion].self, forKey: .dayCompletions) ?? []
         reflectionSnapshots = try container.decodeIfPresent([CanonicalReflectionSnapshot].self, forKey: .reflectionSnapshots) ?? []
         reflectionDecisions = try container.decodeIfPresent([CanonicalReflectionDecision].self, forKey: .reflectionDecisions) ?? []
+        postponeEntries = try container.decodeIfPresent([CanonicalPostponeEntry].self, forKey: .postponeEntries) ?? []
     }
 }
 
@@ -654,6 +675,34 @@ enum CanonicalPlanningEngine {
         document.occurrenceOverrides.removeAll { $0.logicalID == logicalID && !isScheduledStart(payload, $0.occurrenceDate) }
         document.dayCompletions.removeAll { $0.logicalID == logicalID && !dayIsCovered(payload, $0.date) }
         document.levelOverrides.removeAll { $0.logicalID == logicalID && !periodStillCovered(payload, $0.level, $0.periodKey) }
+    }
+
+    static func postponeItem(_ document: inout CanonicalPlanningDocument, _ entry: CanonicalPostponeEntry) -> Bool {
+        guard let payload = document.payloads.first(where: { $0.id == entry.logicalID }), !payload.isSample else { return false }
+        if payload.recurrence.frequency != .none && entry.occurrenceDate == nil { return false }
+        if document.postponeEntries.contains(where: { $0.logicalID == entry.logicalID && $0.occurrenceDate == entry.occurrenceDate }) { return true }
+        document.postponeEntries.append(entry)
+        return true
+    }
+
+    static func restorePostponedItem(_ document: inout CanonicalPlanningDocument, _ entryID: String, _ level: CanonicalPlanningLevel, _ periodKey: String) -> Bool {
+        guard let entry = document.postponeEntries.first(where: { $0.id == entryID }),
+              let payload = document.payloads.first(where: { $0.id == entry.logicalID }) else { return false }
+        if payload.recurrence.frequency == .none {
+            let childIDs = Set(document.payloads.filter { $0.parentID == payload.id }.map(\.id))
+            let ids = childIDs.union([payload.id])
+            for index in document.payloads.indices where ids.contains(document.payloads[index].id) {
+                document.payloads[index].origin = level
+                document.payloads[index].originPeriodKey = periodKey
+                if level == .daily || level == .weekly {
+                    document.payloads[index].startDate = periodKey
+                    document.payloads[index].endDate = periodKey
+                }
+            }
+            document.tombstones.removeAll { ids.contains($0.logicalID) && $0.level == level && $0.periodKey == periodKey }
+        }
+        document.postponeEntries.removeAll { $0.id == entryID }
+        return true
     }
 
     static func recordReflectionDecision(_ document: inout CanonicalPlanningDocument, _ decision: CanonicalReflectionDecision) -> Bool {
@@ -1026,6 +1075,7 @@ enum CanonicalPlanningPersistence {
         copy.dayCompletions = document.dayCompletions.filter { !sampleIDs.contains($0.logicalID) }
         copy.reflectionSnapshots = productionReflectionSnapshots(document, sampleIDs: sampleIDs)
         copy.reflectionDecisions = document.reflectionDecisions.filter { !$0.isSample && !sampleIDs.contains($0.logicalID) }
+        copy.postponeEntries = document.postponeEntries.filter { !$0.isSample && !sampleIDs.contains($0.logicalID) }
         return copy
     }
 
@@ -1051,6 +1101,7 @@ enum CanonicalPlanningPersistence {
             && produced.dayCompletions.isEmpty
             && produced.reflectionSnapshots.isEmpty
             && produced.reflectionDecisions.isEmpty
+            && produced.postponeEntries.isEmpty
     }
 }
 

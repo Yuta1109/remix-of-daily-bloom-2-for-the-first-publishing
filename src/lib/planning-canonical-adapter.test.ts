@@ -77,10 +77,11 @@ describe("planning canonical adapter", () => {
       { id: "parent", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Parent", parentID: undefined },
       { id: "child", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Child", parentID: "parent" },
       { id: "plan", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Plan", planDocument: true },
-      { id: "box", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "Box", postponeBox: true },
+      { id: "box", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "Box", postponeBox: true, logicalID: "parent" },
+      { id: "loose", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "Loose", postponeBox: true },
     ]);
     expect(blocked.blocked).toBe(2);
-    expect(blocked.ready).toBe(2);
+    expect(blocked.ready).toBe(3);
     expect(blocked.activationAllowed).toBe(false);
     expect(JSON.stringify(document)).toBe(beforeBlock);
   });

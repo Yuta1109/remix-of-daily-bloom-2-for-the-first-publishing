@@ -8,6 +8,7 @@ enum PlanningCanonicalAdapter {
         var parentID: String?
         var planDocument: Bool = false
         var postponeBox: Bool = false
+        var logicalID: String?
     }
 
     struct Preview {
@@ -37,11 +38,13 @@ enum PlanningCanonicalAdapter {
                 samplesExcluded += 1
                 continue
             }
-            if row.planDocument || row.postponeBox {
+            if row.planDocument || (row.postponeBox && row.logicalID == nil) {
                 blocked += 1
                 continue
             }
-            let taken = document.payloads.contains { $0.id == row.id || $0.legacyWebID == row.id }
+            let taken = row.postponeBox
+                ? document.postponeEntries.contains { $0.id == row.id || $0.logicalID == row.logicalID }
+                : document.payloads.contains { $0.id == row.id || $0.legacyWebID == row.id }
             if taken { collisions += 1 } else { ready += 1 }
         }
         return Preview(
