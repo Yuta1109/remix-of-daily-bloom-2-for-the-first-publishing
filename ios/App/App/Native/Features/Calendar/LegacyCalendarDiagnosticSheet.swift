@@ -154,7 +154,7 @@ struct LegacyCalendarDiagnosticSheet: View {
             line("重複候補", "\(report.duplicateCount)件")
             line("形式の問題", "\(report.malformedCount)件")
             line("アカウント", ownerLabel(report.owner))
-            line("取り込み", report.importExecuted ? "実行済み" : "実行していません")
+            line("この確認", outcome == nil ? "読み取りのみ" : "取り込みを実行")
             line("今後の移行", report.eligibleForFutureImport ? "条件を満たしています" : "まだ実行できません")
         }
         .frame(maxWidth: .infinity, alignment: .leading)

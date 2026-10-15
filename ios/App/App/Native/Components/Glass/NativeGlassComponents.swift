@@ -218,6 +218,48 @@ private struct PlanningNativeMenuStyle: ViewModifier {
     }
 }
 
+/// Sheet header menu. Uses the same system circle as the prominent sheet button, not the 50 pt floating plus.
+struct PlanningSheetAddMenu: View {
+    var accessibilityLabel: String
+    let actions: [PlanningMenuChoice]
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        Menu {
+            ForEach(actions) { item in
+                Button(action: item.action) {
+                    Label(item.title, systemImage: item.symbol)
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.white)
+        }
+        .modifier(PlanningSheetMenuStyle(tint: theme.accent))
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+private struct PlanningSheetMenuStyle: ViewModifier {
+    var tint: Color
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
+                .tint(tint)
+        } else {
+            content
+                .buttonStyle(.plain)
+                .frame(width: PlanningTokens.Header.buttonVisual, height: PlanningTokens.Header.buttonVisual)
+                .background(Circle().fill(tint))
+        }
+    }
+}
+
 struct NativePeriodSelector: View {
     let title: String
     var action: () -> Void

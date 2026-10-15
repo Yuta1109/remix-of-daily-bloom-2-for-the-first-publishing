@@ -149,7 +149,7 @@ struct PeriodItemListSheet: View {
             .padding(.bottom, 16)
         }
         .overlay(alignment: .topTrailing) {
-            PlanningNativeAddMenu(accessibilityLabel: "追加", actions: PeriodCalendar.addSources(for: bucket).map { source in
+            PlanningSheetAddMenu(accessibilityLabel: "追加", actions: PeriodCalendar.addSources(for: bucket).map { source in
                 PlanningMenuChoice(id: source.rawValue, title: source.title, symbol: Self.sourceSymbol(source)) {
                     PlanningTransition.perform {
                         if source == .create { creating = true } else { picking = source }
@@ -158,7 +158,6 @@ struct PeriodItemListSheet: View {
             })
             .padding(.top, PlanningTokens.Sheet.headerTop)
             .padding(.trailing, PlanningTokens.Sheet.horizontalInset)
-            .scaleEffect(PlanningTokens.Header.buttonVisual / PlanningNativeAddMenu.diameter, anchor: .center)
         }
         .sheet(isPresented: $creating) {
             PlanningItemEditorSheet(draft: PlanningItemDraft(), isNew: true, bucket: bucket, kind: kind, periodKey: periodKey) { draft in

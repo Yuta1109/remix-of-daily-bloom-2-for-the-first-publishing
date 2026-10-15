@@ -72,7 +72,7 @@ describe("today and routine foundation", () => {
     expect(today).toContain("Add Today's Task");
     expect(today).toContain("クイックメモを追加");
     expect(today).toContain("Add Quick Memo");
-    expect(sheets).toContain("PlanningNativeAddMenu(");
+    expect(sheets).toContain("PlanningSheetAddMenu(");
     expect(sheets).toContain("PeriodCalendar.addSources(for: bucket)");
     expect(glass).toContain("struct PlanningNativeAddMenu");
     expect(glass).toContain("Menu {");

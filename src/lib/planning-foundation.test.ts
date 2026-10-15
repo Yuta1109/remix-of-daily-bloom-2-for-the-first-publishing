@@ -1336,7 +1336,7 @@ describe("phase C-3 reflection and popups", () => {
 
   it("rebuilds the list popup around a plus and a parent timeline", () => {
     expect(itemSheets).toContain("centerTitle: \"ToDo・予定\"");
-    expect(itemSheets).toContain("PlanningNativeAddMenu(");
+    expect(itemSheets).toContain("PlanningSheetAddMenu(");
     expect(itemSheets).toContain("accessibilityLabel: \"追加\"");
     expect(itemSheets).toContain("checkmark.square.fill");
     expect(itemSheets).toContain("checkmark.circle.fill");
@@ -1354,7 +1354,7 @@ describe("phase C-3 reflection and popups", () => {
 
   it("anchors the source popover and keeps the list sheet open", () => {
     const glassMenu = readFileSync("ios/App/App/Native/Components/Glass/NativeGlassComponents.swift", "utf8");
-    expect(itemSheets).toContain("PlanningNativeAddMenu(");
+    expect(itemSheets).toContain("PlanningSheetAddMenu(");
     expect(itemSheets).toContain("showsConfirm: false");
     expect(glassMenu).toContain("Menu {");
     expect(glassMenu).not.toContain("glassEffectTransition");
@@ -1637,7 +1637,7 @@ describe("planning targeted correction", () => {
 
   it("makes each source row a full-width hit target and grows the menu from the plus", () => {
     const glassMenu = readFileSync("ios/App/App/Native/Components/Glass/NativeGlassComponents.swift", "utf8");
-    const menu = glassMenu.slice(glassMenu.indexOf("struct PlanningNativeAddMenu"), glassMenu.indexOf("struct NativePeriodSelector"));
+    const menu = glassMenu.slice(glassMenu.indexOf("struct PlanningNativeAddMenu"), glassMenu.indexOf("struct PlanningSheetAddMenu"));
     expect(menu).toContain("Menu {");
     expect(menu).toContain("Label(item.title, systemImage: item.symbol)");
     expect(menu).toContain("static let diameter: CGFloat = 50");
@@ -1645,7 +1645,7 @@ describe("planning targeted correction", () => {
     expect(menu).not.toMatch(/^\s*\.controlSize\(\.large\)/m);
     expect(menu).toContain(".buttonStyle(.glassProminent)");
     expect(glassMenu).not.toContain("PlanningGlassMorphMenu");
-    expect(itemSheets).toContain("PlanningNativeAddMenu(");
+    expect(itemSheets).toContain("PlanningSheetAddMenu(");
     expect(itemSheets).not.toContain(".popover");
   });
 
