@@ -133,6 +133,32 @@ export interface CanonicalDocument {
   reflectionSnapshots: ReflectionSnapshot[];
   reflectionDecisions: ReflectionDecision[];
   postponeEntries: PostponeEntry[];
+  plans: PlanRecord[];
+  planBullets: PlanBulletRecord[];
+  appliedTransfers: string[];
+}
+
+export interface PlanRecord {
+  id: string;
+  title: string;
+  memo: string;
+  replanCount: number;
+  createdAt: string;
+  updatedAt: string;
+  hasBeenSaved: boolean;
+  iconID: string;
+  iconColorID: string;
+  isSample?: boolean;
+}
+
+/** One brainstorm row. A child points at a root. Grandchildren are not stored. */
+export interface PlanBulletRecord {
+  id: string;
+  planID: string;
+  text: string;
+  parentID?: string;
+  order: number;
+  isSample?: boolean;
 }
 
 /** Box row. Display fields can diverge from the payload. The payload is not copied. */
@@ -232,6 +258,9 @@ export function emptyDocument(): CanonicalDocument {
     reflectionSnapshots: [],
     reflectionDecisions: [],
     postponeEntries: [],
+    plans: [],
+    planBullets: [],
+    appliedTransfers: [],
   };
 }
 
@@ -755,6 +784,117 @@ export function completeReflectionWithPostponements(
   return true;
 }
 
+export function listPlans(document: CanonicalDocument): PlanRecord[] {
+  return document.plans.filter((row) => row.hasBeenSaved).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+}
+
+export function createPlan(document: CanonicalDocument, plan: PlanRecord): boolean {
+  if (document.plans.some((row) => row.id === plan.id)) return false;
+  document.plans.unshift(plan);
+  return true;
+}
+
+export function savePlan(document: CanonicalDocument, id: string, patch: Partial<Pick<PlanRecord, "title" | "memo" | "iconID" | "iconColorID">>): boolean {
+  const plan = document.plans.find((row) => row.id === id);
+  if (!plan) return false;
+  if (plan.hasBeenSaved) plan.replanCount += 1;
+  plan.title = patch.title ?? plan.title;
+  plan.memo = patch.memo ?? plan.memo;
+  plan.iconID = patch.iconID ?? plan.iconID;
+  plan.iconColorID = patch.iconColorID ?? plan.iconColorID;
+  plan.updatedAt = "2026-10-15T00:00:00.000Z";
+  plan.hasBeenSaved = true;
+  return true;
+}
+
+export function deletePlan(document: CanonicalDocument, id: string): boolean {
+  const before = document.plans.length;
+  document.plans = document.plans.filter((row) => row.id !== id);
+  document.planBullets = document.planBullets.filter((row) => row.planID !== id);
+  return document.plans.length !== before;
+}
+
+export function planTree(document: CanonicalDocument, planID: string): PlanBulletRecord[] {
+  return document.planBullets.filter((row) => row.planID === planID).sort((a, b) => a.order - b.order);
+}
+
+export function addPlanBullet(document: CanonicalDocument, bullet: PlanBulletRecord): boolean {
+  if (document.planBullets.some((row) => row.id === bullet.id)) return false;
+  if (!document.plans.some((row) => row.id === bullet.planID)) return false;
+  if (bullet.parentID) {
+    const parent = document.planBullets.find((row) => row.id === bullet.parentID && row.planID === bullet.planID);
+    if (!parent || parent.parentID) return false;
+  }
+  document.planBullets.push(bullet);
+  return true;
+}
+
+export function editPlanBullet(document: CanonicalDocument, id: string, text: string): boolean {
+  const bullet = document.planBullets.find((row) => row.id === id);
+  if (!bullet) return false;
+  bullet.text = text;
+  return true;
+}
+
+export function deletePlanBullet(document: CanonicalDocument, id: string): boolean {
+  const bullet = document.planBullets.find((row) => row.id === id);
+  if (!bullet) return false;
+  document.planBullets = document.planBullets.filter((row) => row.id !== id && row.parentID !== id);
+  return true;
+}
+
+function transferPayloadID(bulletID: string, level: PlanningLevel, periodKey: string, kind: PlanningKind): string {
+  return `plan-copy:${bulletID}:${level}:${periodKey}:${kind}`;
+}
+
+/** Copies selected bullets. The plan stays. The same destination is not copied again. */
+export function transferPlan(
+  document: CanonicalDocument,
+  input: { operationID: string; planID: string; bulletIDs: string[]; includeChildren: boolean; level: PlanningLevel; kind: PlanningKind; periodKey: string },
+): boolean {
+  if (document.appliedTransfers.includes(input.operationID)) return true;
+  const bullets = document.planBullets.filter((row) => row.planID === input.planID);
+  if (!document.plans.some((row) => row.id === input.planID) || bullets.length === 0) return false;
+  const selected = bullets.filter((row) => input.bulletIDs.includes(row.id));
+  if (selected.length === 0) return false;
+  if (selected.some((row) => row.parentID && bullets.some((parent) => parent.id === row.parentID && parent.parentID))) return false;
+  const stamp = "2026-10-15T00:00:00.000Z";
+  const day = input.periodKey.length === 7 ? `${input.periodKey}-01` : input.periodKey;
+  const created: CanonicalPayload[] = [];
+  for (const bullet of selected.filter((row) => !row.parentID)) {
+    const id = transferPayloadID(bullet.id, input.level, input.periodKey, input.kind);
+    if (document.payloads.some((row) => row.id === id)) continue;
+    created.push({
+      id, kind: input.kind, origin: input.level, originPeriodKey: input.periodKey, title: bullet.text,
+      iconSymbol: "circle", location: "", memo: "", allDay: false, startDate: day, endDate: day,
+      reminders: [], recurrence: { frequency: "none" }, liveActivity: false, updatedAt: stamp, completed: false,
+    });
+    if (!input.includeChildren) continue;
+    for (const child of bullets.filter((row) => row.parentID === bullet.id)) {
+      const childID = transferPayloadID(child.id, input.level, input.periodKey, input.kind);
+      if (document.payloads.some((row) => row.id === childID) || created.some((row) => row.id === childID)) continue;
+      created.push({
+        id: childID, kind: input.kind, origin: input.level, originPeriodKey: input.periodKey, title: child.text,
+        iconSymbol: "circle", location: "", memo: "", allDay: false, startDate: day, endDate: day,
+        reminders: [], recurrence: { frequency: "none" }, liveActivity: false, updatedAt: stamp, completed: false,
+        parentID: id, childOrder: child.order,
+      });
+    }
+  }
+  for (const bullet of selected.filter((row) => row.parentID && !selected.some((parent) => parent.id === row.parentID))) {
+    const id = transferPayloadID(bullet.id, input.level, input.periodKey, input.kind);
+    if (document.payloads.some((row) => row.id === id) || created.some((row) => row.id === id)) continue;
+    created.push({
+      id, kind: input.kind, origin: input.level, originPeriodKey: input.periodKey, title: bullet.text,
+      iconSymbol: "circle", location: "", memo: "", allDay: false, startDate: day, endDate: day,
+      reminders: [], recurrence: { frequency: "none" }, liveActivity: false, updatedAt: stamp, completed: false,
+    });
+  }
+  document.payloads.push(...created);
+  document.appliedTransfers.push(input.operationID);
+  return true;
+}
+
 export function decodeDocument(raw: Partial<CanonicalDocument> | null | undefined): CanonicalDocument {
   const document = emptyDocument();
   if (!raw || raw.schemaVersion !== CANONICAL_SCHEMA_VERSION) return document;
@@ -775,6 +915,9 @@ export function decodeDocument(raw: Partial<CanonicalDocument> | null | undefine
   }));
   document.reflectionDecisions = raw.reflectionDecisions ?? [];
   document.postponeEntries = raw.postponeEntries ?? [];
+  document.plans = raw.plans ?? [];
+  document.planBullets = raw.planBullets ?? [];
+  document.appliedTransfers = raw.appliedTransfers ?? [];
   document.tombstones = raw.tombstones ?? [];
   document.levelOverrides = raw.levelOverrides ?? [];
   document.occurrenceOverrides = raw.occurrenceOverrides ?? [];
@@ -1049,6 +1192,9 @@ export function productionDocument(document: CanonicalDocument): CanonicalDocume
     reflectionSnapshots: productionReflectionSnapshots(document, sampleIDs),
     reflectionDecisions: document.reflectionDecisions.filter((row) => !row.isSample && !sampleIDs.has(row.logicalID)),
     postponeEntries: document.postponeEntries.filter((row) => !row.isSample && !sampleIDs.has(row.logicalID)),
+    plans: document.plans.filter((row) => !row.isSample),
+    planBullets: document.planBullets.filter((row) => !row.isSample && !document.plans.some((plan) => plan.id === row.planID && plan.isSample)),
+    appliedTransfers: document.appliedTransfers,
   };
 }
 
@@ -1074,7 +1220,9 @@ function productionIsEmpty(document: CanonicalDocument): boolean {
     produced.dayCompletions.length === 0 &&
     produced.reflectionSnapshots.length === 0 &&
     produced.reflectionDecisions.length === 0 &&
-    produced.postponeEntries.length === 0
+    produced.postponeEntries.length === 0 &&
+    produced.plans.length === 0 &&
+    produced.planBullets.length === 0
   );
 }
 

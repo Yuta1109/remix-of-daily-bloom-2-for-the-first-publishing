@@ -7,6 +7,7 @@ enum PlanningCanonicalAdapter {
         var isSample: Bool
         var parentID: String?
         var planDocument: Bool = false
+        var planBullets: [(id: String, parentID: String?)] = []
         var postponeBox: Bool = false
         var logicalID: String?
     }
@@ -16,8 +17,15 @@ enum PlanningCanonicalAdapter {
         var collisions: Int
         var blocked: Int
         var ready: Int
+        var batchConvertible: Bool
         var activationAllowed: Bool
+        var activationBlockers: [String]
     }
+
+    static let liveActivationBlockers = [
+        "postpone-restore-creates-a-new-node",
+        "latest-reflection-remains-editable",
+    ]
 
     static func period(
         _ document: CanonicalPlanningDocument,
@@ -38,11 +46,24 @@ enum PlanningCanonicalAdapter {
                 samplesExcluded += 1
                 continue
             }
-            if row.planDocument || (row.postponeBox && row.logicalID == nil) {
+            if row.postponeBox && row.logicalID == nil {
                 blocked += 1
                 continue
             }
-            let taken = row.postponeBox
+            if row.planDocument {
+                let tooDeep = row.planBullets.contains { bullet in
+                    guard let parentID = bullet.parentID else { return false }
+                    guard let parent = row.planBullets.first(where: { $0.id == parentID }) else { return true }
+                    return parent.parentID != nil
+                }
+                if row.planBullets.isEmpty || tooDeep {
+                    blocked += 1
+                    continue
+                }
+            }
+            let taken = row.planDocument
+                ? document.plans.contains { $0.id == row.id }
+                : row.postponeBox
                 ? document.postponeEntries.contains { $0.id == row.id || $0.logicalID == row.logicalID }
                 : document.payloads.contains { $0.id == row.id || $0.legacyWebID == row.id }
             if taken { collisions += 1 } else { ready += 1 }
@@ -52,7 +73,9 @@ enum PlanningCanonicalAdapter {
             collisions: collisions,
             blocked: blocked,
             ready: ready,
-            activationAllowed: blocked == 0
+            batchConvertible: blocked == 0,
+            activationAllowed: false,
+            activationBlockers: liveActivationBlockers
         )
     }
 }

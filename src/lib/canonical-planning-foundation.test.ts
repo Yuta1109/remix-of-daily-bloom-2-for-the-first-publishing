@@ -27,6 +27,14 @@ import {
   restorePostponedItem,
   completeReflectionWithPostponements,
   listPostponed,
+  createPlan,
+  savePlan,
+  deletePlan,
+  addPlanBullet,
+  editPlanBullet,
+  deletePlanBullet,
+  listPlans,
+  transferPlan,
   projectedKeys,
   repeatAllowedForSpan,
   restoreDocument,
@@ -823,5 +831,49 @@ describe("canonical planning foundation", () => {
     ])).toBe(false);
     expect(failed.reflectionSnapshots).toEqual([]);
     expect(failed.postponeEntries).toEqual([]);
+  });
+
+  it("stores plan documents separately and copies them only on an explicit transfer", () => {
+    const doc = emptyDocument();
+    expect(listPlans(doc)).toEqual([]);
+    const events = ["e1", "e2", "e3", "e4", "e5", "e6"];
+    for (const [index, id] of events.entries()) {
+      createItem(doc, { id, legacyWebID: `web-${id}`, kind: "event", origin: "daily", originPeriodKey: "2026-10-01", title: `Event ${index}`, startDate: "2026-10-01", legacyColorKey: "gray", recurrence: { frequency: "none" } });
+    }
+    const eventSnapshot = JSON.stringify(doc.payloads);
+    expect(createPlan(doc, { id: "plan-1", title: "English", memo: "", replanCount: 0, createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z", hasBeenSaved: false, iconID: "book", iconColorID: "rose" })).toBe(true);
+    expect(listPlans(doc)).toEqual([]);
+    expect(savePlan(doc, "plan-1", { title: "English", memo: "notes" })).toBe(true);
+    expect(savePlan(doc, "plan-1", { title: "English revised" })).toBe(true);
+    expect(listPlans(doc)[0].replanCount).toBe(1);
+    expect(addPlanBullet(doc, { id: "speaking", planID: "plan-1", text: "Speaking", order: 0 })).toBe(true);
+    expect(addPlanBullet(doc, { id: "talk", planID: "plan-1", text: "Practice", parentID: "speaking", order: 0 })).toBe(true);
+    expect(addPlanBullet(doc, { id: "deep", planID: "plan-1", text: "Too deep", parentID: "talk", order: 0 })).toBe(false);
+    expect(addPlanBullet(doc, { id: "missing-parent", planID: "plan-1", text: "Orphan", parentID: "none", order: 1 })).toBe(false);
+    editPlanBullet(doc, "talk", "Practice daily");
+    expect(transferPlan(doc, { operationID: "op-1", planID: "plan-1", bulletIDs: ["speaking"], includeChildren: true, level: "monthly", kind: "task", periodKey: "2026-10" })).toBe(true);
+    expect(transferPlan(doc, { operationID: "op-1", planID: "plan-1", bulletIDs: ["speaking"], includeChildren: true, level: "monthly", kind: "task", periodKey: "2026-10" })).toBe(true);
+    const copies = doc.payloads.filter((row) => row.id.startsWith("plan-copy:"));
+    expect(copies.map((row) => row.id)).toEqual(["plan-copy:speaking:monthly:2026-10:task", "plan-copy:talk:monthly:2026-10:task"]);
+    expect(doc.planBullets.find((row) => row.id === "talk")?.text).toBe("Practice daily");
+    editPlanBullet(doc, "talk", "Still the plan");
+    expect(copies.find((row) => row.parentID)?.title).toBe("Practice daily");
+    expect(effectiveItems(doc, "weekly", "2026-09-28").some((row) => row.logicalID.startsWith("plan-copy:speaking"))).toBe(true);
+    expect(effectiveItems(doc, "daily", "2026-10-01").some((row) => row.logicalID.startsWith("plan-copy:speaking"))).toBe(true);
+    expect(transferPlan(doc, { operationID: "op-2", planID: "plan-1", bulletIDs: ["talk"], includeChildren: false, level: "daily", kind: "task", periodKey: "2026-10-14" })).toBe(true);
+    expect(effectiveItems(doc, "monthly", "2026-10").some((row) => row.logicalID.includes("2026-10-14"))).toBe(false);
+    deletePlan(doc, "plan-1");
+    expect(doc.plans).toEqual([]);
+    expect(doc.payloads.some((row) => row.id.startsWith("plan-copy:"))).toBe(true);
+    const sample = emptyDocument();
+    createPlan(sample, { id: "sample-plan", title: "English", memo: "", replanCount: 0, createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-02T00:00:00.000Z", hasBeenSaved: true, iconID: "book", iconColorID: "rose", isSample: true });
+    sample.planBullets.push({ id: "sample-bullet", planID: "sample-plan", text: "English", order: 0, isSample: true });
+    createPlan(sample, { id: "real-plan", title: "English", memo: "", replanCount: 0, createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-03T00:00:00.000Z", hasBeenSaved: true, iconID: "book", iconColorID: "rose" });
+    expect(productionDocument(sample).plans.map((row) => row.id)).toEqual(["real-plan"]);
+    expect(productionDocument(sample).planBullets).toEqual([]);
+    const decoded = decodeDocument(JSON.parse('{"schemaVersion":1,"legacyMigration":"unresolved","payloads":[],"tombstones":[],"levelOverrides":[],"occurrenceOverrides":[],"dayCompletions":[],"reflectionSnapshots":[]}'));
+    expect(decoded.plans).toEqual([]);
+    expect(decoded.planBullets).toEqual([]);
+    expect(JSON.stringify(doc.payloads.filter((row) => events.includes(row.id)))).toBe(eventSnapshot);
   });
 });

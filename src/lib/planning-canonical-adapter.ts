@@ -22,8 +22,9 @@ export interface NativePlanningCandidate {
   isSample?: boolean;
   completed?: boolean;
   parentID?: string;
-  /** Plan documents are still outside the canonical model. */
+  /** Native Plan document. Convertible when every bullet is at most one level deep. */
   planDocument?: boolean;
+  planBullets?: { id: string; parentID?: string }[];
   /** Native Postpone Box row. Convertible when logicalID is present. */
   postponeBox?: boolean;
   logicalID?: string;
@@ -37,8 +38,16 @@ export interface HandoffPreview {
   blocked: number;
   ready: number;
   writes: 0;
+  /** This batch can be stored. It does not mean live Planning is safe to switch. */
+  batchConvertible: boolean;
   activationAllowed: boolean;
+  activationBlockers: string[];
 }
+
+export const LIVE_ACTIVATION_BLOCKERS = [
+  "postpone-restore-creates-a-new-node",
+  "latest-reflection-remains-editable",
+] as const;
 
 /** Classifies in-memory Planning rows. Does not mutate the document. */
 export function previewNativeHandoff(document: CanonicalDocument, rows: NativePlanningCandidate[]): HandoffPreview {
@@ -52,18 +61,40 @@ export function previewNativeHandoff(document: CanonicalDocument, rows: NativePl
       samplesExcluded += 1;
       continue;
     }
-    if (row.planDocument || (row.postponeBox && !row.logicalID)) {
+    if (row.postponeBox && !row.logicalID) {
       blocked += 1;
       continue;
     }
-    const taken = row.postponeBox
+    if (row.planDocument) {
+      const bullets = row.planBullets ?? [];
+      const tooDeep = bullets.some((bullet) => {
+        const parent = bullets.find((item) => item.id === bullet.parentID);
+        return Boolean(bullet.parentID && (!parent || parent.parentID));
+      });
+      if (bullets.length === 0 || tooDeep) {
+        blocked += 1;
+        continue;
+      }
+    }
+    const taken = row.planDocument
+      ? document.plans.some((plan) => plan.id === row.id)
+      : row.postponeBox
       ? document.postponeEntries.some((entry) => entry.id === row.id || entry.logicalID === row.logicalID)
       : document.payloads.some((payload) => payload.id === row.id || payload.legacyWebID === row.id);
     if (taken) collisions += 1;
     else ready += 1;
   }
   if (JSON.stringify(document) !== before) throw new Error("preview mutated the document");
-  return { samplesExcluded, collisions, blocked, ready, writes: 0, activationAllowed: blocked === 0 };
+  return {
+    samplesExcluded,
+    collisions,
+    blocked,
+    ready,
+    writes: 0,
+    batchConvertible: blocked === 0,
+    activationAllowed: false,
+    activationBlockers: [...LIVE_ACTIVATION_BLOCKERS],
+  };
 }
 
 export function effectivePeriod(document: CanonicalDocument, level: PlanningLevel, key: string): EffectiveItem[] {

@@ -36,7 +36,14 @@ describe("planning canonical adapter", () => {
       { id: "sample", kind: "task", origin: "daily", originPeriodKey: "2026-10-13", title: "Event 1", isSample: true },
       { id: "real-task", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Event 1" },
     ]);
-    expect(preview).toEqual({ samplesExcluded: 1, collisions: 1, blocked: 0, ready: 1, writes: 0, activationAllowed: true });
+    expect(preview.samplesExcluded).toBe(1);
+    expect(preview.collisions).toBe(1);
+    expect(preview.blocked).toBe(0);
+    expect(preview.ready).toBe(1);
+    expect(preview.writes).toBe(0);
+    expect(preview.batchConvertible).toBe(true);
+    expect(preview.activationAllowed).toBe(false);
+    expect(preview.activationBlockers).toEqual(["postpone-restore-creates-a-new-node", "latest-reflection-remains-editable"]);
     expect(JSON.stringify(document)).toBe(before);
     expect(document.payloads.map((row) => row.legacyWebID)).toEqual(["legacy-1", "legacy-2", "legacy-3", "legacy-4", "legacy-5", "legacy-6"]);
     expect(effectivePeriod(document, "monthly", "2026-10").map((row) => row.logicalID)).toEqual([]);
@@ -76,12 +83,14 @@ describe("planning canonical adapter", () => {
     const blocked = previewNativeHandoff(document, [
       { id: "parent", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Parent", parentID: undefined },
       { id: "child", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Child", parentID: "parent" },
-      { id: "plan", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Plan", planDocument: true },
+      { id: "plan", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Plan", planDocument: true, planBullets: [{ id: "root" }, { id: "child", parentID: "root" }] },
+      { id: "deep", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Deep", planDocument: true, planBullets: [{ id: "root" }, { id: "child", parentID: "root" }, { id: "grand", parentID: "child" }] },
       { id: "box", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "Box", postponeBox: true, logicalID: "parent" },
       { id: "loose", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "Loose", postponeBox: true },
     ]);
     expect(blocked.blocked).toBe(2);
-    expect(blocked.ready).toBe(3);
+    expect(blocked.ready).toBe(4);
+    expect(blocked.batchConvertible).toBe(false);
     expect(blocked.activationAllowed).toBe(false);
     expect(JSON.stringify(document)).toBe(beforeBlock);
   });

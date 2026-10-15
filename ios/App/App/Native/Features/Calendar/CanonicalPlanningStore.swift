@@ -292,6 +292,28 @@ struct CanonicalPostponeEntry: Codable, Hashable {
     var isSample: Bool = false
 }
 
+struct CanonicalPlanRecord: Codable, Hashable {
+    var id: String
+    var title: String
+    var memo: String
+    var replanCount: Int
+    var createdAt: String
+    var updatedAt: String
+    var hasBeenSaved: Bool
+    var iconID: String
+    var iconColorID: String
+    var isSample: Bool = false
+}
+
+struct CanonicalPlanBullet: Codable, Hashable {
+    var id: String
+    var planID: String
+    var text: String
+    var parentID: String?
+    var order: Int
+    var isSample: Bool = false
+}
+
 struct CanonicalPlanningDocument: Codable {
     static let schemaVersion = 1
     var schemaVersion: Int
@@ -305,9 +327,12 @@ struct CanonicalPlanningDocument: Codable {
     var reflectionSnapshots: [CanonicalReflectionSnapshot]
     var reflectionDecisions: [CanonicalReflectionDecision]
     var postponeEntries: [CanonicalPostponeEntry]
+    var plans: [CanonicalPlanRecord]
+    var planBullets: [CanonicalPlanBullet]
+    var appliedTransfers: [String]
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, legacyMigration, payloads, tombstones, levelOverrides, occurrenceOverrides, dayCompletions, reflectionSnapshots, reflectionDecisions, postponeEntries
+        case schemaVersion, legacyMigration, payloads, tombstones, levelOverrides, occurrenceOverrides, dayCompletions, reflectionSnapshots, reflectionDecisions, postponeEntries, plans, planBullets, appliedTransfers
     }
 
     init(
@@ -320,7 +345,10 @@ struct CanonicalPlanningDocument: Codable {
         dayCompletions: [CanonicalDayCompletion],
         reflectionSnapshots: [CanonicalReflectionSnapshot],
         reflectionDecisions: [CanonicalReflectionDecision] = [],
-        postponeEntries: [CanonicalPostponeEntry] = []
+        postponeEntries: [CanonicalPostponeEntry] = [],
+        plans: [CanonicalPlanRecord] = [],
+        planBullets: [CanonicalPlanBullet] = [],
+        appliedTransfers: [String] = []
     ) {
         self.schemaVersion = schemaVersion
         self.legacyMigration = legacyMigration
@@ -332,6 +360,9 @@ struct CanonicalPlanningDocument: Codable {
         self.reflectionSnapshots = reflectionSnapshots
         self.reflectionDecisions = reflectionDecisions
         self.postponeEntries = postponeEntries
+        self.plans = plans
+        self.planBullets = planBullets
+        self.appliedTransfers = appliedTransfers
     }
 
     static func empty() -> CanonicalPlanningDocument {
@@ -359,6 +390,9 @@ struct CanonicalPlanningDocument: Codable {
         try container.encode(reflectionSnapshots, forKey: .reflectionSnapshots)
         try container.encode(reflectionDecisions, forKey: .reflectionDecisions)
         try container.encode(postponeEntries, forKey: .postponeEntries)
+        try container.encode(plans, forKey: .plans)
+        try container.encode(planBullets, forKey: .planBullets)
+        try container.encode(appliedTransfers, forKey: .appliedTransfers)
     }
 
     init(from decoder: Decoder) throws {
@@ -373,6 +407,9 @@ struct CanonicalPlanningDocument: Codable {
         reflectionSnapshots = try container.decodeIfPresent([CanonicalReflectionSnapshot].self, forKey: .reflectionSnapshots) ?? []
         reflectionDecisions = try container.decodeIfPresent([CanonicalReflectionDecision].self, forKey: .reflectionDecisions) ?? []
         postponeEntries = try container.decodeIfPresent([CanonicalPostponeEntry].self, forKey: .postponeEntries) ?? []
+        plans = try container.decodeIfPresent([CanonicalPlanRecord].self, forKey: .plans) ?? []
+        planBullets = try container.decodeIfPresent([CanonicalPlanBullet].self, forKey: .planBullets) ?? []
+        appliedTransfers = try container.decodeIfPresent([String].self, forKey: .appliedTransfers) ?? []
     }
 }
 
@@ -1076,6 +1113,9 @@ enum CanonicalPlanningPersistence {
         copy.reflectionSnapshots = productionReflectionSnapshots(document, sampleIDs: sampleIDs)
         copy.reflectionDecisions = document.reflectionDecisions.filter { !$0.isSample && !sampleIDs.contains($0.logicalID) }
         copy.postponeEntries = document.postponeEntries.filter { !$0.isSample && !sampleIDs.contains($0.logicalID) }
+        let samplePlans = Set(document.plans.filter(\.isSample).map(\.id))
+        copy.plans = document.plans.filter { !$0.isSample }
+        copy.planBullets = document.planBullets.filter { !$0.isSample && !samplePlans.contains($0.planID) }
         return copy
     }
 
@@ -1102,6 +1142,8 @@ enum CanonicalPlanningPersistence {
             && produced.reflectionSnapshots.isEmpty
             && produced.reflectionDecisions.isEmpty
             && produced.postponeEntries.isEmpty
+            && produced.plans.isEmpty
+            && produced.planBullets.isEmpty
     }
 }
 
