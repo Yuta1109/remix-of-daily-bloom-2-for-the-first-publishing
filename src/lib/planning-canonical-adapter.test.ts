@@ -74,11 +74,14 @@ describe("planning canonical adapter", () => {
     expect(document.payloads).toHaveLength(6);
     const beforeBlock = JSON.stringify(document);
     const blocked = previewNativeHandoff(document, [
-      { id: "parent", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Parent", childCount: 2, reflectionDisposition: "keep" },
+      { id: "parent", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Parent", parentID: undefined },
+      { id: "child", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Child", parentID: "parent" },
+      { id: "plan", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Plan", planDocument: true },
+      { id: "box", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "Box", postponeBox: true },
     ]);
-    expect(blocked.blocked).toBe(1);
+    expect(blocked.blocked).toBe(2);
+    expect(blocked.ready).toBe(2);
     expect(blocked.activationAllowed).toBe(false);
-    expect(blocked.ready).toBe(0);
     expect(JSON.stringify(document)).toBe(beforeBlock);
   });
 });

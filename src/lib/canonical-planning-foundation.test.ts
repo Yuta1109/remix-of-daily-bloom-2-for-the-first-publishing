@@ -22,6 +22,7 @@ import {
   openCanonicalStore,
   probeLegacyWebViewCalendar,
   productionDocument,
+  recordReflectionDecision,
   projectedKeys,
   repeatAllowedForSpan,
   restoreDocument,
@@ -703,5 +704,46 @@ describe("canonical planning foundation", () => {
     const blocked = openCanonicalStore(memory);
     expect(blocked.mutate((doc) => { applyLegacyCalendarImport(doc, [{ id: "once", title: "Once", date: "2026-10-13" }]); })).toBe(false);
     expect(memory.value).toBe("{");
+  });
+
+  it("keeps one-level children and reflection decisions apart from completion", () => {
+    const doc = emptyDocument();
+    createItem(doc, { id: "parent", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Read two books", startDate: "2026-10-14", endDate: "2026-10-14" });
+    createItem(doc, { id: "a", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Book 1", parentID: "parent", childOrder: 0, startDate: "2026-10-14", endDate: "2026-10-14" });
+    createItem(doc, { id: "b", kind: "task", origin: "monthly", originPeriodKey: "2026-10", title: "Book 2", parentID: "parent", childOrder: 1, completed: true, startDate: "2026-10-14", endDate: "2026-10-14" });
+    for (const level of ["weekly", "daily"] as const) {
+      const key = level === "weekly" ? "2026-10-12" : "2026-10-14";
+      const tree = effectiveItems(doc, level, key).filter((row) => row.parentID === "parent" || row.logicalID === "parent");
+      expect(tree.map((row) => row.logicalID)).toEqual(["parent", "a", "b"]);
+      expect(tree.find((row) => row.logicalID === "a")?.completed).toBe(false);
+      expect(tree.find((row) => row.logicalID === "b")?.completed).toBe(true);
+    }
+    expect(effectiveItems(doc, "future", "future").some((row) => row.logicalID === "a")).toBe(false);
+    editPayload(doc, "a", { title: "Book 1 revised" });
+    expect(doc.payloads.find((row) => row.id === "b")?.title).toBe("Book 2");
+    deleteLevel(doc, "a", "daily", "2026-10-14");
+    expect(effectiveItems(doc, "monthly", "2026-10").some((row) => row.logicalID === "a")).toBe(true);
+    expect(effectiveItems(doc, "daily", "2026-10-14").some((row) => row.logicalID === "a")).toBe(false);
+    const old = JSON.stringify({ payloads: doc.payloads.map(({ id, parentID }) => ({ id, parentID })) });
+    expect(recordReflectionDecision(doc, { id: "d1", level: "daily", periodKey: "2026-10-14", logicalID: "a", disposition: "postpone", completed: false })).toBe(true);
+    expect(recordReflectionDecision(doc, { id: "d2", level: "daily", periodKey: "2026-10-14", logicalID: "a", disposition: "stop", completed: true })).toBe(false);
+    expect(completeReflection(doc, "daily:2026-10-14", ["a"])).toBe(true);
+    expect(completeReflection(doc, "daily:2026-10-14", ["changed"])).toBe(false);
+    editPayload(doc, "a", { title: "Later" });
+    expect(doc.reflectionDecisions[0].disposition).toBe("postpone");
+    expect(doc.reflectionSnapshots[0].decisionIDs).toEqual(["a"]);
+    expect(JSON.stringify({ payloads: doc.payloads.map(({ id, parentID }) => ({ id, parentID })) })).toBe(old);
+    const sample = emptyDocument();
+    createItem(sample, { id: "sample-parent", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "Sample", isSample: true });
+    createItem(sample, { id: "sample-child", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "Child", parentID: "sample-parent", isSample: true });
+    recordReflectionDecision(sample, { id: "sd", level: "daily", periodKey: "2026-10-14", logicalID: "sample-child", disposition: "keep", completed: false, isSample: true });
+    recordReflectionDecision(sample, { id: "real", level: "weekly", periodKey: "2026-W42", logicalID: "unknown", disposition: "stop", completed: false });
+    const produced = productionDocument(sample);
+    expect(produced.payloads).toEqual([]);
+    expect(produced.reflectionDecisions.map((row) => row.id)).toEqual(["real"]);
+    const legacy = decodeDocument(JSON.parse('{"schemaVersion":1,"legacyMigration":"unresolved","payloads":[{"id":"e1","legacyWebID":"web-1","kind":"event","origin":"daily","originPeriodKey":"2026-10-01","title":"Kept","location":"","memo":"","allDay":false,"reminders":[],"recurrence":{"frequency":"none"},"liveActivity":false,"updatedAt":"2026-01-01T00:00:00.000Z","completed":false}],"tombstones":[],"levelOverrides":[],"occurrenceOverrides":[],"dayCompletions":[],"reflectionSnapshots":[]}'));
+    expect(legacy.payloads[0].legacyWebID).toBe("web-1");
+    expect(legacy.reflectionDecisions).toEqual([]);
+    expect(legacy.payloads[0].parentID).toBeUndefined();
   });
 });

@@ -55,6 +55,8 @@ export interface CanonicalPayload {
   completed: boolean;
   /** In-memory tutorial row. Never written to production canonical storage. */
   isSample?: boolean;
+  parentID?: string;
+  childOrder?: number;
 }
 
 export interface Tombstone {
@@ -105,6 +107,20 @@ export interface ReflectionSnapshot {
   decisionIDs: string[];
 }
 
+export type ReflectionDisposition = "keep" | "postpone" | "stop";
+
+/** One item decision inside a completed reflection. Separate from task completion. */
+export interface ReflectionDecision {
+  id: string;
+  level: PlanningLevel;
+  periodKey: string;
+  logicalID: string;
+  occurrenceDate?: string;
+  disposition: ReflectionDisposition;
+  completed: boolean;
+  isSample?: boolean;
+}
+
 export interface CanonicalDocument {
   schemaVersion: number;
   /** Stays unresolved until a native reader for WebKit localStorage exists. */
@@ -115,6 +131,7 @@ export interface CanonicalDocument {
   occurrenceOverrides: OccurrenceOverride[];
   dayCompletions: DayCompletion[];
   reflectionSnapshots: ReflectionSnapshot[];
+  reflectionDecisions: ReflectionDecision[];
 }
 
 export interface EffectiveItem {
@@ -138,6 +155,8 @@ export interface EffectiveItem {
   liveActivityLead?: string;
   completed: boolean;
   todayTaskID?: string;
+  parentID?: string;
+  childOrder?: number;
 }
 
 export interface CreateInput {
@@ -165,6 +184,8 @@ export interface CreateInput {
   todayTaskID?: string;
   completed?: boolean;
   isSample?: boolean;
+  parentID?: string;
+  childOrder?: number;
 }
 
 /**
@@ -191,6 +212,7 @@ export function emptyDocument(): CanonicalDocument {
     occurrenceOverrides: [],
     dayCompletions: [],
     reflectionSnapshots: [],
+    reflectionDecisions: [],
   };
 }
 
@@ -447,6 +469,8 @@ export function effectiveItems(document: CanonicalDocument, level: PlanningLevel
         ? displayedDay ? document.dayCompletions.some((row) => row.logicalID === payload.id && row.date === displayedDay && row.completed) : false
         : payload.completed,
       todayTaskID: payload.todayTaskID,
+      parentID: payload.parentID,
+      childOrder: payload.childOrder,
     });
   }
   const seen = new Set<string>();
@@ -484,6 +508,8 @@ export function createItem(document: CanonicalDocument, input: CreateInput): Can
     todayTaskID: input.todayTaskID,
     completed: input.completed ?? false,
     isSample: input.isSample ?? false,
+    parentID: input.parentID,
+    childOrder: input.childOrder,
   };
   document.payloads.push(payload);
   return payload;
@@ -599,6 +625,15 @@ export function setEventCompletion(document: CanonicalDocument, logicalID: strin
   return true;
 }
 
+/** Records one decision. A second write of the same period, item, and occurrence is refused. */
+export function recordReflectionDecision(document: CanonicalDocument, decision: ReflectionDecision): boolean {
+  const exists = document.reflectionDecisions.some((row) =>
+    row.level === decision.level && row.periodKey === decision.periodKey && row.logicalID === decision.logicalID && row.occurrenceDate === decision.occurrenceDate);
+  if (exists) return false;
+  document.reflectionDecisions.push({ ...decision });
+  return true;
+}
+
 export function completeReflection(document: CanonicalDocument, id: string, decisionIDs: string[]): boolean {
   if (document.reflectionSnapshots.some((row) => row.id === id)) return false;
   document.reflectionSnapshots.push({ id, completed: true, decisionIDs: [...decisionIDs] });
@@ -620,7 +655,10 @@ export function decodeDocument(raw: Partial<CanonicalDocument> | null | undefine
     completed: row.completed ?? false,
     iconSymbol: row.iconSymbol ?? "calendar",
     isSample: row.isSample ?? false,
+    parentID: row.parentID,
+    childOrder: row.childOrder,
   }));
+  document.reflectionDecisions = raw.reflectionDecisions ?? [];
   document.tombstones = raw.tombstones ?? [];
   document.levelOverrides = raw.levelOverrides ?? [];
   document.occurrenceOverrides = raw.occurrenceOverrides ?? [];
@@ -893,6 +931,7 @@ export function productionDocument(document: CanonicalDocument): CanonicalDocume
     occurrenceOverrides: document.occurrenceOverrides.filter((row) => !sampleIDs.has(row.logicalID)),
     dayCompletions: document.dayCompletions.filter((row) => !sampleIDs.has(row.logicalID)),
     reflectionSnapshots: productionReflectionSnapshots(document, sampleIDs),
+    reflectionDecisions: document.reflectionDecisions.filter((row) => !row.isSample && !sampleIDs.has(row.logicalID)),
   };
 }
 

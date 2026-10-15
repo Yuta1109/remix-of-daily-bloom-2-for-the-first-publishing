@@ -5,8 +5,9 @@ enum PlanningCanonicalAdapter {
     struct Candidate {
         var id: String
         var isSample: Bool
-        var childCount: Int = 0
-        var reflectionDisposition: String?
+        var parentID: String?
+        var planDocument: Bool = false
+        var postponeBox: Bool = false
     }
 
     struct Preview {
@@ -36,7 +37,7 @@ enum PlanningCanonicalAdapter {
                 samplesExcluded += 1
                 continue
             }
-            if row.childCount > 0 || row.reflectionDisposition != nil {
+            if row.planDocument || row.postponeBox {
                 blocked += 1
                 continue
             }

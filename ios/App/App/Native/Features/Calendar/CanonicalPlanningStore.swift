@@ -89,11 +89,13 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
     var completed: Bool
     /// Tutorial row. Production saves omit it. Real rows stay even if the title matches a sample.
     var isSample: Bool
+    var parentID: String?
+    var childOrder: Int?
 
     private enum CodingKeys: String, CodingKey {
         case id, legacyWebID, kind, origin, originPeriodKey, title, iconSymbol, colorID, legacyColorKey
         case location, memo, allDay, startDate, endDate, startMinutes, endMinutes, reminders, recurrence
-        case liveActivity, liveActivityLead, updatedAt, todayTaskID, completed, isSample
+        case liveActivity, liveActivityLead, updatedAt, todayTaskID, completed, isSample, parentID, childOrder
     }
 
     init(
@@ -120,7 +122,9 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
         updatedAt: String,
         todayTaskID: String?,
         completed: Bool,
-        isSample: Bool = false
+        isSample: Bool = false,
+        parentID: String? = nil,
+        childOrder: Int? = nil
     ) {
         self.id = id
         self.legacyWebID = legacyWebID
@@ -146,6 +150,8 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
         self.todayTaskID = todayTaskID
         self.completed = completed
         self.isSample = isSample
+        self.parentID = parentID
+        self.childOrder = childOrder
     }
 
     func encode(to encoder: Encoder) throws {
@@ -174,6 +180,8 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
         try container.encodeIfPresent(todayTaskID, forKey: .todayTaskID)
         try container.encode(completed, forKey: .completed)
         try container.encode(isSample, forKey: .isSample)
+        try container.encodeIfPresent(parentID, forKey: .parentID)
+        try container.encodeIfPresent(childOrder, forKey: .childOrder)
     }
 
     init(from decoder: Decoder) throws {
@@ -202,6 +210,8 @@ struct CanonicalPayload: Codable, Identifiable, Hashable {
         todayTaskID = try container.decodeIfPresent(String.self, forKey: .todayTaskID)
         completed = try container.decodeIfPresent(Bool.self, forKey: .completed) ?? false
         isSample = try container.decodeIfPresent(Bool.self, forKey: .isSample) ?? false
+        parentID = try container.decodeIfPresent(String.self, forKey: .parentID)
+        childOrder = try container.decodeIfPresent(Int.self, forKey: .childOrder)
     }
 }
 
@@ -251,6 +261,21 @@ struct CanonicalReflectionSnapshot: Codable, Hashable {
     var decisionIDs: [String]
 }
 
+enum CanonicalReflectionDisposition: String, Codable {
+    case keep, postpone, stop
+}
+
+struct CanonicalReflectionDecision: Codable, Hashable {
+    var id: String
+    var level: CanonicalPlanningLevel
+    var periodKey: String
+    var logicalID: String
+    var occurrenceDate: String?
+    var disposition: CanonicalReflectionDisposition
+    var completed: Bool
+    var isSample: Bool = false
+}
+
 struct CanonicalPlanningDocument: Codable {
     static let schemaVersion = 1
     var schemaVersion: Int
@@ -262,9 +287,10 @@ struct CanonicalPlanningDocument: Codable {
     var occurrenceOverrides: [CanonicalOccurrenceOverride]
     var dayCompletions: [CanonicalDayCompletion]
     var reflectionSnapshots: [CanonicalReflectionSnapshot]
+    var reflectionDecisions: [CanonicalReflectionDecision]
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, legacyMigration, payloads, tombstones, levelOverrides, occurrenceOverrides, dayCompletions, reflectionSnapshots
+        case schemaVersion, legacyMigration, payloads, tombstones, levelOverrides, occurrenceOverrides, dayCompletions, reflectionSnapshots, reflectionDecisions
     }
 
     init(
@@ -275,7 +301,8 @@ struct CanonicalPlanningDocument: Codable {
         levelOverrides: [CanonicalLevelOverride],
         occurrenceOverrides: [CanonicalOccurrenceOverride],
         dayCompletions: [CanonicalDayCompletion],
-        reflectionSnapshots: [CanonicalReflectionSnapshot]
+        reflectionSnapshots: [CanonicalReflectionSnapshot],
+        reflectionDecisions: [CanonicalReflectionDecision] = []
     ) {
         self.schemaVersion = schemaVersion
         self.legacyMigration = legacyMigration
@@ -285,6 +312,7 @@ struct CanonicalPlanningDocument: Codable {
         self.occurrenceOverrides = occurrenceOverrides
         self.dayCompletions = dayCompletions
         self.reflectionSnapshots = reflectionSnapshots
+        self.reflectionDecisions = reflectionDecisions
     }
 
     static func empty() -> CanonicalPlanningDocument {
@@ -310,6 +338,7 @@ struct CanonicalPlanningDocument: Codable {
         try container.encode(occurrenceOverrides, forKey: .occurrenceOverrides)
         try container.encode(dayCompletions, forKey: .dayCompletions)
         try container.encode(reflectionSnapshots, forKey: .reflectionSnapshots)
+        try container.encode(reflectionDecisions, forKey: .reflectionDecisions)
     }
 
     init(from decoder: Decoder) throws {
@@ -322,6 +351,7 @@ struct CanonicalPlanningDocument: Codable {
         occurrenceOverrides = try container.decodeIfPresent([CanonicalOccurrenceOverride].self, forKey: .occurrenceOverrides) ?? []
         dayCompletions = try container.decodeIfPresent([CanonicalDayCompletion].self, forKey: .dayCompletions) ?? []
         reflectionSnapshots = try container.decodeIfPresent([CanonicalReflectionSnapshot].self, forKey: .reflectionSnapshots) ?? []
+        reflectionDecisions = try container.decodeIfPresent([CanonicalReflectionDecision].self, forKey: .reflectionDecisions) ?? []
     }
 }
 
@@ -346,6 +376,8 @@ struct CanonicalEffectiveItem: Hashable {
     var liveActivityLead: String?
     var completed: Bool
     var todayTaskID: String?
+    var parentID: String?
+    var childOrder: Int?
 }
 
 struct CanonicalCreateInput {
@@ -373,6 +405,8 @@ struct CanonicalCreateInput {
     var todayTaskID: String?
     var completed: Bool = false
     var isSample: Bool = false
+    var parentID: String?
+    var childOrder: Int?
 }
 
 struct LegacyCalendarRecord: Codable {
@@ -513,7 +547,9 @@ enum CanonicalPlanningEngine {
                 completed: payload.kind == .event
                     ? (level == .daily && document.dayCompletions.contains { $0.logicalID == payload.id && $0.date == key && $0.completed })
                     : payload.completed,
-                todayTaskID: payload.todayTaskID
+                todayTaskID: payload.todayTaskID,
+                parentID: payload.parentID,
+                childOrder: payload.childOrder
             ))
         }
         return items
@@ -545,7 +581,9 @@ enum CanonicalPlanningEngine {
             updatedAt: input.updatedAt,
             todayTaskID: input.todayTaskID,
             completed: input.completed,
-            isSample: input.isSample
+            isSample: input.isSample,
+            parentID: input.parentID,
+            childOrder: input.childOrder
         )
         document.payloads.append(payload)
         return payload
@@ -616,6 +654,15 @@ enum CanonicalPlanningEngine {
         document.occurrenceOverrides.removeAll { $0.logicalID == logicalID && !isScheduledStart(payload, $0.occurrenceDate) }
         document.dayCompletions.removeAll { $0.logicalID == logicalID && !dayIsCovered(payload, $0.date) }
         document.levelOverrides.removeAll { $0.logicalID == logicalID && !periodStillCovered(payload, $0.level, $0.periodKey) }
+    }
+
+    static func recordReflectionDecision(_ document: inout CanonicalPlanningDocument, _ decision: CanonicalReflectionDecision) -> Bool {
+        let exists = document.reflectionDecisions.contains {
+            $0.level == decision.level && $0.periodKey == decision.periodKey && $0.logicalID == decision.logicalID && $0.occurrenceDate == decision.occurrenceDate
+        }
+        guard !exists else { return false }
+        document.reflectionDecisions.append(decision)
+        return true
     }
 
     static func completeReflection(_ document: inout CanonicalPlanningDocument, _ id: String, _ decisionIDs: [String]) -> Bool {
@@ -978,6 +1025,7 @@ enum CanonicalPlanningPersistence {
         copy.occurrenceOverrides = document.occurrenceOverrides.filter { !sampleIDs.contains($0.logicalID) }
         copy.dayCompletions = document.dayCompletions.filter { !sampleIDs.contains($0.logicalID) }
         copy.reflectionSnapshots = productionReflectionSnapshots(document, sampleIDs: sampleIDs)
+        copy.reflectionDecisions = document.reflectionDecisions.filter { !$0.isSample && !sampleIDs.contains($0.logicalID) }
         return copy
     }
 
@@ -1002,6 +1050,7 @@ enum CanonicalPlanningPersistence {
             && produced.occurrenceOverrides.isEmpty
             && produced.dayCompletions.isEmpty
             && produced.reflectionSnapshots.isEmpty
+            && produced.reflectionDecisions.isEmpty
     }
 }
 

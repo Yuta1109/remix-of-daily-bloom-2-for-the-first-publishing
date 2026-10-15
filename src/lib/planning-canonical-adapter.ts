@@ -21,10 +21,11 @@ export interface NativePlanningCandidate {
   title: string;
   isSample?: boolean;
   completed?: boolean;
-  /** Subtasks have no canonical field yet. */
-  childCount?: number;
-  /** 維持 / 先送り / 終了 is not a canonical field yet. */
-  reflectionDisposition?: string;
+  parentID?: string;
+  /** Plan documents are still outside the canonical model. */
+  planDocument?: boolean;
+  /** Postpone Box membership is still outside the canonical model. */
+  postponeBox?: boolean;
 }
 
 export interface HandoffPreview {
@@ -49,7 +50,7 @@ export function previewNativeHandoff(document: CanonicalDocument, rows: NativePl
       samplesExcluded += 1;
       continue;
     }
-    if ((row.childCount ?? 0) > 0 || row.reflectionDisposition) {
+    if (row.planDocument || row.postponeBox) {
       blocked += 1;
       continue;
     }
