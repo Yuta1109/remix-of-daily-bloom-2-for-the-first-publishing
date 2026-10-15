@@ -724,19 +724,24 @@ enum CanonicalPlanningEngine {
 
     static func restorePostponedItem(_ document: inout CanonicalPlanningDocument, _ entryID: String, _ level: CanonicalPlanningLevel, _ periodKey: String) -> Bool {
         guard let entry = document.postponeEntries.first(where: { $0.id == entryID }),
-              let payload = document.payloads.first(where: { $0.id == entry.logicalID }) else { return false }
-        if payload.recurrence.frequency == .none {
-            let childIDs = Set(document.payloads.filter { $0.parentID == payload.id }.map(\.id))
-            let ids = childIDs.union([payload.id])
-            for index in document.payloads.indices where ids.contains(document.payloads[index].id) {
-                document.payloads[index].origin = level
-                document.payloads[index].originPeriodKey = periodKey
-                if level == .daily || level == .weekly {
-                    document.payloads[index].startDate = periodKey
-                    document.payloads[index].endDate = periodKey
-                }
-            }
-            document.tombstones.removeAll { ids.contains($0.logicalID) && $0.level == level && $0.periodKey == periodKey }
+              let source = document.payloads.first(where: { $0.id == entry.logicalID }) else { return false }
+        if source.recurrence.frequency != .none { return false }
+        let copyID = "restore:\(entryID):\(level.rawValue):\(periodKey)"
+        if !document.payloads.contains(where: { $0.id == copyID }) {
+            var copy = source
+            copy.id = copyID
+            copy.origin = level
+            copy.originPeriodKey = periodKey
+            let day = periodKey.count == 7 ? "\(periodKey)-01" : periodKey
+            copy.startDate = day
+            copy.endDate = day
+            copy.title = entry.title
+            copy.parentID = nil
+            copy.childOrder = nil
+            copy.completed = false
+            copy.legacyWebID = nil
+            copy.isSample = false
+            document.payloads.append(copy)
         }
         document.postponeEntries.removeAll { $0.id == entryID }
         return true

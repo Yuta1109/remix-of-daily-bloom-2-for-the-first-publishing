@@ -45,8 +45,8 @@ export interface HandoffPreview {
 }
 
 export const LIVE_ACTIVATION_BLOCKERS = [
-  "postpone-restore-creates-a-new-node",
-  "latest-reflection-remains-editable",
+  "plan-transfer-id-differs-from-live-bullet-id",
+  "planning-ui-still-reads-session",
 ] as const;
 
 /** Classifies in-memory Planning rows. Does not mutate the document. */

@@ -105,6 +105,8 @@ export interface ReflectionSnapshot {
   id: string;
   completed: true;
   decisionIDs: string[];
+  level?: PlanningLevel;
+  completedAt?: string;
 }
 
 export type ReflectionDisposition = "keep" | "postpone" | "stop";
@@ -174,6 +176,8 @@ export interface PostponeEntry {
   iconSymbol: string;
   colorID?: string;
   reflectionDecisionID?: string;
+  todayTaskID?: string;
+  eventID?: string;
   order: number;
   isSample?: boolean;
 }
@@ -731,26 +735,82 @@ export function removePostponedEntry(document: CanonicalDocument, id: string): b
   return document.postponeEntries.length !== before;
 }
 
-/** Places the referenced payload at the destination and removes the box row. Children follow a postponed parent. */
+/** Appends a childless destination copy and removes the box row. The source payload stays put. */
 export function restorePostponedItem(document: CanonicalDocument, entryID: string, level: PlanningLevel, periodKey: string): boolean {
   const entry = document.postponeEntries.find((row) => row.id === entryID);
   if (!entry) return false;
-  const payload = document.payloads.find((row) => row.id === entry.logicalID);
-  if (!payload) return false;
-  if (payload.recurrence.frequency === "none") {
-    const ids = new Set([payload.id, ...document.payloads.filter((row) => row.parentID === payload.id).map((row) => row.id)]);
-    for (const row of document.payloads) {
-      if (!ids.has(row.id)) continue;
-      row.origin = level;
-      row.originPeriodKey = periodKey;
-      if (level === "daily" || level === "weekly") {
-        row.startDate = periodKey;
-        row.endDate = periodKey;
-      }
-    }
-    document.tombstones = document.tombstones.filter((row) => !(ids.has(row.logicalID) && row.level === level && row.periodKey === periodKey));
+  const source = document.payloads.find((row) => row.id === entry.logicalID);
+  if (!source) return false;
+  if (source.recurrence.frequency !== "none") return false;
+  const copyID = `restore:${entryID}:${level}:${periodKey}`;
+  const linkedToday = entry.todayTaskID;
+  const linkedEvent = entry.eventID;
+  const conflict = document.payloads.some((row) =>
+    row.id !== copyID && row.origin === level && row.originPeriodKey === periodKey && (
+      (linkedToday !== undefined && row.todayTaskID === linkedToday) ||
+      (linkedEvent !== undefined && row.id === linkedEvent)
+    ));
+  if (conflict) return false;
+  if (!document.payloads.some((row) => row.id === copyID)) {
+    const day = periodKey.length === 7 ? `${periodKey}-01` : periodKey;
+    document.payloads.push({
+      ...source,
+      id: copyID,
+      origin: level,
+      originPeriodKey: periodKey,
+      startDate: day,
+      endDate: day,
+      title: entry.title,
+      parentID: undefined,
+      childOrder: undefined,
+      completed: false,
+      todayTaskID: linkedToday,
+      legacyWebID: undefined,
+      isSample: false,
+    });
   }
   document.postponeEntries = document.postponeEntries.filter((row) => row.id !== entryID);
+  return true;
+}
+
+const reflectionEditLimit: Record<Exclude<PlanningLevel, "future">, number> = { daily: 7, weekly: 4, monthly: 1 };
+
+/** Revises one decision on a reflection inside the live edit window. Older rows and Future stay unchanged. */
+export function reviseLatestReflectionDecision(
+  document: CanonicalDocument,
+  snapshotID: string,
+  decisionID: string,
+  disposition: ReflectionDisposition,
+): boolean {
+  const snapshot = document.reflectionSnapshots.find((row) => row.id === snapshotID);
+  const decision = document.reflectionDecisions.find((row) => row.id === decisionID);
+  if (!snapshot || !decision || !snapshot.decisionIDs.includes(decision.logicalID)) return false;
+  if (decision.level === "future" || !snapshot.completedAt || !snapshot.level) return false;
+  const level = snapshot.level;
+  if (level === "future" || decision.level !== level) return false;
+  const editable = document.reflectionSnapshots
+    .filter((row) => row.level === level && row.completedAt)
+    .sort((a, b) => (a.completedAt! < b.completedAt! ? 1 : -1))
+    .slice(0, reflectionEditLimit[level]);
+  if (!editable.some((row) => row.id === snapshotID)) return false;
+  if (decision.disposition === disposition) return true;
+  const box = document.postponeEntries.find((row) => row.logicalID === decision.logicalID && row.occurrenceDate === decision.occurrenceDate);
+  if (decision.disposition === "postpone" && disposition !== "postpone" && box) {
+    document.postponeEntries = document.postponeEntries.filter((row) => row.id !== box.id);
+  }
+  if (disposition === "postpone" && decision.disposition !== "postpone") {
+    postponeItem(document, {
+      id: `box:${decision.id}`,
+      logicalID: decision.logicalID,
+      section: decision.level,
+      originLevel: decision.level,
+      originPeriodKey: decision.periodKey,
+      occurrenceDate: decision.occurrenceDate,
+      reflectionDecisionID: decision.id,
+      todayTaskID: decision.level === "daily" ? decision.logicalID : undefined,
+    });
+  }
+  decision.disposition = disposition;
   return true;
 }
 
@@ -780,7 +840,13 @@ export function completeReflectionWithPostponements(
       reflectionDecisionID: decision.id,
     });
   }
-  document.reflectionSnapshots.push({ id: snapshotID, completed: true, decisionIDs: decisions.map((row) => row.logicalID) });
+  document.reflectionSnapshots.push({
+    id: snapshotID,
+    completed: true,
+    decisionIDs: decisions.map((row) => row.logicalID),
+    level: decisions[0]?.level,
+    completedAt: "2026-10-15T00:00:00.000Z",
+  });
   return true;
 }
 

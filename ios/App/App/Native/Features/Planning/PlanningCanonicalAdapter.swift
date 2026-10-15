@@ -23,8 +23,8 @@ enum PlanningCanonicalAdapter {
     }
 
     static let liveActivationBlockers = [
-        "postpone-restore-creates-a-new-node",
-        "latest-reflection-remains-editable",
+        "plan-transfer-id-differs-from-live-bullet-id",
+        "planning-ui-still-reads-session",
     ]
 
     static func period(

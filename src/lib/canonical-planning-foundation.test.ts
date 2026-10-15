@@ -35,6 +35,7 @@ import {
   deletePlanBullet,
   listPlans,
   transferPlan,
+  reviseLatestReflectionDecision,
   projectedKeys,
   repeatAllowedForSpan,
   restoreDocument,
@@ -807,12 +808,13 @@ describe("canonical planning foundation", () => {
     expect(JSON.stringify(doc.payloads.find((row) => row.id === "series"))).toBe(series);
     expect(restorePostponedItem(doc, "box-1", "weekly", "2026-10-12")).toBe(true);
     expect(restorePostponedItem(doc, "box-1", "weekly", "2026-10-12")).toBe(false);
-    expect(doc.payloads.find((row) => row.id === "parent")?.origin).toBe("weekly");
+    expect(doc.payloads.find((row) => row.id === "parent")?.origin).toBe("monthly");
     expect(doc.payloads.find((row) => row.id === "a")?.parentID).toBe("parent");
-    expect(doc.payloads.find((row) => row.id === "b")?.childOrder).toBe(1);
-    expect(doc.payloads.find((row) => row.id === "b")?.completed).toBe(true);
-    expect(effectiveItems(doc, "monthly", "2026-10").some((row) => row.logicalID === "parent")).toBe(false);
-    expect(effectiveItems(doc, "daily", "2026-10-12").some((row) => row.logicalID === "parent")).toBe(true);
+    expect(doc.payloads.find((row) => row.id === "restore:box-1:weekly:2026-10-12")?.parentID).toBeUndefined();
+    expect(doc.payloads.filter((row) => row.parentID === "restore:box-1:weekly:2026-10-12")).toEqual([]);
+    expect(effectiveItems(doc, "monthly", "2026-10").some((row) => row.logicalID === "parent")).toBe(true);
+    expect(effectiveItems(doc, "monthly", "2026-10").some((row) => row.logicalID.startsWith("restore:"))).toBe(false);
+    expect(effectiveItems(doc, "daily", "2026-10-12").some((row) => row.logicalID === "restore:box-1:weekly:2026-10-12")).toBe(true);
     expect(doc.reflectionSnapshots[0].decisionIDs).toEqual(["a", "b"]);
     const sample = emptyDocument();
     createItem(sample, { id: "sample-task", kind: "task", origin: "daily", originPeriodKey: "2026-10-14", title: "資料の見直し", isSample: true });
@@ -875,5 +877,38 @@ describe("canonical planning foundation", () => {
     expect(decoded.plans).toEqual([]);
     expect(decoded.planBullets).toEqual([]);
     expect(JSON.stringify(doc.payloads.filter((row) => events.includes(row.id)))).toBe(eventSnapshot);
+  });
+
+  it("revises a reflection inside the edit window and leaves older rows and restored copies", () => {
+    const doc = emptyDocument();
+    createItem(doc, { id: "task", kind: "task", origin: "daily", originPeriodKey: "2026-10-01", title: "Task", startDate: "2026-10-01" });
+    createItem(doc, { id: "e1", legacyWebID: "web-e1", kind: "event", origin: "daily", originPeriodKey: "2026-10-02", title: "Kept", startDate: "2026-10-02", legacyColorKey: "red" });
+    const before = JSON.stringify(doc.payloads.find((row) => row.id === "e1"));
+    expect(completeReflectionWithPostponements(doc, "daily:old", [
+      { id: "old", level: "daily", periodKey: "2026-10-01", logicalID: "task", disposition: "keep", completed: false },
+    ])).toBe(true);
+    doc.reflectionSnapshots[0].completedAt = "2026-10-01T00:00:00.000Z";
+    expect(completeReflectionWithPostponements(doc, "daily:new", [
+      { id: "new", level: "daily", periodKey: "2026-10-02", logicalID: "task", disposition: "keep", completed: true },
+    ])).toBe(true);
+    for (let index = 0; index < 7; index += 1) {
+      doc.reflectionSnapshots.push({ id: `daily:extra-${index}`, completed: true, decisionIDs: ["task"], level: "daily", completedAt: `2026-10-${String(10 + index).padStart(2, "0")}T00:00:00.000Z` });
+    }
+    expect(reviseLatestReflectionDecision(doc, "daily:old", "old", "postpone")).toBe(false);
+    expect(doc.reflectionDecisions.find((row) => row.id === "old")?.disposition).toBe("keep");
+    expect(reviseLatestReflectionDecision(doc, "daily:new", "new", "postpone")).toBe(true);
+    expect(doc.postponeEntries.some((row) => row.logicalID === "task")).toBe(true);
+    expect(reviseLatestReflectionDecision(doc, "daily:new", "new", "postpone")).toBe(true);
+    expect(doc.postponeEntries.filter((row) => row.logicalID === "task")).toHaveLength(1);
+    expect(doc.reflectionSnapshots.filter((row) => row.id === "daily:new")).toHaveLength(1);
+    expect(doc.reflectionDecisions.find((row) => row.id === "new")?.completed).toBe(true);
+    expect(restorePostponedItem(doc, doc.postponeEntries[0].id, "weekly", "2026-11-02")).toBe(true);
+    const copyCount = doc.payloads.length;
+    expect(reviseLatestReflectionDecision(doc, "daily:new", "new", "stop")).toBe(true);
+    expect(doc.payloads.length).toBe(copyCount);
+    expect(doc.payloads.some((row) => row.id.startsWith("restore:"))).toBe(true);
+    expect(reviseLatestReflectionDecision(doc, "future:2026", "new", "keep")).toBe(false);
+    expect(JSON.stringify(doc.payloads.find((row) => row.id === "e1"))).toBe(before);
+    expect(restorePostponedItem(doc, "missing", "daily", "2026-10-03")).toBe(false);
   });
 });

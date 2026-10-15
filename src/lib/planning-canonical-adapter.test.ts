@@ -43,7 +43,7 @@ describe("planning canonical adapter", () => {
     expect(preview.writes).toBe(0);
     expect(preview.batchConvertible).toBe(true);
     expect(preview.activationAllowed).toBe(false);
-    expect(preview.activationBlockers).toEqual(["postpone-restore-creates-a-new-node", "latest-reflection-remains-editable"]);
+    expect(preview.activationBlockers).toEqual(["plan-transfer-id-differs-from-live-bullet-id", "planning-ui-still-reads-session"]);
     expect(JSON.stringify(document)).toBe(before);
     expect(document.payloads.map((row) => row.legacyWebID)).toEqual(["legacy-1", "legacy-2", "legacy-3", "legacy-4", "legacy-5", "legacy-6"]);
     expect(effectivePeriod(document, "monthly", "2026-10").map((row) => row.logicalID)).toEqual([]);
